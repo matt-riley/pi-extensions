@@ -63,6 +63,7 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
       tokens: 0,
       lastTool: "",
       abort: null,
+      stopRequested: false,
       _queued: null,
     };
     entries.set(id, entry);
@@ -100,7 +101,11 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
       return true;
     }
     if (entry.status === "running") {
-      entry.abort?.();
+      // abort is only wired once the child session exists (spawn's bind()). A
+      // stop landing during session creation sets a pending flag instead;
+      // update() fires it the moment abort lands, so the stop never no-ops.
+      if (typeof entry.abort === "function") entry.abort();
+      else entry.stopRequested = true;
       return true;
     }
     return false;
@@ -110,6 +115,11 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
     const entry = entries.get(id);
     if (!entry || !patch || typeof patch !== "object") return;
     Object.assign(entry, patch);
+    // A stop requested before abort was wired fires as soon as abort exists.
+    if (entry.stopRequested && typeof entry.abort === "function") {
+      entry.stopRequested = false;
+      entry.abort();
+    }
     notify();
   }
 

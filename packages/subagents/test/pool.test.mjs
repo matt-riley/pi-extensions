@@ -52,6 +52,23 @@ test("stop running calls the abort hook", () => {
   assert.equal(aborted, true);
 });
 
+test("stop before abort is wired fires as soon as abort lands", () => {
+  const pool = createPool({ maxConcurrent: 1 });
+  const { entry } = pool.acquire("scout", { description: "starting" });
+  // Session still being created: no abort hook yet. The stop must not no-op.
+  assert.equal(pool.stop(entry.id), true);
+  assert.equal(pool.get(entry.id)?.stopRequested, true);
+
+  let aborted = false;
+  pool.update(entry.id, {
+    abort: () => {
+      aborted = true;
+    },
+  });
+  assert.equal(aborted, true);
+  assert.equal(pool.get(entry.id)?.stopRequested, false);
+});
+
 test("ids increment per type and do not reuse after release", () => {
   const pool = createPool({ maxConcurrent: 4 });
   const first = pool.acquire("Scout", {});
