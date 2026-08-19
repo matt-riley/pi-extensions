@@ -28,8 +28,9 @@ pi --plan           start pi already in plan mode
 While plan mode is active:
 
 - **Tools are restricted** to `read`, `bash`, `grep`, `find`, `ls`,
-  `plan_mode_question`, and `plan_mode_complete`; **any other tool call is
-  blocked**, and your previous tool set is restored on exit.
+  `plan_mode_question`, `plan_mode_complete`, and `plan_fetch_url`; **any
+  other tool call is blocked**, and your previous tool set is restored on
+exit.
 - **Mutating tools are blocked** (`edit`, `write`, `update_plan` and anything
   outside the plan toolset), and `bash` runs under a **fail-closed read-only
   allowlist** (see `bash-policy.mjs`, modeled on the reference plan-mode
@@ -40,6 +41,12 @@ While plan mode is active:
   known to be read-only. Redirects and command substitution are rejected. This
   is a guardrail, not a sandbox: deliberately scripted mutations (e.g. an
   `awk` program that writes a file) are out of scope.
+- **Read-only web access** via `plan_fetch_url`: fetches an http(s) URL and
+  returns the page title plus up to 40k characters of extracted text
+  (scripts/styles stripped, entities decoded — see `fetch-content.mjs`), with
+  a 20s timeout and an Esc-cancellable request. This is the sanctioned
+  network path: `curl`/`wget` stay blocked by the bash allowlist, so web
+  research can't double as a mutation or exfiltration vector.
 - A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
   path) keep the state visible while active; both clear on exit.
 - The agent explores read-only, then **grills you for the full scope**: it
@@ -78,11 +85,12 @@ so plan mode needs no in-memory plan retention.
   limited to inspection commands (see `bash-policy.mjs`). Test runners
   (`npm test`, `go test`), script interpreters (`node`, `python3 -c`),
   installs, and network tools are blocked in plan mode — exit plan mode to run
-  them. The model is additionally instructed not to mutate.
+  them; use `plan_fetch_url` for web research instead. The model is
+  additionally instructed not to mutate.
 
 ## Development
 
 ```sh
-npm test          # node --test against bash-policy.mjs and plan-file.mjs
+npm test          # node --test against bash-policy.mjs, plan-file.mjs, dialog-queue.mjs, fetch-content.mjs
 npm run check     # syntax-check entrypoints + tests
 ```

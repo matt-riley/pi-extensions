@@ -28,13 +28,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "./bash-policy.mjs";
 import { createDialogQueue } from "./dialog-queue.mjs";
+import { extractReadable } from "./fetch-content.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
+const FETCH_TOOL = "plan_fetch_url";
 // grep/find/ls are read-only built-ins, included like the reference plan-mode
-// example's toolset.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL];
+// example's toolset. plan_fetch_url is the sanctioned web path — bash network
+// tools stay blocked by the fail-closed policy.
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
@@ -47,11 +50,11 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 
 - Stay in Plan Mode until the user exits it. Treat requests to implement as requests to plan the implementation; do not edit files or carry out the plan.
 - Do not use update_plan/TODO tooling; Plan Mode is conversational planning, not execution tracking.
-- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt workarounds.
+- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt bash workarounds. For web research use plan_fetch_url instead: it fetches an http(s) URL and returns readable text.
 
 ## Phase 1 — Ground in the environment
 
-- Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts.
+- Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts. When the request needs current or external information (API docs, versions, references), research it online with plan_fetch_url before asking the user — never ask for something a fetch can look up.
 - Do not ask questions that can be answered from repository or system truth. Ask only when multiple plausible choices remain, a needed identifier/context is missing, or the ambiguity is product intent.
 
 ## Phase 2 — Grill: scope & intent
@@ -472,6 +475,101 @@ export default function planMode(pi: ExtensionAPI) {
         ],
         terminate: true,
       };
+    },
+  });
+
+  pi.registerTool({
+    name: FETCH_TOOL,
+    label: "Fetch URL (read-only web access)",
+    description:
+      "Fetch an http(s) URL and return its readable text content. Read-only web access for planning research — " +
+      "use it instead of bash for anything network-related (curl/wget are blocked in plan mode). " +
+      "Returns the page title, the final URL after redirects, and up to 40k characters of extracted text.",
+    parameters: Type.Object({
+      url: Type.String({ description: "The http(s) URL to fetch" }),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (!state.enabled) {
+        return { content: [{ type: "text", text: "Not in plan mode — plan_fetch_url is inactive." }] };
+      }
+      const url = String(params?.url ?? "").trim();
+      if (!url) {
+        return { content: [{ type: "text", text: "Rejected: url is empty." }] };
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return { content: [{ type: "text", text: `Rejected: "${url}" is not a valid URL.` }] };
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return {
+          content: [{ type: "text", text: `Rejected: only http(s) URLs are allowed, got ${parsed.protocol}//.` }],
+        };
+      }
+      // 20s timeout combined with pi's own cancel signal (Esc aborts the call).
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      const onAbort = () => controller.abort();
+      signal?.addEventListener("abort", onAbort);
+      try {
+        const response = await fetch(parsed, {
+          redirect: "follow",
+          headers: {
+            "user-agent": "Mozilla/5.0 (compatible; pi-plan-mode/0.1; +planning-research)",
+            accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.5",
+          },
+          signal: controller.signal,
+        });
+        const contentType = response.headers.get("content-type") ?? "";
+        const body = await response.text();
+        if (!response.ok) {
+          const snippet = body.replace(/\s+/g, " ").slice(0, 300);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Fetch failed: HTTP ${response.status} ${response.statusText} from ${response.url}.\n${snippet}`,
+              },
+            ],
+          };
+        }
+        const { title, text, truncated } = extractReadable({ contentType, body });
+        if (!text) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Fetched ${response.url} (${contentType || "unknown content type"}) — no readable text found.`,
+              },
+            ],
+          };
+        }
+        const parts = [`URL: ${response.url}`];
+        if (title) parts.push(`Title: ${title}`);
+        parts.push(text);
+        if (truncated) {
+          parts.push(`\n[Truncated: ${text.length} characters — raw body was ${body.length} characters]`);
+        }
+        return { content: [{ type: "text", text: parts.join("\n\n") }] };
+      } catch (error) {
+        const reason = controller.signal.aborted
+          ? signal?.aborted
+            ? "cancelled by the user"
+            : "timed out after 20s"
+          : (error as Error).message;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Fetch failed: ${reason}. Try a different URL or skip the web research.`,
+            },
+          ],
+        };
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
+      }
     },
   });
 }
