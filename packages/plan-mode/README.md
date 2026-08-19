@@ -26,13 +26,19 @@ pi --plan           start pi already in plan mode
 
 While plan mode is active:
 
-- **Tools are restricted** to `read`, `bash`, `plan_mode_question`, and
-  `plan_mode_complete`; **any other tool call is blocked**, and your previous
-  tool set is restored on exit.
+- **Tools are restricted** to `read`, `bash`, `grep`, `find`, `ls`,
+  `plan_mode_question`, and `plan_mode_complete`; **any other tool call is
+  blocked**, and your previous tool set is restored on exit.
 - **Mutating tools are blocked** (`edit`, `write`, `update_plan` and anything
-  outside the plan toolset), and `bash` runs under a mutator guard: redirects
-  and known mutating commands/chains (see `bash-policy.mjs`) are rejected.
-  This is an accidental-mutation guardrail, not a sandbox.
+  outside the plan toolset), and `bash` runs under a **fail-closed read-only
+  allowlist** (see `bash-policy.mjs`, modeled on the reference plan-mode
+  extension): known mutators are blocked outright, only explicitly
+  allowlisted read-only commands pass (with per-command rules that forbid
+  dangerous flags such as `sed -i`, `find -exec/-delete`, `tar -x`,
+  `git push`, `npm install`), and anything else is blocked because it is not
+  known to be read-only. Redirects and command substitution are rejected. This
+  is a guardrail, not a sandbox: deliberately scripted mutations (e.g. an
+  `awk` program that writes a file) are out of scope.
 - A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
   path) keep the state visible while active; both clear on exit.
 - The agent explores read-only, asks questions with
@@ -62,10 +68,11 @@ so plan mode needs no in-memory plan retention.
   `/plan <prompt>` is the intended entry point.
 - No export/save/fresh-session handoff, settings file, or tool pre-selection
   menu yet — say the word if you want any of them.
-- The bash guard is a fail-open blocklist: it blocks high-confidence mutating
-  commands but is not a sandbox, and a few read-only commands are false
-  positives (e.g. `grep -n "<div" file`, `git branch -a`). The model is
-  additionally instructed not to mutate.
+- The bash guard is a **fail-closed read-only allowlist**: plan-mode bash is
+  limited to inspection commands (see `bash-policy.mjs`). Test runners
+  (`npm test`, `go test`), script interpreters (`node`, `python3 -c`),
+  installs, and network tools are blocked in plan mode — exit plan mode to run
+  them. The model is additionally instructed not to mutate.
 
 ## Development
 

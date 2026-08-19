@@ -31,7 +31,9 @@ import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
-const PLAN_TOOLS = ["read", "bash", QUESTION_TOOL, COMPLETE_TOOL];
+// grep/find/ls are read-only built-ins, included like the reference plan-mode
+// example's toolset.
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
@@ -44,7 +46,7 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 
 - Stay in Plan Mode until the user exits it. Treat requests to implement as requests to plan the implementation; do not edit files or carry out the plan.
 - Do not use update_plan/TODO tooling; Plan Mode is conversational planning, not execution tracking.
-- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to read-only inspection by policy — do not attempt workarounds.
+- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt workarounds.
 
 ## Phase 1 — Ground in the environment
 
@@ -316,7 +318,7 @@ export default function planMode(pi: ExtensionAPI) {
       const command = typeof event.input?.command === "string" ? event.input.command : "";
       const blocked = blockedBashCommand(command);
       if (blocked) {
-        return { block: true, reason: `Plan mode blocks mutating bash command: ${blocked}` };
+        return { block: true, reason: `Plan mode blocks bash command (read-only allowlist): ${blocked}` };
       }
     }
   });
