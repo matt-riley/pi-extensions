@@ -1,0 +1,7 @@
+{
+  "name": "pi-subagents",
+  "version": "0.1.0",
+  "description": "In-process parallel subagents: fan work out to named scout/reviewer/oracle children.",
+  "type": "module",
+  "license": "MIT"
+}
