@@ -28,6 +28,8 @@ pi --plan           start pi already in plan mode
 While plan mode is active:
 
 - **Tools are restricted** to `read`, `bash`, `grep`, `find`, `ls`,
+  `repo_map`, `code_search`, `file_outline`, `find_definition` (from
+  `pi-code-search`),
   `plan_mode_question`, `plan_mode_complete`, `plan_fetch_url`, and
   `web_search`; **any other tool call is blocked**, and your previous tool
   set is restored on exit.

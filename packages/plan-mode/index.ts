@@ -31,6 +31,7 @@ import { createDialogQueue } from "./dialog-queue.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
+import { CODE_SEARCH_TOOLS } from "../code-search/tools.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
@@ -40,8 +41,10 @@ const SEARCH_TOOL = "web_search";
 // example's toolset. plan_fetch_url and web_search (from pi-web-fetch) are the
 // sanctioned web paths — bash network tools stay blocked by the fail-closed
 // policy. web_search resolves from the pi-web-fetch extension, which ships in
-// the same repo.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
+// the same repo. CODE_SEARCH_TOOLS (repo_map, code_search, file_outline,
+// find_definition from pi-code-search) are read-only discovery tools — the
+// core activity of plan mode.
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
