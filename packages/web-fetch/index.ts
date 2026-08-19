@@ -4,6 +4,7 @@
 // Registers:
 //   web_fetch       — one URL → markdown/html/text/json/raw + metadata
 //   batch_web_fetch — many URLs with bounded concurrency
+//   web_search      — keyless DuckDuckGo web search (titles/URLs/snippets)
 //
 // GitHub URLs prefer the `gh` CLI (authenticated, structured) and fall back
 // to plain HTTP when gh is missing or unauthenticated. Zero runtime
@@ -11,8 +12,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { fetchSmart } from "./fetch.mjs";
+import { fetchPage, fetchSmart } from "./fetch.mjs";
 import { formatBatchResult, formatWebFetchResult, isKnownFormat } from "./format.mjs";
+import { buildDdgSearchUrl, formatDdgResults, isDdgBlocked, parseDdgResults } from "./search.mjs";
 import { FORMATS, loadSettings } from "./settings.mjs";
 
 const FORMAT_DESC =
@@ -30,6 +32,15 @@ const BATCH_DESCRIPTION = [
   "Fetch multiple URLs in one call with bounded concurrency. Each item accepts the same options as web_fetch;",
   "individual failures are reported per item and do not fail the batch.",
 ].join(" ");
+
+const SEARCH_DESCRIPTION = [
+  "Search the web via DuckDuckGo (no API key required) and return ranked results with titles, URLs, and snippets.",
+  "Use when you need current or source-backed information outside your training data: recent events, versions, docs, people.",
+  "Results reflect DuckDuckGo's index; verify claims against the linked sources before citing them.",
+].join(" ");
+
+const SEARCH_SNIPPET =
+  "web_search(query, max_results?): search the web via DuckDuckGo (no API key); returns ranked results with titles, URLs, and snippets — use for current/source-backed information beyond your training data";
 
 const FORMAT_DEFAULT_BY_TOOL = "markdown";
 
@@ -225,6 +236,53 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
 
       const text = formatBatchResult(results, { concurrency });
       return { content: [{ type: "text", text }] };
+    },
+  });
+
+  pi.registerTool({
+    name: "web_search",
+    label: "web_search",
+    description: SEARCH_DESCRIPTION,
+    promptSnippet: SEARCH_SNIPPET,
+    promptGuidelines: [
+      "Use web_search when you need current or source-backed information outside your training data (recent events, version numbers, docs, people). It is keyless (DuckDuckGo) and returns ranked results with titles, URLs, and snippets.",
+      "After a search, synthesize an answer and cite the returned sources with markdown hyperlinks; do not invent URLs not present in the results.",
+    ],
+    parameters: Type.Object({
+      query: Type.String({ minLength: 2, description: "The search query. Be specific and include relevant keywords." }),
+      max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Max results to return (default 5)." })),
+    }),
+
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const settings = await loadSettings({ cwd: ctx.cwd });
+      const query = String(params?.query ?? "").trim();
+      if (query.length < 2) {
+        return { content: [{ type: "text", text: "Rejected: query is too short." }] };
+      }
+      const limit = clampInt(params?.max_results, 5, 1, 10);
+      const url = buildDdgSearchUrl(query);
+
+      onUpdate?.({ content: [{ type: "text", text: `Searching DuckDuckGo for "${query}"…` }] });
+      try {
+        const outcome = await fetchPage({
+          url,
+          format: "raw",
+          maxChars: 400_000,
+          timeoutMs: settings.defaultTimeoutMs,
+          userAgent: settings.userAgent,
+          extraHeaders: settings.extraHeaders,
+          signal,
+          onStatus: (status: string) =>
+            onUpdate?.({ content: [{ type: "text", text: `web_search: ${status}` }] }),
+        });
+        const body = outcome.kind === "raw" ? outcome.text : "";
+        const blocked = isDdgBlocked({ status: outcome.status, body });
+        const { results } = parseDdgResults(body, { limit });
+        const text = formatDdgResults({ query, results, blocked, limit });
+        return { content: [{ type: "text", text }], details: { results } };
+      } catch (err) {
+        return { content: [{ type: "text", text: errorText("web_search failed", err) }], isError: true };
+      }
     },
   });
 }

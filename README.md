@@ -10,7 +10,7 @@ plain TypeScript loaded directly by pi.
 | --- | --- |
 | [`pi-exit`](./packages/exit) | `/exit` alias for pi's built-in `/quit`. |
 | [`pi-plan-mode`](./packages/plan-mode) | Codex-like read-only `/plan` mode that writes a Markdown plan you edit before implementation. |
-| [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches. |
+| [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. |
 
 ## Install
 

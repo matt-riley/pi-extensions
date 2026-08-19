@@ -1,20 +1,23 @@
-# pi-web-fetch — browser-grade web fetching for pi
+# pi-web-fetch — browser-grade web fetching & search for pi
 
-Zero-dependency `web_fetch` / `batch_web_fetch` tools: browser-like request
-headers, clean readable extraction, page metadata, redirect handling, GitHub
-URLs via the `gh` CLI, and bounded-concurrency batch fetching.
+Zero-dependency `web_fetch` / `batch_web_fetch` / `web_search` tools:
+browser-like request headers, clean readable extraction, page metadata,
+redirect handling, GitHub URLs via the `gh` CLI, bounded-concurrency batch
+fetching, and keyless web search via DuckDuckGo.
 
 ## Tools
 
 ```
 web_fetch(url, format?, maxChars?, timeoutMs?, headers?, includeImages?, followAlternates?)
 batch_web_fetch(requests, concurrency?, totalMaxChars?)
+web_search(query, max_results?)
 ```
 
 `web_fetch` returns a metadata header (`title`, `url`, `published`, `author`,
 `site`, `lang`, `via`) followed by the extracted content in the requested
 format. `batch_web_fetch` fans out with bounded concurrency and reports each
-item's result (or failure) independently.
+item's result (or failure) independently. `web_search` returns ranked
+DuckDuckGo results (title, URL, snippet) without an API key.
 
 ## Output formats
 
@@ -52,6 +55,26 @@ item's result (or failure) independently.
 - **Binary handling** — non-text payloads are reported by content-type and
   size instead of being slurped into context. Fetch a text/JSON
   representation instead (e.g. GitHub raw, an API endpoint).
+
+## `web_search` — keyless DuckDuckGo search
+
+`web_search(query, max_results?)` runs the query through DuckDuckGo's HTML
+endpoint via the same HTTP layer as `web_fetch` (browser headers, redirects,
+timeout, size caps) and returns ranked results as markdown: title, decoded
+URL, and snippet. No API key, no third party beyond DuckDuckGo; it works with
+any provider/model. Snippets and titles are entity-decoded and cleaned with
+the shared tokenizer.
+
+Notes:
+
+- Result links arrive wrapped in `//duckduckgo.com/l/?uddg=…` redirects;
+  the real destination is decoded before being returned.
+- If DuckDuckGo serves its bot-challenge page (HTTP 202 or anomaly markers)
+  instead of results, the tool reports that explicitly rather than a bogus
+  "no results".
+- The HTML endpoint is scrape-friendly but rate-limited: keep queries modest
+  and prefer `web_fetch` when you already have the URL. The parser is
+  unit-tested against captured real markup (`test/search.test.mjs`).
 
 ## GitHub URLs use `gh`
 
