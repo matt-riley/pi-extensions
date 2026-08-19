@@ -3,6 +3,9 @@
 export const RESULT_CAP = 50 * 1024;
 export const DEFAULT_MAX_TURNS = 30;
 export const GRACE_TURNS = 2;
+export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+const TIMEOUT_MIN_MS = 1000;
+const TIMEOUT_MAX_MS = 2 * 60 * 60 * 1000;
 
 export function truncateText(text, cap = RESULT_CAP) {
   const s = text == null ? "" : String(text);
@@ -65,12 +68,13 @@ export function formatResult({ agent, description, status, turns, tokens, durati
 
 export function tokensFromUsage(usage) {
   if (!usage || typeof usage !== "object") return 0;
-  const total = Number(usage.total);
+  const total = Number(usage.totalTokens ?? usage.total);
   if (Number.isFinite(total) && total > 0) return total;
   const input = Number(usage.input) || 0;
   const output = Number(usage.output) || 0;
+  const cacheRead = Number(usage.cacheRead) || 0;
   const cacheWrite = Number(usage.cacheWrite) || 0;
-  return input + output + cacheWrite;
+  return input + output + cacheRead + cacheWrite;
 }
 
 export function extractLastAssistantText(messages) {
@@ -108,6 +112,53 @@ export function resolveMaxTurns(frontmatterMax, toolMax) {
   if (fm != null) cap = Math.min(cap, fm);
   if (tool != null) cap = Math.min(cap, tool);
   return cap;
+}
+
+export function clampTimeoutMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  const t = Math.trunc(n);
+  if (t < TIMEOUT_MIN_MS) return TIMEOUT_MIN_MS;
+  if (t > TIMEOUT_MAX_MS) return TIMEOUT_MAX_MS;
+  return t;
+}
+
+// Frontmatter may raise or lower the timeout (within clamp bounds); the tool
+// argument may only lower it.
+export function resolveTimeoutMs(frontmatterMs, toolMs) {
+  let cap = clampTimeoutMs(frontmatterMs) ?? DEFAULT_TIMEOUT_MS;
+  const tool = clampTimeoutMs(toolMs);
+  if (tool != null) cap = Math.min(cap, tool);
+  return cap;
+}
+
+export function emptyUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
+export function accumulateUsage(acc, usage) {
+  if (!acc || !usage || typeof usage !== "object") return acc;
+  for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]) {
+    const n = Number(usage[key]);
+    if (Number.isFinite(n) && n > 0) acc[key] += n;
+  }
+  const costTotal = Number(usage?.cost?.total);
+  if (Number.isFinite(costTotal) && costTotal > 0) acc.cost.total += costTotal;
+  return acc;
+}
+
+// A completed run that had to be wrapped up past its turn cap is reported as
+// "wrapped up", not a clean completion.
+export function resolveFinalStatus({ status, wrapSent, turns, maxTurns }) {
+  if (status === "completed" && wrapSent && turns > maxTurns) return "wrapped up";
+  return status;
 }
 
 // After each turn_end: continue, send the wrap-up steer, or abort.

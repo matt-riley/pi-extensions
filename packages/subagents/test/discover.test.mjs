@@ -169,12 +169,15 @@ body
   });
 });
 
-test("resolveChildTools excludes writers when no tools are listed", () => {
+test("resolveChildTools falls back to the read-only allowlist when no tools are listed", () => {
   const bare = parseAgentContent("just a body", "/tmp/bare.md");
-  assert.deepEqual(resolveChildTools(bare), {
-    tools: undefined,
-    excludeTools: ["edit", "write", "subagent"],
-  });
+  const resolved = resolveChildTools(bare);
+  assert.deepEqual(resolved.excludeTools, ["subagent"]);
+  for (const tool of ["read", "grep", "find", "ls", "bash", "repo_map", "code_search", "web_search"]) {
+    assert.ok(resolved.tools.includes(tool), `missing ${tool}`);
+  }
+  assert.ok(!resolved.tools.includes("edit"));
+  assert.ok(!resolved.tools.includes("write"));
 });
 
 test("usesAllowlistedBash: builtins are read-only unless they declare write tools", () => {
@@ -200,19 +203,45 @@ body
   assert.equal(usesAllowlistedBash(worker), false);
 });
 
-test("usesAllowlistedBash: custom agents keep the documented contract", () => {
-  const listed = parseAgentContent(
+test("usesAllowlistedBash: full bash requires declared write tools", () => {
+  const bashOnly = parseAgentContent(
     `---
 name: toolsy
-tools: read, bash
+tools: read, grep, bash
 ---
 body
 `,
     "/tmp/toolsy.md",
   );
+  const writer = parseAgentContent(
+    `---
+name: writer
+tools: read, edit, write, bash
+---
+body
+`,
+    "/tmp/writer.md",
+  );
   const bare = parseAgentContent("just a body", "/tmp/bare.md");
-  assert.equal(usesAllowlistedBash(listed), false);
+  assert.equal(usesAllowlistedBash(bashOnly), true);
+  assert.equal(usesAllowlistedBash(writer), false);
   assert.equal(usesAllowlistedBash(bare), true);
+});
+
+test("parseAgentContent clamps timeout_ms", () => {
+  const parsed = parseAgentContent(
+    `---
+name: slow
+max_turns: 5
+timeout_ms: 60000
+---
+body
+`,
+    "/tmp/slow.md",
+  );
+  assert.equal(parsed.timeoutMs, 60000);
+  assert.equal(parseAgentContent("body", "/tmp/none.md").timeoutMs, undefined);
+  assert.equal(parseAgentContent("---\ntimeout_ms: 50\n---\n", "/tmp/tiny.md").timeoutMs, 1000);
 });
 
 test("isWriteCapable only when edit/write are declared", () => {

@@ -2,10 +2,27 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { clampMaxTurns } from "./result.mjs";
+import { clampMaxTurns, clampTimeoutMs } from "./result.mjs";
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 export const WRITE_TOOLS = new Set(["edit", "write"]);
+
+// Read-only fallback when an agent omits tools:. Explicit allowlist of known-safe
+// tools — never a blocklist, so a future mutating extension tool cannot leak in.
+export const READ_ONLY_DEFAULT_TOOLS = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "bash",
+  "repo_map",
+  "code_search",
+  "file_outline",
+  "find_definition",
+  "web_search",
+  "web_fetch",
+  "batch_web_fetch",
+];
 
 export function parseToolList(value) {
   const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
@@ -82,6 +99,7 @@ export function parseAgentContent(content, filePath, parseFrontmatter) {
   const thinkingRaw = typeof frontmatter.thinking === "string" ? frontmatter.thinking.trim() : "";
   const thinking = THINKING_LEVELS.includes(thinkingRaw) ? thinkingRaw : undefined;
   const maxTurns = clampMaxTurns(frontmatter.max_turns);
+  const timeoutMs = clampTimeoutMs(frontmatter.timeout_ms);
   const enabled = frontmatter.enabled !== false && frontmatter.enabled !== "false";
 
   return {
@@ -92,6 +110,7 @@ export function parseAgentContent(content, filePath, parseFrontmatter) {
     model,
     thinking,
     maxTurns,
+    timeoutMs,
     enabled,
     systemPrompt: body.trim(),
     filePath,
@@ -166,12 +185,11 @@ export function findAgent(agents, name) {
 }
 
 // True when the child's bash must be restricted to the read-only allowlist.
-// Builtins are read-only unless they declare edit/write in tools:. Customs keep
-// the documented contract: no tools: → read-only; any tools: list → full bash.
+// Full bash only when the agent explicitly declares edit/write — for builtins
+// and custom agents alike. "No write tools" must not mean "can rm -rf".
 export function usesAllowlistedBash(agent) {
   if (!agent) return true;
-  if (agent.source === "builtin") return !isWriteCapable(agent);
-  return !agent.toolsListed;
+  return !isWriteCapable(agent);
 }
 
 export function isWriteCapable(agent) {
@@ -180,10 +198,10 @@ export function isWriteCapable(agent) {
 }
 
 // The child's tool selection. A declared tools: list is honored for every agent
-// (builtin or custom); without one the child gets the host toolset minus writers.
+// (builtin or custom); without one the child gets the explicit read-only set.
 export function resolveChildTools(agent) {
   if (agent?.toolsListed && agent?.tools?.length) {
     return { tools: [...agent.tools], excludeTools: ["subagent"] };
   }
-  return { tools: undefined, excludeTools: ["edit", "write", "subagent"] };
+  return { tools: [...READ_ONLY_DEFAULT_TOOLS], excludeTools: ["subagent"] };
 }

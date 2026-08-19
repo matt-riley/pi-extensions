@@ -1,6 +1,6 @@
 // child-policy.mjs — inline child-session extension: bash allowlist / block writers.
 
-import { blockedBashCommand } from "../plan-mode/bash-policy.mjs";
+import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 
 export function evaluateChildToolCall(event, { allowlistBash = false, blockWriters = false } = {}) {
   const name = event?.toolName;

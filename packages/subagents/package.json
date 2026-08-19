@@ -1,7 +1,7 @@
 {
   "name": "pi-subagents",
   "version": "0.1.0",
-  "description": "In-process parallel subagents: fan work out to named scout/reviewer/oracle children.",
+  "description": "In-process parallel subagents: off-by-default, named scout/reviewer/oracle/worker/researcher children with a live widget.",
   "type": "module",
   "license": "MIT"
 }

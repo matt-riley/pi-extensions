@@ -11,11 +11,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverAgents, findAgent } from "./discover.mjs";
 import { withOrchestratorPrompt } from "./orchestrate.mjs";
+import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
 import {
   fallbackDescription,
   formatResult,
   resolveMaxTurns,
+  resolveTimeoutMs,
 } from "./result.mjs";
 import { CHILD_ENV, runChild } from "./spawn.mjs";
 import { formatWidgetLines } from "./widget.mjs";
@@ -56,22 +58,6 @@ function notify(ctx: UiCtx | undefined, message: string, level = "info") {
   if (ctx?.hasUI) ctx.ui?.notify?.(message, level);
 }
 
-function resolveChildModel(ctx: UiCtx | undefined, spec?: string) {
-  if (!spec) return { model: ctx?.model, note: undefined as string | undefined };
-  const slash = spec.indexOf("/");
-  if (slash <= 0) {
-    return { model: ctx?.model, note: `unresolved model "${spec}"; inherited parent` };
-  }
-  const provider = spec.slice(0, slash);
-  const id = spec.slice(slash + 1);
-  try {
-    const found = ctx?.modelRegistry?.getModel?.(provider, id);
-    if (found) return { model: found, note: undefined };
-  } catch {
-    // inherit
-  }
-  return { model: ctx?.model, note: `unresolved model "${spec}"; inherited parent` };
-}
 
 export default function piSubagentsExtension(pi: ExtensionAPI) {
   if (process.env[CHILD_ENV] === "1") return;
@@ -114,12 +100,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   function applySubagentState() {
     try {
       const active = pi.getActiveTools();
-      const has = active.includes(TOOL_NAME);
-      if (enabled && !has) {
-        pi.setActiveTools([...new Set([...active, TOOL_NAME])]);
-      } else if (!enabled && has) {
-        pi.setActiveTools(active.filter((tool) => tool !== TOOL_NAME));
-      }
+      const next = reconcileActiveTools(active, enabled, TOOL_NAME);
+      if (next !== active) pi.setActiveTools(next);
     } catch {
       // tool registry not ready yet; session_start re-asserts
     }
@@ -127,7 +109,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
   function updateStatus(ctx: UiCtx | undefined) {
     if (!ctx?.hasUI || !ctx.ui) return;
-    ctx.ui.setStatus?.(WIDGET_ID, enabled ? "subagents on" : undefined);
+    ctx.ui.setStatus?.(WIDGET_ID, enabled && isToolActive() ? "subagents on" : undefined);
   }
 
   pi.on("session_start", (_event, ctx) => {
@@ -170,6 +152,13 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           description: "Turn cap for this child (1-30). May only lower the resolved cap.",
         }),
       ),
+      timeout_ms: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: 7200000,
+          description: "Wall-clock cap for this child (ms, up to 2h). May only lower the resolved cap.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const agentName = String(params?.agent ?? "").trim();
@@ -201,6 +190,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           ? params.description.trim()
           : fallbackDescription(task);
       const maxTurns = resolveMaxTurns(agent.maxTurns, params?.max_turns);
+      const timeoutMs = resolveTimeoutMs(agent.timeoutMs, params?.timeout_ms);
       const { entry, ready } = pool.acquire(agent.name, { description, task, maxTurns });
 
       const started = await ready;
@@ -225,7 +215,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       }
 
       pi.events.emit("subagents:started", { id: entry.id, type: agent.name, description });
-      const { model, note } = resolveChildModel(ctx, agent.model);
+      const { model, note } = resolveChildModel(ctx?.modelRegistry, ctx?.model, agent.model);
 
       try {
         const result = await runChild({
@@ -235,6 +225,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           model,
           thinkingLevel: agent.thinking ?? ctx?.thinkingLevel,
           maxTurns,
+          timeoutMs,
           signal: ctx?.signal ?? signal,
           onEvent: (patch) => {
             pool.update(entry.id, patch);
@@ -257,7 +248,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
         if (result.status === "stopped") {
           pi.events.emit("subagents:stopped", { id: entry.id, type: agent.name });
-        } else if (result.status === "error" || result.status === "aborted") {
+        } else if (["error", "aborted", "timed out"].includes(result.status)) {
           pi.events.emit("subagents:failed", {
             id: entry.id,
             type: agent.name,
@@ -286,7 +277,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         });
         return {
           content: [{ type: "text", text }],
-          isError: result.status === "error",
+          isError: false,
+          usage: result.usage,
         };
       } finally {
         pool.release(entry.id);
@@ -299,6 +291,14 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const arg = String(args ?? "").trim().toLowerCase();
       if (arg === "on" || arg === "off") {
+        if (arg === "on") {
+          const active = pi.getActiveTools();
+          const readOnlyToolset = !active.includes("edit") && !active.includes("write");
+          if (readOnlyToolset) {
+            notify(ctx, "Can't enable subagents in a read-only toolset (plan mode?) — exit it first.");
+            return;
+          }
+        }
         enabled = arg === "on";
         applySubagentState();
         updateStatus(ctx);
@@ -313,7 +313,11 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
       const fleet = pool.list();
       if (fleet.length === 0) {
-        notify(ctx, enabled ? "No running subagents" : "Subagents are off — /subagents on to enable");
+        if (enabled && !isToolActive()) {
+          notify(ctx, "Subagents enabled but unavailable in this read-only toolset");
+        } else {
+          notify(ctx, enabled ? "No running subagents" : "Subagents are off — /subagents on to enable");
+        }
         return;
       }
       if (!ctx.hasUI || !ctx.ui?.select) {

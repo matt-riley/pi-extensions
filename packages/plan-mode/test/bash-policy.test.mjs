@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blockedBashCommand, blockedBashSegment } from "../bash-policy.mjs";
+import { blockedBashCommand, blockedBashSegment } from "../../../shared/bash-policy.mjs";
 
 test("allows read-only inspection commands", () => {
   for (const cmd of [

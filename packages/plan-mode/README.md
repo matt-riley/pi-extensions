@@ -35,7 +35,7 @@ While plan mode is active:
   set is restored on exit.
 - **Mutating tools are blocked** (`edit`, `write`, `update_plan` and anything
   outside the plan toolset), and `bash` runs under a **fail-closed read-only
-  allowlist** (see `bash-policy.mjs`, modeled on the reference plan-mode
+  allowlist** (see `shared/bash-policy.mjs`, modeled on the reference plan-mode
   extension): known mutators are blocked outright, only explicitly
   allowlisted read-only commands pass (with per-command rules that forbid
   dangerous flags such as `sed -i`, `find -exec/-delete`, `tar -x`,
@@ -92,7 +92,7 @@ so plan mode needs no in-memory plan retention.
 - No export/save/fresh-session handoff, settings file, or tool pre-selection
   menu yet — say the word if you want any of them.
 - The bash guard is a **fail-closed read-only allowlist**: plan-mode bash is
-  limited to inspection commands (see `bash-policy.mjs`). Test runners
+  limited to inspection commands (see `shared/bash-policy.mjs`). Test runners
   (`npm test`, `go test`), script interpreters (`node`, `python3 -c`),
   installs, and network tools are blocked in plan mode — exit plan mode to run
   them; use `plan_fetch_url` / `web_search` for web research instead. The model is
@@ -101,6 +101,6 @@ so plan mode needs no in-memory plan retention.
 ## Development
 
 ```sh
-npm test          # node --test against bash-policy.mjs, plan-file.mjs, dialog-queue.mjs
+npm test          # node --test against shared/bash-policy.mjs, plan-file.mjs, dialog-queue.mjs
 npm run check     # syntax-check entrypoints + tests
 ```

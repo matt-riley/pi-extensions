@@ -27,10 +27,11 @@ restart).
 
 ```text
 subagent({
-  agent,            // scout | reviewer | oracle | worker | custom type
+  agent,            // scout | reviewer | oracle | worker | researcher | custom type
   task,             // full prompt — the child cannot see this conversation
   description?,     // 3–5 words for the widget
   max_turns?,       // 1–30, may only lower the resolved cap
+  timeout_ms?,      // wall-clock cap in ms (up to 2h), may only lower the resolved cap
 })
 ```
 
@@ -71,24 +72,33 @@ You implement the task. Do not spawn other agents.
 ```
 
 A declared `tools:` list is honored for every agent (builtin or custom) and
-defines the child's exact toolset. Files that omit `tools:` get the read-only
-default (full toolset minus writers, allowlisted bash). Custom files that list
-`bash` get full bash; listing `edit`/`write` makes the agent write-capable.
-Builtins are read-only **unless** they declare `edit`/`write` in `tools:`.
-`enabled: false` hides that name (including a builtin).
+defines the child's exact toolset. Files that omit `tools:` get an explicit
+read-only allowlist (`read`, `grep`, `find`, `ls`, `bash`, the code-search tools,
+and the web tools) — never a blocklist, so no future mutating tool can leak in.
+
+Full bash is granted **only** to write-capable agents: those that declare
+`edit`/`write` in `tools:`. Every other agent — builtin or custom, listed or
+not — runs bash under the read-only allowlist, so a "read-only" agent cannot
+`rm -rf` its way around missing write tools. `enabled: false` hides that name
+(including a builtin).
 
 Copy-paste examples live in [`examples/custom-agents/`](./examples/custom-agents/) —
 a write-capable `writer` and a read-only `docs-auditor`. Drop them into
 `~/.pi/agent/agents/` (or `<cwd>/.pi/agents/`) to use them as `subagent` types.
 
 v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`),
-`thinking`, `max_turns` (1–30), `enabled`.
+`thinking`, `max_turns` (1–30), `timeout_ms` (ms), `enabled`.
 
 ## Limits
 
 - Max 4 running; extras queue.
-- 30 turns, wrap-up steer, then 2 grace turns, then abort.
-- Last assistant text, capped at 50 KB, plus usage stats.
+- 30 turns, wrap-up steer, then 2 grace turns, then abort; plus a 30-minute
+  wall-clock timeout (frontmatter/`timeout_ms` can adjust) so a hung tool call
+  cannot block the parent forever.
+- Last assistant text, capped at 50 KB, plus usage stats. Child token usage is
+  attributed to the session (`usage` on the tool result).
+- Child runtime failures (error / timed out / aborted) return as normal content
+  — never `isError`, so pi does not blindly auto-retry the same failing spawn.
 - Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
 - Children load host extensions except this package, and never get `subagent`.
 - The orchestrator brief (roster + spawn rules) is appended to the system

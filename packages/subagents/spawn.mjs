@@ -9,7 +9,10 @@ import {
 import { createChildPolicyExtension } from "./child-policy.mjs";
 import { resolveChildTools, usesAllowlistedBash } from "./discover.mjs";
 import {
+  accumulateUsage,
+  emptyUsage,
   extractLastAssistantText,
+  resolveFinalStatus,
   tokensFromUsage,
   turnAction,
 } from "./result.mjs";
@@ -56,6 +59,7 @@ export async function runChild({
   model,
   thinkingLevel,
   maxTurns,
+  timeoutMs,
   signal,
   onEvent,
   bind,
@@ -65,18 +69,22 @@ export async function runChild({
   const blockWriters = allowlistBash;
   let session;
   let unsub;
+  let timer;
   let status = "completed";
   let wrapSent = false;
   let turns = 0;
   let toolUses = 0;
   let tokens = 0;
   let lastTool = "";
+  const usage = emptyUsage();
 
   const emit = (patch) => {
     onEvent?.(patch);
   };
 
+  // Only transition out of "completed" once — the first terminal signal wins.
   const abortChild = async (next = "stopped") => {
+    if (status !== "completed") return;
     status = next;
     try {
       await session?.abort();
@@ -88,6 +96,11 @@ export async function runChild({
   const onAbort = () => {
     void abortChild("stopped");
   };
+
+  const timeout = Number(timeoutMs);
+  if (Number.isFinite(timeout) && timeout > 0) {
+    timer = setTimeout(() => void abortChild("timed out"), timeout);
+  }
 
   try {
     const created = await withChildEnv(async () => {
@@ -118,6 +131,9 @@ export async function runChild({
       session,
     });
 
+    // A timeout or abort may have landed while the session was being created.
+    if (status !== "completed") return finish();
+
     if (signal) {
       if (signal.aborted) {
         await abortChild("stopped");
@@ -142,6 +158,7 @@ export async function runChild({
         lastTool = formatLastTool(event);
         emit({ toolUses, lastTool });
       } else if (event?.type === "message_end" && event.message?.role === "assistant") {
+        accumulateUsage(usage, event.message.usage);
         tokens += tokensFromUsage(event.message.usage);
         emit({ tokens });
       }
@@ -161,6 +178,7 @@ export async function runChild({
     if (status === "completed") status = "error";
     return finish(error instanceof Error ? error.message : String(error));
   } finally {
+    if (timer) clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
     try {
       unsub?.();
@@ -175,17 +193,16 @@ export async function runChild({
   }
 
   function finish(error) {
-    if (status === "completed" && wrapSent && turns > maxTurns) status = "wrapped up";
     const messages = session?.messages ?? session?.agent?.state?.messages;
-    const text = extractLastAssistantText(messages);
     return {
-      status,
-      text,
+      status: resolveFinalStatus({ status, wrapSent, turns, maxTurns }),
+      text: extractLastAssistantText(messages),
       turns,
       tokens,
       toolUses,
       lastTool,
       durationMs: Date.now() - startedAt,
+      usage,
       error,
     };
   }
