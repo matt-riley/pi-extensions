@@ -51,6 +51,68 @@ test("unknown existing (lastWritten null) -> .2", () => {
   );
 });
 
+test("revision after landing on .2 overwrites .2 in place", () => {
+  // owned points at base.2 (a prior revision landed there); existing is read
+  // from base.2 and matches what we last wrote there -> overwrite base.2,
+  // not base and not a new alternate.
+  assert.equal(
+    resolvePlanFile({
+      base: BASE,
+      plan: "p3",
+      existing: "p2",
+      lastWritten: "p2",
+      owned: `${BASE}.2`,
+      altTaken: noAlt,
+    }),
+    `${BASE}.2`,
+  );
+});
+
+test("idempotent rewrite of an owned alternate stays in place", () => {
+  assert.equal(
+    resolvePlanFile({
+      base: BASE,
+      plan: "p2",
+      existing: "p2",
+      lastWritten: null,
+      owned: `${BASE}.2`,
+      altTaken: noAlt,
+    }),
+    `${BASE}.2`,
+  );
+});
+
+test("user edit of the owned .2 pushes to .3", () => {
+  // .2 exists (it's the owned file itself), so altTaken(2) reports taken and
+  // the loop moves to .3.
+  const taken = new Set([2]);
+  assert.equal(
+    resolvePlanFile({
+      base: BASE,
+      plan: "p3",
+      existing: "hand-edited",
+      lastWritten: "p2",
+      owned: `${BASE}.2`,
+      altTaken: (n) => taken.has(n),
+    }),
+    `${BASE}.3`,
+  );
+});
+
+test("owned file missing (deleted) -> recreate owned path", () => {
+  assert.equal(
+    resolvePlanFile({
+      base: BASE,
+      plan: "p3",
+      existing: null,
+      lastWritten: "p2",
+      owned: `${BASE}.2`,
+      altTaken: noAlt,
+    }),
+    `${BASE}.2`,
+  );
+});
+
 test("alt collision loop skips taken numbers", () => {
   const taken = new Set([2, 3]);
   assert.equal(
@@ -69,11 +131,23 @@ test("atomicWriteFile writes and replaces content, leaves no temp files", async 
   assert.deepEqual(await readdir(dir), ["PLAN.md"]);
 });
 
+test("atomicWriteFile creates missing parent directories", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "plan-file-"));
+  const file = path.join(dir, ".pi", "PLAN.md");
+  await atomicWriteFile(file, "one");
+  assert.equal(await readFile(file, "utf8"), "one");
+  assert.deepEqual(await readdir(path.join(dir, ".pi")), ["PLAN.md"]);
+});
+
 test("atomicWriteFile cleans up temp on failure", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "plan-file-"));
   const file = path.join(dir, "PLAN.md");
   await writeFile(file, "keep");
-  // Target directory does not exist, so the temp write (and rename) fail.
-  await assert.rejects(() => atomicWriteFile(path.join(dir, "missing", "PLAN.md"), "x"));
-  assert.deepEqual(await readdir(dir), ["PLAN.md"]);
+  // The parent path segment is a plain file, not a directory, so even
+  // mkdir(recursive) cannot make the target's directory (ENOTDIR) and the
+  // write fails.
+  const blocker = path.join(dir, "blocked-file");
+  await writeFile(blocker, "not a dir");
+  await assert.rejects(() => atomicWriteFile(path.join(blocker, "PLAN.md"), "x"));
+  assert.deepEqual(await readdir(dir), ["PLAN.md", "blocked-file"]);
 });

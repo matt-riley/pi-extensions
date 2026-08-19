@@ -131,6 +131,22 @@ test("blocks a chain when any segment is unsafe", () => {
   assert.ok(blockedBashCommand("cat file | sudo tee out"));
 });
 
+test("allows plain sort/shuf/find without file-writing output primaries", () => {
+  for (const cmd of ["sort file", "sort -u file.txt", "shuf file", "find . -name x"]) {
+    assert.equal(blockedBashCommand(cmd), undefined, `should allow: ${cmd}`);
+  }
+});
+
+test("blocks sort/shuf -o and find's file-writing output primaries", () => {
+  for (const cmd of [
+    "sort -o out.txt file", "sort --output=out.txt file", "sort -oout.txt file",
+    "shuf -o out.txt file", "shuf --output=out.txt file",
+    "find . -fprint out.txt", "find . -fprintf out.txt '%p\\n'", "find . -fls out.txt",
+  ]) {
+    assert.ok(blockedBashCommand(cmd), `should block: ${cmd}`);
+  }
+});
+
 test("empty and whitespace input is allowed", () => {
   assert.equal(blockedBashCommand(""), undefined);
   assert.equal(blockedBashSegment("   "), undefined);

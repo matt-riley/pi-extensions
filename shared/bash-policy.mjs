@@ -79,19 +79,23 @@ const READ_ONLY_HEADS = new Set([
   "git",
 ]);
 
+// branch, tag, remote, config, stash, submodule, and worktree are
+// deliberately absent from both sets below: blockedGit() special-cases each
+// of them BEFORE consulting these sets (they have both read-only and
+// write forms), so an entry here would be dead/unreachable and misleading.
 const GIT_BLOCKED = new Set([
   "add", "commit", "push", "pull", "fetch", "reset", "revert", "checkout",
-  "switch", "restore", "merge", "rebase", "cherry-pick", "stash", "clean",
-  "rm", "mv", "apply", "am", "tag", "branch", "remote", "config", "init",
-  "clone", "submodule", "worktree", "gc", "prune",
+  "switch", "restore", "merge", "rebase", "cherry-pick", "clean",
+  "rm", "mv", "apply", "am", "init",
+  "clone", "gc", "prune",
 ]);
 
 const GIT_READ_ONLY = new Set([
-  "status", "log", "diff", "show", "branch", "tag", "remote", "config", "stash",
+  "status", "log", "diff", "show",
   "rev-parse", "show-ref", "ls-files", "ls-tree", "ls-remote", "grep", "blame",
   "whatchanged", "describe", "shortlog", "count-objects", "fsck", "merge-base",
   "name-rev", "cherry", "diff-tree", "diff-index", "diff-files", "cat-file",
-  "for-each-ref", "var", "version", "help", "submodule", "worktree",
+  "for-each-ref", "var", "version", "help",
   "verify-commit", "verify-tag", "verify-pack",
 ]);
 
@@ -127,9 +131,22 @@ const HEAD_RULES = {
     args.some((a) => a === "-i" || a.startsWith("-i") || a === "--in-place")
       ? "sed -i (in-place edit) …"
       : undefined,
-  find: (args) =>
-    args.some((a) => a === "-exec" || a === "-execdir" || a === "-ok" || a === "-delete")
-      ? "find -exec/-delete …"
+  find: (args) => {
+    if (args.some((a) => a === "-exec" || a === "-execdir" || a === "-ok" || a === "-delete")) {
+      return "find -exec/-delete …";
+    }
+    if (args.some((a) => a === "-fprint" || a === "-fprintf" || a === "-fls")) {
+      return "find -fprint/-fprintf/-fls (writes a file) …";
+    }
+    return undefined;
+  },
+  sort: (args) =>
+    args.some((a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="))
+      ? "sort -o (writes a file) …"
+      : undefined,
+  shuf: (args) =>
+    args.some((a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="))
+      ? "shuf -o (writes a file) …"
       : undefined,
   tar: (args) => {
     const list = args.some((a) => a === "-t" || a === "--list" || /^-[a-zA-Z]*t[a-zA-Z]*$/.test(a));
@@ -321,6 +338,9 @@ function blockedGit(args) {
 
   // Read-only variants of subcommands that also have write forms must be
   // checked before the blocklist, which would otherwise short-circuit them.
+  // branch, tag, remote, config, stash, submodule, and worktree are handled
+  // exclusively here — they are intentionally absent from GIT_BLOCKED and
+  // GIT_READ_ONLY above.
   if (sub === "branch") {
     const readOnly = rest.some(
       (a) =>

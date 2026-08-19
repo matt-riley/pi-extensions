@@ -15,9 +15,11 @@
 //   --plan               -> start pi already in plan mode
 //
 // While active, the model explores read-only and finishes with
-// plan_mode_complete({ plan }). The plan is written to PLAN.md in the current
-// working directory — you read/edit it, then /plan approve ends plan mode and
-// starts implementation from that file. The file is the durable artifact: it
+// plan_mode_complete({ plan }). The plan is written to .pi/PLAN.md in the
+// current working directory (not repo-root PLAN.md — that collides with
+// projects' own PLAN.md files and would force a per-project gitignore entry)
+// — you read/edit it, then /plan approve ends plan mode and starts
+// implementation from that file. The file is the durable artifact: it
 // survives compaction and is the implementation handoff, so plan mode never
 // needs in-memory retention. A footer status and a widget show the state.
 
@@ -32,6 +34,7 @@ import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 import { CODE_SEARCH_TOOLS } from "../code-search/tools.mjs";
+import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
@@ -46,6 +49,9 @@ const SEARCH_TOOL = "web_search";
 // core activity of plan mode.
 const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
+// .pi/ rather than repo root: a root PLAN.md collides with projects' own
+// PLAN.md files and would force a per-project gitignore entry.
+const PLAN_DIR = ".pi";
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
 
@@ -159,6 +165,7 @@ export default function planMode(pi: ExtensionAPI) {
     }
     state.enabled = true;
     pi.setActiveTools(PLAN_TOOLS);
+    setReadOnlyMode(true);
     updateStatus(ctx);
     notify(ctx, "Plan mode active — read-only. /plan exit to leave.");
   }
@@ -168,6 +175,7 @@ export default function planMode(pi: ExtensionAPI) {
     state.enabled = false;
     pi.setActiveTools(state.previousTools ?? DEFAULT_TOOLS);
     state.previousTools = null;
+    setReadOnlyMode(false);
     updateStatus(ctx);
     notify(
       ctx,
@@ -180,10 +188,16 @@ export default function planMode(pi: ExtensionAPI) {
 
   async function writePlanFile(ctx: UiCtx, plan: string): Promise<string> {
     const dir = ctx.cwd ?? process.cwd();
-    const base = path.join(dir, PLAN_FILENAME);
+    const base = path.join(dir, PLAN_DIR, PLAN_FILENAME);
+    // Read from the file we currently own (base or a previously allocated
+    // alternate) so a revision after landing on .2 compares against .2, not
+    // the stale base — otherwise every later revision would mismatch and
+    // allocate a fresh alternate forever. See plan-file.mjs's resolvePlanFile
+    // doc comment for the full decision table.
+    const owned = state.planPath;
     let existing: string | null = null;
     try {
-      existing = await readFile(base, "utf8");
+      existing = await readFile(owned ?? base, "utf8");
     } catch {
       existing = null;
     }
@@ -192,6 +206,7 @@ export default function planMode(pi: ExtensionAPI) {
       plan,
       existing,
       lastWritten,
+      owned,
       altTaken: (n) => existsSync(`${base}.${n}`),
     });
     await atomicWriteFile(chosen, plan);
@@ -217,12 +232,13 @@ export default function planMode(pi: ExtensionAPI) {
     // time; read the file only when our turn comes so external edits made
     // while a question dialog was up are not clobbered.
     const editor = ctx.ui.editor;
+    const planPath = state.planPath;
     const outcome = await enqueueDialog(async () => {
       let current: string;
       try {
-        current = await readFile(state.planPath, "utf8");
+        current = await readFile(planPath, "utf8");
       } catch (error) {
-        notify(ctx, `Failed to read ${state.planPath}: ${(error as Error).message}`);
+        notify(ctx, `Failed to read ${planPath}: ${(error as Error).message}`);
         return null;
       }
       const edited = await editor("Edit plan — Ctrl+G opens $EDITOR:", current);

@@ -69,13 +69,15 @@ While plan mode is active:
   then does it finish with `plan_mode_complete({ plan })`, which:
 
   1. validates the plan,
-  2. writes it to **`PLAN.md`** in the working directory
+  2. writes it to **`.pi/PLAN.md`** in the working directory (not repo-root
+     `PLAN.md` — that would collide with projects' own `PLAN.md` files and
+     force a per-project gitignore entry)
      (revisions overwrite in place unless the file was edited — then they land
-     in `PLAN.md.2`, `.3`, … so your edits are never clobbered; writes are
+     in `.pi/PLAN.md.2`, `.3`, … so your edits are never clobbered; writes are
      atomic), and
   3. ends the turn.
 
-You then read/edit `PLAN.md` — directly, via `/plan edit` or `ctrl+alt+e`
+You then read/edit `.pi/PLAN.md` — directly, via `/plan edit` or `ctrl+alt+e`
 (Ctrl+G inside the dialog opens your `$EDITOR`; the plan is written back when
 you close it), or in any editor of your choice — and run `/plan approve`. That
 ends plan mode, restores your tools, and automatically tells the agent to
