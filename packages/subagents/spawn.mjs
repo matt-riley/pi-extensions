@@ -6,6 +6,7 @@ import {
   SessionManager,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { CHILD_ENV, acquireChildEnv, releaseChildEnv } from "./child-env.mjs";
 import { createChildPolicyExtension } from "./child-policy.mjs";
 import { resolveChildTools, usesAllowlistedBash } from "./discover.mjs";
 import {
@@ -18,7 +19,6 @@ import {
 } from "./result.mjs";
 import { formatLastTool } from "./widget.mjs";
 
-export const CHILD_ENV = "PI_SUBAGENT_CHILD";
 const WRAP_MESSAGE = "Wrap up immediately — provide your final answer now.";
 
 export function buildSystemPrompt(agent) {
@@ -33,21 +33,16 @@ export function buildSystemPrompt(agent) {
 }
 
 function withChildEnv(fn) {
-  const prev = process.env[CHILD_ENV];
-  process.env[CHILD_ENV] = "1";
-  const restore = () => {
-    if (prev === undefined) delete process.env[CHILD_ENV];
-    else process.env[CHILD_ENV] = prev;
-  };
+  acquireChildEnv();
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
-      return result.finally(restore);
+      return result.finally(releaseChildEnv);
     }
-    restore();
+    releaseChildEnv();
     return result;
   } catch (error) {
-    restore();
+    releaseChildEnv();
     throw error;
   }
 }

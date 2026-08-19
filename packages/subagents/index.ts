@@ -9,7 +9,9 @@ import {
 import { Type } from "typebox";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { combineSignals } from "./combine-signals.mjs";
 import { discoverAgents, findAgent } from "./discover.mjs";
+import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { withOrchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
@@ -19,7 +21,8 @@ import {
   resolveMaxTurns,
   resolveTimeoutMs,
 } from "./result.mjs";
-import { CHILD_ENV, runChild } from "./spawn.mjs";
+import { CHILD_ENV } from "./child-env.mjs";
+import { runChild } from "./spawn.mjs";
 import { formatWidgetLines } from "./widget.mjs";
 
 const WIDGET_ID = "subagents";
@@ -226,7 +229,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           thinkingLevel: agent.thinking ?? ctx?.thinkingLevel,
           maxTurns,
           timeoutMs,
-          signal: ctx?.signal ?? signal,
+          // Both the session-level abort (ctx.signal) and the per-tool-call abort
+          // (signal) must be able to cancel the child — a plain `??` only wires up
+          // one and silently drops the other's cancellation.
+          signal: combineSignals([ctx?.signal, signal]),
           onEvent: (patch) => {
             pool.update(entry.id, patch);
             const current = pool.get(entry.id);
@@ -292,6 +298,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       const arg = String(args ?? "").trim().toLowerCase();
       if (arg === "on" || arg === "off") {
         if (arg === "on") {
+          if (isReadOnlyMode()) {
+            notify(ctx, "Can't enable subagents while plan mode is active — /plan exit first.");
+            return;
+          }
           const active = pi.getActiveTools();
           const readOnlyToolset = !active.includes("edit") && !active.includes("write");
           if (readOnlyToolset) {
@@ -314,7 +324,11 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       const fleet = pool.list();
       if (fleet.length === 0) {
         if (enabled && !isToolActive()) {
-          notify(ctx, "Subagents enabled but unavailable in this read-only toolset");
+          if (isReadOnlyMode()) {
+            notify(ctx, "Subagents enabled but unavailable while plan mode is active");
+          } else {
+            notify(ctx, "Subagents enabled but unavailable in this read-only toolset");
+          }
         } else {
           notify(ctx, enabled ? "No running subagents" : "Subagents are off — /subagents on to enable");
         }
@@ -335,7 +349,13 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         notify(ctx, `No subagent ${id}`);
         return;
       }
-      const action = await ctx.ui.select(`${id}`, ["Steer", "Stop"]);
+      const actions =
+        entry.status === "running" ? ["Steer", "Stop"] : entry.status === "queued" ? ["Stop"] : [];
+      if (actions.length === 0) {
+        notify(ctx, `${id} is no longer steerable or stoppable (status: ${entry.status})`);
+        return;
+      }
+      const action = await ctx.ui.select(`${id}`, actions);
       if (action === "Stop") {
         pool.stop(id);
         pi.events.emit("subagents:stopped", { id, type: entry.type });
