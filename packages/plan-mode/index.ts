@@ -3,17 +3,18 @@
 // Lazy edition of @narumirw/pi-plan-mode: no menus, exports, fresh-session
 // handoff, retention policies, or settings file. The workflow:
 //
-//   /plan start          -> enter plan mode (tools restricted to read + bash +
-//                           plan_mode_question + plan_mode_complete)
 //   /plan <prompt>       -> enter plan mode and submit <prompt>
+//   /plan approve        -> approve the plan: leaves plan mode and kicks off
+//                           implementation from the plan file
 //   /plan status         -> show state and the current plan file path
-//   /plan exit | off     -> leave plan mode, restore your tools
+//   /plan exit | off     -> cancel plan mode without implementing
 //
 // While active, the model explores read-only and finishes with
 // plan_mode_complete({ plan }). The plan is written to PLAN.md in the current
-// working directory — you read/edit it, then /plan exit and tell the agent to
-// implement it. The file is the durable artifact: it survives compaction and
-// is the implementation handoff, so plan mode never needs in-memory retention.
+// working directory — you read/edit it, then /plan approve ends plan mode and
+// starts implementation from that file. The file is the durable artifact: it
+// survives compaction and is the implementation handoff, so plan mode never
+// needs in-memory retention.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -72,7 +73,7 @@ Only call plan_mode_complete when the plan leaves no implementation decisions un
 - Test cases and verification scenarios
 - Explicit assumptions and defaults chosen where needed
 
-Keep it concise, human and agent digestible, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta.`;
+Keep it concise, human and agent digestible, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta. Once the plan is written, stay in plan mode until the user approves it with /plan approve — plan mode then ends and implementation begins from that file. Revisions are still planned, never implemented.`;
 
 interface PlanModeState {
   enabled: boolean;
@@ -102,16 +103,20 @@ export default function planMode(pi: ExtensionAPI) {
     notify(ctx, "Plan mode active — read-only. /plan exit to leave.");
   }
 
-  function exitPlanMode(ctx: { hasUI?: boolean; ui?: { notify: (t: string, l?: string) => void } }) {
+  function exitPlanMode(
+    ctx: { hasUI?: boolean; ui?: { notify: (t: string, l?: string) => void } },
+    message?: string,
+  ) {
     if (!state.enabled) return;
     state.enabled = false;
     pi.setActiveTools(state.previousTools ?? DEFAULT_TOOLS);
     state.previousTools = null;
     notify(
       ctx,
-      state.planPath
-        ? `Plan mode off — tools restored. Plan file: ${state.planPath}. Edit it, then ask the agent to implement it.`
-        : "Plan mode off — tools restored.",
+      message ??
+        (state.planPath
+          ? `Plan mode off — tools restored. Plan file: ${state.planPath}.`
+          : "Plan mode off — tools restored."),
     );
   }
 
@@ -147,7 +152,7 @@ export default function planMode(pi: ExtensionAPI) {
   // --- Command -------------------------------------------------------------
 
   pi.registerCommand("plan", {
-    description: "Plan mode: start | exit | status | <prompt>",
+    description: "Plan mode: <prompt> | approve | status | exit",
     handler: async (args, ctx) => {
       const arg = (args ?? "").trim();
       if (arg === "status" || arg === "") {
@@ -155,7 +160,7 @@ export default function planMode(pi: ExtensionAPI) {
           ctx,
           state.enabled
             ? `Plan mode: active — read-only (tools: ${PLAN_TOOLS.join(", ")}).${state.planPath ? `\nPlan file: ${state.planPath}` : ""}`
-            : `Plan mode: off.${state.planPath ? `\nPlan file: ${state.planPath} (last plan — edit it, then ask the agent to implement it)` : ""}\nusage: /plan start | exit | status | <prompt>`,
+            : `Plan mode: off.${state.planPath ? `\nPlan file: ${state.planPath} (edit it, then /plan approve to implement)` : ""}\nusage: /plan <prompt> | approve | status | exit`,
         );
         return;
       }
@@ -163,8 +168,20 @@ export default function planMode(pi: ExtensionAPI) {
         enterPlanMode(ctx);
         return;
       }
+      if (arg === "approve") {
+        if (!state.planPath) {
+          notify(ctx, "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).");
+          return;
+        }
+        const path = state.planPath;
+        exitPlanMode(ctx, `Plan approved — leaving plan mode. Implementing from ${path}.`);
+        await pi.sendUserMessage(`The plan is approved. Read ${path} and implement it exactly as written.`, {
+          deliverAs: "followUp",
+        });
+        return;
+      }
       if (arg === "exit" || arg === "off") {
-        exitPlanMode(ctx);
+        exitPlanMode(ctx, "Plan mode cancelled — tools restored.");
         return;
       }
       // /plan <prompt>: enter plan mode and submit the prompt.
@@ -291,12 +308,12 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
-      notify(ctx, `Plan saved to ${savedPath} — review and edit it, then /plan exit and ask the agent to implement it.`);
+      notify(ctx, `Plan saved to ${savedPath} — review and edit it, then /plan approve to start implementation.`);
       return {
         content: [
           {
             type: "text",
-            text: `Plan accepted and written to ${savedPath}. The user will review or edit it before implementation — stay in plan mode until they exit. Accepted plan:\n\n${plan}`,
+            text: `Plan accepted and written to ${savedPath}. The user will review or edit it and approve with /plan approve — stay in plan mode until then. Accepted plan:\n\n${plan}`,
           },
         ],
         terminate: true,

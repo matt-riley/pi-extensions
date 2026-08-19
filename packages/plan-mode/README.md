@@ -8,10 +8,11 @@ plan mode gives you.
 ## Usage
 
 ```text
+/plan <prompt>      plan the request (read-only); /plan approve starts implementation
 /plan               status (state + plan file path)
-/plan start         enter plan mode
-/plan <prompt>      enter plan mode and submit <prompt>
-/plan exit | off    leave plan mode, restore your tools
+/plan approve       approve the written plan: leaves plan mode, restores tools,
+                    and tells the agent to implement the plan file
+/plan exit | off    cancel plan mode without implementing
 ```
 
 While plan mode is active:
@@ -32,14 +33,18 @@ While plan mode is active:
      in `PLAN.md.2`, `.3`, … so your edits are never clobbered), and
   3. ends the turn.
 
-You then read/edit `PLAN.md`, run `/plan exit`, and tell the agent to
-implement it. The file is the durable artifact — it survives compaction and is
-the implementation handoff, so plan mode needs no in-memory plan retention.
+You then read/edit `PLAN.md` and run `/plan approve`. That ends plan mode,
+restores your tools, and automatically tells the agent to implement the plan
+file — no separate exit/implement step. The file is the durable artifact — it
+survives compaction and is the implementation handoff, so plan mode needs no
+in-memory plan retention.
 
 ## Notes and non-goals (for now)
 
 - Plan mode state is not persisted across pi restarts; the plan file is the
   source of truth.
+- `/plan start` still exists as a no-prompt way to enter plan mode, but
+  `/plan <prompt>` is the intended entry point.
 - No export/save/fresh-session handoff, settings file, tool pre-selection
   menu, or statusline integration yet — say the word if you want any of them.
 
