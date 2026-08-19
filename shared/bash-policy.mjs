@@ -56,7 +56,7 @@ const READ_ONLY_HEADS = new Set([
   "realpath", "readlink", "env", "printenv", "hostname", "uname", "whoami",
   "id", "date", "cal", "uptime", "who", "w", "last",
   // file inspection
-  "cat", "head", "tail", "less", "more", "wc", "sort", "uniq", "diff", "comm",
+  "cat", "head", "tail", "wc", "sort", "uniq", "diff", "comm",
   "cmp", "file", "stat", "du", "df", "tree", "strings", "nm", "objdump",
   "readelf", "xxd", "hexdump", "od", "base64", "md5", "md5sum", "shasum",
   "sha1sum", "sha256sum", "sha512sum", "test",
@@ -66,8 +66,10 @@ const READ_ONLY_HEADS = new Set([
   "echo", "printf", "awk", "sed", "tr", "cut", "paste", "join", "nl", "fold",
   "expand", "unexpand", "rev", "tac", "column", "shuf", "seq", "jq", "yq",
   "xmllint",
-  // processes / system
-  "ps", "top", "htop", "free", "lsof", "netstat", "ss", "sysctl", "vm_stat",
+  // processes / system (top gated to its terminating batch forms below;
+  // less/more/htop/watch are absent: interactive pagers/monitors never exit
+  // in a headless tool call and hang the agent until the bash timeout)
+  "ps", "top", "free", "lsof", "netstat", "ss", "sysctl", "vm_stat",
   "iostat", "dmesg",
   // archives (list/test/stdout only, enforced below)
   "tar", "unzip", "zipinfo", "zcat", "bzcat", "xzcat", "gzip", "bzip2", "xz",
@@ -181,6 +183,12 @@ const HEAD_RULES = {
       : "xz (not list/test/stdout) …",
   env: (args) =>
     args.every((a) => a.includes("=")) ? undefined : "env (executes command) …",
+  // Interactive top never exits in a headless tool call; only the batch
+  // forms terminate (Linux: top -b -n1, macOS: top -l 1).
+  top: (args) =>
+    args.some((a) => a === "-b" || a === "-l")
+      ? undefined
+      : "top (interactive — use top -b -n1 or top -l 1) …",
   sysctl: (args) =>
     args.some((a) => a === "-w" || a.startsWith("-w") || a === "--write")
       ? "sysctl -w (write) …"

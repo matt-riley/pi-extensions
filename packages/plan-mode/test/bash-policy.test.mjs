@@ -19,6 +19,7 @@ test("allows read-only inspection commands", () => {
     "cd src && ls", "pwd", "which node", "type node", "readlink -f x", "realpath x",
     "dirname x", "basename x", "env", "env | grep PATH", "printenv PATH",
     "uname -a", "whoami", "id -u", "date", "uptime", "ps aux", "top -b -n1",
+    "top -l 1",
     "free -h", "stat -f %m file", "du -sh src", "df -h", "tree -L 2", "file x",
     "strings bin", "xxd file", "od -c file", "base64 file", "sha256sum file",
     "lsof -i :8080", "ss -tulpn", "sysctl -a", "test -f file", "echo hi",
@@ -98,6 +99,8 @@ test("blocks dangerous flags on otherwise read-only tools", () => {
     "unzip a.zip", "unzip -d out a.zip", "gzip file", "gzip -d file.gz", "bzip2 -d f.bz2",
     "xz -d f.xz", "env -i", "env FOO=1 ls", "sysctl -w vm.swappiness=10",
     "xmllint --output out f.xml",
+    // interactive/never-exiting commands hang a headless tool call
+    "top", "top -d 1", "htop", "less file.txt", "more file.txt",
   ]) {
     assert.ok(blockedBashCommand(cmd), `should block: ${cmd}`);
   }
