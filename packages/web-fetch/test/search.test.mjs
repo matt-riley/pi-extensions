@@ -77,15 +77,103 @@ test("parseDdgResults: enforces the limit", () => {
 });
 
 test("parseDdgResults: tolerant of missing/empty/malformed input", () => {
-  assert.deepEqual(parseDdgResults(""), { results: [], blocked: false });
-  assert.deepEqual(parseDdgResults(null), { results: [], blocked: false });
-  const { results } = parseDdgResults("<html><div>garbage <b>unclosed", { limit: 5 });
+  assert.deepEqual(parseDdgResults(""), { results: [], blocked: false, parseFailed: false });
+  assert.deepEqual(parseDdgResults(null), { results: [], blocked: false, parseFailed: false });
+  const { results, parseFailed } = parseDdgResults("<html><div>garbage <b>unclosed", { limit: 5 });
   assert.deepEqual(results, []);
+  // Too short to be "substantial" — not flagged as bit-rot, just malformed/empty input.
+  assert.equal(parseFailed, false);
   // A page with zero result bodies yields no results, not a crash.
-  const { results: none } = parseDdgResults(
+  const { results: none, parseFailed: noneParseFailed } = parseDdgResults(
     "<html><body><div id='links'>No more results.</div></body></html>",
   );
   assert.deepEqual(none, []);
+  assert.equal(noneParseFailed, false);
+});
+
+// A realistic-sized genuine "no results" DDG page: DDG branding, explicit
+// no-results copy, but (like the real thing) no result__body blocks at all.
+// Padded with representative chrome/boilerplate to cross the "substantial"
+// length threshold, exercising that a real empty result set does NOT trip
+// parseFailed.
+const NO_RESULTS_FIXTURE = `<!DOCTYPE html>
+<html><head><title>zzzxqvvnotarealquery123 at DuckDuckGo</title>
+<meta name="generator" content="DuckDuckGo">
+</head>
+<body class="body--html no-results">
+  <div id="header_wrapper">
+    <div id="header" class="header--html">
+      <div class="header__logo-wrap"><a href="https://duckduckgo.com/" class="header__logo">DuckDuckGo</a></div>
+      <form id="search_form_homepage" action="/html/">
+        <input type="text" name="q" value="zzzxqvvnotarealquery123">
+      </form>
+    </div>
+  </div>
+  <div id="links" class="results">
+    <div class="no-results">
+      <div class="result-snippet">
+        No  results found for <b>zzzxqvvnotarealquery123</b>.<br>
+        Try entering fewer or more general search terms.
+      </div>
+    </div>
+  </div>
+  <div id="bottom_spacing2"></div>
+  <div class="serp__bottom-links">
+    <a href="/html/?q=zzzxqvvnotarealquery123&kd=-1">Boost</a>
+    <a href="https://duckduckgo.com/">DuckDuckGo Home</a>
+  </div>
+  <div id="footer">
+    <a href="https://duckduckgo.com/about">About DuckDuckGo</a>
+    <a href="https://duckduckgo.com/privacy">Privacy</a>
+  </div>
+</body></html>`;
+
+// A page that still carries DDG branding/chrome (so it's clearly a real DDG
+// response, not garbage) but whose result markup has been restructured away
+// from result__body/result__a/result__snippet entirely — simulating DDG
+// shipping a markup change that silently breaks this parser. No no-results
+// copy is present, distinguishing this from a genuine empty result set.
+const BITROT_FIXTURE = `<!DOCTYPE html>
+<html><head><title>pi coding agent at DuckDuckGo</title>
+<meta name="generator" content="DuckDuckGo">
+</head>
+<body class="body--html">
+  <div id="header_wrapper">
+    <div id="header" class="header--html">
+      <div class="header__logo-wrap"><a href="https://duckduckgo.com/" class="header__logo">DuckDuckGo</a></div>
+    </div>
+  </div>
+  <div id="links" class="react-results--main">
+    <article class="react-result">
+      <a class="react-result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fpi.dev%2F">Pi Coding Agent</a>
+      <p class="react-result__snippet">A terminal-based coding agent &amp; harness.</p>
+    </article>
+    <article class="react-result">
+      <a class="react-result__a" href="https://example.com/direct">Direct link result</a>
+      <p class="react-result__snippet">Restructured markup, old selectors miss it.</p>
+    </article>
+  </div>
+  <div id="footer">
+    <a href="https://duckduckgo.com/about">About DuckDuckGo</a>
+    <a href="https://duckduckgo.com/privacy">Privacy</a>
+  </div>
+</body></html>`;
+
+test("parseDdgResults: parseFailed is false for a genuine no-results DDG page", () => {
+  const { results, parseFailed } = parseDdgResults(NO_RESULTS_FIXTURE, { limit: 5 });
+  assert.deepEqual(results, []);
+  assert.equal(parseFailed, false);
+});
+
+test("parseDdgResults: parseFailed is true when DDG markup no longer matches the parser", () => {
+  const { results, parseFailed } = parseDdgResults(BITROT_FIXTURE, { limit: 5 });
+  assert.deepEqual(results, []);
+  assert.equal(parseFailed, true);
+});
+
+test("parseDdgResults: parseFailed is false when results were extracted normally", () => {
+  const { parseFailed } = parseDdgResults(FIXTURE, { limit: 10 });
+  assert.equal(parseFailed, false);
 });
 
 const AD_FIXTURE = `<!DOCTYPE html>
@@ -201,6 +289,10 @@ test("formatSearchResults: blocked / redirected / empty / results", () => {
 
   const redirected = formatSearchResults({ query: "x", results: [], redirected: true });
   assert.match(redirected, /homepage instead of results/);
+
+  const parseFailed = formatSearchResults({ query: "x", results: [], parseFailed: true });
+  assert.match(parseFailed, /markup could not be parsed/);
+  assert.match(parseFailed, /SearXNG/);
 
   assert.equal(formatSearchResults({ query: "zzz", results: [] }), 'No results found for "zzz".');
 

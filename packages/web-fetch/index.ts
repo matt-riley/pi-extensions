@@ -12,6 +12,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { allocateItemBudget, chargeBudget } from "./batch.mjs";
 import { fetchPage, fetchSmart } from "./fetch.mjs";
 import { formatBatchResult, formatWebFetchResult, isKnownFormat } from "./format.mjs";
 import {
@@ -221,16 +222,38 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           const i = next++;
           if (i >= items.length) return;
           const { index, request } = items[i];
-          const budget = Math.min(request.maxChars, remainingBudget);
-          remainingBudget = Math.max(0, remainingBudget - budget);
+
+          // Allocate against the budget REMAINING right now (not reserved
+          // upfront at batch start) so early small pages leave headroom for
+          // later items instead of starving them.
+          const allocation = allocateItemBudget(remainingBudget, request.maxChars);
+          if (allocation.exhausted) {
+            results[i] = {
+              index,
+              request,
+              skipped:
+                `batch character budget exhausted (totalMaxChars=${totalBudget}) before this URL could be fetched — ` +
+                `re-request it with a higher totalMaxChars or in a smaller/later batch`,
+            };
+            doneCount += 1;
+            onUpdate?.({
+              content: [{ type: "text", text: `batch_web_fetch: ${doneCount}/${items.length} done` }],
+            });
+            continue;
+          }
+
           const options = buildFetchOptions(request, settings, {
             format: request.format,
-            maxChars: budget,
+            maxChars: allocation.cap,
             timeoutMs: settings.defaultTimeoutMs,
           });
           try {
             const outcome = await fetchSmart({ ...options, signal });
-            results[i] = { index, request, outcome };
+            // Charge the budget by content ACTUALLY emitted for this item,
+            // not by the reservation — so unused headroom rolls forward.
+            const emitted = formatWebFetchResult(outcome, { format: request.format, maxChars: allocation.cap });
+            remainingBudget = chargeBudget(remainingBudget, emitted.length);
+            results[i] = { index, request, outcome, cap: allocation.cap };
           } catch (err) {
             results[i] = { index, request, error: errorText(`fetch failed`, err) };
           }
@@ -307,6 +330,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         let results = [];
         let blocked = false;
         let redirected = false;
+        let parseFailed = false;
         if (searxngUrl) {
           const parsed = parseSearxngResults(body, { limit });
           if (parsed.error) {
@@ -319,8 +343,11 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           blocked = isDdgBlocked({ status: outcome.status, body });
           redirected =
             results.length === 0 && isDdgHomepageRedirect(outcome.finalUrl);
+          // Only surface parse-failure when it isn't better explained by a
+          // block/redirect (those already tell the model what happened).
+          parseFailed = parsed.parseFailed && !blocked && !redirected;
         }
-        const text = formatSearchResults({ query, results, blocked, redirected, limit, engine });
+        const text = formatSearchResults({ query, results, blocked, redirected, parseFailed, limit, engine });
         return { content: [{ type: "text", text }], details: { engine, results } };
       } catch (err) {
         return { content: [{ type: "text", text: errorText("web_search failed", err) }], isError: true };

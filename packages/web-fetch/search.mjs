@@ -167,10 +167,26 @@ function extractBlock(tokens, start, end) {
   };
 }
 
+// Heuristics for telling "DDG genuinely has no results" apart from "DDG
+// changed its markup and the parser found nothing" (parseDdgResults'
+// `parseFailed` flag below). A real no-results DDG page is short-ish HTML
+// that still carries DDG branding plus explicit no-results copy; a page
+// where the parser bit-rotted is a substantial, clearly-DDG page yielding
+// zero result__body blocks (or blocks that never resolve into a title+url)
+// without that copy — most likely because DDG renamed/restructured the
+// result markup this parser targets.
+const SUBSTANTIAL_HTML_CHARS = 1000;
+const DDG_PAGE_MARKER = /duckduckgo/i;
+const NO_RESULTS_TEXT = /no\s+results|zero\s+results|did not match any/i;
+
 // Parse organic results out of a raw DuckDuckGo HTML response body.
-// Returns { results, blocked }:
-//   results — [{ title, url, snippet }], capped at `limit`
-//   blocked — always false here; use isDdgBlocked() for challenge detection
+// Returns { results, blocked, parseFailed }:
+//   results     — [{ title, url, snippet }], capped at `limit`
+//   blocked     — always false here; use isDdgBlocked() for challenge detection
+//   parseFailed — true when the page looks like a substantial DDG results
+//                 page but the parser extracted zero results and the page
+//                 doesn't carry DDG's own "no results" copy — i.e. probable
+//                 markup bit-rot rather than a genuine empty result set.
 //
 // Token-stream based (not buildTree): DDG's result divs nest legitimately
 // (wrapper > result__body > extras > ...), and buildTree's same-name div
@@ -179,9 +195,10 @@ function extractBlock(tokens, start, end) {
 // each result__body block.
 export function parseDdgResults(html, { limit = 5 } = {}) {
   const results = [];
-  if (!html) return { results, blocked: false };
+  const htmlStr = String(html ?? "");
+  if (!htmlStr) return { results, blocked: false, parseFailed: false };
 
-  const tokens = tokenize(String(html));
+  const tokens = tokenize(htmlStr);
 
   // Pass 1: locate each div.result__body and its matching close token.
   // Skip ad blocks: their wrapper carries the result--ad class, and even if
@@ -230,7 +247,13 @@ export function parseDdgResults(html, { limit = 5 } = {}) {
     results.push(block);
   }
 
-  return { results, blocked: false };
+  const parseFailed =
+    results.length === 0 &&
+    htmlStr.length >= SUBSTANTIAL_HTML_CHARS &&
+    DDG_PAGE_MARKER.test(htmlStr) &&
+    !NO_RESULTS_TEXT.test(htmlStr);
+
+  return { results, blocked: false, parseFailed };
 }
 
 // DDG serves a bot-challenge page (HTTP 202, "anomaly" markers) instead of
@@ -254,6 +277,7 @@ export function formatSearchResults({
   results = [],
   blocked = false,
   redirected = false,
+  parseFailed = false,
   limit = 5,
   engine = "DuckDuckGo",
 }) {
@@ -267,6 +291,13 @@ export function formatSearchResults({
     return (
       `${engine} redirected the request to its homepage instead of results — ` +
       `likely rate-limited. Try again shortly or rephrase.`
+    );
+  }
+  if (parseFailed) {
+    return (
+      `${engine} returned a page, but its results markup could not be parsed (the site's HTML may have changed) — ` +
+      `this is not necessarily a genuine no-results answer. Try again, rephrase the query, or configure a ` +
+      `SearXNG instance (webFetchSearxngUrl) as a more stable backend.`
     );
   }
   if (results.length === 0) {

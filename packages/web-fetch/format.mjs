@@ -121,17 +121,27 @@ function formatBinary(outcome) {
 
 export function formatBatchResult(items, { concurrency } = {}) {
   const total = items.length;
-  const ok = items.filter((i) => !i.error).length;
+  const ok = items.filter((i) => !i.error && !i.skipped).length;
+  const skipped = items.filter((i) => i.skipped).length;
+  const failed = total - ok - skipped;
+  const summary = [`${ok} ok`, `${failed} failed`];
+  if (skipped) summary.push(`${skipped} skipped`);
   const lines = [
-    `batch_web_fetch: ${total} URLs — ${ok} ok, ${total - ok} failed${concurrency ? ` (concurrency ${concurrency})` : ""}`,
+    `batch_web_fetch: ${total} URLs — ${summary.join(", ")}${concurrency ? ` (concurrency ${concurrency})` : ""}`,
   ];
   for (const item of items) {
     lines.push("");
-    lines.push(`--- [${item.index + 1}/${total}] ${item.error ? "FAILED" : "OK"} ${item.request.url}`);
+    const status = item.error ? "FAILED" : item.skipped ? "SKIPPED" : "OK";
+    lines.push(`--- [${item.index + 1}/${total}] ${status} ${item.request.url}`);
     if (item.error) {
       lines.push(item.error);
+    } else if (item.skipped) {
+      lines.push(`Skipped: ${item.skipped}`);
     } else {
-      lines.push(formatWebFetchResult(item.outcome, { format: item.request.format ?? "markdown", maxChars: item.request.maxChars }));
+      lines.push(formatWebFetchResult(item.outcome, {
+        format: item.request.format ?? "markdown",
+        maxChars: item.cap ?? item.request.maxChars,
+      }));
     }
   }
   return lines.join("\n");
