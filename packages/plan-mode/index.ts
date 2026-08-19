@@ -35,10 +35,13 @@ import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
+const SEARCH_TOOL = "web_search";
 // grep/find/ls are read-only built-ins, included like the reference plan-mode
-// example's toolset. plan_fetch_url is the sanctioned web path — bash network
-// tools stay blocked by the fail-closed policy.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL];
+// example's toolset. plan_fetch_url and web_search (from pi-web-fetch) are the
+// sanctioned web paths — bash network tools stay blocked by the fail-closed
+// policy. web_search resolves from the pi-web-fetch extension, which ships in
+// the same repo.
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
@@ -51,11 +54,11 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 
 - Stay in Plan Mode until the user exits it. Treat requests to implement as requests to plan the implementation; do not edit files or carry out the plan.
 - Do not use update_plan/TODO tooling; Plan Mode is conversational planning, not execution tracking.
-- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt bash workarounds. For web research use plan_fetch_url instead: it fetches an http(s) URL and returns readable text.
+- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt bash workarounds. For web research use plan_fetch_url (fetch a known URL) or web_search (keyless DuckDuckGo search) instead: they return readable content with sources.
 
 ## Phase 1 — Ground in the environment
 
-- Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts. When the request needs current or external information (API docs, versions, references), research it online with plan_fetch_url before asking the user — never ask for something a fetch can look up.
+- Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts. When the request needs current or external information (API docs, versions, references), research it online with plan_fetch_url or web_search before asking the user — never ask for something a fetch or search can look up.
 - Do not ask questions that can be answered from repository or system truth. Ask only when multiple plausible choices remain, a needed identifier/context is missing, or the ambiguity is product intent.
 
 ## Phase 2 — Grill: scope & intent
