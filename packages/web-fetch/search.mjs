@@ -30,8 +30,11 @@ export function buildDdgSearchUrl(query, { region = "" } = {}) {
 // instance; self-hosted instances enable it by default.
 export function buildSearxngUrl(baseUrl, query, { pageno = 1, safesearch = 0 } = {}) {
   const url = new URL(String(baseUrl ?? "")); // throws on invalid base
-  // Instances serve the API under /search; accept a bare base URL.
-  if (url.pathname === "/" || url.pathname === "") url.pathname = "/search";
+  // Instances serve the API under /search; accept a bare base URL or one
+  // that sits behind a reverse-proxy path (e.g. …/searxng on tailnet serve).
+  if (!url.pathname.endsWith("/search")) {
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/search`;
+  }
   url.searchParams.set("q", String(query ?? "").trim());
   url.searchParams.set("format", "json");
   url.searchParams.set("pageno", String(pageno));

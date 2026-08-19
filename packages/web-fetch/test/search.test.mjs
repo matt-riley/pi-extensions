@@ -156,6 +156,11 @@ test("buildSearxngUrl: JSON API params on the user's instance", () => {
     buildSearxngUrl("https://searxng.example.com/search?foo=1", "x"),
     "https://searxng.example.com/search?foo=1&q=x&format=json&pageno=1&safesearch=0",
   );
+  // A reverse-proxy base path (tailnet serve) gets /search appended.
+  assert.equal(
+    buildSearxngUrl("https://waffle.example/searxng", "x"),
+    "https://waffle.example/searxng/search?q=x&format=json&pageno=1&safesearch=0",
+  );
   assert.throws(() => buildSearxngUrl("not a url", "q"), TypeError);
 });
 
