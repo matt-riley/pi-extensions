@@ -169,7 +169,7 @@ export default function planMode(pi: ExtensionAPI) {
       }
       // /plan <prompt>: enter plan mode and submit the prompt.
       enterPlanMode(ctx);
-      await ctx.sendUserMessage(arg, { deliverAs: "followUp" });
+      await pi.sendUserMessage(arg, { deliverAs: "followUp" });
     },
   });
 
