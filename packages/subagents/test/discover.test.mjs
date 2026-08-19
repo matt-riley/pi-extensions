@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { discoverAgents, findAgent, isWriteCapable, parseAgentContent, parseToolList, resolveChildTools, usesAllowlistedBash } from "../discover.mjs";
 
 function tempDir() {
@@ -235,4 +236,27 @@ body
   );
   assert.equal(isWriteCapable(worker), true);
   assert.equal(isWriteCapable(scout), false);
+});
+
+test("shipped builtins resolve with the expected fleet and policy", () => {
+  const builtinDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "agents");
+  const { agents } = discoverAgents({ builtinDir });
+  assert.deepEqual(
+    agents.map((agent) => agent.name).sort(),
+    ["oracle", "researcher", "reviewer", "scout", "worker"],
+  );
+
+  const worker = findAgent(agents, "worker");
+  const researcher = findAgent(agents, "researcher");
+  const scout = findAgent(agents, "scout");
+
+  assert.equal(isWriteCapable(worker), true);
+  assert.equal(usesAllowlistedBash(worker), false);
+  assert.equal(isWriteCapable(researcher), false);
+  assert.equal(usesAllowlistedBash(researcher), true);
+
+  assert.ok(resolveChildTools(worker).tools.includes("edit"));
+  assert.ok(resolveChildTools(worker).tools.includes("write"));
+  assert.ok(resolveChildTools(researcher).tools.includes("web_search"));
+  assert.ok(resolveChildTools(scout).tools.includes("repo_map"));
 });

@@ -41,13 +41,16 @@ Unknown or disabled types error. There is no general-purpose fallback.
 | Type | Job | Writes |
 | --- | --- | --- |
 | `scout` | Fast recon. repo_map → code_search → key files → compressed start-here. | read-only |
-| `reviewer` | Findings with `path:line`, severity, evidence. No edits. | read-only |
+| `reviewer` | Reviews the diff (not the whole file). Findings with `path:line`, severity, verdict. No edits. | read-only |
 | `oracle` | Second opinion. Challenge assumptions. Name what is missing. | read-only |
-| `worker` | Implements a fully-specified change: edits files, runs named checks, reports a diff summary. | edit/write + full bash |
+| `worker` | Implements a fully-specified change: edits files, runs checks, reports a diff summary. | edit/write + full bash |
+| `researcher` | Web/docs research with cited sources and a concise brief. | read-only |
 
 All inherit the parent model. Read-only types get bash restricted to plan-mode's
 fail-closed allowlist. The `worker` is write-capable with prompt-level guard
 rails only (stay in scope, never commit/push/install, stop early on ambiguity).
+Builtins are pre-tuned: `scout` (10 turns, low thinking), `reviewer` (15/high),
+`oracle` (8/high), `worker` (30/high), `researcher` (12/high).
 
 ## Custom types
 
@@ -73,6 +76,10 @@ default (full toolset minus writers, allowlisted bash). Custom files that list
 `bash` get full bash; listing `edit`/`write` makes the agent write-capable.
 Builtins are read-only **unless** they declare `edit`/`write` in `tools:`.
 `enabled: false` hides that name (including a builtin).
+
+Copy-paste examples live in [`examples/custom-agents/`](./examples/custom-agents/) —
+a write-capable `writer` and a read-only `docs-auditor`. Drop them into
+`~/.pi/agent/agents/` (or `<cwd>/.pi/agents/`) to use them as `subagent` types.
 
 v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`),
 `thinking`, `max_turns` (1–30), `enabled`.

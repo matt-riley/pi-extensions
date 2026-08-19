@@ -31,7 +31,7 @@ let enabled = false;
 const TOOL_DESCRIPTION = [
   "Spawn a specialist child with a complete, self-contained task.",
   "Fire multiple subagent calls in one turn to run them in parallel, then synthesize.",
-  "Built-in types: scout (recon), reviewer (code review), oracle (second opinion), worker (implements a fully-specified change; write-capable).",
+  "Built-in types: scout (recon), reviewer (code review), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
   "Custom types live in .pi/agents/*.md or ~/.pi/agent/agents/*.md. Children cannot spawn children.",
 ].join(" ");
 
@@ -156,9 +156,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
     label: "Subagent",
     description: TOOL_DESCRIPTION,
     promptSnippet:
-      "Spawn a specialist subagent (scout, reviewer, oracle, worker, or a custom type)",
+      "Spawn a specialist subagent (scout, reviewer, oracle, worker, researcher, or a custom type)",
     parameters: Type.Object({
-      agent: Type.String({ description: "Agent type (scout, reviewer, oracle, worker, or a custom name)" }),
+      agent: Type.String({ description: "Agent type (scout, reviewer, oracle, worker, researcher, or a custom name)" }),
       task: Type.String({ description: "The full task for the child. It cannot see this conversation." }),
       description: Type.Optional(
         Type.String({ description: "Short 3-5 word summary shown in the widget" }),
