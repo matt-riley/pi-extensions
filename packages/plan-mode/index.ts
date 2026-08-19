@@ -40,7 +40,7 @@ const MAX_PLAN_CHARS = 50000;
 
 const PLAN_MODE_PROMPT = `# Plan Mode (read-only)
 
-You are in Plan Mode, a Codex-like collaboration mode for producing a decision-complete implementation plan. Chat your way to the plan before finalizing it. A final plan must leave no implementation decisions unresolved.
+You are in Plan Mode, a Codex-like collaboration mode for producing a decision-complete implementation plan. Chat your way to the plan before finalizing it. Grill the user for the full scope first: a plan is written only once every decision is settled and understood by both of you. A final plan must leave no implementation decisions unresolved.
 
 ## Mode rules
 
@@ -53,21 +53,24 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 - Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts.
 - Do not ask questions that can be answered from repository or system truth. Ask only when multiple plausible choices remain, a needed identifier/context is missing, or the ambiguity is product intent.
 
-## Phase 2 — Intent chat
+## Phase 2 — Grill: scope & intent
 
-- Keep asking until you can clearly state the goal, success criteria, in/out of scope, constraints, current state, and key preferences/tradeoffs.
-- Bias toward questions over guessing: if a high-impact ambiguity remains, do not produce a proposed plan yet.
+Work the request as a design tree: every decision branches into the decisions that hang off it. The frontier is every decision whose prerequisites are already settled — the questions you can ask now without guessing at answers you haven't heard yet.
+
+- Grill in rounds. Ask the whole frontier in one round: number each question, give 2-4 meaningful options where they exist, and give your recommended answer for each. Use plan_mode_question (with title and recommended) when UI is available; otherwise ask in plain text.
+- Wait for the user's answers before the next round. Answers reshape the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open this round belongs to a later round, not this one.
+- Finding facts is your job, never the user's: never ask for anything read-only exploration can look up (files, config, identifiers). Only decisions go to the user.
+- Keep grilling until you can state the goal, success criteria, in/out of scope, constraints, current state, and key preferences/tradeoffs without guessing. Bias toward questions over guessing: if a high-impact ambiguity remains, do not produce a proposed plan yet.
 - For an unanswered preference or tradeoff, use the recommended option only when it is low risk and record that default as an explicit assumption in the final plan.
 
-## Phase 3 — Implementation chat
+## Phase 3 — Grill: implementation spec
 
-- Once intent is stable, keep asking until the spec is decision-complete: approach, interfaces, data flow, edge cases/failure modes, testing and acceptance criteria, and any migration or compatibility constraints.
-- Use plan_mode_question for important preferences, tradeoffs, or assumption locks that cannot be discovered by exploration. Ask 1-3 concise questions with 2-4 meaningful options.
+- Once intent is stable, keep grilling until the spec is decision-complete: approach, interfaces, data flow, edge cases/failure modes, testing and acceptance criteria, and any migration or compatibility constraints. Same round mechanics — numbered frontier questions with options and recommended answers — now over implementation decisions.
 - If plan_mode_question is cancelled or UI is unavailable, ask one concise plain-text question instead, or proceed only with a clearly stated low-risk assumption.
 
 ## Ending each turn
 
-- If a material decision remains, use plan_mode_question (or ask in plain text when UI is unavailable).
+- If the grill frontier is not empty — a material decision remains — keep grilling with plan_mode_question (or plain text when UI is unavailable). Do not finalize.
 - If the implementation plan is decision-complete, call plan_mode_complete alone as your final action, passing the complete Markdown plan. Do not call other tools in the same batch and do not emit a normal assistant response after it.
 - Never end with prose that merely announces you are about to present the plan. Submit the actual plan with plan_mode_complete in that turn.
 
@@ -330,14 +333,19 @@ export default function planMode(pi: ExtensionAPI) {
     label: "Plan Mode Question",
     description:
       "Ask the user a decision question with 2-4 meaningful options before finalizing the plan. " +
+      "Include a recommended answer when you have a sensible default. " +
       "Use only for preferences, tradeoffs, or assumption locks that cannot be discovered by read-only exploration.",
     parameters: Type.Object({
+      title: Type.Optional(Type.String({ description: "Short title for the question (grill format)" })),
       question: Type.String({ description: "The question to ask" }),
       options: Type.Array(Type.String(), { description: "2-4 meaningful options; the user may also type their own" }),
+      recommended: Type.Optional(Type.String({ description: "Your recommended answer, shown to the user" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const title = typeof params?.title === "string" ? params.title.trim() : "";
       const question = String(params?.question ?? "").trim();
       const options = Array.isArray(params?.options) ? params.options.map(String) : [];
+      const recommended = typeof params?.recommended === "string" ? params.recommended.trim() : "";
       if (!question) {
         return { content: [{ type: "text", text: "Rejected: question is empty." }] };
       }
@@ -362,7 +370,14 @@ export default function planMode(pi: ExtensionAPI) {
         };
       }
       try {
-        const choice = await ctx.ui.select(question, options);
+        const dialogTitle = [
+          title ? `❓ ${title}` : "",
+          question,
+          recommended ? `➡️ Recommended: ${recommended}` : "",
+        ]
+          .filter((part) => part.length > 0)
+          .join("\n\n");
+        const choice = await ctx.ui.select(dialogTitle, options);
         if (choice === undefined || choice === null) {
           return {
             content: [

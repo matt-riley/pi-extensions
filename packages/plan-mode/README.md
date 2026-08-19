@@ -1,9 +1,10 @@
 # pi-plan-mode — Codex-like Plan Mode for Pi
 
 Adds a read-only `/plan` collaboration mode: the agent explores your repo,
-asks decision questions, and produces a **Markdown plan file you review and
-edit before implementation** — the same review-before-do loop Copilot CLI's
-plan mode gives you.
+**grills you for the full scope** (design-tree rounds of decision questions,
+each with a recommended answer), and only then produces a **Markdown plan
+file you review and edit before implementation** — the same review-before-do
+loop Copilot CLI's plan mode gives you.
 
 ## Usage
 
@@ -41,9 +42,11 @@ While plan mode is active:
   `awk` program that writes a file) are out of scope.
 - A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
   path) keep the state visible while active; both clear on exit.
-- The agent explores read-only, asks questions with
-  `plan_mode_question` when a preference or tradeoff matters, and finishes
-  with `plan_mode_complete({ plan })`, which:
+- The agent explores read-only, then **grills you for the full scope**: it
+  works the request as a design tree and asks each round's frontier questions
+  — numbered, with options and a recommended answer via `plan_mode_question`
+  — until every decision is settled and nothing is silently assumed. Only
+  then does it finish with `plan_mode_complete({ plan })`, which:
 
   1. validates the plan,
   2. writes it to **`PLAN.md`** in the working directory
