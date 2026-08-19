@@ -28,7 +28,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "./bash-policy.mjs";
 import { createDialogQueue } from "./dialog-queue.mjs";
-import { extractReadable } from "./fetch-content.mjs";
+import { fetchSmart } from "../web-fetch/fetch.mjs";
+import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
@@ -482,13 +483,22 @@ export default function planMode(pi: ExtensionAPI) {
     name: FETCH_TOOL,
     label: "Fetch URL (read-only web access)",
     description:
-      "Fetch an http(s) URL and return its readable text content. Read-only web access for planning research — " +
-      "use it instead of bash for anything network-related (curl/wget are blocked in plan mode). " +
-      "Returns the page title, the final URL after redirects, and up to 40k characters of extracted text.",
+      "Fetch an http(s) URL and return readable content for planning research — " +
+      "the sanctioned network path (curl/wget are blocked in plan mode). " +
+      "Returns clean markdown with title/URL metadata by default; GitHub URLs use the gh CLI when available. " +
+      "Does not execute JavaScript. Use it instead of bash for anything network-related.",
     parameters: Type.Object({
       url: Type.String({ description: "The http(s) URL to fetch" }),
+      format: Type.Optional(
+        Type.String({
+          description: "Output format: markdown (default), html, text, json, or raw.",
+        }),
+      ),
+      maxChars: Type.Optional(
+        Type.Integer({ minimum: 1000, description: "Content cap in characters (default 40000)." }),
+      ),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       if (!state.enabled) {
         return { content: [{ type: "text", text: "Not in plan mode — plan_fetch_url is inactive." }] };
       }
@@ -507,57 +517,42 @@ export default function planMode(pi: ExtensionAPI) {
           content: [{ type: "text", text: `Rejected: only http(s) URLs are allowed, got ${parsed.protocol}//.` }],
         };
       }
-      // 20s timeout combined with pi's own cancel signal (Esc aborts the call).
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20_000);
-      const onAbort = () => controller.abort();
-      signal?.addEventListener("abort", onAbort);
+      const format = typeof params?.format === "string" ? params.format : "markdown";
+      if (!isKnownFormat(format)) {
+        return {
+          content: [{
+            type: "text",
+            text: `Rejected: format must be one of markdown, html, text, json, raw. Got "${format}".`,
+          }],
+        };
+      }
+      const requestedMaxChars = Number(params?.maxChars);
+      const maxChars = Number.isFinite(requestedMaxChars)
+        ? Math.min(1_000_000, Math.max(1000, Math.trunc(requestedMaxChars)))
+        : 40_000;
+
+      // Same fetch engine as web_fetch (browser-like headers, redirects,
+      // alternate-content fallback, gh for GitHub URLs), with plan mode's own
+      // caps: 20s timeout, 40k default content cap, Esc-cancellable.
+      onUpdate?.({ content: [{ type: "text", text: `Fetching ${url}…` }] });
       try {
-        const response = await fetch(parsed, {
-          redirect: "follow",
-          headers: {
-            "user-agent": "Mozilla/5.0 (compatible; pi-plan-mode/0.1; +planning-research)",
-            accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.5",
-          },
-          signal: controller.signal,
-        });
-        const contentType = response.headers.get("content-type") ?? "";
-        const body = await response.text();
-        if (!response.ok) {
-          const snippet = body.replace(/\s+/g, " ").slice(0, 300);
+        const outcome = await fetchSmart({ url, format, maxChars, timeoutMs: 20_000, signal });
+        const text = formatWebFetchResult(outcome, { format, maxChars });
+        if (!text.trim()) {
           return {
-            content: [
-              {
-                type: "text",
-                text: `Fetch failed: HTTP ${response.status} ${response.statusText} from ${response.url}.\n${snippet}`,
-              },
-            ],
+            content: [{
+              type: "text",
+              text: `Fetched ${outcome.finalUrl ?? url} — no readable content found.`,
+            }],
           };
         }
-        const { title, text, truncated } = extractReadable({ contentType, body });
-        if (!text) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Fetched ${response.url} (${contentType || "unknown content type"}) — no readable text found.`,
-              },
-            ],
-          };
-        }
-        const parts = [`URL: ${response.url}`];
-        if (title) parts.push(`Title: ${title}`);
-        parts.push(text);
-        if (truncated) {
-          parts.push(`\n[Truncated: ${text.length} characters — raw body was ${body.length} characters]`);
-        }
-        return { content: [{ type: "text", text: parts.join("\n\n") }] };
+        return { content: [{ type: "text", text }] };
       } catch (error) {
-        const reason = controller.signal.aborted
-          ? signal?.aborted
-            ? "cancelled by the user"
-            : "timed out after 20s"
-          : (error as Error).message;
+        const reason = signal?.aborted
+          ? "cancelled by the user"
+          : error instanceof Error
+            ? error.message
+            : String(error);
         return {
           content: [
             {
@@ -566,9 +561,6 @@ export default function planMode(pi: ExtensionAPI) {
             },
           ],
         };
-      } finally {
-        clearTimeout(timeout);
-        signal?.removeEventListener("abort", onAbort);
       }
     },
   });

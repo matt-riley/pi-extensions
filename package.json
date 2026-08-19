@@ -8,11 +8,12 @@
   "pi": {
     "extensions": [
       "./packages/exit/index.ts",
-      "./packages/plan-mode/index.ts"
+      "./packages/plan-mode/index.ts",
+      "./packages/web-fetch/index.ts"
     ]
   },
   "scripts": {
-    "check": "bun build --no-bundle packages/exit/index.ts >/dev/null && bun build --no-bundle packages/plan-mode/index.ts >/dev/null && node --test 'packages/**/*.test.mjs'",
+    "check": "bun build --no-bundle packages/exit/index.ts >/dev/null && bun build --no-bundle packages/plan-mode/index.ts >/dev/null && bun build --no-bundle packages/web-fetch/index.ts >/dev/null && node --test 'packages/**/*.test.mjs'",
     "test": "node --test 'packages/**/*.test.mjs'"
   }
 }

@@ -42,11 +42,13 @@ exit.
   is a guardrail, not a sandbox: deliberately scripted mutations (e.g. an
   `awk` program that writes a file) are out of scope.
 - **Read-only web access** via `plan_fetch_url`: fetches an http(s) URL and
-  returns the page title plus up to 40k characters of extracted text
-  (scripts/styles stripped, entities decoded — see `fetch-content.mjs`), with
-  a 20s timeout and an Esc-cancellable request. This is the sanctioned
-  network path: `curl`/`wget` stay blocked by the bash allowlist, so web
-  research can't double as a mutation or exfiltration vector.
+  returns clean readable content — markdown by default with title/URL
+  metadata, capped at 40k characters. Powered by the same zero-dependency
+  fetch engine as [`pi-web-fetch`](../web-fetch): browser-like headers,
+  redirect following, alternate-content fallback, and the `gh` CLI for GitHub
+  URLs when available. 20s timeout and an Esc-cancellable request. This is the
+  sanctioned network path: `curl`/`wget` stay blocked by the bash allowlist,
+  so web research can't double as a mutation or exfiltration vector.
 - A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
   path) keep the state visible while active; both clear on exit.
 - The agent explores read-only, then **grills you for the full scope**: it
@@ -91,6 +93,6 @@ so plan mode needs no in-memory plan retention.
 ## Development
 
 ```sh
-npm test          # node --test against bash-policy.mjs, plan-file.mjs, dialog-queue.mjs, fetch-content.mjs
+npm test          # node --test against bash-policy.mjs, plan-file.mjs, dialog-queue.mjs
 npm run check     # syntax-check entrypoints + tests
 ```
