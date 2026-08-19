@@ -15,10 +15,6 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - run: npm install
+      - run: npm ci
 
       - run: npm run check

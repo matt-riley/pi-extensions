@@ -28,15 +28,14 @@ package is published to npm on its own.
 - Nontrivial logic (policies, parsers, state machines) goes in a plain `.mjs`
   module so `node --test` can cover it without a TS loader, with tests beside
   it in `test/*.test.mjs`.
-- `npm run check` must pass before pushing: syntax-check every entrypoint with
-  `bun build --no-bundle`, type-check with `tsc --noEmit`, and run the test
-  suite.
+- `npm run check` must pass before pushing: type-check with `tsc --noEmit`
+  (its tsconfig `include` covers every `packages/**/*.ts` entrypoint, so new
+  packages are checked with no script edits) and run the test suite.
 
 ## Commands
 
 - `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs'`).
-- `npm run check` — syntax-check entrypoints, type-check (`tsc --noEmit`),
-  and run tests.
+- `npm run check` — type-check (`tsc --noEmit`) and run tests.
 
 ## Commits
 
