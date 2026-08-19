@@ -1,10 +1,16 @@
 // search.mjs — code_search engine: content search over the cache inventory
 // with definition-first ranking, enclosing-symbol framing, and did-you-mean
-// suggestions. Content is re-read per query (scan-based); the cache supplies
-// the skip-list (binary/huge files) and the symbol tables for framing.
+// suggestions. Two execution paths:
+//   - git-grep fast path: when the session was built via git, dispatch to
+//     `git grep` (injected exec) instead of reading every file — the
+//     resulting hits are scored/ranked/framed through the same pipeline as
+//     the scan path, so output is identical either way.
+//   - scan path (fallback / non-git repos): readFile is injected, content is
+//     re-read per query. The cache supplies the skip-list (binary/huge
+//     files) and the symbol tables for framing.
 //
-// Pure-ish: readFile is injected. Ranking per match:
-//   definition hit (+100) > whole-word exact (+50) > word-boundary (+30) >
+// Pure-ish: readFile/exec are injected. Ranking per match:
+//   definition hit (+100) > word-boundary exact match (+50) >
 //   substring (+10) > comment-only line (0)
 
 import { escapeRegExp } from "./gitignore.mjs";
@@ -66,9 +72,32 @@ function buildMatcher(query, { caseSensitive, wholeWord, regex }) {
  * @param {string} opts.query
  * @param {object} opts.opts        { caseSensitive, wholeWord, regex, maxResults, path }
  * @param {(rel: string) => Promise<string | null>} opts.readFile
+ * @param {(cmd: string, args: string[], execOpts?: object) => Promise<{code:number,stdout:string,stderr:string}>} [opts.exec]
+ *        Injected process runner, used only for the git-grep fast path.
+ * @param {string} [opts.root]      repo root, required for the git-grep fast path
+ * @param {boolean} [opts.viaGit]   whether the session/inventory was built via git
+ * @param {AbortSignal} [opts.signal]
  * @returns {Promise<{ hits: Array, total: number, truncated: boolean, suggestion: string[] }>}
  */
-export async function searchRepo({ cache, query, opts = {}, readFile }) {
+export async function searchRepo({ cache, query, opts = {}, readFile, exec, root, viaGit, signal }) {
+  if (opts.regex) {
+    const unsafe = checkRegexSafety(query);
+    if (unsafe) throw new Error(`code_search regex rejected: ${unsafe}`);
+  }
+
+  if (viaGit && exec && root) {
+    try {
+      const result = await gitGrepSearch({ cache, query, opts, exec, root, signal });
+      if (result) return result;
+    } catch {
+      // Fall through to the pure scan path below.
+    }
+  }
+
+  return scanRepo({ cache, query, opts, readFile, signal });
+}
+
+async function scanRepo({ cache, query, opts, readFile, signal }) {
   const files = Object.keys(cache?.files ?? {});
   const maxResults = clampMax(opts.maxResults);
   const matcher = buildMatcher(query, opts);
@@ -77,6 +106,7 @@ export async function searchRepo({ cache, query, opts = {}, readFile }) {
   let scanned = 0;
 
   for (const rel of files) {
+    if (signal?.aborted) throw new Error("code_search: search cancelled");
     if (opts.path && !(rel === opts.path || rel.startsWith(opts.path + "/"))) continue;
     const entry = cache.files[rel];
     if (isBinaryFile(rel)) continue;
@@ -112,6 +142,112 @@ export async function searchRepo({ cache, query, opts = {}, readFile }) {
   return { hits: shown, total, truncated, suggestion, scanned };
 }
 
+// --- git-grep fast path -----------------------------------------------------
+
+/**
+ * Parse one `git grep -n --column` output line into { rel, lineNo, col, text }.
+ * Only the first three colon-separated fields (file, line, col) are split;
+ * everything after is kept verbatim as `text` (which may itself contain
+ * colons).
+ */
+export function parseGitGrepLine(line) {
+  const m = /^(.*?):(\d+):(\d+):([\s\S]*)$/.exec(line);
+  if (!m) return null;
+  return { rel: m[1], lineNo: Number(m[2]), col: Number(m[3]), text: m[4] };
+}
+
+/** Build the `git grep` argv for a given query/opts. Exported for tests. */
+export function buildGitGrepArgs({ query, opts, root }) {
+  const args = ["-C", root, "grep", "-I", "-n", "--column", "--untracked"];
+  if (!opts.caseSensitive) args.push("-i");
+  if (opts.regex) args.push("-E");
+  else args.push("--fixed-strings");
+  if (opts.wholeWord) args.push("-w");
+  args.push("-e", query);
+  if (opts.path) args.push("--", opts.path);
+  return args;
+}
+
+/**
+ * Fast path for git-backed repos: run `git grep` instead of reading every
+ * file, then reuse the same scoring/ranking/framing pipeline as the scan
+ * path. Returns null (signalling "fall back to scan") on any error or
+ * unexpected exit code; a nonzero exit with empty stdout (code 1) means "no
+ * matches", which is not an error.
+ */
+async function gitGrepSearch({ cache, query, opts, exec, root, signal }) {
+  if (signal?.aborted) throw new Error("code_search: search cancelled");
+  const maxResults = clampMax(opts.maxResults);
+  const args = buildGitGrepArgs({ query, opts, root });
+  const result = await exec("git", args, { timeout: 15_000 });
+  const stdout = String(result?.stdout ?? "");
+
+  if (result?.code === 1 && stdout.trim() === "") {
+    return { hits: [], total: 0, truncated: false, suggestion: suggestNames(query, Object.keys(cache?.files ?? {}), cache) };
+  }
+  if (result?.code !== 0) return null; // unexpected exit code → fall back
+
+  if (signal?.aborted) throw new Error("code_search: search cancelled");
+
+  const byFile = new Map();
+  for (const line of stdout.split("\n")) {
+    if (!line) continue;
+    const parsed = parseGitGrepLine(line);
+    if (!parsed) continue;
+    const { rel, lineNo, col, text } = parsed;
+    const entry = cache?.files?.[rel];
+    if (!entry) continue; // not in the inventory (e.g. cache is stale)
+    if (isBinaryFile(rel)) continue;
+    if ((entry.size ?? 0) > MAX_FILE_BYTES) continue;
+    if (!byFile.has(rel)) byFile.set(rel, []);
+    byFile.get(rel).push({ rel, lineNo, col, text, entry });
+  }
+
+  let total = 0;
+  const hits = [];
+  for (const fileHitsRaw of byFile.values()) {
+    const fileHits = [];
+    for (const h of fileHitsRaw) {
+      total++;
+      const score = scoreLine(h.text, h.lineNo, query, h.entry, opts);
+      if (fileHits.length < PER_FILE_CAP) fileHits.push({ rel: h.rel, lineNo: h.lineNo, col: h.col, score, text: h.text, entry: h.entry });
+    }
+    fileHits.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
+    hits.push(...fileHits);
+  }
+
+  hits.sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel) || a.lineNo - b.lineNo);
+  const shown = hits.slice(0, maxResults);
+  const truncated = total > shown.length;
+
+  let suggestion = [];
+  if (total === 0) suggestion = suggestNames(query, Object.keys(cache?.files ?? {}), cache);
+
+  return { hits: shown, total, truncated, suggestion };
+}
+
+// --- regex safety guard ------------------------------------------------------
+
+/**
+ * Heuristic (not a proof) catastrophic-backtracking check: flags a group
+ * `(...)` that contains its own quantifier (+, *, or {n,}) and is itself
+ * immediately followed by a quantifier — the classic `(a+)+` / `(a*)*` /
+ * `(a{2,})+` shape. This will not catch every ReDoS pattern and may flag a
+ * few safe ones; it exists to reject the obvious cases cheaply before
+ * compiling/running a user-supplied regex.
+ */
+export function checkRegexSafety(pattern) {
+  const re = /\(([^()]*)\)\s*(?:[+*]|\{\d*,\d*\})/g;
+  let m;
+  while ((m = re.exec(String(pattern ?? "")))) {
+    const inner = m[1] ?? "";
+    if (/[+*]|\{\d*,\d*\}/.test(inner)) {
+      return "pattern looks like it could cause catastrophic backtracking (nested quantifiers) — simplify it or set regex=false.";
+    }
+  }
+  return null;
+}
+
 function clampMax(maxResults) {
   const n = Number(maxResults);
   if (!Number.isFinite(n)) return DEFAULT_MAX_RESULTS;
@@ -122,13 +258,9 @@ function scoreLine(raw, lineNo, query, entry, opts) {
   const trimmed = raw.trim();
   // Comment-only line → 0 (approx: line starts with a comment marker).
   if (/^(#|\/\/|\/\*|\*|<!--|--|%|;)/.test(trimmed)) return 0;
-  let base = 10; // substring
-  if (opts.wholeWord) {
-    base = 30;
-    // Whole-word exact match of the query → +50
-    const re = new RegExp(`\\b${escapeRegExp(query)}\\b`, opts.caseSensitive ? "" : "i");
-    if (re.test(raw)) base = 50;
-  }
+  // Word-boundary exact match of the query → +50, else a plain substring → +10.
+  const boundaryRe = new RegExp(`\\b${escapeRegExp(query)}\\b`, opts.caseSensitive ? "" : "i");
+  const base = boundaryRe.test(raw) ? 50 : 10;
   // Definition at this line (symbol name equals query, case-insensitive) → 100
   const isDef = (entry?.symbols ?? []).some(
     (s) => s.startLine === lineNo && s.name.toLowerCase() === String(query).toLowerCase(),

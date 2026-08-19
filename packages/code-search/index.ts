@@ -264,7 +264,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression (default false)." })),
       maxResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "Max hits to return (default 30)." })),
     }),
-    async execute(_toolCallId, params, _signal, onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const session = await sessionFor(ctx, onUpdate);
       const query = String(params?.query ?? "").trim();
       if (!query) return { content: [{ type: "text", text: "Rejected: query is empty." }] };
@@ -292,6 +292,10 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
               return null;
             }
           },
+          exec,
+          root: session.root,
+          viaGit: session.viaGit,
+          signal,
         });
         return { content: [{ type: "text", text: formatSearchHits({ query, hits, total, truncated, suggestion }) }] };
       } catch (error) {

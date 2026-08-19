@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { enclosingSymbol, levenshtein, searchRepo } from "../search.mjs";
+import { buildGitGrepArgs, checkRegexSafety, enclosingSymbol, levenshtein, parseGitGrepLine, searchRepo } from "../search.mjs";
 
 // Minimal cache shape: relPath → entry { size, lang, symbols, ... }
 function entry(symbols, size = 100) {
@@ -142,4 +142,191 @@ test("levenshtein distances", () => {
   assert.equal(levenshtein("greet", "greets"), 1);
   assert.equal(levenshtein("kitten", "sitting"), 3);
   assert.equal(levenshtein("", "abc"), 3);
+});
+
+// --- default-mode ranking (task 2) -----------------------------------------
+
+test("default mode ranks exact word-boundary matches above substring-in-longer-identifier matches", async () => {
+  const files = { "a.ts": entry([], 50) };
+  const content = "const greeting = 1;\nconst greet = 2;\n";
+  const r = await searchRepo({ cache: { files }, query: "greet", opts: {}, readFile: async () => content });
+  assert.equal(r.hits[0].text.trim(), "const greet = 2;");
+  assert.equal(r.hits[0].score, 50);
+  const substringHit = r.hits.find((h) => h.text.includes("greeting"));
+  assert.ok(substringHit);
+  assert.equal(substringHit.score, 10);
+  assert.ok(r.hits[0].score > substringHit.score);
+});
+
+// --- git-grep fast path (task 1) -------------------------------------------
+
+test("buildGitGrepArgs maps search options to git grep flags", () => {
+  assert.deepEqual(
+    buildGitGrepArgs({ query: "foo", opts: {}, root: "/r" }),
+    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-e", "foo"],
+  );
+  assert.deepEqual(
+    buildGitGrepArgs({ query: "foo", opts: { caseSensitive: true }, root: "/r" }),
+    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "--fixed-strings", "-e", "foo"],
+  );
+  assert.deepEqual(
+    buildGitGrepArgs({ query: "f(oo)", opts: { regex: true }, root: "/r" }),
+    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "-E", "-e", "f(oo)"],
+  );
+  assert.deepEqual(
+    buildGitGrepArgs({ query: "foo", opts: { wholeWord: true }, root: "/r" }),
+    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-w", "-e", "foo"],
+  );
+  assert.deepEqual(
+    buildGitGrepArgs({ query: "foo", opts: { path: "src" }, root: "/r" }),
+    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-e", "foo", "--", "src"],
+  );
+});
+
+test("parseGitGrepLine splits only file:line:col, keeps colons in the text field", () => {
+  assert.deepEqual(
+    parseGitGrepLine("src/a.ts:12:5:const x = 'a:b:c';"),
+    { rel: "src/a.ts", lineNo: 12, col: 5, text: "const x = 'a:b:c';" },
+  );
+  assert.equal(parseGitGrepLine("not a match"), null);
+});
+
+test("git-grep fast path parses hits (incl. colons in text) and reuses the scoring/framing pipeline", async () => {
+  const files = { "src/a.ts": entry([sym("greet", 1, 3)]) };
+  const stdout = [
+    "src/a.ts:1:1:function greet() { return 'x:y:z'; }",
+    "src/a.ts:2:3:  greet(); // calls greet",
+  ].join("\n") + "\n";
+  const exec = async (cmd) => {
+    assert.equal(cmd, "git");
+    return { code: 0, stdout, stderr: "" };
+  };
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: {},
+    readFile: async () => {
+      throw new Error("should not scan when git grep succeeds");
+    },
+    exec,
+    root: "/repo",
+    viaGit: true,
+  });
+  assert.equal(r.total, 2);
+  assert.equal(r.hits[0].lineNo, 1);
+  assert.equal(r.hits[0].score, 100); // definition line, framed via the same scoreLine logic
+  assert.ok(r.hits.some((h) => h.text.includes("x:y:z")));
+});
+
+test("git grep exit code 1 with empty stdout means no matches, not an error", async () => {
+  const files = { "a.ts": entry([]) };
+  const exec = async () => ({ code: 1, stdout: "", stderr: "" });
+  const r = await searchRepo({
+    cache: { files },
+    query: "zzz",
+    opts: {},
+    readFile: async () => {
+      throw new Error("should not scan on a clean no-match exit");
+    },
+    exec,
+    root: "/repo",
+    viaGit: true,
+  });
+  assert.equal(r.total, 0);
+  assert.deepEqual(r.hits, []);
+});
+
+test("git grep failure (throws) falls back silently to the scan path", async () => {
+  const files = { "src/a.ts": entry([sym("greet", 1, 1)]) };
+  const content = "function greet() {}\n";
+  const exec = async () => {
+    throw new Error("git not found");
+  };
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: {},
+    readFile: async (rel) => (rel === "src/a.ts" ? content : null),
+    exec,
+    root: "/repo",
+    viaGit: true,
+  });
+  assert.equal(r.total, 1);
+  assert.equal(r.hits[0].score, 100);
+});
+
+test("git grep unexpected exit code falls back silently to the scan path", async () => {
+  const files = { "src/a.ts": entry([sym("greet", 1, 1)]) };
+  const content = "function greet() {}\n";
+  const exec = async () => ({ code: 2, stdout: "", stderr: "fatal: not a git repository" });
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: {},
+    readFile: async (rel) => (rel === "src/a.ts" ? content : null),
+    exec,
+    root: "/repo",
+    viaGit: true,
+  });
+  assert.equal(r.total, 1);
+});
+
+test("git-grep path is skipped (falls to scan) when viaGit is false", async () => {
+  const files = { "src/a.ts": entry([sym("greet", 1, 1)]) };
+  const content = "function greet() {}\n";
+  const exec = async () => {
+    throw new Error("exec should not be called when viaGit is false");
+  };
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: {},
+    readFile: async (rel) => (rel === "src/a.ts" ? content : null),
+    exec,
+    root: "/repo",
+    viaGit: false,
+  });
+  assert.equal(r.total, 1);
+});
+
+// --- abort + regex guard (task 3) ------------------------------------------
+
+test("checkRegexSafety rejects nested-quantifier patterns, allows normal regexes", () => {
+  assert.ok(checkRegexSafety("(a+)+"));
+  assert.ok(checkRegexSafety("(a*)*"));
+  assert.ok(checkRegexSafety("(a{2,})+"));
+  assert.equal(checkRegexSafety("gr(eet|eeter)"), null);
+  assert.equal(checkRegexSafety("^foo.*bar$"), null);
+});
+
+test("searchRepo rejects catastrophic regex patterns with a clear message instead of running them", async () => {
+  await assert.rejects(
+    searchRepo({ cache: { files: FILES }, query: "(a+)+", opts: { regex: true }, readFile }),
+    /catastrophic|nested quantifiers/i,
+  );
+});
+
+test("searchRepo still accepts normal regexes under the guard", async () => {
+  const r = await searchRepo({ cache: { files: FILES }, query: "gr(eet|eeter)", opts: { regex: true }, readFile });
+  assert.equal(r.total, 7);
+});
+
+test("searchRepo throws a clear cancellation error when the signal is already aborted", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let readCalls = 0;
+  await assert.rejects(
+    searchRepo({
+      cache: { files: FILES },
+      query: "greet",
+      opts: {},
+      readFile: async (rel) => {
+        readCalls++;
+        return readFile(rel);
+      },
+      signal: controller.signal,
+    }),
+    /cancelled/i,
+  );
+  assert.equal(readCalls, 0);
 });

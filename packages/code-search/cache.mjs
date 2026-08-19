@@ -94,6 +94,7 @@ export async function refreshCache({
   readFile: readFileFn,
   onProgress,
   maxSymbolsPerFile = MAX_SYMBOLS_PER_FILE,
+  maxCacheBytes = MAX_CACHE_BYTES,
 }) {
   const { files, truncated } = await list();
   const fileSet = new Set(files);
@@ -165,25 +166,55 @@ export async function refreshCache({
     files: nextFiles,
   };
 
-  shrinkIfNeeded(next);
+  shrinkIfNeeded(next, maxCacheBytes);
 
   return { cache: next, changed: changedList, removed, truncated };
 }
 
-/** Drop symbols/imports/reexports of the largest files until under the byte cap. */
-function shrinkIfNeeded(cache) {
-  let json = JSON.stringify(cache);
-  if (json.length <= MAX_CACHE_BYTES) return;
-  const entries = Object.entries(cache.files)
-    .map(([rel, e]) => ({ rel, e, bytes: json.length > 0 ? e.size : 0 }))
-    .sort((a, b) => b.e.size - a.e.size);
-  for (const { rel, e } of entries) {
-    if (json.length <= MAX_CACHE_BYTES) break;
-    e.symbols = [];
-    e.imports = [];
-    e.reexports = [];
-    e.symbolsDropped = true;
-    json = JSON.stringify(cache);
+/**
+ * Drop symbols/imports/reexports of the largest files until the estimated
+ * serialized cache size is under `maxBytes`. Each entry's size is
+ * JSON.stringify'd once (not the whole cache, per entry, per iteration —
+ * that was O(n^2) on large repos); a running total is decremented by the
+ * measured before/after delta as entries are stripped. One real
+ * JSON.stringify(cache) verifies the estimate at the end; if the estimate
+ * drifted and it's still over, a second bounded pass strips a few more.
+ */
+export function shrinkIfNeeded(cache, maxBytes = MAX_CACHE_BYTES) {
+  const items = Object.values(cache.files).map((e) => ({ e, bytes: JSON.stringify(e).length }));
+  // Rough total: sum of per-entry sizes plus a small fixed allowance for the
+  // cache wrapper object (version/root/builtAt/braces/commas).
+  let total = items.reduce((sum, it) => sum + it.bytes, 0) + 64;
+  if (total <= maxBytes) return;
+
+  items.sort((a, b) => b.bytes - a.bytes);
+
+  const strip = (it) => {
+    if (it.e.symbolsDropped) return 0;
+    const before = it.bytes;
+    it.e.symbols = [];
+    it.e.imports = [];
+    it.e.reexports = [];
+    it.e.symbolsDropped = true;
+    it.bytes = JSON.stringify(it.e).length;
+    return before - it.bytes;
+  };
+
+  for (const it of items) {
+    if (total <= maxBytes) break;
+    total -= strip(it);
+  }
+
+  // Verify once against the real serialized size; the estimate can drift
+  // (wrapper overhead, unicode escaping, etc). If still over, keep
+  // stripping the next-largest remaining entries using the same delta
+  // bookkeeping rather than re-stringifying the whole cache per entry.
+  let actual = JSON.stringify(cache).length;
+  if (actual > maxBytes) {
+    for (const it of items) {
+      if (actual <= maxBytes) break;
+      actual -= strip(it);
+    }
   }
 }
 
