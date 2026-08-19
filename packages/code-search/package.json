@@ -1,0 +1,7 @@
+{
+  "name": "pi-code-search",
+  "version": "0.1.0",
+  "description": "Faster, more reliable code discovery for pi: repo_map / code_search / file_outline / find_definition with a persistent mtime-invalidated symbol cache. Zero runtime dependencies.",
+  "type": "module",
+  "license": "MIT"
+}
