@@ -27,6 +27,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "./bash-policy.mjs";
+import { createDialogQueue } from "./dialog-queue.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
@@ -57,7 +58,7 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 
 Work the request as a design tree: every decision branches into the decisions that hang off it. The frontier is every decision whose prerequisites are already settled — the questions you can ask now without guessing at answers you haven't heard yet.
 
-- Grill in rounds. Ask the whole frontier in one round: number each question, give 2-4 meaningful options where they exist, and give your recommended answer for each. Use plan_mode_question (with title and recommended) when UI is available; otherwise ask in plain text.
+- Grill in rounds. Ask the whole frontier in one round: number each question, give 2-4 meaningful options where they exist, and give your recommended answer for each. Use plan_mode_question (with title and recommended) when UI is available; otherwise ask in plain text. Questions fired in one batch appear as sequential dialogs — one per question — and every answer comes back before you continue.
 - Wait for the user's answers before the next round. Answers reshape the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open this round belongs to a later round, not this one.
 - Finding facts is your job, never the user's: never ask for anything read-only exploration can look up (files, config, identifiers). Only decisions go to the user.
 - Keep grilling until you can state the goal, success criteria, in/out of scope, constraints, current state, and key preferences/tradeoffs without guessing. Bias toward questions over guessing: if a high-impact ambiguity remains, do not produce a proposed plan yet.
@@ -111,6 +112,11 @@ export default function planMode(pi: ExtensionAPI) {
   // Content we last wrote to planPath, so revisions can overwrite in place
   // while user edits are never clobbered.
   let lastWritten: string | null = null;
+  // pi runs sibling tool calls concurrently, and the TUI dialog manager only
+  // owns one dialog at a time. Serialize every interactive dialog (question
+  // selects, the plan editor) so concurrent calls never open stacked dialogs
+  // that hide each other and hang the tool batch.
+  const enqueueDialog = createDialogQueue();
 
   function notify(ctx: UiCtx, message: string) {
     if (ctx.hasUI) ctx.ui?.notify?.(message, "info");
@@ -197,18 +203,27 @@ export default function planMode(pi: ExtensionAPI) {
       notify(ctx, "No interactive editor available in this mode — edit the plan file directly.");
       return;
     }
-    let current: string;
-    try {
-      current = await readFile(state.planPath, "utf8");
-    } catch (error) {
-      notify(ctx, `Failed to read ${state.planPath}: ${(error as Error).message}`);
-      return;
-    }
-    const edited = await ctx.ui.editor("Edit plan — Ctrl+G opens $EDITOR:", current);
-    if (edited === undefined || edited === null) {
-      notify(ctx, "Edit cancelled — plan unchanged.");
-      return;
-    }
+    // Queue with question dialogs so only one interactive dialog is open at a
+    // time; read the file only when our turn comes so external edits made
+    // while a question dialog was up are not clobbered.
+    const editor = ctx.ui.editor;
+    const outcome = await enqueueDialog(async () => {
+      let current: string;
+      try {
+        current = await readFile(state.planPath, "utf8");
+      } catch (error) {
+        notify(ctx, `Failed to read ${state.planPath}: ${(error as Error).message}`);
+        return null;
+      }
+      const edited = await editor("Edit plan — Ctrl+G opens $EDITOR:", current);
+      if (edited === undefined || edited === null) {
+        notify(ctx, "Edit cancelled — plan unchanged.");
+        return null;
+      }
+      return { edited, current };
+    });
+    if (outcome === null) return;
+    const { edited, current } = outcome;
     if (edited === current) {
       notify(ctx, "No changes — plan unchanged.");
       return;
@@ -369,6 +384,7 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      const select = ctx.ui.select;
       try {
         const dialogTitle = [
           title ? `❓ ${title}` : "",
@@ -377,7 +393,10 @@ export default function planMode(pi: ExtensionAPI) {
         ]
           .filter((part) => part.length > 0)
           .join("\n\n");
-        const choice = await ctx.ui.select(dialogTitle, options);
+        // Sibling tool calls run concurrently, so questions fired in one round
+        // must share the dialog queue — an unqueued select would be hidden
+        // behind the next question's dialog and hang the batch.
+        const choice = await enqueueDialog(() => select(dialogTitle, options));
         if (choice === undefined || choice === null) {
           return {
             content: [

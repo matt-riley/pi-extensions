@@ -45,7 +45,10 @@ While plan mode is active:
 - The agent explores read-only, then **grills you for the full scope**: it
   works the request as a design tree and asks each round's frontier questions
   — numbered, with options and a recommended answer via `plan_mode_question`
-  — until every decision is settled and nothing is silently assumed. Only
+  — until every decision is settled and nothing is silently assumed. A
+  round's questions come back as one dialog at a time (they are serialized so
+  concurrent question calls never stack dialogs and hang the turn); answer
+  each and the agent gets the whole round back. Only
   then does it finish with `plan_mode_complete({ plan })`, which:
 
   1. validates the plan,
