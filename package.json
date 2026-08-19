@@ -15,7 +15,12 @@
     ]
   },
   "scripts": {
-    "check": "bun build --no-bundle packages/exit/index.ts >/dev/null && bun build --no-bundle packages/plan-mode/index.ts >/dev/null && bun build --no-bundle packages/web-fetch/index.ts >/dev/null && bun build --no-bundle packages/code-search/index.ts >/dev/null && bun build --no-bundle packages/subagents/index.ts >/dev/null && node --test 'packages/**/*.test.mjs'",
+    "check": "bun build --no-bundle packages/exit/index.ts >/dev/null && bun build --no-bundle packages/plan-mode/index.ts >/dev/null && bun build --no-bundle packages/web-fetch/index.ts >/dev/null && bun build --no-bundle packages/code-search/index.ts >/dev/null && bun build --no-bundle packages/subagents/index.ts >/dev/null && tsc --noEmit && node --test 'packages/**/*.test.mjs'",
     "test": "node --test 'packages/**/*.test.mjs'"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typebox": "^1.3.16",
+    "typescript": "^5.7.0"
   }
 }

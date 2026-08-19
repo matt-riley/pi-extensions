@@ -14,6 +14,23 @@ plain TypeScript loaded directly by pi.
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 
+### Package dependencies
+
+These packages are published as separate directories but are not fully
+independent — some import modules from their siblings, so deleting or
+renaming one can break another:
+
+- **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /
+  `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
+  (used to implement `plan_fetch_url`), and imports `CODE_SEARCH_TOOLS` from
+  **`pi-code-search`**'s `tools.mjs` (to allow read-only discovery tools in
+  plan mode's toolset).
+- **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
+  allowlist from `shared/bash-policy.mjs` at the repo root.
+
+`pi-exit`, `pi-web-fetch`, and `pi-code-search` have no dependencies on
+other packages in this repo.
+
 ## Install
 
 Clone the repo into pi's global extensions directory; pi auto-discovers the
