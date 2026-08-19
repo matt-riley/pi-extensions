@@ -19,8 +19,9 @@ test("allows read-only inspection commands", () => {
     "cd src && ls", "pwd", "which node", "type node", "readlink -f x", "realpath x",
     "dirname x", "basename x", "env", "env | grep PATH", "printenv PATH",
     "uname -a", "whoami", "id -u", "date", "uptime", "ps aux", "top -b -n1",
-    "top -l 1",
+    "top -bn1", "top -b -n 1", "top -l 1", "top -l1",
     "free -h", "stat -f %m file", "du -sh src", "df -h", "tree -L 2", "file x",
+    "vm_stat", "iostat", "iostat 1 3", "netstat -rn", "dmesg -T", "tail -n 5 file",
     "strings bin", "xxd file", "od -c file", "base64 file", "sha256sum file",
     "lsof -i :8080", "ss -tulpn", "sysctl -a", "test -f file", "echo hi",
     "FOO=1 ls", "ls -la & echo done", "ls -la | head -5", "git log -p | head -50",
@@ -100,7 +101,10 @@ test("blocks dangerous flags on otherwise read-only tools", () => {
     "xz -d f.xz", "env -i", "env FOO=1 ls", "sysctl -w vm.swappiness=10",
     "xmllint --output out f.xml",
     // interactive/never-exiting commands hang a headless tool call
-    "top", "top -d 1", "htop", "less file.txt", "more file.txt",
+    "top", "top -d 1", "top -b", "top -l", "top -n 5", "htop", "less file.txt",
+    "more file.txt", "tail -f log", "tail -F log", "tail --follow log",
+    "lsof -r", "lsof -r2", "dmesg -w", "dmesg --follow", "free -s 1",
+    "netstat -c", "vm_stat 1", "iostat 1",
   ]) {
     assert.ok(blockedBashCommand(cmd), `should block: ${cmd}`);
   }

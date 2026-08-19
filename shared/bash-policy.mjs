@@ -128,6 +128,18 @@ const INTERPRETER_FLAGS = {
 
 // Flag-level rules for otherwise read-only commands: return a reason string
 // when a dangerous flag/subcommand is present.
+
+// True when a positive numeric argument for short flag `letter` is present:
+// `-x <N>`, `-x<N>`, or `-x` inside a combined short-flag cluster (`-bx<N>`).
+// Used by commands whose only terminating form carries a bounded repeat count.
+function hasFlagCount(args, letter) {
+  return args.some((a, i) => {
+    if (a === `-${letter}`) return /^[1-9]\d*$/.test(args[i + 1] ?? "");
+    const match = /^-([a-zA-Z]*)([a-zA-Z])([1-9]\d*)$/.exec(a);
+    return !!match && match[2] === letter;
+  });
+}
+
 const HEAD_RULES = {
   sed: (args) =>
     args.some((a) => a === "-i" || a.startsWith("-i") || a === "--in-place")
@@ -183,12 +195,43 @@ const HEAD_RULES = {
       : "xz (not list/test/stdout) …",
   env: (args) =>
     args.every((a) => a.includes("=")) ? undefined : "env (executes command) …",
-  // Interactive top never exits in a headless tool call; only the batch
-  // forms terminate (Linux: top -b -n1, macOS: top -l 1).
+  // Interactive top never exits in a headless tool call. Only the bounded
+  // forms terminate: macOS `top -l <N>` (logging, N samples) and Linux
+  // `top -b -n <N>` (batch, N iterations). `-b` alone, or `-l`/`-n` without
+  // a numeric count, loops forever.
   top: (args) =>
-    args.some((a) => a === "-b" || a === "-l")
+    hasFlagCount(args, "l") ||
+    (args.some((a) => a.startsWith("-b")) && hasFlagCount(args, "n"))
       ? undefined
       : "top (interactive — use top -b -n1 or top -l 1) …",
+  tail: (args) =>
+    args.some((a) => a === "-f" || a === "-F" || a === "--follow" || a.startsWith("--follow="))
+      ? "tail -f/-F/--follow (follows a file forever) …"
+      : undefined,
+  lsof: (args) =>
+    args.some((a) => a === "-r" || a === "+r" || /^[-+]r\d+$/.test(a) || a === "--repeat")
+      ? "lsof -r (repeat mode never exits) …"
+      : undefined,
+  dmesg: (args) =>
+    args.some((a) => a === "-w" || a === "-W" || a === "--follow")
+      ? "dmesg -w/--follow (waits for kernel messages) …"
+      : undefined,
+  free: (args) =>
+    args.some((a) => a === "-s" || a === "--seconds" || a.startsWith("--seconds=") || /^-s\d+$/.test(a))
+      ? "free -s (repeats forever) …"
+      : undefined,
+  netstat: (args) =>
+    args.some((a) => a === "-c" || a === "--continuous")
+      ? "netstat -c (continuous output) …"
+      : undefined,
+  vm_stat: (args) =>
+    args.some((a) => /^\d+$/.test(a))
+      ? "vm_stat <interval> (repeats forever) …"
+      : undefined,
+  iostat: (args) =>
+    args.filter((a) => /^\d+$/.test(a)).length === 1
+      ? "iostat <interval> (repeats forever — add a count: iostat 1 3) …"
+      : undefined,
   sysctl: (args) =>
     args.some((a) => a === "-w" || a.startsWith("-w") || a === "--write")
       ? "sysctl -w (write) …"
