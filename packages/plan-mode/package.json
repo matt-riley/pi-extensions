@@ -1,0 +1,7 @@
+{
+  "name": "pi-plan-mode",
+  "version": "0.1.0",
+  "description": "Codex-like read-only /plan collaboration mode with a Markdown plan file for review before implementation.",
+  "type": "module",
+  "license": "MIT"
+}
