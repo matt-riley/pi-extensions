@@ -44,7 +44,8 @@ While plan mode is active:
 - **Read-only web access** via `plan_fetch_url` and `web_search`:
   `plan_fetch_url` fetches an http(s) URL and returns clean readable content
   — markdown by default with title/URL metadata, capped at 40k characters;
-  `web_search` runs a keyless DuckDuckGo search (titles/URLs/snippets, up to
+  `web_search` runs a keyless web search (DuckDuckGo by default, or a
+  configured SearXNG instance) returning titles/URLs/snippets, up to
   10 results). Both are powered by the same zero-dependency engine as
   [`pi-web-fetch`](../web-fetch): browser-like headers, redirect following,
   alternate-content fallback, and the `gh` CLI for GitHub URLs when

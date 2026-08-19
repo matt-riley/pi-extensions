@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS = {
   followAlternates: true,
   includeImages: false,
   useGh: true,
+  searxngUrl: "",
 };
 
 function clampInt(value, min, max, fallback) {
@@ -85,6 +86,9 @@ export function sanitizeSettings(raw) {
   if (images !== undefined) out.includeImages = images;
   const gh = bool("UseGh") ?? bool("useGh");
   if (gh !== undefined) out.useGh = gh;
+
+  const searxng = src.SearxngUrl ?? src.searxngUrl;
+  if (typeof searxng === "string" && searxng.trim()) out.searxngUrl = searxng.trim();
 
   return out;
 }

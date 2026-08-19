@@ -25,6 +25,61 @@ export function buildDdgSearchUrl(query, { region = "" } = {}) {
   return url.href;
 }
 
+// Build a SearXNG JSON-API query URL on a user-supplied instance base
+// (e.g. https://searxng.example.com). format=json must be enabled on the
+// instance; self-hosted instances enable it by default.
+export function buildSearxngUrl(baseUrl, query, { pageno = 1, safesearch = 0 } = {}) {
+  const url = new URL(String(baseUrl ?? "")); // throws on invalid base
+  // Instances serve the API under /search; accept a bare base URL.
+  if (url.pathname === "/" || url.pathname === "") url.pathname = "/search";
+  url.searchParams.set("q", String(query ?? "").trim());
+  url.searchParams.set("format", "json");
+  url.searchParams.set("pageno", String(pageno));
+  url.searchParams.set("safesearch", String(safesearch));
+  return url.href;
+}
+
+// Parse a SearXNG JSON API response body into the shared result shape.
+// Returns { results, error? } — error is set for non-JSON bodies and for
+// SearXNG's own { error: "..." } responses.
+export function parseSearxngResults(body, { limit = 5 } = {}) {
+  let data;
+  try {
+    data = JSON.parse(String(body ?? ""));
+  } catch {
+    return { results: [], error: "SearXNG returned a non-JSON response." };
+  }
+  if (typeof data?.error === "string" && data.error) {
+    return { results: [], error: `SearXNG: ${data.error}` };
+  }
+  const results = [];
+  const list = Array.isArray(data?.results) ? data.results : [];
+  for (const r of list) {
+    if (results.length >= limit) break;
+    const title = String(r?.title ?? "").replace(/\s+/g, " ").trim();
+    const url = String(r?.url ?? "").trim();
+    if (!title || !url) continue;
+    const snippet = String(r?.content ?? "").replace(/\s+/g, " ").trim();
+    results.push({ title, url, snippet });
+  }
+  return { results };
+}
+
+// DDG sometimes responds to scrape-y requests by redirecting to its homepage
+// (final URL without a q= parameter) instead of serving results.
+export function isDdgHomepageRedirect(finalUrl) {
+  if (!finalUrl) return false;
+  let url;
+  try {
+    url = new URL(finalUrl);
+  } catch {
+    return false;
+  }
+  const host = url.hostname;
+  const ddgHost = host === "duckduckgo.com" || host.endsWith(".duckduckgo.com");
+  return ddgHost && !url.searchParams.has("q");
+}
+
 function tokenClass(token) {
   for (const a of token?.attrs ?? []) {
     if (a.name === "class") return a.value;
@@ -126,13 +181,22 @@ export function parseDdgResults(html, { limit = 5 } = {}) {
   const tokens = tokenize(String(html));
 
   // Pass 1: locate each div.result__body and its matching close token.
+  // Skip ad blocks: their wrapper carries the result--ad class, and even if
+  // that class changes, ad links decode to a duckduckgo.com y.js tracker
+  // rather than an external destination (checked in pass 2).
   const opens = [];
   const bodies = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.type === "tag") {
-      if (!VOID_TAGS.has(t.name)) opens.push(i);
-      if (t.name === "div" && tokenHasClass(t, "result__body")) bodies.push({ start: i, end: -1 });
+      if (!VOID_TAGS.has(t.name)) {
+        if (t.name === "div" && tokenHasClass(t, "result__body")) {
+          const wrapperClass = opens.length > 0 ? tokenClass(tokens[opens[opens.length - 1]]) : "";
+          const isAdWrapper = /(^|\s)result--ad(\s|$)/.test(wrapperClass);
+          if (!isAdWrapper) bodies.push({ start: i, end: -1 });
+        }
+        opens.push(i);
+      }
     } else if (t.type === "close") {
       const openIdx = opens.pop();
       if (openIdx !== undefined) {
@@ -151,6 +215,15 @@ export function parseDdgResults(html, { limit = 5 } = {}) {
     if (results.length >= limit) break;
     const block = extractBlock(tokens, b.start, b.end === -1 ? tokens.length - 1 : b.end);
     if (!block.url || !block.title) continue;
+    // Ad/tracker links stay on duckduckgo.com after decoding; organic
+    // results always point elsewhere.
+    let host = "";
+    try {
+      host = new URL(block.url).hostname;
+    } catch {
+      continue;
+    }
+    if (host === "duckduckgo.com" || host.endsWith(".duckduckgo.com")) continue;
     results.push(block);
   }
 
@@ -171,17 +244,32 @@ export function isDdgBlocked({ status = 0, body = "" } = {}) {
 }
 
 // Markdown formatting for the tool result. Pure for testability.
-export function formatDdgResults({ query, results = [], blocked = false, limit = 5 }) {
+// `engine` labels the source ("DuckDuckGo" or "SearXNG"); `redirected`
+// distinguishes a bot bounce (DDG homepage redirect) from a genuine no-result.
+export function formatSearchResults({
+  query,
+  results = [],
+  blocked = false,
+  redirected = false,
+  limit = 5,
+  engine = "DuckDuckGo",
+}) {
   if (blocked) {
     return (
-      `Search was blocked by DuckDuckGo (bot challenge or rate limit). ` +
+      `Search was blocked by ${engine} (bot challenge or rate limit). ` +
       `Try again in a bit or rephrase the query.`
+    );
+  }
+  if (redirected) {
+    return (
+      `${engine} redirected the request to its homepage instead of results — ` +
+      `likely rate-limited. Try again shortly or rephrase.`
     );
   }
   if (results.length === 0) {
     return `No results found for "${query}".`;
   }
-  const header = `Search results for "${query}" (${results.length}${results.length >= limit ? "+" : ""}) — DuckDuckGo\n`;
+  const header = `Search results for "${query}" (${results.length}${results.length >= limit ? "+" : ""}) — ${engine}\n`;
   const lines = results.map((r, i) => {
     const base = `${i + 1}. [${r.title}](${r.url})`;
     return r.snippet ? `${base}\n   ${r.snippet}` : base;

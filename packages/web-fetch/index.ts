@@ -14,7 +14,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { fetchPage, fetchSmart } from "./fetch.mjs";
 import { formatBatchResult, formatWebFetchResult, isKnownFormat } from "./format.mjs";
-import { buildDdgSearchUrl, formatDdgResults, isDdgBlocked, parseDdgResults } from "./search.mjs";
+import {
+  buildDdgSearchUrl,
+  buildSearxngUrl,
+  formatSearchResults,
+  isDdgBlocked,
+  isDdgHomepageRedirect,
+  parseDdgResults,
+  parseSearxngResults,
+} from "./search.mjs";
 import { FORMATS, loadSettings } from "./settings.mjs";
 
 const FORMAT_DESC =
@@ -34,13 +42,13 @@ const BATCH_DESCRIPTION = [
 ].join(" ");
 
 const SEARCH_DESCRIPTION = [
-  "Search the web via DuckDuckGo (no API key required) and return ranked results with titles, URLs, and snippets.",
+  "Search the web via DuckDuckGo (no API key required) or a configured SearXNG instance, returning ranked results with titles, URLs, and snippets.",
   "Use when you need current or source-backed information outside your training data: recent events, versions, docs, people.",
-  "Results reflect DuckDuckGo's index; verify claims against the linked sources before citing them.",
+  "Results reflect the engine's index; verify claims against the linked sources before citing them.",
 ].join(" ");
 
 const SEARCH_SNIPPET =
-  "web_search(query, max_results?): search the web via DuckDuckGo (no API key); returns ranked results with titles, URLs, and snippets — use for current/source-backed information beyond your training data";
+  "web_search(query, max_results?): search the web (keyless DuckDuckGo by default; SearXNG instance via webFetchSearxngUrl) — returns ranked results with titles, URLs, and snippets; use for current/source-backed information beyond your training data";
 
 const FORMAT_DEFAULT_BY_TOOL = "markdown";
 
@@ -260,14 +268,33 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         return { content: [{ type: "text", text: "Rejected: query is too short." }] };
       }
       const limit = clampInt(params?.max_results, 5, 1, 10);
-      const url = buildDdgSearchUrl(query);
+      const searxngUrl = String(settings.searxngUrl ?? "").trim();
+      const engine = searxngUrl ? "SearXNG" : "DuckDuckGo";
 
-      onUpdate?.({ content: [{ type: "text", text: `Searching DuckDuckGo for "${query}"…` }] });
+      // webFetchSearxngUrl switches the backend to a self-hosted SearXNG
+      // instance (JSON API, no keys, no scraping); DDG HTML is the default.
+      let url;
+      if (searxngUrl) {
+        try {
+          url = buildSearxngUrl(searxngUrl, query);
+        } catch {
+          return {
+            content: [{
+              type: "text",
+              text: `Rejected: webFetchSearxngUrl "${searxngUrl}" is not a valid http(s) URL.`,
+            }],
+          };
+        }
+      } else {
+        url = buildDdgSearchUrl(query);
+      }
+
+      onUpdate?.({ content: [{ type: "text", text: `Searching ${engine} for "${query}"…` }] });
       try {
         const outcome = await fetchPage({
           url,
           format: "raw",
-          maxChars: 400_000,
+          maxChars: searxngUrl ? 300_000 : 400_000,
           timeoutMs: settings.defaultTimeoutMs,
           userAgent: settings.userAgent,
           extraHeaders: settings.extraHeaders,
@@ -275,11 +302,26 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           onStatus: (status: string) =>
             onUpdate?.({ content: [{ type: "text", text: `web_search: ${status}` }] }),
         });
-        const body = outcome.kind === "raw" ? outcome.text : "";
-        const blocked = isDdgBlocked({ status: outcome.status, body });
-        const { results } = parseDdgResults(body, { limit });
-        const text = formatDdgResults({ query, results, blocked, limit });
-        return { content: [{ type: "text", text }], details: { results } };
+        const body = outcome.kind === "raw" || outcome.kind === "text" ? outcome.text : "";
+
+        let results = [];
+        let blocked = false;
+        let redirected = false;
+        if (searxngUrl) {
+          const parsed = parseSearxngResults(body, { limit });
+          if (parsed.error) {
+            return { content: [{ type: "text", text: `Search failed: ${parsed.error}` }], isError: true };
+          }
+          results = parsed.results;
+        } else {
+          const parsed = parseDdgResults(body, { limit });
+          results = parsed.results;
+          blocked = isDdgBlocked({ status: outcome.status, body });
+          redirected =
+            results.length === 0 && isDdgHomepageRedirect(outcome.finalUrl);
+        }
+        const text = formatSearchResults({ query, results, blocked, redirected, limit, engine });
+        return { content: [{ type: "text", text }], details: { engine, results } };
       } catch (err) {
         return { content: [{ type: "text", text: errorText("web_search failed", err) }], isError: true };
       }

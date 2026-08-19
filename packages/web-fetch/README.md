@@ -56,22 +56,34 @@ DuckDuckGo results (title, URL, snippet) without an API key.
   size instead of being slurped into context. Fetch a text/JSON
   representation instead (e.g. GitHub raw, an API endpoint).
 
-## `web_search` — keyless DuckDuckGo search
+## `web_search` — keyless web search
 
-`web_search(query, max_results?)` runs the query through DuckDuckGo's HTML
-endpoint via the same HTTP layer as `web_fetch` (browser headers, redirects,
-timeout, size caps) and returns ranked results as markdown: title, decoded
-URL, and snippet. No API key, no third party beyond DuckDuckGo; it works with
-any provider/model. Snippets and titles are entity-decoded and cleaned with
-the shared tokenizer.
+`web_search(query, max_results?)` returns ranked results as markdown: title,
+URL, and snippet. No API key; works with any provider/model.
+
+**Engine selection** — DuckDuckGo by default; set `searxngUrl` in settings to
+point `web_search` at a self-hosted SearXNG instance (JSON API, aggregates
+many engines, no scraping):
+
+```json
+{ "webFetch": { "searxngUrl": "https://searxng.example.com" } }
+```
+
+A bare base URL gets the `/search` path appended. `format=json` must be
+enabled on the instance (default for self-hosted; most public instances
+disable it). Invalid or missing instances fall back to an explicit error,
+never a silent empty result.
 
 Notes:
 
-- Result links arrive wrapped in `//duckduckgo.com/l/?uddg=…` redirects;
-  the real destination is decoded before being returned.
+- DuckDuckGo result links arrive wrapped in `//duckduckgo.com/l/?uddg=…`
+  redirects; the real destination is decoded before being returned, and ad
+  blocks (`result--ad` wrappers / `duckduckgo.com/y.js` trackers) are
+  filtered out.
 - If DuckDuckGo serves its bot-challenge page (HTTP 202 or anomaly markers)
-  instead of results, the tool reports that explicitly rather than a bogus
-  "no results".
+  instead of results, the tool reports that explicitly; a redirect to the
+  DDG homepage (no `q=` param) is reported as rate-limiting rather than a
+  bogus "no results".
 - The HTML endpoint is scrape-friendly but rate-limited: keep queries modest
   and prefer `web_fetch` when you already have the URL. The parser is
   unit-tested against captured real markup (`test/search.test.mjs`).
@@ -116,7 +128,8 @@ Optional keys in `~/.pi/agent/settings.json` or `<project>/.pi/settings.json`
     "extraHeaders": {},
     "followAlternates": true,
     "includeImages": false,
-    "useGh": true
+    "useGh": true,
+    "searxngUrl": ""
   }
 }
 ```
@@ -132,6 +145,7 @@ Optional keys in `~/.pi/agent/settings.json` or `<project>/.pi/settings.json`
 | `followAlternates` | `true` | Alternate-content fallback |
 | `includeImages` | `false` | Keep markdown image references |
 | `useGh` | `true` | Prefer `gh` for GitHub URLs |
+| `searxngUrl` | `""` | Self-hosted SearXNG instance (JSON API) — `web_search` uses it instead of DuckDuckGo |
 
 ## Limitations
 

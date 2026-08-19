@@ -63,6 +63,24 @@ test("sanitizeSettings: clamps and coerces", () => {
   assert.deepEqual(s.extraHeaders, { "x-a": "1", "x-b": "y" });
 });
 
+test("sanitizeSettings: searxngUrl flat and nested", () => {
+  assert.equal(
+    sanitizeSettings({ webFetchSearxngUrl: "https://searxng.example.com" }).searxngUrl,
+    "https://searxng.example.com",
+  );
+  assert.equal(
+    sanitizeSettings({ webFetch: { searxngUrl: "https://searxng.local" } }).searxngUrl,
+    "https://searxng.local",
+  );
+  // Flat keys override nested (consistent with the other webFetch* keys).
+  assert.equal(
+    sanitizeSettings({ webFetchSearxngUrl: "https://flat.example", webFetch: { searxngUrl: "https://nested.example" } }).searxngUrl,
+    "https://flat.example",
+  );
+  assert.equal(sanitizeSettings({ webFetchSearxngUrl: 42 }).searxngUrl, undefined);
+  assert.equal(sanitizeSettings({ webFetchSearxngUrl: "   " }).searxngUrl, undefined);
+});
+
 test("sanitizeSettings: broken input ignored", () => {
   assert.deepEqual(sanitizeSettings(null), {});
   assert.deepEqual(sanitizeSettings({ webFetchDefaultMaxChars: "abc" }), {});
