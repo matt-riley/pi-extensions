@@ -7,21 +7,27 @@
 //   /plan approve        -> approve the plan: leaves plan mode and kicks off
 //                           implementation from the plan file
 //   /plan status         -> show state and the current plan file path
+//   /plan edit           -> edit the plan in the editor dialog (Ctrl+G hands
+//                           off to $EDITOR, then the plan is written back)
 //   /plan exit | off     -> cancel plan mode without implementing
+//   ctrl+alt+p           -> toggle plan mode
+//   ctrl+alt+e           -> edit the plan (same as /plan edit)
+//   --plan               -> start pi already in plan mode
 //
 // While active, the model explores read-only and finishes with
 // plan_mode_complete({ plan }). The plan is written to PLAN.md in the current
 // working directory — you read/edit it, then /plan approve ends plan mode and
 // starts implementation from that file. The file is the durable artifact: it
 // survives compaction and is the implementation handoff, so plan mode never
-// needs in-memory retention.
+// needs in-memory retention. A footer status and a widget show the state.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "./bash-policy.mjs";
+import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
@@ -75,6 +81,20 @@ Only call plan_mode_complete when the plan leaves no implementation decisions un
 
 Keep it concise, human and agent digestible, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta. Once the plan is written, stay in plan mode until the user approves it with /plan approve — plan mode then ends and implementation begins from that file. Revisions are still planned, never implemented.`;
 
+// Minimal structural context used by helpers; real ExtensionContext/command
+// contexts satisfy it.
+interface UiCtx {
+  hasUI?: boolean;
+  cwd?: string;
+  ui?: {
+    notify?: (title: string, level?: string) => void;
+    setStatus?: (id: string, text: string | undefined) => void;
+    setWidget?: (id: string, lines: string[] | undefined) => void;
+    editor?: (title: string, prefill?: string) => Promise<string | undefined>;
+    theme?: { fg?: (color: string, text: string) => string };
+  };
+}
+
 interface PlanModeState {
   enabled: boolean;
   previousTools: string[] | null;
@@ -87,11 +107,29 @@ export default function planMode(pi: ExtensionAPI) {
   // while user edits are never clobbered.
   let lastWritten: string | null = null;
 
-  function notify(ctx: { hasUI?: boolean; ui?: { notify: (t: string, l?: string) => void } }, message: string) {
-    if (ctx.hasUI) ctx.ui?.notify(message, "info");
+  function notify(ctx: UiCtx, message: string) {
+    if (ctx.hasUI) ctx.ui?.notify?.(message, "info");
   }
 
-  function enterPlanMode(ctx: { hasUI?: boolean; ui?: { notify: (t: string, l?: string) => void } }) {
+  function updateStatus(ctx: UiCtx) {
+    if (!ctx.hasUI || !ctx.ui) return;
+    if (state.enabled) {
+      const label =
+        ctx.ui.theme?.fg != null ? ctx.ui.theme.fg("warning", "plan (read-only)") : "plan (read-only)";
+      ctx.ui.setStatus?.("plan-mode", label);
+      ctx.ui.setWidget?.("plan-mode", [
+        "Plan mode: active — read-only",
+        state.planPath
+          ? `Plan file: ${state.planPath} — /plan approve to implement`
+          : "No plan yet — /plan <prompt> to start",
+      ]);
+    } else {
+      ctx.ui.setStatus?.("plan-mode", undefined);
+      ctx.ui.setWidget?.("plan-mode", undefined);
+    }
+  }
+
+  function enterPlanMode(ctx: UiCtx) {
     if (state.enabled) return;
     try {
       state.previousTools = pi.getActiveTools();
@@ -100,17 +138,16 @@ export default function planMode(pi: ExtensionAPI) {
     }
     state.enabled = true;
     pi.setActiveTools(PLAN_TOOLS);
+    updateStatus(ctx);
     notify(ctx, "Plan mode active — read-only. /plan exit to leave.");
   }
 
-  function exitPlanMode(
-    ctx: { hasUI?: boolean; ui?: { notify: (t: string, l?: string) => void } },
-    message?: string,
-  ) {
+  function exitPlanMode(ctx: UiCtx, message?: string) {
     if (!state.enabled) return;
     state.enabled = false;
     pi.setActiveTools(state.previousTools ?? DEFAULT_TOOLS);
     state.previousTools = null;
+    updateStatus(ctx);
     notify(
       ctx,
       message ??
@@ -120,39 +157,72 @@ export default function planMode(pi: ExtensionAPI) {
     );
   }
 
-  async function writePlanFile(
-    ctx: { cwd?: string },
-    plan: string,
-  ): Promise<string> {
+  async function writePlanFile(ctx: UiCtx, plan: string): Promise<string> {
     const dir = ctx.cwd ?? process.cwd();
-    const target = path.join(dir, PLAN_FILENAME);
+    const base = path.join(dir, PLAN_FILENAME);
     let existing: string | null = null;
     try {
-      existing = await readFile(target, "utf8");
+      existing = await readFile(base, "utf8");
     } catch {
       existing = null;
     }
-    if (existing !== null && existing !== lastWritten) {
-      // The file exists and differs from what we last wrote — the user (or
-      // something else) changed it. Never clobber: pick PLAN.md.2, PLAN.md.3, …
-      let n = 2;
-      while (existsSync(`${target}.${n}`)) n++;
-      const alt = `${target}.${n}`;
-      await writeFile(alt, plan, "utf8");
-      state.planPath = alt;
-      lastWritten = plan;
-      return alt;
-    }
-    await writeFile(target, plan, "utf8");
-    state.planPath = target;
+    const chosen = resolvePlanFile({
+      base,
+      plan,
+      existing,
+      lastWritten,
+      altTaken: (n) => existsSync(`${base}.${n}`),
+    });
+    await atomicWriteFile(chosen, plan);
+    state.planPath = chosen;
     lastWritten = plan;
-    return target;
+    return chosen;
+  }
+
+  async function editPlanFile(ctx: UiCtx) {
+    if (!state.planPath) {
+      notify(ctx, "No plan file to edit yet — finish planning first.");
+      return;
+    }
+    if (!existsSync(state.planPath)) {
+      notify(ctx, `Plan file missing (${state.planPath}) — re-plan or restore it first.`);
+      return;
+    }
+    if (!ctx.hasUI || !ctx.ui?.editor) {
+      notify(ctx, "No interactive editor available in this mode — edit the plan file directly.");
+      return;
+    }
+    let current: string;
+    try {
+      current = await readFile(state.planPath, "utf8");
+    } catch (error) {
+      notify(ctx, `Failed to read ${state.planPath}: ${(error as Error).message}`);
+      return;
+    }
+    const edited = await ctx.ui.editor("Edit plan — Ctrl+G opens $EDITOR:", current);
+    if (edited === undefined || edited === null) {
+      notify(ctx, "Edit cancelled — plan unchanged.");
+      return;
+    }
+    if (edited === current) {
+      notify(ctx, "No changes — plan unchanged.");
+      return;
+    }
+    try {
+      await atomicWriteFile(state.planPath, edited);
+    } catch (error) {
+      notify(ctx, `Failed to write ${state.planPath}: ${(error as Error).message}`);
+      return;
+    }
+    lastWritten = edited;
+    updateStatus(ctx);
+    notify(ctx, `Plan updated — ${state.planPath}.`);
   }
 
   // --- Command -------------------------------------------------------------
 
   pi.registerCommand("plan", {
-    description: "Plan mode: <prompt> | approve | status | exit",
+    description: "Plan mode: <prompt> | approve | status | edit | exit",
     handler: async (args, ctx) => {
       const arg = (args ?? "").trim();
       if (arg === "status" || arg === "") {
@@ -160,7 +230,7 @@ export default function planMode(pi: ExtensionAPI) {
           ctx,
           state.enabled
             ? `Plan mode: active — read-only (tools: ${PLAN_TOOLS.join(", ")}).${state.planPath ? `\nPlan file: ${state.planPath}` : ""}`
-            : `Plan mode: off.${state.planPath ? `\nPlan file: ${state.planPath} (edit it, then /plan approve to implement)` : ""}\nusage: /plan <prompt> | approve | status | exit`,
+            : `Plan mode: off.${state.planPath ? `\nPlan file: ${state.planPath} (edit it, then /plan approve to implement)` : ""}\nusage: /plan <prompt> | approve | status | edit | exit`,
         );
         return;
       }
@@ -173,11 +243,21 @@ export default function planMode(pi: ExtensionAPI) {
           notify(ctx, "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).");
           return;
         }
-        const path = state.planPath;
-        exitPlanMode(ctx, `Plan approved — leaving plan mode. Implementing from ${path}.`);
-        await pi.sendUserMessage(`The plan is approved. Read ${path} and implement it exactly as written.`, {
+        const planFile = state.planPath;
+        if (!existsSync(planFile)) {
+          notify(ctx, `Plan file missing (${planFile}) — re-plan or restore it first.`);
+          return;
+        }
+        exitPlanMode(ctx, `Plan approved — leaving plan mode. Implementing from ${planFile}.`);
+        await pi.sendUserMessage(`The plan is approved. Read ${planFile} and implement it exactly as written.`, {
           deliverAs: "followUp",
         });
+        state.planPath = null;
+        lastWritten = null;
+        return;
+      }
+      if (arg === "edit") {
+        await editPlanFile(ctx);
         return;
       }
       if (arg === "exit" || arg === "off") {
@@ -188,6 +268,30 @@ export default function planMode(pi: ExtensionAPI) {
       enterPlanMode(ctx);
       await pi.sendUserMessage(arg, { deliverAs: "followUp" });
     },
+  });
+
+  // --- Flag, shortcuts, session start --------------------------------------
+
+  pi.registerFlag("plan", {
+    description: "Start in plan mode (read-only)",
+    type: "boolean",
+    default: false,
+  });
+
+  pi.registerShortcut("ctrl+alt+p", {
+    description: "Toggle plan mode",
+    handler: (ctx) => (state.enabled ? exitPlanMode(ctx) : enterPlanMode(ctx)),
+  });
+
+  pi.registerShortcut("ctrl+alt+e", {
+    description: "Edit plan in external editor",
+    handler: async (ctx) => {
+      await editPlanFile(ctx);
+    },
+  });
+
+  pi.on("session_start", (_event, ctx) => {
+    if (pi.getFlag("plan") && !state.enabled) enterPlanMode(ctx);
   });
 
   // --- Prompt injection + tool enforcement ----------------------------------
@@ -202,7 +306,10 @@ export default function planMode(pi: ExtensionAPI) {
 
   pi.on("tool_call", (event) => {
     if (!state.enabled) return;
-    if (event.toolName === "edit" || event.toolName === "write" || event.toolName === "update_plan") {
+    // Strict allowlist: plan mode permits only the plan toolset, so a stale or
+    // out-of-band tool call (grep/find/ls built-ins, other extensions' tools,
+    // edit/write/update_plan) never executes.
+    if (!PLAN_TOOLS.includes(event.toolName)) {
       return { block: true, reason: `Plan mode blocks ${event.toolName} — read-only planning.` };
     }
     if (event.toolName === "bash") {
@@ -231,6 +338,16 @@ export default function planMode(pi: ExtensionAPI) {
       const options = Array.isArray(params?.options) ? params.options.map(String) : [];
       if (!question) {
         return { content: [{ type: "text", text: "Rejected: question is empty." }] };
+      }
+      if (options.length < 2 || options.length > 4) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Rejected: expected 2-4 options, got ${options.length}. Call plan_mode_question again with 2-4 meaningful options.`,
+            },
+          ],
+        };
       }
       if (!ctx.hasUI || !ctx.ui?.select) {
         return {
@@ -308,12 +425,13 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      updateStatus(ctx);
       notify(ctx, `Plan saved to ${savedPath} — review and edit it, then /plan approve to start implementation.`);
       return {
         content: [
           {
             type: "text",
-            text: `Plan accepted and written to ${savedPath}. The user will review or edit it and approve with /plan approve — stay in plan mode until then. Accepted plan:\n\n${plan}`,
+            text: `Plan accepted and written to ${savedPath}. The user will review or edit it and approve with /plan approve — stay in plan mode until then. Re-read the file if you need to revise it.`,
           },
         ],
         terminate: true,
