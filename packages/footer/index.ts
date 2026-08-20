@@ -1,13 +1,14 @@
 // /footer — always-on status footer.
 //
 // Replaces pi's built-in footer with one that shows, left to right:
-//   model (provider/id) · thinking level badge · extension statuses ·
-//   ↑input ↓output tokens · $cost · (git branch)
-// Re-renders when the model, thinking level, or an assistant message
-// changes. Toggle with /footer.
+//   🤖 model (provider/id) · 🧠 thinking level badge · extension statuses ·
+//   ↑input ↓output tokens · $cost · git branch
+// Glyphs are Nerd Font v3 icons (see ICONS in format.mjs) — requires a
+// Nerd Font in the terminal. Re-renders when the model, thinking level, or
+// an assistant message changes. Toggle with /footer.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { composeLine, fmtCost, fmtTokens, thinkColor } from "./format.mjs";
+import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
 
 interface BranchEntry {
   type?: string;
@@ -77,19 +78,23 @@ export default function (pi: ExtensionAPI) {
 
           const left: Seg[] = [];
           if (model?.id) {
-            left.push({ text: model.provider ? `${model.provider}/${model.id}` : model.id, color: "accent" });
+            left.push({
+              text: `${ICONS.robot} ${model.provider ? `${model.provider}/${model.id}` : model.id}`,
+              color: "accent",
+            });
           }
-          if (left.length) left.push({ text: ` ~${level}`, color: thinkColor(level) });
+          if (left.length) left.push({ text: ` ${ICONS.brain} ~${level}`, color: thinkColor(level) });
 
           const right: Seg[] = [];
           const statuses = footerData.getExtensionStatuses?.();
           if (statuses?.size) {
             right.push({ text: ` ${Array.from(statuses.values()).join(" · ")}`, color: "dim" });
           }
-          right.push({ text: ` ↑${fmtTokens(input)} ↓${fmtTokens(output)}`, color: "dim" });
-          right.push({ text: ` ${fmtCost(cost)}`, color: "dim" });
+          right.push({ text: ` ${ICONS.arrowUp} ${fmtTokens(input)}`, color: "sky" });
+          right.push({ text: ` ${ICONS.arrowDown} ${fmtTokens(output)}`, color: "peach" });
+          right.push({ text: ` ${ICONS.dollar} ${fmtCost(cost)}`, color: "green" });
           const branch = footerData.getGitBranch?.();
-          if (branch) right.push({ text: ` (${branch})`, color: "dim" });
+          if (branch) right.push({ text: ` ${ICONS.gitBranch} ${branch}`, color: "teal" });
 
           return [composeLine(left, right, width, fg)];
         },

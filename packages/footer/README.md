@@ -1,9 +1,10 @@
 # pi-footer
 
-Replaces pi's built-in footer with an always-on status line showing, left to
-right: **model** (provider/id) in the accent color, the **thinking level**
-badge (color-coded per level), **extension statuses**, **↑input ↓output
-token totals**, **$cost**, and the **git branch**.
+Replaces pi's built-in footer with an always-on status line showing, left
+to right: **model** (robot glyph + provider/id) in the accent color, the
+**thinking level** badge (brain glyph, color-coded per level),
+**extension statuses**, **↑input ↓output token totals** (sky/peach),
+**$cost** (green), and the **git branch** (branch glyph, teal).
 
 The footer re-renders live when the model changes (Ctrl+P), the thinking
 level changes (Shift+Tab), a message completes (token totals tick up), or
@@ -25,6 +26,14 @@ The custom footer is on by default. Toggle it:
 
 `/footer` restores the built-in footer when off, and reinstates the custom
 one when on.
+
+## Requirements
+
+Glyphs are [Nerd Font](https://www.nerdfonts.com) v3 icons — your terminal
+needs a Nerd Font installed (MonoLisa ships a paid NF variant; free
+alternatives include JetBrains Mono Nerd Font and MesloLGM Nerd Font) or
+they render as empty boxes. `/footer` restores the built-in footer if you
+want the plain look back.
 
 ## Notes
 

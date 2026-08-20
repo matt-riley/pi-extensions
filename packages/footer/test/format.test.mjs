@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composeLine, fmtCost, fmtTokens, thinkColor, visibleWidth } from "../format.mjs";
+import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor, visibleWidth } from "../format.mjs";
 
 // Fake theme.fg emitting realistic numeric SGR codes (pi emits e.g. 38;5;214m).
 const apply = (color, text) => `\u001b[38;5;1m${text}\u001b[0m`;
@@ -67,6 +67,23 @@ test("composeLine drops thinking badge before the model", () => {
   assert.equal(visibleWidth(line), 10);
   assert.ok(line.includes("model"));
   assert.ok(!line.includes("high"));
+});
+
+test("ICONS are single BMP code units (width-safe)", () => {
+  for (const [name, glyph] of Object.entries(ICONS)) {
+    assert.equal(glyph.length, 1, `${name} must be one code unit`);
+    assert.ok(glyph.codePointAt(0) <= 0xffff, `${name} must be BMP`);
+  }
+});
+
+test("composeLine width math holds with nerd glyphs", () => {
+  const line = composeLine(
+    [{ text: `${ICONS.robot} model`, color: "accent" }],
+    [{ text: ` ${ICONS.gitBranch} main`, color: "teal" }],
+    24,
+    apply,
+  );
+  assert.equal(visibleWidth(line), 24);
 });
 
 test("composeLine leaves right side when the model must go", () => {

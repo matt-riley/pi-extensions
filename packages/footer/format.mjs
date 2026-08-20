@@ -38,6 +38,25 @@ export function thinkColor(level) {
 }
 
 /**
+ * Nerd Font v3 glyphs, verified against nerd-fonts-generated.css (v3.5.0).
+ * Class names for provenance: nf-cod-robot \uec20, nf-fa-brain \uee9c,
+ * nf-fa-arrow_up \uf062, nf-fa-arrow_down \uf063, nf-fa-dollar \uf155,
+ * nf-cod-git_branch \uec6f.
+ *
+ * All are BMP codepoints — exactly one JS code unit and one terminal cell —
+ * so footer width math stays exact. Requires a Nerd Font in the terminal,
+ * otherwise these render as tofu boxes.
+ */
+export const ICONS = {
+  robot: "\uec20",
+  brain: "\uee9c",
+  arrowUp: "\uf062",
+  arrowDown: "\uf063",
+  dollar: "\uf155",
+  gitBranch: "\uec6f",
+};
+
+/**
  * Lay one line of footer segments into `width` columns.
  *
  * A segment is `{ text, color? }`; `apply(color, text)` renders a colored
