@@ -11,7 +11,8 @@
       "./packages/plan-mode/index.ts",
       "./packages/web-fetch/index.ts",
       "./packages/code-search/index.ts",
-      "./packages/subagents/index.ts"
+      "./packages/subagents/index.ts",
+      "./packages/footer/index.ts"
     ]
   },
   "scripts": {

@@ -1,0 +1,7 @@
+{
+  "name": "pi-footer",
+  "version": "0.1.0",
+  "description": "Always-on status footer: model, thinking level, token & cost totals, git branch.",
+  "type": "module",
+  "license": "MIT"
+}

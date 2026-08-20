@@ -31,10 +31,32 @@ declare module "@earendil-works/pi-coding-agent" {
 
   export type AgentToolUpdateCallback<T = unknown> = (partial: AgentToolResult<T>) => void;
 
+  /** TUI object handed to the custom footer renderer — used to request re-renders. */
+  export interface FooterTui {
+    requestRender?(): void;
+  }
+
+  /** Data exposed only through the footer renderer, not otherwise reachable by extensions. */
+  export interface FooterData {
+    getGitBranch?(): string | null;
+    getExtensionStatuses?(): ReadonlyMap<string, string>;
+    onBranchChange?(cb: () => void): () => void;
+  }
+
+  /** Callback passed to `ctx.ui.setFooter`. */
+  export interface FooterCallback {
+    (tui: FooterTui, theme: ExtensionUIContext["theme"], footerData: FooterData): {
+      invalidate(): void;
+      render(width: number): string[];
+      dispose?: () => void;
+    };
+  }
+
   export interface ExtensionUIContext {
     notify?(title: string, level?: string): void;
     setStatus?(id: string, text: string | undefined): void;
     setWidget?(id: string, lines: string[] | undefined): void;
+    setFooter?(footer: FooterCallback | undefined): void;
     editor?(title: string, prefill?: string): Promise<string | undefined>;
     select?(title: string, options: string[]): Promise<string | undefined>;
     input?(title: string, value?: string): Promise<string | undefined>;
@@ -49,8 +71,9 @@ declare module "@earendil-works/pi-coding-agent" {
     cwd?: string;
     hasUI?: boolean;
     isProjectTrusted?(): boolean;
-    model?: unknown;
+    model?: { id?: string; provider?: string; [key: string]: unknown };
     modelRegistry?: { getModel?: (provider: string, id: string) => unknown };
+    sessionManager?: { getBranch?(): unknown[] };
     signal?: AbortSignal;
     thinkingLevel?: string;
     shutdown(): void;
