@@ -1,15 +1,15 @@
 ---
-description: Commit all changes on this branch and push, Conventional Commits style
+description: Commit changes as atomic Conventional Commits and push
 argument-hint: "[message]"
 ---
-Stage every change in the working tree, commit it on the current branch with a Conventional Commit message, and push to upstream (main when none is set). Run the commit — do not print an example.
+Commit the working tree as one or more atomic Conventional Commits, then push. Run the commits — do not print examples.
 
-- If `git status --short` is empty, say "nothing to commit" and stop.
-- `git add -A`, then derive the message from `git diff --cached`.
-- Subject: `type(scope): subject` — imperative, lowercase, no trailing period. Add a short body only when the diff needs explanation. If the user supplied text, use it as the subject (or subject + body).
-- `git commit -m` the message; let hooks run.
-- `git push` to origin (current branch, or main).
+1. If `git status --short` is empty, say "nothing to commit" and stop.
+2. Inspect the whole tree (`git status --short`, `git diff`, `git diff --cached`). Group unrelated changes into separate commits — one logical change per commit. A fix and a refactor of the same file become two commits, not one.
+3. Order commits by dependency: a change another change builds on comes first. Source changes rank above tests, docs, and config, so the headline change is the first commit. Exclude lockfiles and generated files from the grouping decision.
+4. Commit each group on its own: `git add` only the specific paths for that change (never `git add -A`), then `git commit -m` with `type(scope): subject` — imperative, lowercase, no trailing period; a short body only when the diff needs explanation. If the user supplied text, use it as the subject (or subject + body) of the headline commit.
+5. Push once when every commit is made: `git push` to origin (current branch, or main).
 
-Report the commit hash, branch, and push result.
+Report each commit hash with a one-line summary, the branch, and the push result.
 
 $@
