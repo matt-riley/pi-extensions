@@ -81,7 +81,9 @@ export default function (pi: ExtensionAPI) {
         render(width: number): string[] {
           const model = ctx.model;
           const level = ctx.thinkingLevel ?? "off";
-          const icons = ICONS ?? FALLBACK_ICONS;
+          // Merge so a stale format.mjs (missing newer glyphs after /reload)
+          // can never leave a slot undefined — fallback keys are always fresh.
+          const icons = { ...FALLBACK_ICONS, ...(ICONS ?? {}) };
 
           let input = 0;
           let output = 0;
