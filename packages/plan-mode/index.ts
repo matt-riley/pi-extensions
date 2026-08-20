@@ -40,6 +40,13 @@ const QUESTION_TOOL = "plan_mode_question";
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
 const SEARCH_TOOL = "web_search";
+// lore_recall (from the lore extension) is read-only memory recall: it lets
+// the planner surface prior decisions, preferences, and rejected approaches
+// before grilling the user — exactly the "never ask what the store already
+// knows" discipline Phase 1 needs. lore registers it, not this repo, so it is
+// optional: if lore is not loaded the name matches nothing and the model is
+// simply never offered the tool.
+const RECALL_TOOL = "lore_recall";
 // grep/find/ls are read-only built-ins, included like the reference plan-mode
 // example's toolset. plan_fetch_url and web_search (from pi-web-fetch) are the
 // sanctioned web paths — bash network tools stay blocked by the fail-closed
@@ -47,7 +54,7 @@ const SEARCH_TOOL = "web_search";
 // the same repo. CODE_SEARCH_TOOLS (repo_map, code_search, file_outline,
 // find_definition from pi-code-search) are read-only discovery tools — the
 // core activity of plan mode.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, RECALL_TOOL, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 // .pi/ rather than repo root: a root PLAN.md collides with projects' own
 // PLAN.md files and would force a per-project gitignore entry.
@@ -67,6 +74,7 @@ You are in Plan Mode, a Codex-like collaboration mode for producing a decision-c
 
 ## Phase 1 — Ground in the environment
 
+- Recall memory first: call lore_recall with a query that captures the request's subject before exploring, to surface relevant prior decisions, preferences, rejected approaches, and recurring mistakes. Do not ask the user for anything lore already knows.
 - Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts. When the request needs current or external information (API docs, versions, references), research it online with plan_fetch_url or web_search before asking the user — never ask for something a fetch or search can look up.
 - Do not ask questions that can be answered from repository or system truth. Ask only when multiple plausible choices remain, a needed identifier/context is missing, or the ambiguity is product intent.
 
