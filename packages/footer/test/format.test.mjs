@@ -79,11 +79,27 @@ test("ICONS are single BMP code units (width-safe)", () => {
 test("composeLine width math holds with nerd glyphs", () => {
   const line = composeLine(
     [{ text: `${ICONS.robot} model`, color: "accent" }],
-    [{ text: ` ${ICONS.gitBranch} main`, color: "teal" }],
+    [{ text: ` ${ICONS.gitBranch} main`, color: "muted" }],
     24,
     apply,
   );
   assert.equal(visibleWidth(line), 24);
+});
+
+test("composeLine paints unknown theme colors as plain text", () => {
+  const boom = (color, text) => {
+    if (color === "info") throw new Error(`Unknown theme color: ${color}`);
+    return apply(color, text);
+  };
+  const line = composeLine(
+    [{ text: "abc", color: "accent" }],
+    [{ text: "xyz", color: "info" }],
+    20,
+    boom,
+  );
+  assert.equal(visibleWidth(line), 20);
+  assert.ok(line.includes("xyz"));
+  assert.ok(!line.includes("Unknown theme color"));
 });
 
 test("composeLine leaves right side when the model must go", () => {

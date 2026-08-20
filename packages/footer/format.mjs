@@ -69,7 +69,17 @@ export const ICONS = {
  * the end (thinking badge before model).
  */
 export function composeLine(left, right, width, apply) {
-  const fmt = (segs) => segs.map((s) => (s.color ? apply(s.color, s.text) : s.text)).join("");
+  // theme.fg throws on unknown tokens (and kills pi via uncaughtException),
+  // so paint never lets a bad color escape the footer renderer.
+  const paint = (s) => {
+    if (!s.color) return s.text;
+    try {
+      return apply(s.color, s.text);
+    } catch {
+      return s.text;
+    }
+  };
+  const fmt = (segs) => segs.map(paint).join("");
   const vis = (segs) => visibleWidth(fmt(segs));
 
   let l = left.slice();

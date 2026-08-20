@@ -10,6 +10,15 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
 
+const FALLBACK_ICONS = {
+  robot: "\uec20",
+  brain: "\uee9c",
+  arrowUp: "\uf062",
+  arrowDown: "\uf063",
+  dollar: "\uf155",
+  gitBranch: "\uec6f",
+};
+
 interface BranchEntry {
   type?: string;
   message?: {
@@ -55,7 +64,13 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setFooter((tui, theme, footerData) => {
       requestRender = () => tui.requestRender?.();
       const dispose = footerData.onBranchChange?.(() => tui.requestRender?.());
-      const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
+      const fg = (color: string, text: string) => {
+        try {
+          return theme?.fg?.(color, text) ?? text;
+        } catch {
+          return text;
+        }
+      };
 
       return {
         invalidate() {},
@@ -63,6 +78,7 @@ export default function (pi: ExtensionAPI) {
         render(width: number): string[] {
           const model = ctx.model;
           const level = ctx.thinkingLevel ?? "off";
+          const icons = ICONS ?? FALLBACK_ICONS;
 
           let input = 0;
           let output = 0;
@@ -79,22 +95,22 @@ export default function (pi: ExtensionAPI) {
           const left: Seg[] = [];
           if (model?.id) {
             left.push({
-              text: `${ICONS.robot} ${model.provider ? `${model.provider}/${model.id}` : model.id}`,
+              text: `${icons.robot} ${model.provider ? `${model.provider}/${model.id}` : model.id}`,
               color: "accent",
             });
           }
-          if (left.length) left.push({ text: ` ${ICONS.brain} ~${level}`, color: thinkColor(level) });
+          if (left.length) left.push({ text: ` ${icons.brain} ~${level}`, color: thinkColor(level) });
 
           const right: Seg[] = [];
           const statuses = footerData.getExtensionStatuses?.();
           if (statuses?.size) {
             right.push({ text: ` ${Array.from(statuses.values()).join(" · ")}`, color: "dim" });
           }
-          right.push({ text: ` ${ICONS.arrowUp} ${fmtTokens(input)}`, color: "sky" });
-          right.push({ text: ` ${ICONS.arrowDown} ${fmtTokens(output)}`, color: "peach" });
-          right.push({ text: ` ${ICONS.dollar} ${fmtCost(cost)}`, color: "green" });
+          right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
+          right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });
+          right.push({ text: ` ${icons.dollar} ${fmtCost(cost)}`, color: "success" });
           const branch = footerData.getGitBranch?.();
-          if (branch) right.push({ text: ` ${ICONS.gitBranch} ${branch}`, color: "teal" });
+          if (branch) right.push({ text: ` ${icons.gitBranch} ${branch}`, color: "muted" });
 
           return [composeLine(left, right, width, fg)];
         },

@@ -3,8 +3,8 @@
 Replaces pi's built-in footer with an always-on status line showing, left
 to right: **model** (robot glyph + provider/id) in the accent color, the
 **thinking level** badge (brain glyph, color-coded per level),
-**extension statuses**, **↑input ↓output token totals** (sky/peach),
-**$cost** (green), and the **git branch** (branch glyph, teal).
+**extension statuses**, **↑input ↓output token totals** (link/warning),
+**$cost** (success), and the **git branch** (branch glyph, muted).
 
 The footer re-renders live when the model changes (Ctrl+P), the thinking
 level changes (Shift+Tab), a message completes (token totals tick up), or
