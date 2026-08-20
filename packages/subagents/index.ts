@@ -71,6 +71,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
     onChange() {
       const lines = formatWidgetLines(pool.list(), pool.queuedCount());
       widgetCtx?.ui?.setWidget?.(WIDGET_ID, lines);
+      updateStatus(widgetCtx);
     },
   });
 
@@ -112,7 +113,17 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
   function updateStatus(ctx: UiCtx | undefined) {
     if (!ctx?.hasUI || !ctx.ui) return;
-    ctx.ui.setStatus?.(WIDGET_ID, enabled && isToolActive() ? "subagents on" : undefined);
+    if (!enabled || !isToolActive()) {
+      ctx.ui.setStatus?.(WIDGET_ID, undefined);
+      return;
+    }
+    const running = pool.runningCount();
+    const queued = pool.queuedCount();
+    const text =
+      running > 0 || queued > 0
+        ? `subagents: ${running} running${queued > 0 ? ` · ${queued} queued` : ""}`
+        : "subagents on";
+    ctx.ui.setStatus?.(WIDGET_ID, text);
   }
 
   pi.on("session_start", (_event, ctx) => {

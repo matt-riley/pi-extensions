@@ -19,9 +19,10 @@ Results come back truncated.
 Use scout and reviewer in parallel: scout the auth flow, reviewer the tests.
 ```
 
-A status widget above the editor lists the fleet. It is display-only. The
-enabled state lasts for the pi process (survives session switches, resets on
-restart).
+A status widget above the editor lists the fleet. It is display-only. While
+enabled, the footer status line shows a live `subagents: N running · M queued`
+count. The enabled state lasts for the pi process (survives session switches,
+resets on restart).
 
 ## Tool
 
