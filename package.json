@@ -14,7 +14,7 @@
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts"
     ],
-    "prompts": ["./prompts/upgrade.md"]
+    "prompts": ["./prompts"]
   },
   "scripts": {
     "check": "tsc --noEmit && node --test 'packages/**/*.test.mjs'",
