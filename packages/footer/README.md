@@ -4,7 +4,8 @@ Replaces pi's built-in footer with an always-on status line showing, left
 to right: **model** (robot glyph + provider/id) in the accent color, the
 **thinking level** badge (brain glyph, color-coded per level),
 **extension statuses**, **↑input ↓output token totals** (link/warning),
-**$cost** (success), and the **git branch** (branch glyph, muted).
+**$cost** (success), the **current directory name** (folder glyph, muted),
+and the **git branch** (branch glyph, muted).
 
 The footer re-renders live when the model changes (Ctrl+P), the thinking
 level changes (Shift+Tab), a message completes (token totals tick up), or
@@ -42,5 +43,6 @@ want the plain look back.
   `/session`.
 - Cost uses each model's configured pricing; cheap models show four decimal
   places.
-- Under narrow terminals the footer degrades gracefully: it drops the branch
-  first, then truncates the model label, then the thinking badge.
+- Under narrow terminals the footer degrades gracefully: it drops the branch,
+  then the directory name, then cost and token counts, then truncates the
+  model label, then the thinking badge.

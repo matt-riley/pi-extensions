@@ -2,10 +2,12 @@
 //
 // Replaces pi's built-in footer with one that shows, left to right:
 //   🤖 model (provider/id) · 🧠 thinking level badge · extension statuses ·
-//   ↑input ↓output tokens · $cost · git branch
+//   ↑input ↓output tokens · $cost · 📁 directory · git branch
 // Glyphs are Nerd Font v3 icons (see ICONS in format.mjs) — requires a
 // Nerd Font in the terminal. Re-renders when the model, thinking level, or
 // an assistant message changes. Toggle with /footer.
+
+import { basename } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
@@ -16,6 +18,7 @@ const FALLBACK_ICONS = {
   arrowUp: "\uf062",
   arrowDown: "\uf063",
   dollar: "\uf155",
+  folder: "\uf07b",
   gitBranch: "\uec6f",
 };
 
@@ -109,6 +112,8 @@ export default function (pi: ExtensionAPI) {
           right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
           right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });
           right.push({ text: ` ${icons.dollar} ${fmtCost(cost)}`, color: "success" });
+          const dir = basename(ctx.cwd || process.cwd());
+          if (dir) right.push({ text: ` ${icons.folder} ${dir}`, color: "muted" });
           const branch = footerData.getGitBranch?.();
           if (branch) right.push({ text: ` ${icons.gitBranch} ${branch}`, color: "muted" });
 
