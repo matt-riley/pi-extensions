@@ -13,7 +13,8 @@
       "./packages/code-search/index.ts",
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts"
-    ]
+    ],
+    "prompts": ["./prompts/upgrade.md"]
   },
   "scripts": {
     "check": "tsc --noEmit && node --test 'packages/**/*.test.mjs'",
