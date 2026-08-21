@@ -48,6 +48,23 @@ git -C ~/.pi/agent/extensions/pi-extensions pull
 
 then `/reload` again.
 
+### Prompt templates
+
+pi auto-discovers **extensions** from the `pi.extensions` key in `package.json`,
+but it does **not** read `pi.prompts` from auto-discovered extension
+directories — prompt templates only load from installed packages or the
+settings `prompts` array. Register the repo's `prompts/` directory in
+`~/.pi/agent/settings.json`:
+
+```json
+{
+  "prompts": ["~/.pi/agent/extensions/pi-extensions/prompts"]
+}
+```
+
+Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
+`/review`, `/upgrade`, `/migrate`, `/retro`, …) are silently unavailable.
+
 ## Requirements
 
 - **Pi** with extension support (auto-discovers `~/.pi/agent/extensions/*`).
