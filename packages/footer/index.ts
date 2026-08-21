@@ -23,6 +23,19 @@ const FALLBACK_ICONS = {
   gauge: "\ued2f",
 };
 
+// Stale-module guard (same failure mode as FALLBACK_ICONS): /reload re-imports
+// this file fresh but serves a cached pre-ctxColor format.mjs, where the missing
+// binding reads as undefined — fall back to inline thresholds instead of
+// letting render throw and kill pi via uncaughtException.
+const ctxColorSafe = (percent: number): string =>
+  typeof ctxColor === "function"
+    ? ctxColor(percent)
+    : percent >= 90
+      ? "error"
+      : percent >= 75
+        ? "warning"
+        : "muted";
+
 interface BranchEntry {
   type?: string;
   message?: {
@@ -121,7 +134,7 @@ export default function (pi: ExtensionAPI) {
           }
           const usage = (ctx as { getContextUsage?: () => ContextUsage | undefined }).getContextUsage?.();
           if (usage && usage.percent != null) {
-            right.push({ text: ` ${icons.gauge} ${Math.round(usage.percent)}%`, color: ctxColor(usage.percent) });
+            right.push({ text: ` ${icons.gauge} ${Math.round(usage.percent)}%`, color: ctxColorSafe(usage.percent) });
           }
           right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
           right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });
