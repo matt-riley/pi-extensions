@@ -37,11 +37,18 @@ export function thinkColor(level) {
   return THINK_COLOR[level] || "thinkingHigh";
 }
 
+/** Context-window fill percentage -> theme color token (verified tokens). */
+export function ctxColor(percent) {
+  if (percent >= 90) return "error";
+  if (percent >= 75) return "warning";
+  return "muted";
+}
+
 /**
  * Nerd Font v3 glyphs, verified against nerd-fonts-generated.css (v3.5.0).
  * Class names for provenance: nf-cod-robot \uec20, nf-fa-brain \uee9c,
  * nf-fa-arrow_up \uf062, nf-fa-arrow_down \uf063, nf-fa-dollar \uf155,
- * nf-fa-folder \uf07b, nf-cod-git_branch \uec6f.
+ * nf-fa-folder \uf07b, nf-cod-git_branch \uec6f, nf-fa-gauge_high \ued2f.
  *
  * All are BMP codepoints — exactly one JS code unit and one terminal cell —
  * so footer width math stays exact. Requires a Nerd Font in the terminal,
@@ -55,6 +62,7 @@ export const ICONS = {
   dollar: "\uf155",
   folder: "\uf07b",
   gitBranch: "\uec6f",
+  gauge: "\ued2f",
 };
 
 /**

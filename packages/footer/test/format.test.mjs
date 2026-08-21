@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor, visibleWidth } from "../format.mjs";
+import { composeLine, ctxColor, fmtCost, fmtTokens, ICONS, thinkColor, visibleWidth } from "../format.mjs";
 
 // Fake theme.fg emitting realistic numeric SGR codes (pi emits e.g. 38;5;214m).
 const apply = (color, text) => `\u001b[38;5;1m${text}\u001b[0m`;
@@ -30,6 +30,15 @@ test("thinkColor maps levels and falls back", () => {
   assert.equal(thinkColor("off"), "thinkingOff");
   assert.equal(thinkColor("xhigh"), "thinkingXhigh");
   assert.equal(thinkColor("bogus"), "thinkingHigh");
+});
+
+test("ctxColor escalates with context pressure", () => {
+  assert.equal(ctxColor(0), "muted");
+  assert.equal(ctxColor(74.9), "muted");
+  assert.equal(ctxColor(75), "warning");
+  assert.equal(ctxColor(89.9), "warning");
+  assert.equal(ctxColor(90), "error");
+  assert.equal(ctxColor(100), "error");
 });
 
 test("composeLine fills width with gap between blocks", () => {

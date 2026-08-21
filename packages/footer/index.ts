@@ -2,15 +2,15 @@
 //
 // Replaces pi's built-in footer with one that shows, left to right:
 //   🤖 model (provider/id) · 🧠 thinking level badge · extension statuses ·
-//   ↑input ↓output tokens · $cost · 📁 directory · git branch
+//   ▦ context % · ↑input ↓output tokens · $cost · 📁 directory · git branch
 // Glyphs are Nerd Font v3 icons (see ICONS in format.mjs) — requires a
-// Nerd Font in the terminal. Re-renders when the model, thinking level, or
-// an assistant message changes. Toggle with /footer.
+// Nerd Font in the terminal. Re-renders when the model, thinking level,
+// context usage, or an assistant message changes. Toggle with /footer.
 
 import { basename } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { composeLine, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
+import { composeLine, ctxColor, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
 
 const FALLBACK_ICONS = {
   robot: "\uec20",
@@ -20,6 +20,7 @@ const FALLBACK_ICONS = {
   dollar: "\uf155",
   folder: "\uf07b",
   gitBranch: "\uec6f",
+  gauge: "\ued2f",
 };
 
 interface BranchEntry {
@@ -28,6 +29,12 @@ interface BranchEntry {
     role?: string;
     usage?: { input?: number; output?: number; cost?: { total?: number } };
   };
+}
+
+interface ContextUsage {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
 }
 
 interface Seg {
@@ -46,6 +53,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("model_select", refresh);
   pi.on("thinking_level_select", refresh);
   pi.on("message_end", refresh);
+  pi.on("session_compact", refresh);
 
   pi.registerCommand("footer", {
     description: "Toggle the custom status footer",
@@ -110,6 +118,10 @@ export default function (pi: ExtensionAPI) {
           const statuses = footerData.getExtensionStatuses?.();
           if (statuses?.size) {
             right.push({ text: ` ${Array.from(statuses.values()).join(" · ")}`, color: "dim" });
+          }
+          const usage = (ctx as { getContextUsage?: () => ContextUsage | undefined }).getContextUsage?.();
+          if (usage && usage.percent != null) {
+            right.push({ text: ` ${icons.gauge} ${Math.round(usage.percent)}%`, color: ctxColor(usage.percent) });
           }
           right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
           right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });
