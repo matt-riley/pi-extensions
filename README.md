@@ -13,6 +13,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. |
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
+| [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
 ### Package dependencies
 
@@ -28,7 +29,7 @@ renaming one can break another:
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root.
 
-`pi-exit`, `pi-web-fetch`, and `pi-code-search` have no dependencies on
+`pi-exit`, `pi-web-fetch`, `pi-code-search`, and `pi-footer` have no dependencies on
 other packages in this repo.
 
 ## Install
