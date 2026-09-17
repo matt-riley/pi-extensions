@@ -49,6 +49,20 @@ Trade-off: library-only skills are invisible to pi's `/skill:name` command
 (pi never discovered them). The agent path is `skill_select` → `read` the
 returned `SKILL.md`, which is what the tool is for.
 
+## Other harnesses
+
+The same ranker ships as a command, so agents without a pi extension (Claude
+Code, Codex, Copilot, plain scripts) can search the library too:
+
+```sh
+node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "<task>" [--limit N] [--json] [--root DIR]
+```
+
+Exit codes: `0` matches, `1` none, `2` bad usage. Give the harness one line of
+instruction — *skill library at `~/.pi/agent/skill-library`; search it before
+improvising a specialist workflow* — and read the returned `SKILL.md`. The file
+format is already the Agent Skills standard, so nothing else is needed.
+
 ## Ranking
 
 Deterministic, no model, no network:

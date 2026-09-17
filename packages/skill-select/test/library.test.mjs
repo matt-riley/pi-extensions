@@ -121,6 +121,20 @@ test("rankSkills scores names above descriptions and phrases above tokens", () =
   assert.equal(phrase[0].name, "sandbox-next");
 });
 
+test("rankSkills matches word variants like migration and migrations", () => {
+  // Faithful to the real entries: the AWS blurb contains "migration", so exact
+  // token scoring ties them and alphabetical order wrongly wins.
+  const skills = [
+    skill("aws-sdk-v2-to-v3-migration", "The codebase needs a safe modular v3 migration with minimal downtime."),
+    skill("sandbox-migrate-to-next", "Use when porting a Cloudflare Sandbox app, or when the user asks to migrate to Sandbox 1.0."),
+  ];
+  assert.deepEqual(rankSkills(skills, "sandbox migration").map((entry) => entry.name), [
+    "sandbox-migrate-to-next",
+    "aws-sdk-v2-to-v3-migration",
+  ]);
+  assert.ok(rankSkills(skills, "sandbox migration")[0].score > rankSkills(skills, "sandbox migration")[1].score);
+});
+
 test("rankSkills with an empty query browses the catalog alphabetically", () => {
   const ranked = rankSkills([skill("zeta", "z"), skill("alpha", "a")], "", { limit: 1 });
   assert.deepEqual(ranked.map((entry) => entry.name), ["alpha"]);

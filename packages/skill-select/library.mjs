@@ -35,6 +35,32 @@ function normalizePhrase(text) {
   return String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+/**
+ * Cheap stem so word variants unify: folds a trailing plural, then a five
+ * character prefix (migrate / migration / migrations -> "migra", test/tests ->
+ * "test"). Deterministic and dependency-free by design.
+ */
+function stemKey(token) {
+  const singular = token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token;
+  return singular.length >= 5 ? singular.slice(0, 5) : singular;
+}
+
+function tokenIndex(text) {
+  const tokens = tokenize(text);
+  return {
+    tokens: new Set(tokens),
+    stems: new Set(tokens.map(stemKey)),
+  };
+}
+
+/** "exact" | "stem" | null */
+function tokenMatch(token, index) {
+  if (index.tokens.has(token)) {
+    return "exact";
+  }
+  return index.stems.has(stemKey(token)) ? "stem" : null;
+}
+
 function unquote(value) {
   const text = String(value ?? "").trim();
   if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
@@ -219,16 +245,22 @@ export function rankSkills(skills, query, { limit = DEFAULT_LIMIT } = {}) {
     } else if (queryNorm.length >= 4 && descriptionText.includes(queryNorm)) {
       score += 3;
     }
-    const nameTokens = new Set(tokenize(entry.name));
-    const descriptionTokens = new Set(tokenize(descriptionText));
+    const nameTokens = tokenIndex(entry.name);
+    const descriptionTokens = tokenIndex(descriptionText);
     for (const token of tokens) {
-      if (nameTokens.has(token)) {
+      const nameHit = tokenMatch(token, nameTokens);
+      if (nameHit === "exact") {
         score += 3;
+      } else if (nameHit === "stem") {
+        score += 2.5;
       } else if (nameNorm.includes(token)) {
         score += 2;
       }
-      if (descriptionTokens.has(token)) {
+      const descriptionHit = tokenMatch(token, descriptionTokens);
+      if (descriptionHit === "exact") {
         score += 1.5;
+      } else if (descriptionHit === "stem") {
+        score += 1;
       }
     }
     return { ...entry, score };
