@@ -140,6 +140,21 @@ test("rankSkills with an empty query browses the catalog alphabetically", () => 
   assert.deepEqual(ranked.map((entry) => entry.name), ["alpha"]);
 });
 
+test("discoverSkills skips archived directories at any depth", async () => {
+  const { dir, cleanup } = await tmpTree();
+  try {
+    await writeSkill(dir, "active-skill");
+    await writeSkill(join(dir, "archived"), "retired-skill");
+    await writeSkill(join(dir, "active-skill", "archived"), "nested-retired-skill");
+    await writeSkill(join(dir, "Archived"), "case-insensitive");
+
+    const skills = await discoverSkills({ roots: [dir] });
+    assert.deepEqual(skills.map((skill) => skill.name), ["active-skill"]);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("discoverSkills follows symlinked directories once, without looping", async () => {
   const { dir, cleanup } = await tmpTree();
   try {

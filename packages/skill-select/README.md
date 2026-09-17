@@ -45,6 +45,10 @@ straight at a skills repository instead of copying it:
 ln -s ~/code/agent-skills/skills ~/.pi/agent/skill-library/agent-skills
 ```
 
+Directories named `archived` (at any depth, case-insensitive), `node_modules`
+and `.git` are skipped. Retired skills must not be selectable: an agent would
+otherwise follow guidance nobody maintains.
+
 Trade-off: library-only skills are invisible to pi's `/skill:name` command
 (pi never discovered them). The agent path is `skill_select` → `read` the
 returned `SKILL.md`, which is what the tool is for.

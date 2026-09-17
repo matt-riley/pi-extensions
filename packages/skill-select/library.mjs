@@ -12,7 +12,9 @@ export const DEFAULT_LIMIT = 5;
 export const MAX_LIMIT = 20;
 
 const SKILL_FILE = /^skill\.md$/i;
-const SKIP_DIRS = new Set(["node_modules", ".git"]);
+// `archived` holds retired skills: searchable would mean an agent could follow
+// guidance nobody maintains any more, so it is skipped like vendor/build dirs.
+const SKIP_DIRS = new Set(["node_modules", ".git", "archived"]);
 const MAX_DEPTH = 6;
 const MAX_SKILLS = 500;
 const DESCRIPTION_CHARS = 200;
@@ -154,7 +156,7 @@ async function walkSkillFiles(dir, onFile, depth = 0, visited = new Set()) {
     return;
   }
   for (const entry of [...entries].sort((left, right) => left.name.localeCompare(right.name))) {
-    if (SKIP_DIRS.has(entry.name)) {
+    if (SKIP_DIRS.has(entry.name.toLowerCase())) {
       continue;
     }
     const full = join(dir, entry.name);
