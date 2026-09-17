@@ -5,7 +5,7 @@
 // parsing, ranking and formatting live here so they stay testable with no
 // network and no model.
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 export const DEFAULT_LIMIT = 5;
@@ -105,26 +105,50 @@ export function resolveRoots({ cwd = process.cwd(), home = process.env.HOME ?? "
   return [...new Set(candidates)];
 }
 
-async function walkSkillFiles(dir, onFile, depth = 0) {
+async function walkSkillFiles(dir, onFile, depth = 0, visited = new Set()) {
   if (depth > MAX_DEPTH) {
     return;
   }
+  // Resolve symlinks before recursing so linked skill directories work and a
+  // loop back into an already-visited tree terminates.
+  let real;
+  try {
+    real = await realpath(dir);
+  } catch {
+    return; // Missing or unreadable roots are simply empty.
+  }
+  if (visited.has(real)) {
+    return;
+  }
+  visited.add(real);
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
-    return; // Missing or unreadable roots are simply empty.
+    return;
   }
   for (const entry of [...entries].sort((left, right) => left.name.localeCompare(right.name))) {
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) {
-        continue;
-      }
-      await walkSkillFiles(join(dir, entry.name), onFile, depth + 1);
+    if (SKIP_DIRS.has(entry.name)) {
       continue;
     }
-    if (entry.isFile() && SKILL_FILE.test(entry.name)) {
-      await onFile(join(dir, entry.name));
+    const full = join(dir, entry.name);
+    let isDirectory = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
+        const info = await stat(full);
+        isDirectory = info.isDirectory();
+        isFile = info.isFile();
+      } catch {
+        continue; // Broken link.
+      }
+    }
+    if (isDirectory) {
+      await walkSkillFiles(full, onFile, depth + 1, visited);
+      continue;
+    }
+    if (isFile && SKILL_FILE.test(entry.name)) {
+      await onFile(full);
     }
   }
 }

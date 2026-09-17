@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -124,6 +124,25 @@ test("rankSkills scores names above descriptions and phrases above tokens", () =
 test("rankSkills with an empty query browses the catalog alphabetically", () => {
   const ranked = rankSkills([skill("zeta", "z"), skill("alpha", "a")], "", { limit: 1 });
   assert.deepEqual(ranked.map((entry) => entry.name), ["alpha"]);
+});
+
+test("discoverSkills follows symlinked directories once, without looping", async () => {
+  const { dir, cleanup } = await tmpTree();
+  try {
+    const real = join(dir, "real");
+    await writeSkill(real, "linked-skill");
+    const library = join(dir, "library");
+    await mkdir(library, { recursive: true });
+    await symlink(real, join(library, "alias"));
+    // Cycle: the real tree links back to the library root that links to it.
+    await symlink(library, join(real, "loop"));
+
+    const skills = await discoverSkills({ roots: [library] });
+    assert.deepEqual(skills.map((skill) => skill.name), ["linked-skill"]);
+    assert.equal(skills[0].path, join(library, "alias", "linked-skill", "SKILL.md"));
+  } finally {
+    await cleanup();
+  }
 });
 
 test("formatMatches renders ranked matches with paths and a read hint", () => {

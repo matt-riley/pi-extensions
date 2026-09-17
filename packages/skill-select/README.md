@@ -37,6 +37,14 @@ Earlier roots win when two skills share a name. The discovery roots 3–6 are th
 ones pi already lists, so the tool also searches skills you do keep listed —
 useful as a fuzzy index even then.
 
+Skill directories may be symlinks: the walker resolves them (and skips trees it
+has already visited, so cycles terminate). A library root can therefore link
+straight at a skills repository instead of copying it:
+
+```sh
+ln -s ~/code/agent-skills/skills ~/.pi/agent/skill-library/agent-skills
+```
+
 Trade-off: library-only skills are invisible to pi's `/skill:name` command
 (pi never discovered them). The agent path is `skill_select` → `read` the
 returned `SKILL.md`, which is what the tool is for.
@@ -54,4 +62,5 @@ Deterministic, no model, no network:
 
 `node --test packages/skill-select/test/library.test.mjs` — frontmatter parsing
 (plain, folded, literal, quoted, BOM/CRLF), root resolution, nested discovery
-with name fallback, dedupe, ranking, and formatting.
+with name fallback, symlinked directories including a cycle, dedupe, ranking,
+and formatting.
