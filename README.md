@@ -53,6 +53,14 @@ git -C ~/.pi/agent/extensions/pi-extensions pull
 
 then `/reload` again.
 
+Check the tools are intact (loads the entrypoints through a stub pi, discovers
+the local skill library, reports whether a TypeSafe key is visible):
+
+```sh
+npm run verify                 # offline
+npm run verify -- --live       # also makes one real TypeSafe call
+```
+
 ### Prompt templates
 
 pi auto-discovers **extensions** from the `pi.extensions` key in `package.json`,

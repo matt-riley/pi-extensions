@@ -22,6 +22,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit && node --test 'packages/**/*.test.mjs'",
+    "verify": "node scripts/verify-tools.mjs",
     "test": "node --test 'packages/**/*.test.mjs'"
   },
   "devDependencies": {
