@@ -36,10 +36,13 @@ function normalizeBaseUrl(value) {
 
 /** Resolve runtime configuration from the environment. */
 export function resolveConfig(env = process.env) {
-  const apiKey = typeof env?.TYPESAFE_API_KEY === "string" ? env.TYPESAFE_API_KEY.trim() : "";
+  // TYPESAFE_API_KEY is the canonical name; LORE_TYPESAFE_API_KEY is accepted
+  // because lore already exports the shared key under its own prefix.
+  const primaryKey = typeof env?.TYPESAFE_API_KEY === "string" ? env.TYPESAFE_API_KEY.trim() : "";
+  const loreKey = typeof env?.LORE_TYPESAFE_API_KEY === "string" ? env.LORE_TYPESAFE_API_KEY.trim() : "";
   const model = typeof env?.TYPESAFE_MODEL === "string" ? env.TYPESAFE_MODEL.trim() : "";
   return {
-    apiKey,
+    apiKey: primaryKey || loreKey,
     baseUrl: normalizeBaseUrl(env?.TYPESAFE_BASE_URL),
     model: model || DEFAULT_MODEL,
     timeoutMs: positiveInteger(env?.TYPESAFE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),

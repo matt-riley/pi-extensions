@@ -25,7 +25,7 @@ Environment only — no config file:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. |
+| `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. Falls back to `LORE_TYPESAFE_API_KEY` (the name lore exports) when unset. |
 | `TYPESAFE_MODEL` | `jev-latest` | Default model. |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai/v1` | Override for a proxy or a test double. |
 | `TYPESAFE_TIMEOUT_MS` | `30000` | Request timeout. |

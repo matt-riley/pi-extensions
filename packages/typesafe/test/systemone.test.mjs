@@ -53,6 +53,15 @@ test("resolveConfig ignores blank values and rejects non-http base urls", () => 
   assert.throws(() => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test" }), /http/i);
 });
 
+test("resolveConfig accepts LORE_TYPESAFE_API_KEY as a fallback name", () => {
+  assert.equal(resolveConfig({ LORE_TYPESAFE_API_KEY: "lore-named" }).apiKey, "lore-named");
+  assert.equal(
+    resolveConfig({ TYPESAFE_API_KEY: "primary", LORE_TYPESAFE_API_KEY: "lore-named" }).apiKey,
+    "primary",
+  );
+  assert.equal(resolveConfig({ LORE_TYPESAFE_API_KEY: "   " }).apiKey, "");
+});
+
 test("validateQuestions accepts the three primitives and rejects malformed ones", () => {
   assert.doesNotThrow(() => validateQuestions({
     urgent: { type: "noul", instructions: "Does this convey urgency?" },
