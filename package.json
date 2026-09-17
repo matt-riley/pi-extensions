@@ -12,6 +12,7 @@
       "./packages/web-fetch/index.ts",
       "./packages/code-search/index.ts",
       "./packages/typesafe/index.ts",
+      "./packages/skill-select/index.ts",
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts"
     ],

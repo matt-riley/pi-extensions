@@ -1,0 +1,7 @@
+{
+  "name": "pi-skill-select",
+  "version": "0.1.0",
+  "description": "On-demand skill selection for pi: search the full skill library by task and get SKILL.md paths back, so skill names and descriptions never have to sit in the system prompt. Zero runtime dependencies.",
+  "type": "module",
+  "license": "MIT"
+}

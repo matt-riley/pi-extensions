@@ -34,6 +34,7 @@ import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
 import { CODE_SEARCH_TOOLS } from "../code-search/tools.mjs";
+import { SKILL_SELECT_TOOLS } from "../skill-select/tools.mjs";
 import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
@@ -52,9 +53,10 @@ const RECALL_TOOL = "lore_recall";
 // sanctioned web paths — bash network tools stay blocked by the fail-closed
 // policy. web_search resolves from the pi-web-fetch extension, which ships in
 // the same repo. CODE_SEARCH_TOOLS (repo_map, code_search, file_outline,
-// find_definition from pi-code-search) are read-only discovery tools — the
-// core activity of plan mode.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, RECALL_TOOL, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
+// find_definition from pi-code-search) and SKILL_SELECT_TOOLS (skill_select
+// from pi-skill-select) are read-only discovery tools — the core activity of
+// plan mode; skill_select only reads the local skill library.
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, ...SKILL_SELECT_TOOLS, RECALL_TOOL, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 // .pi/ rather than repo root: a root PLAN.md collides with projects' own
 // PLAN.md files and would force a per-project gitignore entry.
