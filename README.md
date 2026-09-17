@@ -12,6 +12,8 @@ plain TypeScript loaded directly by pi.
 | [`pi-plan-mode`](./packages/plan-mode) | Codex-like read-only `/plan` mode that writes a Markdown plan you edit before implementation. |
 | [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. |
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
+| [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed choice/noul/score questions over state and returns probabilities instead of prose. Environment-only config (`TYPESAFE_API_KEY`). |
+| [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
@@ -25,12 +27,14 @@ renaming one can break another:
   `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
   (used to implement `plan_fetch_url`), and imports `CODE_SEARCH_TOOLS` from
   **`pi-code-search`**'s `tools.mjs` (to allow read-only discovery tools in
-  plan mode's toolset).
+  plan mode's toolset), plus `SKILL_SELECT_TOOLS` from **`pi-skill-select`**'s
+  `tools.mjs` (so planning can pull in a specialist skill without it living
+  in the system prompt).
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root.
 
-`pi-exit`, `pi-web-fetch`, `pi-code-search`, and `pi-footer` have no dependencies on
-other packages in this repo.
+`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
+and `pi-footer` have no dependencies on other packages in this repo.
 
 ## Install
 
