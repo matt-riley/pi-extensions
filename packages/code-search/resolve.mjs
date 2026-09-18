@@ -8,9 +8,8 @@
 // reads (package.json for workspaces, context lines) are injected.
 
 import { levenshtein } from "./search.mjs";
-import { MAX_FILES } from "./inventory.mjs";
 
-export const DEF_KINDS = new Set([
+const DEF_KINDS = new Set([
   "function", "class", "interface", "type", "enum",
   "const", "variable", "field", "method",
 ]);
@@ -349,4 +348,3 @@ async function suggestDefs(q, files, cache) {
   return [...seen].sort((a, b) => levenshtein(q, a) - levenshtein(q, b)).slice(0, 3);
 }
 
-export { MAX_FILES };

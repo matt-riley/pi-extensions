@@ -64,7 +64,7 @@ function buildLineStarts(source) {
  * Comments and whitespace are dropped; strings/templates/regex are single
  * tokens. line/col are 1-based.
  */
-export function tokenizeTs(source) {
+function tokenizeTs(source) {
   const tokens = [];
   const n = source.length;
   const lineStarts = buildLineStarts(source);

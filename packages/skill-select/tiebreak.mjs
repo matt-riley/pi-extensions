@@ -9,12 +9,12 @@
 import { askSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
 
 export const TIEBREAK_ENV = "PI_SKILL_SELECT_TIEBREAK";
-export const MAX_CANDIDATES = 8;
-export const DEFAULT_MIN_GAP = 1.5;
+const MAX_CANDIDATES = 8;
+const DEFAULT_MIN_GAP = 1.5;
 // Selection is an interactive read: a slow provider must not stall the tool,
 // so tiebreaks get a much shorter budget than a deliberate agent question.
-export const TIEBREAK_TIMEOUT_MS = 3000;
-export const DECLINE_OPTION = "none_of_these";
+const TIEBREAK_TIMEOUT_MS = 3000;
+const DECLINE_OPTION = "none_of_these";
 
 /**
  * Tiebreaking is on by default whenever a TypeSafe key is reachable — the env,

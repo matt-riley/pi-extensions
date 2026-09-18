@@ -12,7 +12,7 @@ import {
 } from "./html.mjs";
 import { treeToMarkdown, treeToText } from "./markdown.mjs";
 
-export const MAX_RAW_CHARS = 4_000_000; // cap on the body we will process
+const MAX_RAW_CHARS = 4_000_000; // cap on the body we will process
 export const DEFAULT_MAX_CHARS = 60_000;
 export const RAW_DEFAULT_MAX_CHARS = 200_000;
 export const THIN_CONTENT_CHARS = 250; // below this, alternates are worth trying

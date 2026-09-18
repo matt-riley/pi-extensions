@@ -1,8 +1,8 @@
 // result.mjs — truncate, usage line, last-assistant extract, turn-cap policy.
 
 export const RESULT_CAP = 50 * 1024;
-export const DEFAULT_MAX_TURNS = 30;
-export const GRACE_TURNS = 2;
+const DEFAULT_MAX_TURNS = 30;
+const GRACE_TURNS = 2;
 export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const TIMEOUT_MIN_MS = 1000;
 const TIMEOUT_MAX_MS = 2 * 60 * 60 * 1000;
@@ -32,7 +32,7 @@ export function formatTokens(count) {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-export function formatDuration(ms) {
+function formatDuration(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n) || n < 0) return "0s";
   if (n < 1000) return `${Math.round(n)}ms`;

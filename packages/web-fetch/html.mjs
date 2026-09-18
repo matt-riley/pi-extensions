@@ -318,7 +318,7 @@ export function textLength(node) {
   return total;
 }
 
-export function nodeText(node) {
+function nodeText(node) {
   if (node.tag === null) return node.text;
   let out = "";
   for (const c of node.children) out += nodeText(c);
@@ -496,7 +496,7 @@ export function stripBoilerplate(root) {
 
 // --- Main-content selection -------------------------------------------------
 
-export const MIN_MAIN_CHARS = 200;
+const MIN_MAIN_CHARS = 200;
 
 // Picks the subtree most likely to hold the article: <article>, then
 // <main>/[role=main], then the block-level child of the body with the most

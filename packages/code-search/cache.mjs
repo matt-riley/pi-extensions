@@ -10,17 +10,16 @@
 
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { MAX_FILES } from "./inventory.mjs";
 import { langForFile, parseFallbackSource } from "./fallback-parser.mjs";
 import { parseTsSource } from "./ts-parser.mjs";
 
 export const CACHE_VERSION = 1;
-export const CACHE_DIR = ".pi/cache";
-export const CACHE_FILE = "pi-code-search.json";
+const CACHE_DIR = ".pi/cache";
+const CACHE_FILE = "pi-code-search.json";
 const MAX_SYMBOLS_PER_FILE = 500;
 // Hard cap on serialized cache size; beyond it, symbols of the largest files
 // are dropped (inventory entries are kept, so search/repo_map still work).
-export const MAX_CACHE_BYTES = 20 * 1024 * 1024;
+const MAX_CACHE_BYTES = 20 * 1024 * 1024;
 
 export function cachePathFor(root) {
   return join(root, CACHE_DIR, CACHE_FILE);
@@ -228,4 +227,3 @@ export function cacheStats(cache) {
 }
 
 // Re-export so callers only import from cache.mjs.
-export { MAX_FILES };

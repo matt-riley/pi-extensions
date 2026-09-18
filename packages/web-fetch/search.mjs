@@ -16,7 +16,7 @@
 import { tokenize, VOID_TAGS } from "./html.mjs";
 import { safeResolve } from "./fetch.mjs";
 
-export const DDG_HTML_URL = "https://html.duckduckgo.com/html/";
+const DDG_HTML_URL = "https://html.duckduckgo.com/html/";
 
 export function buildDdgSearchUrl(query, { region = "" } = {}) {
   const url = new URL(DDG_HTML_URL);

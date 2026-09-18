@@ -4,12 +4,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { clampMaxTurns, clampTimeoutMs } from "./result.mjs";
 
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-export const WRITE_TOOLS = new Set(["edit", "write"]);
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const WRITE_TOOLS = new Set(["edit", "write"]);
 
 // Read-only fallback when an agent omits tools:. Explicit allowlist of known-safe
 // tools — never a blocklist, so a future mutating extension tool cannot leak in.
-export const READ_ONLY_DEFAULT_TOOLS = [
+const READ_ONLY_DEFAULT_TOOLS = [
   "read",
   "grep",
   "find",
@@ -33,7 +33,7 @@ export function parseToolList(value) {
   return tools.length > 0 ? tools : undefined;
 }
 
-export function parseSimpleFrontmatter(content) {
+function parseSimpleFrontmatter(content) {
   const text = String(content ?? "");
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return { frontmatter: {}, body: text };
@@ -117,7 +117,7 @@ export function parseAgentContent(content, filePath, parseFrontmatter) {
   };
 }
 
-export function loadAgentsFromDir(dir, source, parseFrontmatter, warn) {
+function loadAgentsFromDir(dir, source, parseFrontmatter, warn) {
   const agents = [];
   if (!dir || !existsSync(dir)) return agents;
 

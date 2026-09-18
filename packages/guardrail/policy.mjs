@@ -36,7 +36,7 @@ import {
   tokenize,
 } from "../../shared/shell-parse.mjs";
 
-export const VERDICT_RANK = { allow: 0, judge: 1, confirm: 2, block: 3 };
+const VERDICT_RANK = { allow: 0, judge: 1, confirm: 2, block: 3 };
 
 /** The more severe of two verdicts. */
 export function worst(a, b) {
@@ -44,7 +44,7 @@ export function worst(a, b) {
 }
 
 /** The most severe verdict in a list. */
-export function worstOf(verdicts) {
+function worstOf(verdicts) {
   return verdicts.reduce((acc, v) => worst(acc, v), "allow");
 }
 
@@ -90,7 +90,7 @@ const SYSTEM_PREFIXES = [
 
 const HOME_PREFIXES = [/^~(\/|$)/, /^\$HOME(\/|$)/, /^\$\{HOME\}(\/|$)/, /^\/(Users|home)\/[^/]+(\/|$)/];
 
-export function isRegenerablePath(token) {
+function isRegenerablePath(token) {
   return REGENERABLE.some((re) => re.test(token));
 }
 
@@ -110,7 +110,7 @@ export function isEnvFile(token) {
  * source files are routine (editing another repo from this session) but
  * `~/.zshrc` and a stray `settings.json` are where a mistake actually hurts.
  */
-export function isConfigLike(token) {
+function isConfigLike(token) {
   const base = String(token ?? "").split("/").pop() ?? "";
   if (!base) return false;
   if (base.startsWith(".") && base !== ".") return true;
@@ -313,7 +313,7 @@ function overwriteShape(head, args, segment) {
 }
 
 /** One segment's shapes: a segment can both overwrite and delete. */
-export function detectShapes(segment) {
+function detectShapes(segment) {
   const tokens = tokenize(segment);
   if (!tokens.length) return [];
   const { head, args } = findHead(tokens);
@@ -335,7 +335,7 @@ export function detectShapes(segment) {
 const INLINE_FLAGS = new Set(["-c", "-e", "--eval", "-p", "--print", "-E"]);
 
 /** Script files a command would execute, and inline source passed directly. */
-export function collectIndirection(command) {
+function collectIndirection(command) {
   const scriptRefs = [];
   const inline = [];
   for (const segment of splitSegments(String(command ?? ""))) {
@@ -394,7 +394,7 @@ function unquotedSource(src) {
 }
 
 /** Classify source text (a script, or an inline -e/-c payload). */
-export function evaluateSourceText(text, label = "inline code") {
+function evaluateSourceText(text, label = "inline code") {
   const src = String(text ?? "");
   const hits = [];
   for (const [re, name] of SOURCE_SHAPES) {
@@ -615,7 +615,7 @@ function collectCommands(input, out = []) {
   return out;
 }
 
-export function evaluateFileTool(toolName, input, { cwd, outsideWorkspace = "judge" } = {}) {
+function evaluateFileTool(toolName, input, { cwd, outsideWorkspace = "judge" } = {}) {
   const evidence = { targets: [], shapes: [] };
   let verdict = "allow";
   let reason = null;
@@ -664,7 +664,7 @@ const READ_ONLY_TOOLS = new Set([
 
 const MUTATING_TOOLS = new Set(["bash", "shell", "edit", "write", "apply_patch", "multiedit", "notebook_edit", "create_file", "delete_file", "move_file", "str_replace_editor"]);
 
-export function isReadOnlyToolName(name) {
+function isReadOnlyToolName(name) {
   const n = String(name ?? "").toLowerCase();
   return READ_ONLY_TOOLS.has(n) || /^(get|list|search|read|fetch|query|describe|show|recall)_/.test(n) || n.startsWith("lore_");
 }

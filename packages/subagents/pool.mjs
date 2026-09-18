@@ -1,6 +1,6 @@
 // pool.mjs — cap-4 running, queue the rest, incrementing type ids.
 
-export const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 4;
 
 export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
   const entries = new Map();

@@ -25,13 +25,13 @@ const BINARY_EXTENSIONS = new Set([
   ".obj", ".pyc", ".pyo", ".node", ".db", ".sqlite", ".sqlite3", ".lockb",
 ]);
 
-export const MAX_FILE_BYTES = 1024 * 1024; // >1MB files are skipped by search
-export const PER_FILE_CAP = 5;
-export const DEFAULT_MAX_RESULTS = 30;
-export const MAX_RESULTS_LIMIT = 100;
+const MAX_FILE_BYTES = 1024 * 1024; // >1MB files are skipped by search
+const PER_FILE_CAP = 5;
+const DEFAULT_MAX_RESULTS = 30;
+const MAX_RESULTS_LIMIT = 100;
 const MAX_SCAN_FILES = 20_000; // bound work on pathological repos
 
-export function isBinaryFile(relPath) {
+function isBinaryFile(relPath) {
   const dot = relPath.lastIndexOf(".");
   if (dot <= 0) return false;
   return BINARY_EXTENSIONS.has(relPath.slice(dot).toLowerCase());

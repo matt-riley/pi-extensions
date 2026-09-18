@@ -24,7 +24,7 @@ export const BLAST_LEVELS = [
   "Shared or production systems: a remote, a server, a database, or anything another person depends on.",
 ];
 
-export const THRESHOLDS = {
+const THRESHOLDS = {
   destructive: 0.5,
   intentMismatch: 0.6,
   credentials: 0.6,

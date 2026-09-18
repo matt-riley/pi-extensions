@@ -13,9 +13,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-export const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
-export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
+const DEFAULT_MODEL = "jev-latest";
+const DEFAULT_TIMEOUT_MS = 30000;
 
 const MAX_ERROR_BODY_CHARS = 300;
 

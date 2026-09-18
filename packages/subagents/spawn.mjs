@@ -21,7 +21,7 @@ import { formatLastTool } from "./widget.mjs";
 
 const WRAP_MESSAGE = "Wrap up immediately — provide your final answer now.";
 
-export function buildSystemPrompt(agent) {
+function buildSystemPrompt(agent) {
   const readonly = usesAllowlistedBash(agent);
   const name = agent?.name || "agent";
   const body = agent?.systemPrompt || "";

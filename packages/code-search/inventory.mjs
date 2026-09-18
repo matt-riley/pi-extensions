@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { collectRules, matchPath, parseGitignore } from "./gitignore.mjs";
 
-export const MAX_FILES = 50_000;
+const MAX_FILES = 50_000;
 
 // Path prefixes (relative to repo root) always excluded from the inventory,
 // regardless of git state: third-party deps, the repo's own git dir, and our

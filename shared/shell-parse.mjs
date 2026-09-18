@@ -11,7 +11,7 @@
 // < as data. A regex over raw text counts them as redirects and produces the
 // false positives the guardrail exists to avoid.
 
-export const CHAIN_OPS = ["&&", "&", "||", "|", ";", "\n"];
+const CHAIN_OPS = ["&&", "&", "||", "|", ";", "\n"];
 
 // Split a command on chain operators that appear outside quotes.
 export function splitSegments(input) {

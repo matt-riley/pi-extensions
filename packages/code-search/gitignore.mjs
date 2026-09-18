@@ -10,7 +10,7 @@
 // Pure functions — fully unit-testable without touching the filesystem.
 
 /** A compiled ignore rule. */
-export class IgnoreRule {
+class IgnoreRule {
   constructor({ pattern, base, regex, negated, dirOnly, source }) {
     this.pattern = pattern; // raw pattern text (after ! and without trailing /)
     this.base = base; // dir (relative to walk root) the pattern applies under; "" = root
