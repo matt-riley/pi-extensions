@@ -38,6 +38,12 @@ export function needsTiebreak(matches, { minGap = DEFAULT_MIN_GAP } = {}) {
   return Number(first?.score ?? 0) - Number(second?.score ?? 0) <= minGap;
 }
 
+/** A usable override only; a blank or junk value must not fall back to 30s. */
+function shortBudget(env) {
+  const configured = Number(env?.TYPESAFE_TIMEOUT_MS);
+  return Number.isInteger(configured) && configured > 0 ? String(configured) : String(TIEBREAK_TIMEOUT_MS);
+}
+
 /**
  * Promote the skill TypeSafe picks when the lexical top scores are close.
  *
@@ -61,6 +67,11 @@ export async function tiebreakMatches({
   const list = Array.isArray(matches) ? matches : [];
   if (!tiebreakEnabled(env)) {
     return { matches: list, applied: false, reason: "disabled" };
+  }
+  // Browsing the catalog gives every row score 0, which would look like a
+  // perfect tie and spend a paid call unscrambling alphabetical order.
+  if (!String(query ?? "").trim()) {
+    return { matches: list, applied: false, reason: "no_query" };
   }
   if (!needsTiebreak(list, { minGap })) {
     return { matches: list, applied: false, reason: "scores_separated" };
@@ -87,7 +98,7 @@ export async function tiebreakMatches({
       },
       env: {
         ...env,
-        TYPESAFE_TIMEOUT_MS: env?.TYPESAFE_TIMEOUT_MS ?? String(TIEBREAK_TIMEOUT_MS),
+        TYPESAFE_TIMEOUT_MS: shortBudget(env),
       },
       signal,
     });

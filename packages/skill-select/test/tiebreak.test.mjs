@@ -136,6 +136,20 @@ test("fires exactly at the gap boundary", async () => {
   assert.equal(beyondBoundary.calls.length, 0, "1.6 apart is a clear lexical winner");
 });
 
+test("does not spend a call browsing the catalog", async () => {
+  const matches = [match("alpha", 0), match("beta", 0)];
+  const { ask, calls } = fakeAsk("beta");
+  const result = await tiebreakMatches({ query: "", matches, env: ENV, ask });
+  assert.equal(calls.length, 0);
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "no_query");
+  assert.deepEqual(result.matches.map((entry) => entry.name), ["alpha", "beta"]);
+
+  const whitespace = fakeAsk("beta");
+  await tiebreakMatches({ query: "   ", matches, env: ENV, ask: whitespace.ask });
+  assert.equal(whitespace.calls.length, 0);
+});
+
 test("gives the provider a short budget and forwards cancellation", async () => {
   const matches = [match("a", 9), match("b", 8.6)];
   const controller = new AbortController();
@@ -147,6 +161,22 @@ test("gives the provider a short budget and forwards cancellation", async () => 
   await tiebreakMatches({ query: "q", matches, env: ENV, ask, signal: controller.signal });
   assert.equal(seen[0].signal, controller.signal);
   assert.equal(seen[0].env.TYPESAFE_TIMEOUT_MS, "3000");
+});
+
+test("ignores a junk timeout override instead of inheriting 30s", async () => {
+  const matches = [match("a", 9), match("b", 8.6)];
+  const seen = [];
+  const ask = async (request) => {
+    seen.push(request);
+    return { answers: { best: { type: "choice", choice: "b" } } };
+  };
+  for (const junk of ["", "soon", "0", "-5"]) {
+    await tiebreakMatches({ query: "q", matches, env: { ...ENV, TYPESAFE_TIMEOUT_MS: junk }, ask });
+  }
+  assert.deepEqual(seen.map((request) => request.env.TYPESAFE_TIMEOUT_MS), ["3000", "3000", "3000", "3000"]);
+
+  await tiebreakMatches({ query: "q", matches, env: { ...ENV, TYPESAFE_TIMEOUT_MS: "7000" }, ask });
+  assert.equal(seen.at(-1).env.TYPESAFE_TIMEOUT_MS, "7000");
 });
 
 test("reports the inversion so the model can trust the order", async () => {

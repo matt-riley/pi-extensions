@@ -153,6 +153,59 @@ test("renders unusable answers instead of NaN", () => {
   assert.match(text, /blank_score: unusable answer/);
 });
 
+test("accepts numeric answers delivered as strings", () => {
+  const text = formatAnswers({
+    model: "jev-latest",
+    answers: {
+      urgent: { type: "noul", noul: "0.92" },
+      risk: { type: "score", score: "1.6", confidence: "0.8" },
+    },
+  });
+  assert.match(text, /urgent: noul 0\.92/);
+  assert.match(text, /risk: score 1\.60 \(confidence 0\.80\)/);
+});
+
+test("omits the probability line when there is no distribution", () => {
+  const text = formatAnswers({
+    model: "jev-latest",
+    answers: { bare: { type: "choice", choice: "billing" } },
+  });
+  assert.match(text, /bare: choice "billing"/);
+  assert.doesNotMatch(text, /probabilities:/);
+});
+
+test("an explicit LORE_CONFIG is the only file consulted", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-typesafe-explicit-"));
+  try {
+    const home = join(dir, "home");
+    mkdirSync(join(home, ".config", "lore"), { recursive: true });
+    writeFileSync(join(home, ".config", "lore", "lore.json"), JSON.stringify({ typesafe: { apiKey: "current" } }));
+    const broken = join(dir, "broken.json");
+    writeFileSync(broken, "{ not json");
+
+    assert.equal(resolveConfig({ HOME: home, LORE_CONFIG: broken }).apiKey, "");
+    assert.equal(resolveConfig({ HOME: home }).apiKey, "current");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("is not shadowed by a stale legacy config once migrated", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-typesafe-legacy-"));
+  try {
+    const home = join(dir, "home");
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "lore.json"), JSON.stringify({ typesafe: { apiKey: "stale-legacy" } }));
+    assert.equal(resolveConfig({ HOME: home }).apiKey, "stale-legacy", "unmigrated installs keep working");
+
+    mkdirSync(join(home, ".config", "lore"), { recursive: true });
+    writeFileSync(join(home, ".config", "lore", "lore.json"), JSON.stringify({ typesafe: {} }));
+    assert.equal(resolveConfig({ HOME: home }).apiKey, "", "a migrated config must not fall back to the legacy key");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("validateQuestions accepts the three primitives and rejects malformed ones", () => {
   assert.doesNotThrow(() => validateQuestions({
     urgent: { type: "noul", instructions: "Does this convey urgency?" },

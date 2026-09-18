@@ -4,7 +4,7 @@
 // The extension entrypoint owns tool registration; everything here is pure
 // request building, validation, transport and formatting so it stays testable.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -45,6 +45,12 @@ function normalizeBaseUrl(value) {
  * that have not been migrated.
  */
 function loreConfigPaths(env) {
+  const explicitConfig = typeof env?.LORE_CONFIG === "string" ? env.LORE_CONFIG.trim() : "";
+  if (explicitConfig) {
+    // An explicit override means that file, exactly as lore treats it: no
+    // silent fallback that could authenticate with something else.
+    return [explicitConfig];
+  }
   const home = typeof env?.HOME === "string" && env.HOME.trim() ? env.HOME.trim() : homedir();
   const copilotHome = typeof env?.LORE_COPILOT_HOME === "string" && env.LORE_COPILOT_HOME.trim()
     ? env.LORE_COPILOT_HOME.trim()
@@ -53,12 +59,11 @@ function loreConfigPaths(env) {
   const configHome = xdgHome && isAbsolute(xdgHome) ? xdgHome : join(home, ".config");
   const explicitHome = typeof env?.LORE_HOME === "string" ? env.LORE_HOME.trim() : "";
   const preferredHome = explicitHome || join(configHome, "lore");
-  const explicitConfig = typeof env?.LORE_CONFIG === "string" ? env.LORE_CONFIG.trim() : "";
-  return [...new Set([
-    ...(explicitConfig ? [explicitConfig] : []),
-    join(preferredHome, "lore.json"),
-    join(copilotHome, "lore.json"),
-  ])];
+  const preferredConfig = join(preferredHome, "lore.json");
+  // lore only reads the pre-migration home while nothing has been migrated, so
+  // a stale legacy key cannot shadow the current config.
+  const legacy = !explicitHome && !existsSync(preferredConfig);
+  return legacy ? [preferredConfig, join(copilotHome, "lore.json")] : [preferredConfig];
 }
 
 /**
@@ -254,8 +259,7 @@ export async function askSystemOne({
   }
 }
 
-function formatProbabilities(probabilities, legend) {
-  const entries = Object.entries(probabilities ?? {});
+function formatProbabilities(probabilities, legend) {  const entries = Object.entries(probabilities ?? {});
   // Score levels come back keyed "0".."n" — keep numeric order and label them.
   const numeric = entries.every(([key]) => /^\d+$/.test(key));
   const ordered = numeric
@@ -267,6 +271,18 @@ function formatProbabilities(probabilities, legend) {
       return numeric && legend?.[key] ? `${key}=${legend[key]} (${probability})` : `${key}=${probability}`;
     })
     .join(" ");
+}
+
+/** Numeric answer values, accepting a numeric string but not a blank. */
+function finiteAnswerValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string" && !value.trim()) {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 /** Render answers as compact text for the model to read. */
@@ -283,10 +299,8 @@ export function formatAnswers({ model, usage, answers } = {}) {
   }
   for (const [id, answer] of entries) {
     if (answer?.type === "noul") {
-      const value = answer.noul;
-      lines.push(typeof value === "number" && Number.isFinite(value)
-        ? `${id}: noul ${value.toFixed(2)}`
-        : `${id}: unusable answer (no noul value)`);
+      const value = finiteAnswerValue(answer.noul);
+      lines.push(value === null ? `${id}: unusable answer (no noul value)` : `${id}: noul ${value.toFixed(2)}`);
       continue;
     }
     if (answer?.type === "choice") {
@@ -296,18 +310,24 @@ export function formatAnswers({ model, usage, answers } = {}) {
       }
       const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
       lines.push(`${id}: choice "${answer.choice}"${confidence}`);
-      lines.push(`  probabilities: ${formatProbabilities(answer.probabilities)}`);
+      const probabilities = formatProbabilities(answer.probabilities);
+      if (probabilities) {
+        lines.push(`  probabilities: ${probabilities}`);
+      }
       continue;
     }
     if (answer?.type === "score") {
-      const value = answer.score;
-      if (typeof value !== "number" || !Number.isFinite(value)) {
+      const value = finiteAnswerValue(answer.score);
+      if (value === null) {
         lines.push(`${id}: unusable answer (no score value)`);
         continue;
       }
       const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
       lines.push(`${id}: score ${value.toFixed(2)}${confidence}`);
-      lines.push(`  probabilities: ${formatProbabilities(answer.probabilities, answer.legend)}`);
+      const probabilities = formatProbabilities(answer.probabilities, answer.legend);
+      if (probabilities) {
+        lines.push(`  probabilities: ${probabilities}`);
+      }
       continue;
     }
     lines.push(`${id}: ${JSON.stringify(answer)}`);

@@ -104,7 +104,15 @@ if (args.json) {
     query: args.query,
     total: skills.length,
     matches: adjusted.matches.map(({ name, description, path, score, root }) => ({ name, description, path, score, root })),
-    tiebreak: { applied: adjusted.applied, reason: adjusted.reason, chosen: adjusted.chosen ?? null },
+    tiebreak: {
+      applied: adjusted.applied,
+      reason: adjusted.reason,
+      chosen: adjusted.chosen ?? null,
+      over: adjusted.over ?? null,
+      chosenScore: adjusted.chosenScore ?? null,
+      overScore: adjusted.overScore ?? null,
+      error: adjusted.error ?? null,
+    },
   }, null, 2));
 } else {
   const note = adjusted.applied
