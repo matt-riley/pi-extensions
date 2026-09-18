@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDialogQueue } from "../dialog-queue.mjs";
+import { createDialogQueue } from "../../../shared/dialog-queue.mjs";
 
 test("runs dialogs FIFO, each waiting for the previous to settle", async () => {
   const enqueue = createDialogQueue();

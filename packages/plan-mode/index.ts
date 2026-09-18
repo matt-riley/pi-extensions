@@ -29,7 +29,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
-import { createDialogQueue } from "./dialog-queue.mjs";
+import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
