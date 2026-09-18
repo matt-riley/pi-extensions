@@ -17,33 +17,14 @@
 //
 // Read-only. `node scripts/context-report.mjs [--json]`
 
-import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 
+import { findSessionFiles, percentile, readSession } from "./lib/sessions.mjs";
+
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
 
-function percentile(values, p) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
-}
-
-function walk(dir, out = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full, out);
-    else if (entry.name.endsWith(".jsonl")) out.push(full);
-  }
-  return out;
-}
-
-/** Context a request actually read: what was not cached, plus what was. */
-function contextSize(usage) {
-  return (Number(usage.input) || 0) + (Number(usage.cacheRead) || 0);
-}
-
-const files = walk(SESSIONS_DIR);
+const files = findSessionFiles(SESSIONS_DIR);
 const turns = [];
 const requests = [];
 const compactions = [];
@@ -53,115 +34,75 @@ let skippedCostRecords = 0;
 let skippedCostTotal = 0;
 
 for (const file of files) {
-  let turn = null;
-  let sinceCompaction = 0;
-  let lastContext = 0;
+  const session = readSession(file);
+  compactions.push(...session.compactions);
 
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    if (!line.trim()) continue;
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    if (record.type === "compaction") {
-      compactions.push({
-        requests: sinceCompaction,
-        tokensBefore: Number(record.tokensBefore) || 0,
-        fromHook: record.fromHook === true,
-        contextBefore: lastContext,
-      });
-      sinceCompaction = 0;
-      continue;
-    }
-
-    const message = record.message;
-    if (!message) continue;
-
-    if (message.role === "user") {
-      if (turn) turns.push(turn);
-      const text =
-        typeof message.content === "string"
-          ? message.content
-          : Array.isArray(message.content)
-            ? message.content
-                .filter((b) => b?.type === "text")
-                .map((b) => b.text)
-                .join(" ")
-            : "";
-      turn = text.trim()
-        ? {
-            requests: 0,
-            billed: 0,
-            cacheRead: 0,
-            fresh: 0,
-            contextFirst: null,
-            contextLast: 0,
-            contexts: [],
-            cost: 0,
-            models: new Set(),
-          }
-        : null;
-      continue;
-    }
-
-    const usage = message.usage;
-    if (message.role !== "assistant" || !usage) continue;
-
-    const fresh = Number(usage.input) || 0;
-    const cacheRead = Number(usage.cacheRead) || 0;
-    const output = Number(usage.output) || 0;
-    const context = contextSize(usage);
-    const rawCost = Number(usage.cost?.total) || 0; // A handful of providers emit nonsense (openrouter/auto reported -$2,351
-    // across 7 requests). Counting them would make every total a lie.
-    const suspect = rawCost < 0;
-    const cost = suspect ? 0 : rawCost;
-    if (!suspect) {
-      costParts.input += Number(usage.cost?.input) || 0;
-      costParts.output += Number(usage.cost?.output) || 0;
-      costParts.cacheRead += Number(usage.cost?.cacheRead) || 0;
-      costParts.cacheWrite += Number(usage.cost?.cacheWrite) || 0;
-    }
-    if (suspect) {
-      skippedCostRecords++;
-      skippedCostTotal += rawCost;
-    }
-    const model = `${message.provider ?? "?"}/${message.model ?? "?"}`;
-    sinceCompaction++;
-    lastContext = context;
-
-    requests.push({ context, fresh, cacheRead, output, cost, model });
-    const agg = byModel.get(model) ?? {
+  for (const turn of session.turns) {
+    const row = {
       requests: 0,
       billed: 0,
       cacheRead: 0,
-      output: 0,
+      fresh: 0,
+      contextFirst: null,
+      contextLast: 0,
+      contexts: [],
       cost: 0,
-      zeros: 0,
+      models: new Set(),
     };
-    agg.requests++;
-    agg.billed += context;
-    agg.cacheRead += cacheRead;
-    agg.output += output;
-    agg.cost += cost;
-    if (rawCost === 0) agg.zeros++;
-    byModel.set(model, agg);
 
-    if (turn) {
-      turn.requests++;
-      turn.billed += context;
-      turn.cacheRead += cacheRead;
-      turn.fresh += fresh;
-      turn.contextFirst ??= context;
-      turn.contextLast = context;
-      turn.contexts.push(context);
-      turn.cost += cost;
-      turn.models.add(model);
+    for (const request of turn.requests) {
+      // A handful of providers emit nonsense (openrouter/auto reported -$2,351
+      // across seven requests). Counting them would make every total a lie.
+      const suspect = request.cost.total < 0;
+      const cost = suspect ? 0 : request.cost.total;
+      if (suspect) {
+        skippedCostRecords++;
+        skippedCostTotal += request.cost.total;
+      } else {
+        costParts.input += request.cost.input;
+        costParts.output += request.cost.output;
+        costParts.cacheRead += request.cost.cacheRead;
+        costParts.cacheWrite += request.cost.cacheWrite;
+      }
+
+      requests.push({
+        context: request.context,
+        fresh: request.input,
+        cacheRead: request.cacheRead,
+        output: request.output,
+        cost,
+        model: request.model,
+      });
+
+      const agg = byModel.get(request.model) ?? {
+        requests: 0,
+        billed: 0,
+        cacheRead: 0,
+        output: 0,
+        cost: 0,
+        zeros: 0,
+      };
+      agg.requests++;
+      agg.billed += request.context;
+      agg.cacheRead += request.cacheRead;
+      agg.output += request.output;
+      agg.cost += cost;
+      if (request.cost.total === 0) agg.zeros++;
+      byModel.set(request.model, agg);
+
+      row.requests++;
+      row.billed += request.context;
+      row.cacheRead += request.cacheRead;
+      row.fresh += request.input;
+      row.contextFirst ??= request.context;
+      row.contextLast = request.context;
+      row.contexts.push(request.context);
+      row.cost += cost;
+      row.models.add(request.model);
     }
+
+    if (row.requests) turns.push(row);
   }
-  if (turn) turns.push(turn);
 }
 
 const live = turns.filter((t) => t.requests > 0);

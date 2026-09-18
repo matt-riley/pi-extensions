@@ -2,5 +2,5 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["packages/*/index.ts", "packages/*/test/*.test.mjs", "scripts/*.mjs"],
   "project": ["packages/**/*.{ts,mjs}", "shared/**/*.mjs", "scripts/**/*.mjs", "types/**/*.d.ts"],
-  "ignoreDependencies": ["@earendil-works/pi-coding-agent", "oxlint", "oxfmt", "fallow"]
+  "ignoreDependencies": ["@earendil-works/pi-coding-agent"]
 }
