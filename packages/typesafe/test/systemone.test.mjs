@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   askSystemOne,
@@ -9,6 +12,9 @@ import {
 } from "../systemone.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
+// A guaranteed-absent config path keeps the file fallback out of every case
+// that is asserting what happens without a key.
+const NO_KEY_ENV = { LORE_CONFIG: join(tmpdir(), "pi-typesafe-absent", "lore.json") };
 
 function jsonResponse(body, { status = 200 } = {}) {
   return {
@@ -59,7 +65,30 @@ test("resolveConfig accepts LORE_TYPESAFE_API_KEY as a fallback name", () => {
     resolveConfig({ TYPESAFE_API_KEY: "primary", LORE_TYPESAFE_API_KEY: "lore-named" }).apiKey,
     "primary",
   );
-  assert.equal(resolveConfig({ LORE_TYPESAFE_API_KEY: "   " }).apiKey, "");
+  assert.equal(resolveConfig({ LORE_TYPESAFE_API_KEY: "   ", ...NO_KEY_ENV }).apiKey, "");
+});
+
+test("resolveConfig falls back to the lore config file when no env key is set", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-typesafe-"));
+  try {
+    const configPath = join(dir, "lore.json");
+    writeFileSync(configPath, JSON.stringify({ typesafe: { apiKey: "from-lore-file" } }));
+
+    assert.equal(resolveConfig({ LORE_CONFIG: configPath }).apiKey, "from-lore-file");
+    assert.equal(
+      resolveConfig({ TYPESAFE_API_KEY: "from-env", LORE_CONFIG: configPath }).apiKey,
+      "from-env",
+      "the environment still wins",
+    );
+    assert.equal(resolveConfig({ LORE_CONFIG: join(dir, "missing.json") }).apiKey, "");
+
+    writeFileSync(configPath, "{ not json");
+    assert.equal(resolveConfig({ LORE_CONFIG: configPath }).apiKey, "");
+    writeFileSync(configPath, JSON.stringify({ typesafe: { apiKey: "   " } }));
+    assert.equal(resolveConfig({ LORE_CONFIG: configPath }).apiKey, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("validateQuestions accepts the three primitives and rejects malformed ones", () => {
@@ -117,7 +146,7 @@ test("askSystemOne honors a per-call model override", async () => {
 test("askSystemOne fails fast on a missing key without calling the provider", async () => {
   const { fetchImpl, calls } = capturingFetch(() => jsonResponse({}));
   await assert.rejects(
-    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: {}, fetchImpl }),
+    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: NO_KEY_ENV, fetchImpl }),
     (error) => {
       assert.match(error.message, /TYPESAFE_API_KEY/);
       return true;

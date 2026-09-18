@@ -4,6 +4,10 @@
 // The extension entrypoint owns tool registration; everything here is pure
 // request building, validation, transport and formatting so it stays testable.
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 export const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
 export const DEFAULT_MODEL = "jev-latest";
 export const DEFAULT_TIMEOUT_MS = 30000;
@@ -34,15 +38,39 @@ function normalizeBaseUrl(value) {
   return url.toString().replace(/\/+$/, "");
 }
 
-/** Resolve runtime configuration from the environment. */
-export function resolveConfig(env = process.env) {
-  // TYPESAFE_API_KEY is the canonical name; LORE_TYPESAFE_API_KEY is accepted
-  // because lore already exports the shared key under its own prefix.
+/**
+ * Last-resort key source: the lore config already carries a `typesafe.apiKey`
+ * field, so a machine that launches pi from a GUI — where shell exports never
+ * arrive — only has to set the key in one place.
+ */
+function apiKeyFromLoreConfig(env) {
+  const override = typeof env?.LORE_CONFIG === "string" ? env.LORE_CONFIG.trim() : "";
+  const home = typeof env?.HOME === "string" && env.HOME.trim() ? env.HOME.trim() : homedir();
+  const configPath = override || join(home, ".config", "lore", "lore.json");
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const key = parsed?.typesafe?.apiKey;
+    return typeof key === "string" ? key.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The shared TypeSafe key, in precedence order: TYPESAFE_API_KEY, then
+ * LORE_TYPESAFE_API_KEY, then the lore config file. Never throws.
+ */
+export function resolveApiKey(env = process.env) {
   const primaryKey = typeof env?.TYPESAFE_API_KEY === "string" ? env.TYPESAFE_API_KEY.trim() : "";
   const loreKey = typeof env?.LORE_TYPESAFE_API_KEY === "string" ? env.LORE_TYPESAFE_API_KEY.trim() : "";
+  return primaryKey || loreKey || apiKeyFromLoreConfig(env);
+}
+
+/** Resolve runtime configuration from the environment. */
+export function resolveConfig(env = process.env) {
   const model = typeof env?.TYPESAFE_MODEL === "string" ? env.TYPESAFE_MODEL.trim() : "";
   return {
-    apiKey: primaryKey || loreKey,
+    apiKey: resolveApiKey(env),
     baseUrl: normalizeBaseUrl(env?.TYPESAFE_BASE_URL),
     model: model || DEFAULT_MODEL,
     timeoutMs: positiveInteger(env?.TYPESAFE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),

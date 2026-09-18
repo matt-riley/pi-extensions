@@ -72,8 +72,9 @@ format is already the Agent Skills standard, so nothing else is needed.
 Lexical ranking is deterministic and offline. When it is genuinely torn — the
 top two scores within 1.5 points — one choice question over the top eight
 candidates promotes the better fit. This is **on by default whenever a TypeSafe
-key is reachable** (`TYPESAFE_API_KEY` or `LORE_TYPESAFE_API_KEY`); set
-`PI_SKILL_SELECT_TIEBREAK=0` to keep selection entirely local.
+key is reachable**: `TYPESAFE_API_KEY`, `LORE_TYPESAFE_API_KEY`, or
+`typesafe.apiKey` in the lore config. Set `PI_SKILL_SELECT_TIEBREAK=0` to keep
+selection entirely local.
 
 ```sh
 PI_SKILL_SELECT_TIEBREAK=0 node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "review my code"

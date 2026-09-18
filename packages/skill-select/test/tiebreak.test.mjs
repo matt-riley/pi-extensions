@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   TIEBREAK_ENV,
@@ -9,6 +11,9 @@ import {
 } from "../tiebreak.mjs";
 
 const ENV = { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "tb-key" };
+// Guaranteed-absent config path: the key-less cases must not read a real
+// machine's lore config, or the suite passes and fails by environment.
+const NO_KEY_ENV = { LORE_CONFIG: join(tmpdir(), "pi-tiebreak-absent", "lore.json") };
 
 function match(name, score) {
   return { name, score, description: `${name} description`, path: `/lib/${name}/SKILL.md` };
@@ -26,8 +31,8 @@ test("tiebreakEnabled is on by default with a key and off on request", () => {
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "k" }), true);
   assert.equal(tiebreakEnabled({ TYPESAFE_API_KEY: "k" }), true);
   assert.equal(tiebreakEnabled({ LORE_TYPESAFE_API_KEY: "k" }), true);
-  assert.equal(tiebreakEnabled({}), false);
-  assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1" }), false);
+  assert.equal(tiebreakEnabled(NO_KEY_ENV), false);
+  assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1", ...NO_KEY_ENV }), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "0", TYPESAFE_API_KEY: "k" }), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "off", TYPESAFE_API_KEY: "k" }), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "false", TYPESAFE_API_KEY: "k" }), false);
@@ -67,7 +72,7 @@ test("leaves the order alone when the model declines", async () => {
 
 test("does not call the provider when disabled or when scores are separated", async () => {
   const { ask, calls } = fakeAsk("sandbox-next");
-  const disabled = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 8.9)], env: {}, ask });
+  const disabled = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 8.9)], env: NO_KEY_ENV, ask });
   assert.equal(disabled.reason, "disabled");
   const optedOut = await tiebreakMatches({
     query: "q",

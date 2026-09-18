@@ -6,7 +6,7 @@
 // keyless, separated scores, provider errors, or a declined answer all leave
 // the lexical order untouched.
 
-import { askSystemOne } from "../typesafe/systemone.mjs";
+import { askSystemOne, resolveApiKey } from "../typesafe/systemone.mjs";
 
 export const TIEBREAK_ENV = "PI_SKILL_SELECT_TIEBREAK";
 export const MAX_CANDIDATES = 8;
@@ -14,12 +14,12 @@ export const DEFAULT_MIN_GAP = 1.5;
 export const DECLINE_OPTION = "none_of_these";
 
 /**
- * Tiebreaking is on by default whenever a TypeSafe key is reachable. Set
- * PI_SKILL_SELECT_TIEBREAK to 0/false/off/no to keep selection fully local.
+ * Tiebreaking is on by default whenever a TypeSafe key is reachable — the env,
+ * or the lore config file. Set PI_SKILL_SELECT_TIEBREAK to 0/false/off/no to
+ * keep selection fully local.
  */
 export function tiebreakEnabled(env = process.env) {
-  const key = env?.TYPESAFE_API_KEY || env?.LORE_TYPESAFE_API_KEY;
-  if (!String(key ?? "").trim()) {
+  if (!resolveApiKey(env)) {
     return false;
   }
   const flag = String(env?.[TIEBREAK_ENV] ?? "").trim().toLowerCase();
