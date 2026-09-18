@@ -14,6 +14,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
 | [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed choice/noul/score questions over state and returns probabilities instead of prose. Environment-only config (`TYPESAFE_API_KEY`). |
 | [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
+| [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Attaches one line to failed tool results: name the root cause, then check the evidence with `typesafe_ask`. Text only, never blocks a call. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
@@ -37,7 +38,8 @@ renaming one can break another:
   allowlist from `shared/bash-policy.mjs` at the repo root.
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
-and `pi-footer` have no dependencies on other packages in this repo.
+`pi-diagnosis-nudge`, and `pi-footer` have no dependencies on other packages in
+this repo.
 
 ## Install
 
