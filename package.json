@@ -13,6 +13,7 @@
       "./packages/code-search/index.ts",
       "./packages/typesafe/index.ts",
       "./packages/skill-select/index.ts",
+      "./packages/guardrail/index.ts",
       "./packages/diagnosis-nudge/index.ts",
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts"
