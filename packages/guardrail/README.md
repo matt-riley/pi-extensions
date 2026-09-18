@@ -89,6 +89,12 @@ binary or an obfuscated payload does.
   command-shaped argument runs the shell rules, and secret or system paths are
   refused. Tool names that look read-only (`get_*`, `list_*`, `lore_*`, and pi's
   own discovery tools) are trusted and never inspected.
+- **Subagents are covered.** `pi-subagents` builds children with
+  `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
+  `agentDir` is what makes pi load global extensions — so a child gets this
+  guardrail plus its own inline child policy. Child sessions have no UI, so the
+  flagged band *blocks* there instead of prompting: an unattended agent gets a
+  refusal, a human gets a dialog.
 - Catastrophic patterns are matched against source with string literals
   blanked, so a test fixture full of `"rm -rf ~"` strings is not treated as
   though it ran. The consequence is deliberate: `shutil.rmtree('/Users')` in an
@@ -113,7 +119,7 @@ binary or an obfuscated payload does.
 
 ## Tests
 
-`node --test packages/guardrail/test/*.test.mjs` — 56 cases:
+`node --test packages/guardrail/test/*.test.mjs` — 63 cases:
 
 - `policy.test.mjs` — shapes, target classes, quoting, heredocs, chaining,
   indirection, file tools, unknown tools.
