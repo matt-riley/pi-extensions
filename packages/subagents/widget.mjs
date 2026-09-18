@@ -17,7 +17,8 @@ export function formatWidgetLines(entries, queuedCount) {
       lines.push(`${branch} ⠹ ${type}  ${description} · queued`);
       return;
     }
-    const turns = entry.maxTurns != null ? `↻${entry.turns ?? 0}≤${entry.maxTurns}` : `↻${entry.turns ?? 0}`;
+    const turns =
+      entry.maxTurns != null ? `↻${entry.turns ?? 0}≤${entry.maxTurns}` : `↻${entry.turns ?? 0}`;
     const uses = entry.toolUses ?? 0;
     const tools = `${uses} tool${uses === 1 ? "" : "s"}`;
     const tok = formatTokens(entry.tokens ?? 0);

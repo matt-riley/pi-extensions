@@ -14,7 +14,9 @@ export function truncateText(text, cap = RESULT_CAP) {
 }
 
 export function fallbackDescription(task, max = 40) {
-  const t = String(task ?? "").replace(/\s+/g, " ").trim();
+  const t = String(task ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!t) return "task";
   if (t.length <= max) return t;
   return `${t.slice(0, max - 1)}…`;
@@ -56,7 +58,16 @@ export function formatUsageLine({ turns, tokens, durationMs } = {}) {
   return parts.join(" · ");
 }
 
-export function formatResult({ agent, description, status, turns, tokens, durationMs, text, note } = {}) {
+export function formatResult({
+  agent,
+  description,
+  status,
+  turns,
+  tokens,
+  durationMs,
+  text,
+  note,
+} = {}) {
   const who = agent || "agent";
   const label = description ? `[${who}] ${description} — ${status}` : `[${who}] — ${status}`;
   const stats = formatUsageLine({ turns, tokens, durationMs });
@@ -165,7 +176,8 @@ export function resolveFinalStatus({ status, wrapSent, turns, maxTurns }) {
 // At maxTurns → wrap. Then GRACE_TURNS more turns. Then abort.
 export function turnAction(turns, maxTurns, graceTurns = GRACE_TURNS) {
   const cap = clampMaxTurns(maxTurns) ?? DEFAULT_MAX_TURNS;
-  const grace = Number.isFinite(graceTurns) && graceTurns >= 0 ? Math.trunc(graceTurns) : GRACE_TURNS;
+  const grace =
+    Number.isFinite(graceTurns) && graceTurns >= 0 ? Math.trunc(graceTurns) : GRACE_TURNS;
   if (turns < cap) return "continue";
   if (turns === cap) return "wrap";
   if (turns < cap + grace) return "continue";

@@ -7,18 +7,46 @@ import { enclosingSymbol } from "./search.mjs";
 const REPO_MAP_LINE_CAP = 150;
 const TREE_LINE_CAP = 60;
 const KEY_FILES = [
-  "README.md", "README.txt", "README", "AGENTS.md", "CLAUDE.md",
-  "LICENSE", "LICENSE.md", "LICENSE.txt",
-  "package.json", "tsconfig.json", "jsconfig.json", "pyproject.toml",
-  "Cargo.toml", "go.mod", "Gemfile", "pom.xml", "build.gradle",
-  "deno.json", "deno.jsonc", "Makefile", "Dockerfile",
-  "docker-compose.yml", "compose.yaml", "compose.yml",
-  ".env.example", "vitest.config.ts", "vitest.config.js", "jest.config.ts",
-  "jest.config.js", "eslint.config.js", "eslint.config.mjs", ".eslintrc.js",
-  ".prettierrc", ".prettierrc.json", "biome.json", "turbo.json", "nx.json",
-  "lerna.json", "pnpm-workspace.yaml",
+  "README.md",
+  "README.txt",
+  "README",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "LICENSE",
+  "LICENSE.md",
+  "LICENSE.txt",
+  "package.json",
+  "tsconfig.json",
+  "jsconfig.json",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "Gemfile",
+  "pom.xml",
+  "build.gradle",
+  "deno.json",
+  "deno.jsonc",
+  "Makefile",
+  "Dockerfile",
+  "docker-compose.yml",
+  "compose.yaml",
+  "compose.yml",
+  ".env.example",
+  "vitest.config.ts",
+  "vitest.config.js",
+  "jest.config.ts",
+  "jest.config.js",
+  "eslint.config.js",
+  "eslint.config.mjs",
+  ".eslintrc.js",
+  ".prettierrc",
+  ".prettierrc.json",
+  "biome.json",
+  "turbo.json",
+  "nx.json",
+  "lerna.json",
+  "pnpm-workspace.yaml",
 ];
-
 
 export function fmtBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -133,7 +161,10 @@ export function packageHighlights(relPath, json) {
   const entry = json.main ?? json.module ?? json.types;
   if (entry) lines.push(`entry: ${entry}`);
   if (json.packageManager) lines.push(`packageManager: ${json.packageManager}`);
-  if (json.workspaces) lines.push(`workspaces: ${Array.isArray(json.workspaces) ? json.workspaces.join(", ") : "yes"}`);
+  if (json.workspaces)
+    lines.push(
+      `workspaces: ${Array.isArray(json.workspaces) ? json.workspaces.join(", ") : "yes"}`,
+    );
   const deps = Object.keys(json.dependencies ?? {}).length;
   const devDeps = Object.keys(json.devDependencies ?? {}).length;
   if (deps || devDeps) lines.push(`deps: ${deps} runtime, ${devDeps} dev`);
@@ -142,13 +173,25 @@ export function packageHighlights(relPath, json) {
 
 /** Assemble the full repo_map text. */
 export function formatRepoMap({
-  root, branch, viaGit, files, truncated,
-  languages, tree, keyFiles, testFiles, pkg,
-  newest, largest, symbolCount,
+  root,
+  branch,
+  viaGit,
+  files,
+  truncated,
+  languages,
+  tree,
+  keyFiles,
+  testFiles,
+  pkg,
+  newest,
+  largest,
+  symbolCount,
 }) {
   const out = [];
   out.push(`# Repo map — ${root}`);
-  out.push(`files: ${files.length}${truncated ? ` (capped at ${files.length})` : ""}  ·  size: ${fmtBytes(files.reduce((s, f) => s + (f.size ?? 0), 0))}  ·  symbols indexed: ${symbolCount}`);
+  out.push(
+    `files: ${files.length}${truncated ? ` (capped at ${files.length})` : ""}  ·  size: ${fmtBytes(files.reduce((s, f) => s + (f.size ?? 0), 0))}  ·  symbols indexed: ${symbolCount}`,
+  );
   if (branch) out.push(`branch: ${branch}`);
   if (!viaGit) out.push(`(not a git repo — pure-node walker inventory)`);
   out.push("");
@@ -197,7 +240,9 @@ const SIG_CAP = 120;
 /** file_outline text for one file's symbols. */
 export function formatOutline({ relPath, symbols, truncated }) {
   const out = [`# Outline — ${relPath}`];
-  const sorted = [...symbols].sort((a, b) => a.startLine - b.startLine || (a.col ?? 0) - (b.col ?? 0));
+  const sorted = [...symbols].sort(
+    (a, b) => a.startLine - b.startLine || (a.col ?? 0) - (b.col ?? 0),
+  );
   const shown = sorted.slice(0, OUTLINE_CAP);
   for (const s of shown) {
     let sig = (s.signature ?? "").replace(/\s+/g, " ").trim().slice(0, SIG_CAP);
@@ -218,7 +263,8 @@ export function frameHit(hit) {
   const sym = enclosingSymbol(hit.entry, hit.lineNo);
   if (!sym) return null;
   const sig = (sym.signature ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
-  const range = sym.endLine >= 0 ? `lines ${sym.startLine}–${sym.endLine}` : `starts line ${sym.startLine}`;
+  const range =
+    sym.endLine >= 0 ? `lines ${sym.startLine}–${sym.endLine}` : `starts line ${sym.startLine}`;
   return `in ${sym.kind} ${sym.name}${sig ? ` ${sig}` : ""} (${range})`;
 }
 
@@ -233,7 +279,9 @@ export function formatSearchHits({ query, hits, total, truncated, suggestion }) 
     if (text) out.push(`  ${text}`);
   }
   if (truncated && total > hits.length) {
-    out.push(`… and ${total - hits.length} more matches — narrow with path=<dir> or a more specific query.`);
+    out.push(
+      `… and ${total - hits.length} more matches — narrow with path=<dir> or a more specific query.`,
+    );
   }
   if (suggestion?.length > 0) {
     out.push(`No matches for "${query}" — did you mean: ${suggestion.join(", ")}?`);
@@ -249,7 +297,9 @@ export function formatDefinitions({ symbol, external, candidates, note }) {
   }
   if (note) out.push(note);
   for (const c of candidates.slice(0, 3)) {
-    out.push(`${c.rel}:${c.line}  ${c.kind} ${c.name}${c.signature ? `  ${c.signature.replace(/\s+/g, " ").trim().slice(0, 100)}` : ""}${c.exported ? "  (exported)" : ""}`);
+    out.push(
+      `${c.rel}:${c.line}  ${c.kind} ${c.name}${c.signature ? `  ${c.signature.replace(/\s+/g, " ").trim().slice(0, 100)}` : ""}${c.exported ? "  (exported)" : ""}`,
+    );
     if (c.context && c.context.length > 0) {
       for (const line of c.context) out.push(`  | ${line}`);
     }

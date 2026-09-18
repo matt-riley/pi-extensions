@@ -28,11 +28,24 @@
 
 import { homedir } from "node:os";
 
-import { DEFAULT_LIMIT, discoverSkills, formatMatches, rankSkills, resolveRoots } from "../packages/skill-select/library.mjs";
+import {
+  DEFAULT_LIMIT,
+  discoverSkills,
+  formatMatches,
+  rankSkills,
+  resolveRoots,
+} from "../packages/skill-select/library.mjs";
 import { tiebreakMatches } from "../packages/skill-select/tiebreak.mjs";
 
 function parseArgs(argv) {
-  const args = { query: "", limit: DEFAULT_LIMIT, json: false, roots: [], help: false, error: null };
+  const args = {
+    query: "",
+    limit: DEFAULT_LIMIT,
+    json: false,
+    roots: [],
+    help: false,
+    error: null,
+  };
   const positional = [];
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -92,28 +105,41 @@ if (args.help) {
   process.exit(0);
 }
 
-const roots = args.roots.length > 0
-  ? args.roots
-  : resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env });
+const roots =
+  args.roots.length > 0
+    ? args.roots
+    : resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env });
 const skills = await discoverSkills({ roots });
 const matches = rankSkills(skills, args.query, { limit: args.limit });
 const adjusted = await tiebreakMatches({ query: args.query, matches, env: process.env });
 
 if (args.json) {
-  console.log(JSON.stringify({
-    query: args.query,
-    total: skills.length,
-    matches: adjusted.matches.map(({ name, description, path, score, root }) => ({ name, description, path, score, root })),
-    tiebreak: {
-      applied: adjusted.applied,
-      reason: adjusted.reason,
-      chosen: adjusted.chosen ?? null,
-      over: adjusted.over ?? null,
-      chosenScore: adjusted.chosenScore ?? null,
-      overScore: adjusted.overScore ?? null,
-      error: adjusted.error ?? null,
-    },
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        query: args.query,
+        total: skills.length,
+        matches: adjusted.matches.map(({ name, description, path, score, root }) => ({
+          name,
+          description,
+          path,
+          score,
+          root,
+        })),
+        tiebreak: {
+          applied: adjusted.applied,
+          reason: adjusted.reason,
+          chosen: adjusted.chosen ?? null,
+          over: adjusted.over ?? null,
+          chosenScore: adjusted.chosenScore ?? null,
+          overScore: adjusted.overScore ?? null,
+          error: adjusted.error ?? null,
+        },
+      },
+      null,
+      2,
+    ),
+  );
 } else {
   const note = adjusted.applied
     ? `TypeSafe chose "${adjusted.chosen}" over "${adjusted.over}" (lexical scores ${adjusted.chosenScore} vs ${adjusted.overScore} were too close to call).`

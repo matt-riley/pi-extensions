@@ -24,7 +24,7 @@ test("tokenize: tags and text", () => {
 });
 
 test("tokenize: attribute forms", () => {
-  const [tag] = tokenize('<a href="https://x" data-a=\'y\' unquoted=z hidden>');
+  const [tag] = tokenize("<a href=\"https://x\" data-a='y' unquoted=z hidden>");
   assert.equal(tag.type, "tag");
   assert.deepEqual(tag.attrs, [
     { name: "href", value: "https://x" },
@@ -35,7 +35,7 @@ test("tokenize: attribute forms", () => {
 });
 
 test("tokenize: self-closing and void elements", () => {
-  const tokens = tokenize("<br/><img src=\"a.png\"><hr>");
+  const tokens = tokenize('<br/><img src="a.png"><hr>');
   assert.deepEqual(
     tokens.map((t) => t.type),
     ["tag", "tag", "tag"],
@@ -133,13 +133,18 @@ function treeFrom(html) {
 }
 
 test("stripBoilerplate: removes chrome tags", () => {
-  const tree = stripBoilerplate(treeFrom(
-    "<body><nav>menu</nav><footer>foot</footer><aside>side</aside>" +
-    "<form><input></form><script>x</script><style>y</style>" +
-    "<main><p>content</p></main></body>",
-  ));
+  const tree = stripBoilerplate(
+    treeFrom(
+      "<body><nav>menu</nav><footer>foot</footer><aside>side</aside>" +
+        "<form><input></form><script>x</script><style>y</style>" +
+        "<main><p>content</p></main></body>",
+    ),
+  );
   const tags = [];
-  const walk = (n) => { if (n.tag) tags.push(n.tag); for (const c of n.children) walk(c); };
+  const walk = (n) => {
+    if (n.tag) tags.push(n.tag);
+    for (const c of n.children) walk(c);
+  };
   walk(tree);
   assert.ok(!tags.includes("nav"));
   assert.ok(!tags.includes("footer"));
@@ -149,10 +154,12 @@ test("stripBoilerplate: removes chrome tags", () => {
 });
 
 test("stripBoilerplate: class/id heuristics", () => {
-  const tree = stripBoilerplate(treeFrom(
-    '<body><div class="sidebar">x</div><div id="comments">y</div>' +
-    '<div class="ad-container">z</div><div class="article-body">keep</div></body>',
-  ));
+  const tree = stripBoilerplate(
+    treeFrom(
+      '<body><div class="sidebar">x</div><div id="comments">y</div>' +
+        '<div class="ad-container">z</div><div class="article-body">keep</div></body>',
+    ),
+  );
   const texts = [];
   const walk = (n) => {
     if (n.tag === null && n.children.length === 0) texts.push(n.text);
@@ -163,12 +170,17 @@ test("stripBoilerplate: class/id heuristics", () => {
 });
 
 test("stripBoilerplate: hidden dropped, article header kept", () => {
-  const tree = stripBoilerplate(treeFrom(
-    '<body><header class="site-header">site</header>' +
-    '<article><header><h1>Title</h1></header><p hidden>secret</p><p>body</p></article></body>',
-  ));
+  const tree = stripBoilerplate(
+    treeFrom(
+      '<body><header class="site-header">site</header>' +
+        "<article><header><h1>Title</h1></header><p hidden>secret</p><p>body</p></article></body>",
+    ),
+  );
   const texts = [];
-  const walk = (n) => { if (n.tag === null) texts.push(n.text); for (const c of n.children) walk(c); };
+  const walk = (n) => {
+    if (n.tag === null) texts.push(n.text);
+    for (const c of n.children) walk(c);
+  };
   walk(tree);
   assert.ok(!texts.includes("secret"));
   assert.ok(!texts.includes("site"));
@@ -178,7 +190,10 @@ test("stripBoilerplate: hidden dropped, article header kept", () => {
 test("stripBoilerplate: prunes empty containers", () => {
   const tree = stripBoilerplate(treeFrom("<body><div><nav>x</nav></div><p>keep</p></body>"));
   const divs = [];
-  const walk = (n) => { if (n.tag === "div") divs.push(n); for (const c of n.children) walk(c); };
+  const walk = (n) => {
+    if (n.tag === "div") divs.push(n);
+    for (const c of n.children) walk(c);
+  };
   walk(tree);
   assert.equal(divs.length, 0);
 });
@@ -186,26 +201,31 @@ test("stripBoilerplate: prunes empty containers", () => {
 // --- main selection ---------------------------------------------------------
 
 test("selectMain: article preferred over more text elsewhere", () => {
-  const tree = stripBoilerplate(treeFrom(
-    "<body><div>".repeat(1) + "long padding text ".repeat(40) +
-    "<article><p>short real content</p></article></div></body>",
-  ));
+  const tree = stripBoilerplate(
+    treeFrom(
+      "<body><div>".repeat(1) +
+        "long padding text ".repeat(40) +
+        "<article><p>short real content</p></article></div></body>",
+    ),
+  );
   const main = selectMain(tree);
   assert.equal(main.tag, "article");
 });
 
 test("selectMain: main/role=main", () => {
-  const tree = stripBoilerplate(treeFrom(
-    '<body><div role="main"><p>content here</p></div></body>',
-  ));
+  const tree = stripBoilerplate(
+    treeFrom('<body><div role="main"><p>content here</p></div></body>'),
+  );
   const main = selectMain(tree);
   assert.equal(main.attrs.role, "main");
 });
 
 test("selectMain: longest block child wins", () => {
-  const tree = stripBoilerplate(treeFrom(
-    "<body><div><p>short</p></div><div><p>".concat("words ".repeat(60), "</p></div></body>"),
-  ));
+  const tree = stripBoilerplate(
+    treeFrom(
+      "<body><div><p>short</p></div><div><p>".concat("words ".repeat(60), "</p></div></body>"),
+    ),
+  );
   const main = selectMain(tree);
   assert.ok(textLength(main) > 200);
 });
@@ -220,7 +240,11 @@ test("selectMain: falls back to body for short pages", () => {
 // --- serialization ----------------------------------------------------------
 
 test("serializeTree: pretty-printed cleaned html", () => {
-  const tree = stripBoilerplate(treeFrom("<body><main><h1>T</h1><p>Hello <b>world</b></p><pre>  keep\n  me</pre></main></body>"));
+  const tree = stripBoilerplate(
+    treeFrom(
+      "<body><main><h1>T</h1><p>Hello <b>world</b></p><pre>  keep\n  me</pre></main></body>",
+    ),
+  );
   const html = serializeTree(selectMain(tree));
   assert.match(html, /<h1>T<\/h1>/);
   assert.match(html, /Hello <b>world<\/b>/);
@@ -252,7 +276,7 @@ test("extractMetadata: full head", () => {
 test("extractMetadata: og:title and time datetime fallbacks", () => {
   const html =
     '<html><head><meta property="og:title" content="OG Title">' +
-    "<time datetime=\"2025-01-02\"></time></head><body></body></html>";
+    '<time datetime="2025-01-02"></time></head><body></body></html>';
   const meta = extractMetadata(html);
   assert.equal(meta.title, "OG Title");
   assert.equal(meta.published, "2025-01-02");

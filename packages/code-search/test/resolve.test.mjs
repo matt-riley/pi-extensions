@@ -8,9 +8,21 @@ import {
 } from "../resolve.mjs";
 
 const def = (name, kind = "function", extra = {}) => ({
-  name, kind, startLine: 1, endLine: 1, exported: true, signature: "", ...extra,
+  name,
+  kind,
+  startLine: 1,
+  endLine: 1,
+  exported: true,
+  signature: "",
+  ...extra,
 });
-const entry = ({ symbols = [], imports = [], reexports = [] } = {}) => ({ symbols, imports, reexports, size: 100, lang: "ts" });
+const entry = ({ symbols = [], imports = [], reexports = [] } = {}) => ({
+  symbols,
+  imports,
+  reexports,
+  size: 100,
+  lang: "ts",
+});
 
 const BASE = {
   "src/index.ts": entry({
@@ -22,7 +34,9 @@ const BASE = {
     imports: [{ names: [{ imported: "foo", local: "foo" }], source: "@lib/foo" }],
   }),
   "lib/foo.ts": entry({ symbols: [def("foo")] }),
-  "src/barrel.ts": entry({ reexports: [{ names: [{ imported: "deep", local: "deep" }], source: "./deep" }] }),
+  "src/barrel.ts": entry({
+    reexports: [{ names: [{ imported: "deep", local: "deep" }], source: "./deep" }],
+  }),
   "src/deep.ts": entry({ reexports: [{ names: null, source: "./deeper" }] }),
   "src/deeper.ts": entry({ symbols: [def("deep", "function", { exported: true })] }),
   "src/alias2.ts": entry({
@@ -69,10 +83,15 @@ test("parseTsconfigPaths extracts baseUrl and paths", () => {
 
 test("resolveSpecifier: relative with extension and index probing", () => {
   const fileSet = new Set(Object.keys(BASE));
-  assert.deepEqual(resolveSpecifier("./helper", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null }),
-    { type: "file", rel: "src/helper/index.ts" });
-  assert.deepEqual(resolveSpecifier("../missing", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null }).type,
-    "unresolved");
+  assert.deepEqual(
+    resolveSpecifier("./helper", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null }),
+    { type: "file", rel: "src/helper/index.ts" },
+  );
+  assert.deepEqual(
+    resolveSpecifier("../missing", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null })
+      .type,
+    "unresolved",
+  );
 });
 
 test("resolveSpecifier: tsconfig path aliases", () => {
@@ -91,7 +110,11 @@ test("resolveSpecifier: bare specifier → external", () => {
     { type: "external", pkg: "react" },
   );
   assert.deepEqual(
-    resolveSpecifier("@scope/other", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: new Map() }),
+    resolveSpecifier("@scope/other", "src/index.ts", {
+      fileSet,
+      tsconfig: null,
+      workspaceMap: new Map(),
+    }),
     { type: "external", pkg: "@scope/other" },
   );
 });
@@ -116,7 +139,14 @@ test("resolveDefinition: external imports are reported, not scanned", async () =
       }),
     },
   };
-  const r = await resolveDefinition({ symbol: "react", fromFile: "src/app.ts", cache, tsconfig: null, workspaceMap: new Map(), readFile: async () => "x" });
+  const r = await resolveDefinition({
+    symbol: "react",
+    fromFile: "src/app.ts",
+    cache,
+    tsconfig: null,
+    workspaceMap: new Map(),
+    readFile: async () => "x",
+  });
   assert.equal(r.external, "react");
   assert.equal(r.primaryRel, null);
 });
@@ -124,11 +154,19 @@ test("resolveDefinition: external imports are reported, not scanned", async () =
 test("resolveDefinition: global scan lists exported definitions first", async () => {
   const cache = {
     files: {
-      "src/one.ts": entry({ symbols: [def("util", "function", { exported: false, startLine: 3 })] }),
+      "src/one.ts": entry({
+        symbols: [def("util", "function", { exported: false, startLine: 3 })],
+      }),
       "src/two.ts": entry({ symbols: [def("util", "function", { exported: true, startLine: 1 })] }),
     },
   };
-  const r = await resolveDefinition({ symbol: "util", cache, tsconfig: null, workspaceMap: null, readFile: async () => "export function util() {}" });
+  const r = await resolveDefinition({
+    symbol: "util",
+    cache,
+    tsconfig: null,
+    workspaceMap: null,
+    readFile: async () => "export function util() {}",
+  });
   assert.equal(r.candidates[0].rel, "src/two.ts");
   assert.equal(r.external, null);
 });
@@ -141,7 +179,14 @@ test("resolveDefinition: kind filter narrows candidates", async () => {
       }),
     },
   };
-  const r = await resolveDefinition({ symbol: "thing", kind: "type", cache, tsconfig: null, workspaceMap: null, readFile: async () => "x" });
+  const r = await resolveDefinition({
+    symbol: "thing",
+    kind: "type",
+    cache,
+    tsconfig: null,
+    workspaceMap: null,
+    readFile: async () => "x",
+  });
   assert.ok(r.candidates.every((c) => c.kind === "type"));
 });
 
@@ -151,7 +196,13 @@ test("resolveDefinition: no candidates suggests near names", async () => {
       "src/one.ts": entry({ symbols: [def("greeter"), def("groot")] }),
     },
   };
-  const r = await resolveDefinition({ symbol: "greetr", cache, tsconfig: null, workspaceMap: null, readFile: async () => "x" });
+  const r = await resolveDefinition({
+    symbol: "greetr",
+    cache,
+    tsconfig: null,
+    workspaceMap: null,
+    readFile: async () => "x",
+  });
   assert.equal(r.candidates.length, 0);
   assert.ok(r.note.includes("did you mean"));
   assert.ok(r.note.includes("greeter"));
@@ -164,7 +215,14 @@ test("resolveDefinition: re-export cycles terminate", async () => {
       "src/b.ts": entry({ reexports: [{ names: null, source: "./a" }] }),
     },
   };
-  const r = await resolveDefinition({ symbol: "loop", fromFile: "src/a.ts", cache, tsconfig: null, workspaceMap: null, readFile: async () => "x" });
+  const r = await resolveDefinition({
+    symbol: "loop",
+    fromFile: "src/a.ts",
+    cache,
+    tsconfig: null,
+    workspaceMap: null,
+    readFile: async () => "x",
+  });
   // No crash, no definition found
   assert.equal(r.primaryRel, null);
   assert.ok(r.note.includes("no definition"));

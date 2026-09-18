@@ -47,7 +47,9 @@ export function normalizeRel(relPath) {
 export async function findRepoRoot(cwd, exec) {
   try {
     if (exec) {
-      const result = await exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { timeout: 5000 });
+      const result = await exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+        timeout: 5000,
+      });
       const root = String(result?.stdout ?? "").trim();
       if (result?.code === 0 && root && !/[\r\n]/.test(root)) {
         return { root, viaGit: true };

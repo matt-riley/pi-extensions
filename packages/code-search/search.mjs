@@ -17,12 +17,54 @@ import { escapeRegExp } from "./gitignore.mjs";
 
 // Extensions we never scan as text (binary images, archives, compiled, …).
 const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif", ".svgz",
-  ".pdf", ".zip", ".gz", ".tgz", ".tar", ".bz2", ".xz", ".7z", ".rar",
-  ".woff", ".woff2", ".ttf", ".otf", ".eot",
-  ".mp3", ".mp4", ".mov", ".avi", ".mkv", ".wav", ".ogg", ".flac",
-  ".so", ".dylib", ".dll", ".exe", ".class", ".jar", ".wasm", ".a", ".o",
-  ".obj", ".pyc", ".pyo", ".node", ".db", ".sqlite", ".sqlite3", ".lockb",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".ico",
+  ".avif",
+  ".svgz",
+  ".pdf",
+  ".zip",
+  ".gz",
+  ".tgz",
+  ".tar",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  ".mp3",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".mkv",
+  ".wav",
+  ".ogg",
+  ".flac",
+  ".so",
+  ".dylib",
+  ".dll",
+  ".exe",
+  ".class",
+  ".jar",
+  ".wasm",
+  ".a",
+  ".o",
+  ".obj",
+  ".pyc",
+  ".pyo",
+  ".node",
+  ".db",
+  ".sqlite",
+  ".sqlite3",
+  ".lockb",
 ]);
 
 const MAX_FILE_BYTES = 1024 * 1024; // >1MB files are skipped by search
@@ -79,7 +121,16 @@ function buildMatcher(query, { caseSensitive, wholeWord, regex }) {
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<{ hits: Array, total: number, truncated: boolean, suggestion: string[] }>}
  */
-export async function searchRepo({ cache, query, opts = {}, readFile, exec, root, viaGit, signal }) {
+export async function searchRepo({
+  cache,
+  query,
+  opts = {},
+  readFile,
+  exec,
+  root,
+  viaGit,
+  signal,
+}) {
   if (opts.regex) {
     const unsafe = checkRegexSafety(query);
     if (unsafe) throw new Error(`code_search regex rejected: ${unsafe}`);
@@ -126,7 +177,8 @@ async function scanRepo({ cache, query, opts, readFile, signal }) {
       const col = (m.index ?? 0) + 1;
       total++;
       const score = scoreLine(raw, lineNo, query, entry, opts);
-      if (fileHits.length < PER_FILE_CAP) fileHits.push({ rel, lineNo, col, score, text: raw, entry });
+      if (fileHits.length < PER_FILE_CAP)
+        fileHits.push({ rel, lineNo, col, score, text: raw, entry });
     }
     fileHits.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
     hits.push(...fileHits);
@@ -183,7 +235,12 @@ async function gitGrepSearch({ cache, query, opts, exec, root, signal }) {
   const stdout = String(result?.stdout ?? "");
 
   if (result?.code === 1 && stdout.trim() === "") {
-    return { hits: [], total: 0, truncated: false, suggestion: suggestNames(query, Object.keys(cache?.files ?? {}), cache) };
+    return {
+      hits: [],
+      total: 0,
+      truncated: false,
+      suggestion: suggestNames(query, Object.keys(cache?.files ?? {}), cache),
+    };
   }
   if (result?.code !== 0) return null; // unexpected exit code → fall back
 
@@ -210,7 +267,15 @@ async function gitGrepSearch({ cache, query, opts, exec, root, signal }) {
     for (const h of fileHitsRaw) {
       total++;
       const score = scoreLine(h.text, h.lineNo, query, h.entry, opts);
-      if (fileHits.length < PER_FILE_CAP) fileHits.push({ rel: h.rel, lineNo: h.lineNo, col: h.col, score, text: h.text, entry: h.entry });
+      if (fileHits.length < PER_FILE_CAP)
+        fileHits.push({
+          rel: h.rel,
+          lineNo: h.lineNo,
+          col: h.col,
+          score,
+          text: h.text,
+          entry: h.entry,
+        });
     }
     fileHits.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
     hits.push(...fileHits);
@@ -278,7 +343,11 @@ export function enclosingSymbol(entry, lineNo) {
   for (const s of symbols) {
     if (s.startLine > lineNo) continue;
     if (s.endLine >= 0 && s.endLine < lineNo) continue;
-    if (!best || s.startLine > best.startLine || (s.startLine === best.startLine && (s.endLine < 0 || s.endLine > best.endLine))) {
+    if (
+      !best ||
+      s.startLine > best.startLine ||
+      (s.startLine === best.startLine && (s.endLine < 0 || s.endLine > best.endLine))
+    ) {
       best = s;
     }
   }

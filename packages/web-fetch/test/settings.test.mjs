@@ -16,7 +16,11 @@ function tmpSettings(files) {
 test("defaults when no settings files exist", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "web-fetch-empty-"));
   try {
-    const s = await loadSettings({ cwd: dir, globalPath: path.join(dir, "missing.json"), projectPath: path.join(dir, "missing2.json") });
+    const s = await loadSettings({
+      cwd: dir,
+      globalPath: path.join(dir, "missing.json"),
+      projectPath: path.join(dir, "missing2.json"),
+    });
     assert.equal(s.defaultFormat, "markdown");
     assert.equal(s.defaultMaxChars, 60000);
     assert.equal(s.batchConcurrency, 4);
@@ -47,10 +51,10 @@ test("project overrides global, nested and flat keys both work", async () => {
 test("sanitizeSettings: clamps and coerces", () => {
   const s = sanitizeSettings({
     webFetchDefaultMaxChars: "99999999", // clamps to 1_000_000
-    webFetchDefaultTimeoutMs: 50,        // clamps to 1000
-    webFetchBatchConcurrency: 100,       // clamps to 10
-    webFetchDefaultFormat: "bogus",      // ignored
-    webFetchIncludeImages: "true",       // string bool accepted
+    webFetchDefaultTimeoutMs: 50, // clamps to 1000
+    webFetchBatchConcurrency: 100, // clamps to 10
+    webFetchDefaultFormat: "bogus", // ignored
+    webFetchIncludeImages: "true", // string bool accepted
     webFetchUseGh: false,
     webFetchExtraHeaders: { "x-a": 1, "x-b": "y" },
   });
@@ -74,7 +78,10 @@ test("sanitizeSettings: searxngUrl flat and nested", () => {
   );
   // Flat keys override nested (consistent with the other webFetch* keys).
   assert.equal(
-    sanitizeSettings({ webFetchSearxngUrl: "https://flat.example", webFetch: { searxngUrl: "https://nested.example" } }).searxngUrl,
+    sanitizeSettings({
+      webFetchSearxngUrl: "https://flat.example",
+      webFetch: { searxngUrl: "https://nested.example" },
+    }).searxngUrl,
     "https://flat.example",
   );
   assert.equal(sanitizeSettings({ webFetchSearxngUrl: 42 }).searxngUrl, undefined);

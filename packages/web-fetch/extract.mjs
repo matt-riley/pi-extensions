@@ -32,7 +32,10 @@ export function parseContentType(header = "") {
 
 export function isHtmlContent({ mime = "", body = "" } = {}) {
   if (mime.includes("text/html") || mime.includes("application/xhtml")) return true;
-  const sniff = String(body ?? "").trimStart().slice(0, 512).toLowerCase();
+  const sniff = String(body ?? "")
+    .trimStart()
+    .slice(0, 512)
+    .toLowerCase();
   return sniff.startsWith("<!doctype html") || sniff.startsWith("<html");
 }
 
@@ -70,14 +73,24 @@ export function truncateText(text, maxChars) {
 //   html  -> { kind:"page", meta, markdown, html, text, rawTextLength, truncated }
 //   text  -> { kind:"text", text, truncated }
 //   binary-> { kind:"binary", size }
-export function extractPage({ contentType = "", body = "", includeImages = false, maxChars = DEFAULT_MAX_CHARS } = {}) {
+export function extractPage({
+  contentType = "",
+  body = "",
+  includeImages = false,
+  maxChars = DEFAULT_MAX_CHARS,
+} = {}) {
   const raw = String(body ?? "").slice(0, MAX_RAW_CHARS);
   const { mime } = parseContentType(contentType);
 
   if (!isHtmlContent({ mime, body: raw })) {
     if (isTextMime(mime) || looksLikeJson(raw)) {
       const trimmed = raw.trim();
-      return { kind: "text", text: trimmed, truncated: trimmed.length > maxChars, size: trimmed.length };
+      return {
+        kind: "text",
+        text: trimmed,
+        truncated: trimmed.length > maxChars,
+        size: trimmed.length,
+      };
     }
     return { kind: "binary", size: raw.length };
   }

@@ -21,7 +21,12 @@ import { isAbsolute, resolve } from "node:path";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { evaluateToolCall } from "./policy.mjs";
-import { DEFAULT_TIMEOUT_MS, extractUserRequest, judgeToolCall, recommendedAction } from "./judge.mjs";
+import {
+  DEFAULT_TIMEOUT_MS,
+  extractUserRequest,
+  judgeToolCall,
+  recommendedAction,
+} from "./judge.mjs";
 
 const COMMAND = "guardrail";
 const SCRIPT_READ_LIMIT = 64 * 1024;
@@ -33,7 +38,9 @@ const DENY = "⛔ Deny";
 const SUGGEST = "✏️ Suggest an alternative";
 
 function disabledByEnv(env = process.env) {
-  const value = String(env?.PI_GUARDRAIL ?? "").trim().toLowerCase();
+  const value = String(env?.PI_GUARDRAIL ?? "")
+    .trim()
+    .toLowerCase();
   return value === "off" || value === "0" || value === "false";
 }
 
@@ -45,11 +52,12 @@ function timeoutMs(env = process.env) {
 /** One-line rendering of what is about to run. */
 function describeAction(toolName, input) {
   const name = String(toolName ?? "tool");
-  const raw = typeof input?.command === "string"
-    ? input.command
-    : typeof input?.path === "string"
-      ? input.path
-      : JSON.stringify(input ?? {}) ?? "";
+  const raw =
+    typeof input?.command === "string"
+      ? input.command
+      : typeof input?.path === "string"
+        ? input.path
+        : (JSON.stringify(input ?? {}) ?? "");
   return `${name}: ${String(raw).replace(/\s+/g, " ").trim().slice(0, MAX_ACTION_CHARS)}`;
 }
 
@@ -108,7 +116,13 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     const refs = decision?.evidence?.scriptRefs ?? [];
     if (refs.length) {
       const { scriptTexts, unresolved } = readScriptRefs(refs, cwd);
-      decision = evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolvedScripts: unresolved });
+      decision = evaluateToolCall({
+        toolName,
+        input,
+        cwd,
+        scriptTexts,
+        unresolvedScripts: unresolved,
+      });
     }
 
     const verdict = decision?.verdict ?? "allow";
@@ -122,7 +136,8 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     // that reaches for a missing UI mid-prompt would fail the tool call.
     const ask = (() => {
       const ui = ctx?.ui;
-      if (!hasUI || typeof ui?.select !== "function" || typeof ui?.input !== "function") return null;
+      if (!hasUI || typeof ui?.select !== "function" || typeof ui?.input !== "function")
+        return null;
       return { select: ui.select, input: ui.input };
     })();
     let finalVerdict = verdict;
@@ -183,7 +198,9 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       describeAction(toolName, input),
       reason,
       recommended ? `➡️ Recommended: ${recommended}` : "",
-    ].filter((part) => part.length > 0).join("\n\n");
+    ]
+      .filter((part) => part.length > 0)
+      .join("\n\n");
 
     let choice;
     try {
@@ -191,7 +208,10 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notify(ctx, `🛑 Guardrail dialog failed — ${message}`, "error");
-      return { block: true, reason: `The guardrail could not ask for approval (${message}), so the call was refused.` };
+      return {
+        block: true,
+        reason: `The guardrail could not ask for approval (${message}), so the call was refused.`,
+      };
     }
 
     if (choice === APPROVE) {
@@ -203,7 +223,9 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       let alternative = "";
       try {
         alternative = String(
-          (await enqueueDialog(() => ask.input("What should it do instead?", "Describe the safer version"))) ?? "",
+          (await enqueueDialog(() =>
+            ask.input("What should it do instead?", "Describe the safer version"),
+          )) ?? "",
         ).trim();
       } catch {
         alternative = "";
@@ -228,7 +250,9 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
   pi.registerCommand(COMMAND, {
     description: "Show or toggle the destructive-action guardrail for this session",
     handler: async (args, ctx) => {
-      const action = String(args ?? "").trim().toLowerCase();
+      const action = String(args ?? "")
+        .trim()
+        .toLowerCase();
       if (action === "off" || action === "disable") {
         state.enabled = false;
         notify(ctx, "Guardrail off for this session. /guardrail on to re-arm.", "warning");

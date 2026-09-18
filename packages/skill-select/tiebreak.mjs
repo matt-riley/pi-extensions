@@ -25,7 +25,9 @@ export function tiebreakEnabled(env = process.env) {
   if (!resolveApiKey(env)) {
     return false;
   }
-  const flag = String(env?.[TIEBREAK_ENV] ?? "").trim().toLowerCase();
+  const flag = String(env?.[TIEBREAK_ENV] ?? "")
+    .trim()
+    .toLowerCase();
   return !["0", "false", "off", "no"].includes(flag);
 }
 
@@ -41,7 +43,9 @@ export function needsTiebreak(matches, { minGap = DEFAULT_MIN_GAP } = {}) {
 /** A usable override only; a blank or junk value must not fall back to 30s. */
 function shortBudget(env) {
   const configured = Number(env?.TYPESAFE_TIMEOUT_MS);
-  return Number.isInteger(configured) && configured > 0 ? String(configured) : String(TIEBREAK_TIMEOUT_MS);
+  return Number.isInteger(configured) && configured > 0
+    ? String(configured)
+    : String(TIEBREAK_TIMEOUT_MS);
 }
 
 /**
@@ -78,12 +82,17 @@ export async function tiebreakMatches({
   }
 
   try {
-    const candidates = list.slice(0, MAX_CANDIDATES).filter((entry) => entry && typeof entry.name === "string");
+    const candidates = list
+      .slice(0, MAX_CANDIDATES)
+      .filter((entry) => entry && typeof entry.name === "string");
     if (candidates.length < 2) {
       return { matches: list, applied: false, reason: "too_few_candidates" };
     }
     const criteria = Object.fromEntries(
-      candidates.map((entry) => [entry.name, entry.description ? String(entry.description).slice(0, 300) : null]),
+      candidates.map((entry) => [
+        entry.name,
+        entry.description ? String(entry.description).slice(0, 300) : null,
+      ]),
     );
     criteria[DECLINE_OPTION] = "None of the listed skills fits the task";
 
@@ -92,7 +101,8 @@ export async function tiebreakMatches({
       questions: {
         best: {
           type: "choice",
-          instructions: "Which listed skill best fits the task at `task`, if any? Choose none_of_these when no listed skill is a genuine match.",
+          instructions:
+            "Which listed skill best fits the task at `task`, if any? Choose none_of_these when no listed skill is a genuine match.",
           criteria,
         },
       },

@@ -16,7 +16,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { cachePathFor, cacheStats, loadCache, parseFilePayload, refreshCache, saveCache } from "./cache.mjs";
+import {
+  cachePathFor,
+  cacheStats,
+  loadCache,
+  parseFilePayload,
+  refreshCache,
+  saveCache,
+} from "./cache.mjs";
 import { findRepoRoot, listRepoFiles, normalizeRel } from "./inventory.mjs";
 import { searchRepo } from "./search.mjs";
 import {
@@ -39,21 +46,47 @@ interface CacheEntry {
   symbolCount?: number;
   symbolsTruncated?: boolean;
   symbolsDropped?: boolean;
-  symbols: Array<{ name: string; kind: string; signature?: string; startLine: number; endLine: number; exported?: boolean; col?: number }>;
-  imports?: Array<{ names: Array<{ imported: string; local: string }>; source: string; typeOnly?: boolean; line?: number }>;
-  reexports?: Array<{ names: Array<{ imported: string; local: string }> | null; source: string | null; line?: number }>;
+  symbols: Array<{
+    name: string;
+    kind: string;
+    signature?: string;
+    startLine: number;
+    endLine: number;
+    exported?: boolean;
+    col?: number;
+  }>;
+  imports?: Array<{
+    names: Array<{ imported: string; local: string }>;
+    source: string;
+    typeOnly?: boolean;
+    line?: number;
+  }>;
+  reexports?: Array<{
+    names: Array<{ imported: string; local: string }> | null;
+    source: string | null;
+    line?: number;
+  }>;
 }
 
 interface SessionState {
   root: string;
   viaGit: boolean;
-  cache: { version: number; root: string; builtAt: number; files: Record<string, CacheEntry> } | null;
+  cache: {
+    version: number;
+    root: string;
+    builtAt: number;
+    files: Record<string, CacheEntry>;
+  } | null;
   cachePath: string;
   built: boolean;
   symbolCount: number;
 }
 
-type ExecFn = (cmd: string, args: string[], opts?: { timeout?: number }) => Promise<{ code: number; stdout: string; stderr: string }>;
+type ExecFn = (
+  cmd: string,
+  args: string[],
+  opts?: { timeout?: number },
+) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 function makeExec(pi: ExtensionAPI): ExecFn {
   return async (cmd, args, opts) => {
@@ -77,7 +110,11 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   // One in-flight refresh per repo root; sibling tool calls share it.
   const inflight = new Map<string, Promise<SessionState>>();
 
-  async function getSession(root: string, ctx: UiLite, onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void): Promise<SessionState> {
+  async function getSession(
+    root: string,
+    ctx: UiLite,
+    onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
+  ): Promise<SessionState> {
     const existing = inflight.get(root);
     if (existing) return existing;
     const p = buildSession(root, ctx, onUpdate).finally(() => inflight.delete(root));
@@ -85,11 +122,19 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     return p;
   }
 
-  async function buildSession(root: string, ctx: UiLite, onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void): Promise<SessionState> {
+  async function buildSession(
+    root: string,
+    ctx: UiLite,
+    onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
+  ): Promise<SessionState> {
     const { viaGit } = await findRepoRoot(root, exec);
     const cachePath = cachePathFor(root);
     const previous = await loadCache(cachePath);
-    const { cache: next, changed, truncated } = await refreshCache({
+    const {
+      cache: next,
+      changed,
+      truncated,
+    } = await refreshCache({
       cache: previous,
       root,
       list: () => listRepoFiles({ root, exec }),
@@ -121,25 +166,42 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       }
     }
     const stats = cacheStats(next);
-    return { root, viaGit, cache: next, cachePath, built: changed.length > 0, symbolCount: stats.symbolCount };
+    return {
+      root,
+      viaGit,
+      cache: next,
+      cachePath,
+      built: changed.length > 0,
+      symbolCount: stats.symbolCount,
+    };
   }
 
-  async function sessionFor(ctx: UiLite, onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void): Promise<SessionState> {
+  async function sessionFor(
+    ctx: UiLite,
+    onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
+  ): Promise<SessionState> {
     const cwd = ctx.cwd ?? process.cwd();
     const { root } = await findRepoRoot(cwd, exec);
     const session = await getSession(root, ctx, onUpdate);
     if (session.built) {
       session.built = false; // only the first caller reports the build
-      notify(ctx, `Indexed ${Object.keys(session.cache?.files ?? {}).length} files — ${session.symbolCount} symbols`);
+      notify(
+        ctx,
+        `Indexed ${Object.keys(session.cache?.files ?? {}).length} files — ${session.symbolCount} symbols`,
+      );
     }
     return session;
   }
 
   /** Validate a user-supplied repo-relative path; returns rel or an error string. */
   function validateRel(input: unknown): { ok: true; rel: string } | { ok: false; error: string } {
-    let raw = String(input ?? "").replace(/^@/, "").replace(/\\/g, "/").trim();
+    let raw = String(input ?? "")
+      .replace(/^@/, "")
+      .replace(/\\/g, "/")
+      .trim();
     if (!raw) return { ok: false, error: "path is empty" };
-    if (raw.startsWith("/")) return { ok: false, error: `absolute paths are not allowed: "${raw}"` };
+    if (raw.startsWith("/"))
+      return { ok: false, error: `absolute paths are not allowed: "${raw}"` };
     if (raw.split("/").includes("..")) return { ok: false, error: `".." is not allowed in paths` };
     const rel = normalizeRel(raw);
     if (!rel) return { ok: false, error: "path resolves to empty" };
@@ -192,7 +254,9 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       "Use repo_map first on unfamiliar repos: one call gives the layout, languages, manifests, and package scripts before any search or read.",
     ],
     parameters: Type.Object({
-      depth: Type.Optional(Type.Integer({ minimum: 1, maximum: 4, description: "Tree depth (default 2)." })),
+      depth: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 4, description: "Tree depth (default 2)." }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, onUpdate, ctx) {
       const session = await sessionFor(ctx, onUpdate);
@@ -213,7 +277,9 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       let branch = "";
       if (session.viaGit) {
         try {
-          const r = await exec("git", ["-C", session.root, "rev-parse", "--abbrev-ref", "HEAD"], { timeout: 3000 });
+          const r = await exec("git", ["-C", session.root, "rev-parse", "--abbrev-ref", "HEAD"], {
+            timeout: 3000,
+          });
           if (r.code === 0) branch = r.stdout.trim();
         } catch {
           branch = "";
@@ -255,11 +321,21 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       query: Type.String({ description: "Text to find (plain substring unless regex=true)." }),
-      path: Type.Optional(Type.String({ description: "Scope to a repo-relative directory or file." })),
-      caseSensitive: Type.Optional(Type.Boolean({ description: "Match case exactly (default false)." })),
-      wholeWord: Type.Optional(Type.Boolean({ description: "Require word boundaries (default false)." })),
-      regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression (default false)." })),
-      maxResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "Max hits to return (default 30)." })),
+      path: Type.Optional(
+        Type.String({ description: "Scope to a repo-relative directory or file." }),
+      ),
+      caseSensitive: Type.Optional(
+        Type.Boolean({ description: "Match case exactly (default false)." }),
+      ),
+      wholeWord: Type.Optional(
+        Type.Boolean({ description: "Require word boundaries (default false)." }),
+      ),
+      regex: Type.Optional(
+        Type.Boolean({ description: "Treat query as a regular expression (default false)." }),
+      ),
+      maxResults: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 100, description: "Max hits to return (default 30)." }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const session = await sessionFor(ctx, onUpdate);
@@ -294,7 +370,11 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
           viaGit: session.viaGit,
           signal,
         });
-        return { content: [{ type: "text", text: formatSearchHits({ query, hits, total, truncated, suggestion }) }] };
+        return {
+          content: [
+            { type: "text", text: formatSearchHits({ query, hits, total, truncated, suggestion }) },
+          ],
+        };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return { content: [{ type: "text", text: `code_search failed: ${msg}` }] };
@@ -332,10 +412,16 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
           symbols = payload.symbols.list;
           truncated = payload.symbols.truncated;
         } catch {
-          return { content: [{ type: "text", text: `file_outline: "${v.rel}" not found in the repo inventory.` }] };
+          return {
+            content: [
+              { type: "text", text: `file_outline: "${v.rel}" not found in the repo inventory.` },
+            ],
+          };
         }
       }
-      return { content: [{ type: "text", text: formatOutline({ relPath: v.rel, symbols, truncated }) }] };
+      return {
+        content: [{ type: "text", text: formatOutline({ relPath: v.rel, symbols, truncated }) }],
+      };
     },
   });
 
@@ -357,8 +443,15 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       symbol: Type.String({ description: "Symbol name to find." }),
-      fromFile: Type.Optional(Type.String({ description: "Repo-relative file to resolve the symbol's import from." })),
-      kind: Type.Optional(Type.String({ description: "Optional kind filter: function, class, interface, type, enum, const, method, field." })),
+      fromFile: Type.Optional(
+        Type.String({ description: "Repo-relative file to resolve the symbol's import from." }),
+      ),
+      kind: Type.Optional(
+        Type.String({
+          description:
+            "Optional kind filter: function, class, interface, type, enum, const, method, field.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, onUpdate, ctx) {
       const session = await sessionFor(ctx, onUpdate);
@@ -389,10 +482,17 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         },
       });
       return {
-        content: [{
-          type: "text",
-          text: formatDefinitions({ symbol, external: result.external, candidates: result.candidates, note: result.note }),
-        }],
+        content: [
+          {
+            type: "text",
+            text: formatDefinitions({
+              symbol,
+              external: result.external,
+              candidates: result.candidates,
+              note: result.note,
+            }),
+          },
+        ],
       };
     },
   });

@@ -31,60 +31,247 @@ import {
 
 const MUTATOR_HEADS = new Set([
   // file/fs mutation
-  "rm", "mv", "cp", "mkdir", "rmdir", "touch", "chmod", "chown", "chgrp", "ln",
-  "dd", "tee", "truncate", "install", "unlink", "shred",
+  "rm",
+  "mv",
+  "cp",
+  "mkdir",
+  "rmdir",
+  "touch",
+  "chmod",
+  "chown",
+  "chgrp",
+  "ln",
+  "dd",
+  "tee",
+  "truncate",
+  "install",
+  "unlink",
+  "shred",
   // privilege / process control
-  "sudo", "su", "kill", "pkill", "killall", "passwd", "nohup", "tmux", "screen",
-  "systemctl", "service", "launchctl", "fdisk", "mkfs", "mount", "umount",
-  "reboot", "poweroff", "halt", "shutdown", "init", "telinit", "sync", "fuser",
+  "sudo",
+  "su",
+  "kill",
+  "pkill",
+  "killall",
+  "passwd",
+  "nohup",
+  "tmux",
+  "screen",
+  "systemctl",
+  "service",
+  "launchctl",
+  "fdisk",
+  "mkfs",
+  "mount",
+  "umount",
+  "reboot",
+  "poweroff",
+  "halt",
+  "shutdown",
+  "init",
+  "telinit",
+  "sync",
+  "fuser",
   // build/package installation
-  "make", "cmake", "ninja", "brew", "apt", "apt-get", "dnf", "yum", "pacman",
-  "pip", "pip3", "gem", "bundle", "mvn", "gradle", "dpkg", "rpm", "port",
-  "npx", "nvm", "fnm", "volta", "asdf", "uv", "poetry", "pipx", "conda", "mamba",
+  "make",
+  "cmake",
+  "ninja",
+  "brew",
+  "apt",
+  "apt-get",
+  "dnf",
+  "yum",
+  "pacman",
+  "pip",
+  "pip3",
+  "gem",
+  "bundle",
+  "mvn",
+  "gradle",
+  "dpkg",
+  "rpm",
+  "port",
+  "npx",
+  "nvm",
+  "fnm",
+  "volta",
+  "asdf",
+  "uv",
+  "poetry",
+  "pipx",
+  "conda",
+  "mamba",
   // network transfers (write side effects, exfiltration)
-  "curl", "wget", "scp", "sftp", "rsync", "ssh",
+  "curl",
+  "wget",
+  "scp",
+  "sftp",
+  "rsync",
+  "ssh",
   // editors / in-place rewriting
-  "vim", "vi", "nvim", "nano", "emacs", "code", "subl",
+  "vim",
+  "vi",
+  "nvim",
+  "nano",
+  "emacs",
+  "code",
+  "subl",
   // shells spawning a nested interpreter
-  "sh", "bash", "zsh", "fish",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
   // databases
-  "psql", "mysql", "sqlite3", "redis-cli", "mongosh",
+  "psql",
+  "mysql",
+  "sqlite3",
+  "redis-cli",
+  "mongosh",
   // vcs that mutate
-  "svn", "hg",
+  "svn",
+  "hg",
   // misc
-  "xargs", "watch", "docker", "podman", "kubectl", "terraform", "pulumi",
+  "xargs",
+  "watch",
+  "docker",
+  "podman",
+  "kubectl",
+  "terraform",
+  "pulumi",
   // macOS system mutation
-  "defaults", "osascript", "plutil", "diskutil", "pbcopy", "open",
-  "softwareupdate", "mdutil",
+  "defaults",
+  "osascript",
+  "plutil",
+  "diskutil",
+  "pbcopy",
+  "open",
+  "softwareupdate",
+  "mdutil",
 ]);
 
 const READ_ONLY_HEADS = new Set([
   // navigation / info
-  "cd", "pwd", "ls", "which", "whereis", "type", "dirname", "basename",
-  "realpath", "readlink", "env", "printenv", "hostname", "uname", "whoami",
-  "id", "date", "cal", "uptime", "who", "w", "last",
+  "cd",
+  "pwd",
+  "ls",
+  "which",
+  "whereis",
+  "type",
+  "dirname",
+  "basename",
+  "realpath",
+  "readlink",
+  "env",
+  "printenv",
+  "hostname",
+  "uname",
+  "whoami",
+  "id",
+  "date",
+  "cal",
+  "uptime",
+  "who",
+  "w",
+  "last",
   // file inspection
-  "cat", "head", "tail", "wc", "sort", "uniq", "diff", "comm",
-  "cmp", "file", "stat", "du", "df", "tree", "strings", "nm", "objdump",
-  "readelf", "xxd", "hexdump", "od", "base64", "md5", "md5sum", "shasum",
-  "sha1sum", "sha256sum", "sha512sum", "test",
+  "cat",
+  "head",
+  "tail",
+  "wc",
+  "sort",
+  "uniq",
+  "diff",
+  "comm",
+  "cmp",
+  "file",
+  "stat",
+  "du",
+  "df",
+  "tree",
+  "strings",
+  "nm",
+  "objdump",
+  "readelf",
+  "xxd",
+  "hexdump",
+  "od",
+  "base64",
+  "md5",
+  "md5sum",
+  "shasum",
+  "sha1sum",
+  "sha256sum",
+  "sha512sum",
+  "test",
   // search
-  "grep", "egrep", "fgrep", "rg", "find", "fd", "ag", "ack", "locate",
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg",
+  "find",
+  "fd",
+  "ag",
+  "ack",
+  "locate",
   // text processing
-  "echo", "printf", "awk", "sed", "tr", "cut", "paste", "join", "nl", "fold",
-  "expand", "unexpand", "rev", "tac", "column", "shuf", "seq", "jq", "yq",
+  "echo",
+  "printf",
+  "awk",
+  "sed",
+  "tr",
+  "cut",
+  "paste",
+  "join",
+  "nl",
+  "fold",
+  "expand",
+  "unexpand",
+  "rev",
+  "tac",
+  "column",
+  "shuf",
+  "seq",
+  "jq",
+  "yq",
   "xmllint",
   // processes / system (top gated to its terminating batch forms below;
   // less/more/htop/watch are absent: interactive pagers/monitors never exit
   // in a headless tool call and hang the agent until the bash timeout)
-  "ps", "top", "free", "lsof", "netstat", "ss", "sysctl", "vm_stat",
-  "iostat", "dmesg",
+  "ps",
+  "top",
+  "free",
+  "lsof",
+  "netstat",
+  "ss",
+  "sysctl",
+  "vm_stat",
+  "iostat",
+  "dmesg",
   // archives (list/test/stdout only, enforced below)
-  "tar", "unzip", "zipinfo", "zcat", "bzcat", "xzcat", "gzip", "bzip2", "xz",
+  "tar",
+  "unzip",
+  "zipinfo",
+  "zcat",
+  "bzcat",
+  "xzcat",
+  "gzip",
+  "bzip2",
+  "xz",
   // version/help-only interpreters (enforced below)
-  "node", "deno", "python", "python3", "ruby", "perl", "php",
+  "node",
+  "deno",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+  "php",
   // package managers (read-only subcommands, enforced below)
-  "npm", "pnpm", "yarn", "bun", "cargo", "go",
+  "npm",
+  "pnpm",
+  "yarn",
+  "bun",
+  "cargo",
+  "go",
   // git (read-only subcommands, enforced below)
   "git",
 ]);
@@ -94,32 +281,95 @@ const READ_ONLY_HEADS = new Set([
 // of them BEFORE consulting these sets (they have both read-only and
 // write forms), so an entry here would be dead/unreachable and misleading.
 const GIT_BLOCKED = new Set([
-  "add", "commit", "push", "pull", "fetch", "reset", "revert", "checkout",
-  "switch", "restore", "merge", "rebase", "cherry-pick", "clean",
-  "rm", "mv", "apply", "am", "init",
-  "clone", "gc", "prune",
+  "add",
+  "commit",
+  "push",
+  "pull",
+  "fetch",
+  "reset",
+  "revert",
+  "checkout",
+  "switch",
+  "restore",
+  "merge",
+  "rebase",
+  "cherry-pick",
+  "clean",
+  "rm",
+  "mv",
+  "apply",
+  "am",
+  "init",
+  "clone",
+  "gc",
+  "prune",
 ]);
 
 const GIT_READ_ONLY = new Set([
-  "status", "log", "diff", "show",
-  "rev-parse", "show-ref", "ls-files", "ls-tree", "ls-remote", "grep", "blame",
-  "whatchanged", "describe", "shortlog", "count-objects", "fsck", "merge-base",
-  "name-rev", "cherry", "diff-tree", "diff-index", "diff-files", "cat-file",
-  "for-each-ref", "var", "version", "help",
-  "verify-commit", "verify-tag", "verify-pack",
+  "status",
+  "log",
+  "diff",
+  "show",
+  "rev-parse",
+  "show-ref",
+  "ls-files",
+  "ls-tree",
+  "ls-remote",
+  "grep",
+  "blame",
+  "whatchanged",
+  "describe",
+  "shortlog",
+  "count-objects",
+  "fsck",
+  "merge-base",
+  "name-rev",
+  "cherry",
+  "diff-tree",
+  "diff-index",
+  "diff-files",
+  "cat-file",
+  "for-each-ref",
+  "var",
+  "version",
+  "help",
+  "verify-commit",
+  "verify-tag",
+  "verify-pack",
 ]);
 
 const PKG_READ_ONLY = {
   npm: new Set([
-    "list", "ls", "view", "info", "search", "outdated", "audit", "ping",
-    "whoami", "help", "version", "root", "prefix", "explain", "config",
+    "list",
+    "ls",
+    "view",
+    "info",
+    "search",
+    "outdated",
+    "audit",
+    "ping",
+    "whoami",
+    "help",
+    "version",
+    "root",
+    "prefix",
+    "explain",
+    "config",
   ]),
   pnpm: new Set(["list", "view", "info", "search", "outdated", "audit", "why", "help", "version"]),
   yarn: new Set(["list", "info", "why", "audit", "outdated", "help", "version"]),
   bun: new Set(["pm"]),
 };
 
-const CARGO_READ_ONLY = new Set(["metadata", "tree", "search", "info", "locate-project", "version", "help"]);
+const CARGO_READ_ONLY = new Set([
+  "metadata",
+  "tree",
+  "search",
+  "info",
+  "locate-project",
+  "version",
+  "help",
+]);
 const GO_READ_ONLY = new Set(["env", "list", "version", "help", "doc"]);
 
 // Interpreters may only be invoked for version/help output; anything else
@@ -163,11 +413,15 @@ const HEAD_RULES = {
     return undefined;
   },
   sort: (args) =>
-    args.some((a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="))
+    args.some(
+      (a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="),
+    )
       ? "sort -o (writes a file) …"
       : undefined,
   shuf: (args) =>
-    args.some((a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="))
+    args.some(
+      (a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="),
+    )
       ? "shuf -o (writes a file) …"
       : undefined,
   tar: (args) => {
@@ -177,8 +431,11 @@ const HEAD_RULES = {
       args.some(
         (a) =>
           /^-[a-zA-Z]*[xcu][a-zA-Z]*$/.test(a) ||
-          a === "--extract" || a === "--create" || a === "--append" ||
-          a === "--update" || a === "--delete",
+          a === "--extract" ||
+          a === "--create" ||
+          a === "--append" ||
+          a === "--update" ||
+          a === "--delete",
       )
     ) {
       return "tar (extract/create) …";
@@ -190,7 +447,13 @@ const HEAD_RULES = {
       ? undefined
       : "unzip (not list-only) …",
   gzip: (args) =>
-    args.some((a) => /^-[a-zA-Z]*[tlc][a-zA-Z]*$/.test(a) || a === "--test" || a === "--list" || a === "--stdout")
+    args.some(
+      (a) =>
+        /^-[a-zA-Z]*[tlc][a-zA-Z]*$/.test(a) ||
+        a === "--test" ||
+        a === "--list" ||
+        a === "--stdout",
+    )
       ? undefined
       : "gzip (not list/test/stdout) …",
   bzip2: (args) =>
@@ -198,18 +461,22 @@ const HEAD_RULES = {
       ? undefined
       : "bzip2 (not test/stdout) …",
   xz: (args) =>
-    args.some((a) => /^-[a-zA-Z]*[tlc][a-zA-Z]*$/.test(a) || a === "--test" || a === "--list" || a === "--stdout")
+    args.some(
+      (a) =>
+        /^-[a-zA-Z]*[tlc][a-zA-Z]*$/.test(a) ||
+        a === "--test" ||
+        a === "--list" ||
+        a === "--stdout",
+    )
       ? undefined
       : "xz (not list/test/stdout) …",
-  env: (args) =>
-    args.every((a) => a.includes("=")) ? undefined : "env (executes command) …",
+  env: (args) => (args.every((a) => a.includes("=")) ? undefined : "env (executes command) …"),
   // Interactive top never exits in a headless tool call. Only the bounded
   // forms terminate: macOS `top -l <N>` (logging, N samples) and Linux
   // `top -b -n <N>` (batch, N iterations). `-b` alone, or `-l`/`-n` without
   // a numeric count, loops forever.
   top: (args) =>
-    hasFlagCount(args, "l") ||
-    (args.some((a) => a.startsWith("-b")) && hasFlagCount(args, "n"))
+    hasFlagCount(args, "l") || (args.some((a) => a.startsWith("-b")) && hasFlagCount(args, "n"))
       ? undefined
       : "top (interactive — use top -b -n1 or top -l 1) …",
   tail: (args) =>
@@ -225,7 +492,9 @@ const HEAD_RULES = {
       ? "dmesg -w/--follow (waits for kernel messages) …"
       : undefined,
   free: (args) =>
-    args.some((a) => a === "-s" || a === "--seconds" || a.startsWith("--seconds=") || /^-s\d+$/.test(a))
+    args.some(
+      (a) => a === "-s" || a === "--seconds" || a.startsWith("--seconds=") || /^-s\d+$/.test(a),
+    )
       ? "free -s (repeats forever) …"
       : undefined,
   netstat: (args) =>
@@ -233,9 +502,7 @@ const HEAD_RULES = {
       ? "netstat -c (continuous output) …"
       : undefined,
   vm_stat: (args) =>
-    args.some((a) => /^\d+$/.test(a))
-      ? "vm_stat <interval> (repeats forever) …"
-      : undefined,
+    args.some((a) => /^\d+$/.test(a)) ? "vm_stat <interval> (repeats forever) …" : undefined,
   iostat: (args) =>
     args.filter((a) => /^\d+$/.test(a)).length === 1
       ? "iostat <interval> (repeats forever — add a count: iostat 1 3) …"
@@ -245,9 +512,7 @@ const HEAD_RULES = {
       ? "sysctl -w (write) …"
       : undefined,
   xmllint: (args) =>
-    args.some((a) => a === "-o" || a === "--output")
-      ? "xmllint --output (write) …"
-      : undefined,
+    args.some((a) => a === "-o" || a === "--output") ? "xmllint --output (write) …" : undefined,
 };
 
 // ---------------------------------------------------------------------------
@@ -274,18 +539,27 @@ function blockedGit(args) {
   if (sub === "branch") {
     const readOnly = rest.some(
       (a) =>
-        /^-[avr]+$/.test(a) || a === "--list" || a.startsWith("--merged") ||
-        a.startsWith("--no-merged") || a.startsWith("--contains") ||
-        a.startsWith("--points-at") || a.startsWith("--sort"),
+        /^-[avr]+$/.test(a) ||
+        a === "--list" ||
+        a.startsWith("--merged") ||
+        a.startsWith("--no-merged") ||
+        a.startsWith("--contains") ||
+        a.startsWith("--points-at") ||
+        a.startsWith("--sort"),
     );
     if (!readOnly && rest.some((a) => !a.startsWith("-"))) return "git branch (create/delete) …";
     return undefined;
   }
   if (sub === "tag") {
     const readOnly = rest.some(
-      (a) => a === "-l" || a === "--list" || a.startsWith("--sort") ||
-        a.startsWith("--contains") || a.startsWith("--merged") ||
-        a.startsWith("--points-at") || /^-[a-zA-Z]*n/.test(a),
+      (a) =>
+        a === "-l" ||
+        a === "--list" ||
+        a.startsWith("--sort") ||
+        a.startsWith("--contains") ||
+        a.startsWith("--merged") ||
+        a.startsWith("--points-at") ||
+        /^-[a-zA-Z]*n/.test(a),
     );
     if (!readOnly && rest.some((a) => !a.startsWith("-"))) return "git tag (write) …";
     return undefined;
@@ -293,8 +567,12 @@ function blockedGit(args) {
   if (sub === "remote") {
     const first = rest[0];
     if (
-      first && first !== "-v" && first !== "--verbose" &&
-      first !== "show" && first !== "get-url" && !first.startsWith("-")
+      first &&
+      first !== "-v" &&
+      first !== "--verbose" &&
+      first !== "show" &&
+      first !== "get-url" &&
+      !first.startsWith("-")
     ) {
       return "git remote (write) …";
     }
@@ -367,7 +645,8 @@ function blockedGo(args) {
   const sub = args[j]?.toLowerCase();
   const rest = args.slice(j + 1);
   if (!sub) return undefined; // bare go prints help
-  if (sub === "env" && rest.some((a) => a === "-w" || a.startsWith("-w"))) return "go env -w (write) …";
+  if (sub === "env" && rest.some((a) => a === "-w" || a.startsWith("-w")))
+    return "go env -w (write) …";
   if (!GO_READ_ONLY.has(sub)) return `go ${sub} …`;
   return undefined;
 }

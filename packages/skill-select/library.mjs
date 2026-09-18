@@ -21,9 +21,38 @@ const DESCRIPTION_CHARS = 200;
 
 // Small stopword set: query words that carry no selection signal.
 const STOPWORDS = new Set([
-  "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "with", "my",
-  "me", "i", "is", "it", "this", "that", "how", "do", "does", "use", "using",
-  "when", "what", "which", "can", "should", "need", "want", "please", "help",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "for",
+  "to",
+  "of",
+  "in",
+  "on",
+  "with",
+  "my",
+  "me",
+  "i",
+  "is",
+  "it",
+  "this",
+  "that",
+  "how",
+  "do",
+  "does",
+  "use",
+  "using",
+  "when",
+  "what",
+  "which",
+  "can",
+  "should",
+  "need",
+  "want",
+  "please",
+  "help",
 ]);
 
 function tokenize(text) {
@@ -34,7 +63,10 @@ function tokenize(text) {
 }
 
 function normalizePhrase(text) {
-  return String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /**
@@ -65,7 +97,10 @@ function tokenMatch(token, index) {
 
 function unquote(value) {
   const text = String(value ?? "").trim();
-  if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
     return text.slice(1, -1);
   }
   return text;
@@ -78,7 +113,9 @@ function unquote(value) {
  */
 export function parseFrontmatter(text) {
   const result = { name: "", description: "" };
-  const normalized = String(text ?? "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  const normalized = String(text ?? "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n");
   if (!normalized.startsWith("---\n")) {
     return result;
   }
@@ -96,7 +133,10 @@ export function parseFrontmatter(text) {
     const value = rawValue.trim();
     if (value === ">" || value === "|" || value === ">-" || value === "|-") {
       const collected = [];
-      while (index + 1 < lines.length && (lines[index + 1].trim() === "" || /^\s+\S/.test(lines[index + 1]))) {
+      while (
+        index + 1 < lines.length &&
+        (lines[index + 1].trim() === "" || /^\s+\S/.test(lines[index + 1]))
+      ) {
         collected.push(lines[index + 1].trim());
         index += 1;
       }
@@ -115,7 +155,11 @@ export function parseFrontmatter(text) {
  * escape hatch: skills kept there are never listed by pi's skill discovery, so
  * they cost no context until skill_select finds them.
  */
-export function resolveRoots({ cwd = process.cwd(), home = process.env.HOME ?? "", env = process.env } = {}) {
+export function resolveRoots({
+  cwd = process.cwd(),
+  home = process.env.HOME ?? "",
+  env = process.env,
+} = {}) {
   const configured = String(env?.PI_SKILL_LIBRARY ?? "")
     .split(/[,:]/)
     .map((entry) => entry.trim())
@@ -270,12 +314,14 @@ export function rankSkills(skills, query, { limit = DEFAULT_LIMIT } = {}) {
 
   return scored
     .filter((entry) => entry.score > 0)
-    .sort((left, right) => (right.score - left.score) || left.name.localeCompare(right.name))
+    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
     .slice(0, boundedLimit);
 }
 
 function truncate(text, max = DESCRIPTION_CHARS) {
-  const value = String(text ?? "").replace(/\s+/g, " ").trim();
+  const value = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 

@@ -24,7 +24,9 @@ export function createChildPolicyExtension({ allowlistBash = false, blockWriters
   return {
     name: "subagent-child-policy",
     factory(pi) {
-      pi.on("tool_call", async (event) => evaluateChildToolCall(event, { allowlistBash, blockWriters }));
+      pi.on("tool_call", async (event) =>
+        evaluateChildToolCall(event, { allowlistBash, blockWriters }),
+      );
     },
   };
 }

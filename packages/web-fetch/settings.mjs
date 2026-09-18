@@ -63,7 +63,8 @@ export function sanitizeSettings(raw) {
   const concurrency = clampInt(src.BatchConcurrency ?? src.batchConcurrency, 1, 10, undefined);
   if (concurrency !== undefined) out.batchConcurrency = concurrency;
 
-  if (typeof (src.UserAgent ?? src.userAgent) === "string") out.userAgent = src.UserAgent ?? src.userAgent;
+  if (typeof (src.UserAgent ?? src.userAgent) === "string")
+    out.userAgent = src.UserAgent ?? src.userAgent;
 
   const extra = src.ExtraHeaders ?? src.extraHeaders;
   if (extra && typeof extra === "object" && !Array.isArray(extra)) {

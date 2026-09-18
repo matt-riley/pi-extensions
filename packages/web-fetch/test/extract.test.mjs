@@ -42,7 +42,10 @@ test("extractPage: html → metadata + markdown", () => {
 });
 
 test("extractPage: html sniffed without content-type", () => {
-  const out = extractPage({ contentType: "", body: "<!doctype html><html><body><p>hi</p></body></html>" });
+  const out = extractPage({
+    contentType: "",
+    body: "<!doctype html><html><body><p>hi</p></body></html>",
+  });
   assert.equal(out.kind, "page");
 });
 
@@ -67,7 +70,10 @@ test("truncateText: word boundary", () => {
 });
 
 test("content-type helpers", () => {
-  assert.deepEqual(parseContentType("text/html; charset=utf-8"), { mime: "text/html", charset: "utf-8" });
+  assert.deepEqual(parseContentType("text/html; charset=utf-8"), {
+    mime: "text/html",
+    charset: "utf-8",
+  });
   assert.equal(isHtmlContent({ mime: "text/html" }), true);
   assert.equal(isHtmlContent({ mime: "text/plain", body: "<html><body>x</body></html>" }), true);
   assert.equal(isTextMime("application/json"), true);

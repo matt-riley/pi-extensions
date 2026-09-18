@@ -27,7 +27,10 @@ test("truncateText caps at 50 KB and appends an ellipsis", () => {
 });
 
 test("formatUsageLine and formatResult", () => {
-  assert.equal(formatUsageLine({ turns: 8, tokens: 12400, durationMs: 4100 }), "8 turns · 12.4k tok · 4.1s");
+  assert.equal(
+    formatUsageLine({ turns: 8, tokens: 12400, durationMs: 4100 }),
+    "8 turns · 12.4k tok · 4.1s",
+  );
   const text = formatResult({
     agent: "scout",
     description: "auth entry points",
@@ -37,7 +40,10 @@ test("formatUsageLine and formatResult", () => {
     durationMs: 4100,
     text: "found it",
   });
-  assert.equal(text, "[scout] auth entry points — completed · 8 turns · 12.4k tok · 4.1s\n\nfound it");
+  assert.equal(
+    text,
+    "[scout] auth entry points — completed · 8 turns · 12.4k tok · 4.1s\n\nfound it",
+  );
   assert.equal(formatResult({ agent: "scout", status: "stopped" }), "[scout] — stopped");
 });
 
@@ -47,14 +53,17 @@ test("extractLastAssistantText walks backward and joins text parts", () => {
     extractLastAssistantText([
       { role: "user", content: "go" },
       { role: "assistant", content: [{ type: "text", text: "old" }] },
-      { role: "assistant", content: [{ type: "text", text: "new" }, { type: "text", text: "er" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "new" },
+          { type: "text", text: "er" },
+        ],
+      },
     ]),
     "newer",
   );
-  assert.equal(
-    extractLastAssistantText([{ role: "assistant", content: "plain" }]),
-    "plain",
-  );
+  assert.equal(extractLastAssistantText([{ role: "assistant", content: "plain" }]), "plain");
 });
 
 test("resolveMaxTurns only lowers the cap", () => {
@@ -97,7 +106,14 @@ test("accumulateUsage sums fields across messages", () => {
     totalTokens: 0,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   });
-  accumulateUsage(acc, { input: 10, output: 5, cacheRead: 3, cacheWrite: 2, totalTokens: 20, cost: { total: 0.01 } });
+  accumulateUsage(acc, {
+    input: 10,
+    output: 5,
+    cacheRead: 3,
+    cacheWrite: 2,
+    totalTokens: 20,
+    cost: { total: 0.01 },
+  });
   accumulateUsage(acc, { input: 1, output: 1, totalTokens: 2 });
   assert.equal(acc.input, 11);
   assert.equal(acc.output, 6);
@@ -110,8 +126,20 @@ test("accumulateUsage sums fields across messages", () => {
 });
 
 test("resolveFinalStatus marks a wrapped completion as wrapped up", () => {
-  assert.equal(resolveFinalStatus({ status: "completed", wrapSent: false, turns: 40, maxTurns: 30 }), "completed");
-  assert.equal(resolveFinalStatus({ status: "completed", wrapSent: true, turns: 40, maxTurns: 30 }), "wrapped up");
-  assert.equal(resolveFinalStatus({ status: "timed out", wrapSent: false, turns: 5, maxTurns: 30 }), "timed out");
-  assert.equal(resolveFinalStatus({ status: "stopped", wrapSent: false, turns: 1, maxTurns: 30 }), "stopped");
+  assert.equal(
+    resolveFinalStatus({ status: "completed", wrapSent: false, turns: 40, maxTurns: 30 }),
+    "completed",
+  );
+  assert.equal(
+    resolveFinalStatus({ status: "completed", wrapSent: true, turns: 40, maxTurns: 30 }),
+    "wrapped up",
+  );
+  assert.equal(
+    resolveFinalStatus({ status: "timed out", wrapSent: false, turns: 5, maxTurns: 30 }),
+    "timed out",
+  );
+  assert.equal(
+    resolveFinalStatus({ status: "stopped", wrapSent: false, turns: 1, maxTurns: 30 }),
+    "stopped",
+  );
 });

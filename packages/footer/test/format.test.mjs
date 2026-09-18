@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composeLine, ctxColor, fmtCost, fmtTokens, ICONS, thinkColor, visibleWidth } from "../format.mjs";
+import {
+  composeLine,
+  ctxColor,
+  fmtCost,
+  fmtTokens,
+  ICONS,
+  thinkColor,
+  visibleWidth,
+} from "../format.mjs";
 
 // Fake theme.fg emitting realistic numeric SGR codes (pi emits e.g. 38;5;214m).
 const apply = (color, text) => `\u001b[38;5;1m${text}\u001b[0m`;
@@ -42,7 +50,12 @@ test("ctxColor escalates with context pressure", () => {
 });
 
 test("composeLine fills width with gap between blocks", () => {
-  const line = composeLine([{ text: "abc", color: "accent" }], [{ text: "xyz", color: "dim" }], 20, apply);
+  const line = composeLine(
+    [{ text: "abc", color: "accent" }],
+    [{ text: "xyz", color: "dim" }],
+    20,
+    apply,
+  );
   assert.equal(visibleWidth(line), 20);
   assert.ok(line.startsWith("\u001b[38;5;1mabc\u001b[0m"));
   assert.ok(line.endsWith("\u001b[38;5;1mxyz\u001b[0m"));

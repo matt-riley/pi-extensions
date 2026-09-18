@@ -49,8 +49,14 @@ export function langForFile(relPath) {
   if (dot > 0) {
     const ext = relPath.slice(dot).toLowerCase();
     if (
-      ext === ".ts" || ext === ".tsx" || ext === ".mts" || ext === ".cts" ||
-      ext === ".js" || ext === ".jsx" || ext === ".mjs" || ext === ".cjs" ||
+      ext === ".ts" ||
+      ext === ".tsx" ||
+      ext === ".mts" ||
+      ext === ".cts" ||
+      ext === ".js" ||
+      ext === ".jsx" ||
+      ext === ".mjs" ||
+      ext === ".cjs" ||
       relPath.endsWith(".d.ts")
     ) {
       return "ts";
@@ -100,13 +106,29 @@ const FAMILIES = {
     [/^\s*include\s+([A-Z]\w*)/, "import", 1],
   ],
   java: [
-    [/^\s*(?:public|private|protected|static|final|abstract|sealed|non-sealed|strictfp|synchronized|native|transient|volatile|default|@\w+\s+)*\s*(?:class|interface|enum|record|@interface)\s+(\w+)/, "class", 1],
-    [/^\s*(?:public|private|protected|static|final|abstract|synchronized|native|default|\s)*[\w<>[\],.\s]+\([^;{]*\)\s*(?:throws\s+[\w.,\s]+)?\s*[{;]/, "method", 0],
+    [
+      /^\s*(?:public|private|protected|static|final|abstract|sealed|non-sealed|strictfp|synchronized|native|transient|volatile|default|@\w+\s+)*\s*(?:class|interface|enum|record|@interface)\s+(\w+)/,
+      "class",
+      1,
+    ],
+    [
+      /^\s*(?:public|private|protected|static|final|abstract|synchronized|native|default|\s)*[\w<>[\],.\s]+\([^;{]*\)\s*(?:throws\s+[\w.,\s]+)?\s*[{;]/,
+      "method",
+      0,
+    ],
     [/^\s*import\s+(?:static\s+)?([\w.]+);/, "import", 1],
   ],
   kt: [
-    [/^\s*(?:public|private|protected|internal|override|open|abstract|sealed|data|enum|annotation|companion\s+object)?\s*(?:class|interface|enum\s+class|object)\s+(\w+)/, "class", 1],
-    [/^\s*(?:public|private|protected|internal|override|open|suspend|tailrec|inline|operator|infix|external|abstract|final|reified|noinline|crossinline)?\s*(?:fun)\s+(\w+)/, "function", 1],
+    [
+      /^\s*(?:public|private|protected|internal|override|open|abstract|sealed|data|enum|annotation|companion\s+object)?\s*(?:class|interface|enum\s+class|object)\s+(\w+)/,
+      "class",
+      1,
+    ],
+    [
+      /^\s*(?:public|private|protected|internal|override|open|suspend|tailrec|inline|operator|infix|external|abstract|final|reified|noinline|crossinline)?\s*(?:fun)\s+(\w+)/,
+      "function",
+      1,
+    ],
     [/^\s*import\s+([\w.*]+)/, "import", 1],
     [/^\s*package\s+([\w.]+)/, "namespace", 1],
   ],
@@ -114,16 +136,22 @@ const FAMILIES = {
     [/^\s*#include\s*[<"]([^>"]+)[>"]/, "import", 1],
     [/^\s*typedef\s+(?:struct|enum|union)?\s*[\w]+\s+(\w+)\s*;/, "type", 1],
     [/^\s*(?:struct|class|enum|union)\s+(\w+)\b/, "class", 1],
-    [/^\s*(?:static\s+|inline\s+|extern\s+|const\s+|volatile\s+|unsigned\s+|signed\s+)*[\w\s*]+\([^;{]*\)\s*[{;]/, "function", 0],
+    [
+      /^\s*(?:static\s+|inline\s+|extern\s+|const\s+|volatile\s+|unsigned\s+|signed\s+)*[\w\s*]+\([^;{]*\)\s*[{;]/,
+      "function",
+      0,
+    ],
   ],
-  md: [
-    [/^\s{0,3}(#{1,6})\s+(.+)$/, "heading", 2],
-  ],
+  md: [[/^\s{0,3}(#{1,6})\s+(.+)$/, "heading", 2]],
 };
 
 // Generic fallback: universal declaration keywords, then any `name(` pattern.
 const GENERIC_RULES = [
-  [/^\s*(?:export\s+|default\s+|pub\s+|public\s+|private\s+|async\s+|static\s+)*(?:function|def|func|fn|class|struct|interface|type|enum|trait)\s+(\w+)/, "decl", 1],
+  [
+    /^\s*(?:export\s+|default\s+|pub\s+|public\s+|private\s+|async\s+|static\s+)*(?:function|def|func|fn|class|struct|interface|type|enum|trait)\s+(\w+)/,
+    "decl",
+    1,
+  ],
   [/^\s*(\w+)\s*\(/, "function", 1],
 ];
 

@@ -56,7 +56,20 @@ const RECALL_TOOL = "lore_recall";
 // find_definition from pi-code-search) and SKILL_SELECT_TOOLS (skill_select
 // from pi-skill-select) are read-only discovery tools — the core activity of
 // plan mode; skill_select only reads the local skill library.
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", ...CODE_SEARCH_TOOLS, ...SKILL_SELECT_TOOLS, RECALL_TOOL, QUESTION_TOOL, COMPLETE_TOOL, FETCH_TOOL, SEARCH_TOOL];
+const PLAN_TOOLS = [
+  "read",
+  "bash",
+  "grep",
+  "find",
+  "ls",
+  ...CODE_SEARCH_TOOLS,
+  ...SKILL_SELECT_TOOLS,
+  RECALL_TOOL,
+  QUESTION_TOOL,
+  COMPLETE_TOOL,
+  FETCH_TOOL,
+  SEARCH_TOOL,
+];
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 // .pi/ rather than repo root: a root PLAN.md collides with projects' own
 // PLAN.md files and would force a per-project gitignore entry.
@@ -152,7 +165,9 @@ export default function planMode(pi: ExtensionAPI) {
     if (!ctx.hasUI || !ctx.ui) return;
     if (state.enabled) {
       const label =
-        ctx.ui.theme?.fg != null ? ctx.ui.theme.fg("warning", "plan (read-only)") : "plan (read-only)";
+        ctx.ui.theme?.fg != null
+          ? ctx.ui.theme.fg("warning", "plan (read-only)")
+          : "plan (read-only)";
       ctx.ui.setStatus?.("plan-mode", label);
       ctx.ui.setWidget?.("plan-mode", [
         "Plan mode: active — read-only",
@@ -296,7 +311,10 @@ export default function planMode(pi: ExtensionAPI) {
       }
       if (arg === "approve") {
         if (!state.planPath) {
-          notify(ctx, "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).");
+          notify(
+            ctx,
+            "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).",
+          );
           return;
         }
         const planFile = state.planPath;
@@ -305,9 +323,12 @@ export default function planMode(pi: ExtensionAPI) {
           return;
         }
         exitPlanMode(ctx, `Plan approved — leaving plan mode. Implementing from ${planFile}.`);
-        await pi.sendUserMessage(`The plan is approved. Read ${planFile} and implement it exactly as written.`, {
-          deliverAs: "followUp",
-        });
+        await pi.sendUserMessage(
+          `The plan is approved. Read ${planFile} and implement it exactly as written.`,
+          {
+            deliverAs: "followUp",
+          },
+        );
         state.planPath = null;
         lastWritten = null;
         return;
@@ -372,7 +393,10 @@ export default function planMode(pi: ExtensionAPI) {
       const command = typeof event.input?.command === "string" ? event.input.command : "";
       const blocked = blockedBashCommand(command);
       if (blocked) {
-        return { block: true, reason: `Plan mode blocks bash command (read-only allowlist): ${blocked}` };
+        return {
+          block: true,
+          reason: `Plan mode blocks bash command (read-only allowlist): ${blocked}`,
+        };
       }
     }
   });
@@ -387,10 +411,16 @@ export default function planMode(pi: ExtensionAPI) {
       "Include a recommended answer when you have a sensible default. " +
       "Use only for preferences, tradeoffs, or assumption locks that cannot be discovered by read-only exploration.",
     parameters: Type.Object({
-      title: Type.Optional(Type.String({ description: "Short title for the question (grill format)" })),
+      title: Type.Optional(
+        Type.String({ description: "Short title for the question (grill format)" }),
+      ),
       question: Type.String({ description: "The question to ask" }),
-      options: Type.Array(Type.String(), { description: "2-4 meaningful options; the user may also type their own" }),
-      recommended: Type.Optional(Type.String({ description: "Your recommended answer, shown to the user" })),
+      options: Type.Array(Type.String(), {
+        description: "2-4 meaningful options; the user may also type their own",
+      }),
+      recommended: Type.Optional(
+        Type.String({ description: "Your recommended answer, shown to the user" }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const title = typeof params?.title === "string" ? params.title.trim() : "";
@@ -468,7 +498,9 @@ export default function planMode(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!state.enabled) {
-        return { content: [{ type: "text", text: "Not in plan mode — plan_mode_complete is inactive." }] };
+        return {
+          content: [{ type: "text", text: "Not in plan mode — plan_mode_complete is inactive." }],
+        };
       }
       const plan = String(params?.plan ?? "").trim();
       if (!plan) {
@@ -498,7 +530,10 @@ export default function planMode(pi: ExtensionAPI) {
         };
       }
       updateStatus(ctx);
-      notify(ctx, `Plan saved to ${savedPath} — review and edit it, then /plan approve to start implementation.`);
+      notify(
+        ctx,
+        `Plan saved to ${savedPath} — review and edit it, then /plan approve to start implementation.`,
+      );
       return {
         content: [
           {
@@ -532,7 +567,9 @@ export default function planMode(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal, onUpdate, _ctx) {
       if (!state.enabled) {
-        return { content: [{ type: "text", text: "Not in plan mode — plan_fetch_url is inactive." }] };
+        return {
+          content: [{ type: "text", text: "Not in plan mode — plan_fetch_url is inactive." }],
+        };
       }
       const url = String(params?.url ?? "").trim();
       if (!url) {
@@ -546,16 +583,23 @@ export default function planMode(pi: ExtensionAPI) {
       }
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
         return {
-          content: [{ type: "text", text: `Rejected: only http(s) URLs are allowed, got ${parsed.protocol}//.` }],
+          content: [
+            {
+              type: "text",
+              text: `Rejected: only http(s) URLs are allowed, got ${parsed.protocol}//.`,
+            },
+          ],
         };
       }
       const format = typeof params?.format === "string" ? params.format : "markdown";
       if (!isKnownFormat(format)) {
         return {
-          content: [{
-            type: "text",
-            text: `Rejected: format must be one of markdown, html, text, json, raw. Got "${format}".`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Rejected: format must be one of markdown, html, text, json, raw. Got "${format}".`,
+            },
+          ],
         };
       }
       const requestedMaxChars = Number(params?.maxChars);
@@ -572,10 +616,12 @@ export default function planMode(pi: ExtensionAPI) {
         const text = formatWebFetchResult(outcome, { format, maxChars });
         if (!text.trim()) {
           return {
-            content: [{
-              type: "text",
-              text: `Fetched ${outcome.finalUrl ?? url} — no readable content found.`,
-            }],
+            content: [
+              {
+                type: "text",
+                text: `Fetched ${outcome.finalUrl ?? url} — no readable content found.`,
+              },
+            ],
           };
         }
         return { content: [{ type: "text", text }] };

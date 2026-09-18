@@ -10,13 +10,18 @@
 import { levenshtein } from "./search.mjs";
 
 const DEF_KINDS = new Set([
-  "function", "class", "interface", "type", "enum",
-  "const", "variable", "field", "method",
+  "function",
+  "class",
+  "interface",
+  "type",
+  "enum",
+  "const",
+  "variable",
+  "field",
+  "method",
 ]);
 
-const EXT_PROBE = [
-  "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts",
-];
+const EXT_PROBE = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts"];
 const REEXPORT_DEPTH = 8;
 
 /** Parse tsconfig/jsconfig compilerOptions.paths + baseUrl. */
@@ -31,9 +36,7 @@ export function parseTsconfigPaths(json) {
     if (typeof target === "string") entries.push({ pattern, target });
   }
   if (entries.length === 0) return null;
-  const baseUrl = typeof compiler.baseUrl === "string"
-    ? compiler.baseUrl.replace(/\/+$/, "")
-    : "";
+  const baseUrl = typeof compiler.baseUrl === "string" ? compiler.baseUrl.replace(/\/+$/, "") : "";
   return { baseUrl: baseUrl === "." ? "" : baseUrl, entries };
 }
 
@@ -235,10 +238,19 @@ export async function resolveDefinition({
         }
       }
       if (targetSpec) {
-        const resolved = resolveSpecifier(targetSpec, fromFile, { fileSet, tsconfig, workspaceMap });
+        const resolved = resolveSpecifier(targetSpec, fromFile, {
+          fileSet,
+          tsconfig,
+          workspaceMap,
+        });
         if (resolved.type === "file") {
           const followed = followReexports(resolved.rel, targetName, {
-            cache, fileSet, tsconfig, workspaceMap, depth: 0, visited: new Set(),
+            cache,
+            fileSet,
+            tsconfig,
+            workspaceMap,
+            depth: 0,
+            visited: new Set(),
             alsoName: symbol, // default imports resolve to the function's own name
           });
           if (followed?.rel) {
@@ -247,7 +259,9 @@ export async function resolveDefinition({
             external = followed.external;
             if (importRec) note.push(`imported from "${importRec.source}" (re-exported)`);
           } else {
-            note.push(`import of "${symbol}" from "${targetSpec}" resolved to ${resolved.rel} but no definition found there`);
+            note.push(
+              `import of "${symbol}" from "${targetSpec}" resolved to ${resolved.rel} but no definition found there`,
+            );
           }
         } else if (resolved.type === "external") {
           external = resolved.pkg;
@@ -271,7 +285,14 @@ export async function resolveDefinition({
       if (s.name !== symbol) continue;
       if (kind && s.kind !== kind) continue;
       if (!DEF_KINDS.has(s.kind)) continue;
-      candidates.push({ rel, line: s.startLine, name: s.name, kind: s.kind, signature: s.signature, exported: !!s.exported });
+      candidates.push({
+        rel,
+        line: s.startLine,
+        name: s.name,
+        kind: s.kind,
+        signature: s.signature,
+        exported: !!s.exported,
+      });
     }
   }
   candidates.sort((a, b) => {
@@ -287,13 +308,17 @@ export async function resolveDefinition({
     const lines = (await readFile(c.rel))?.split(/\r?\n/) ?? [];
     const lo = Math.max(0, c.line - 2);
     const hi = Math.min(lines.length, c.line + 1);
-    c.context = lines.slice(lo, hi).map((l) => l.trim().slice(0, 100)).filter(Boolean);
+    c.context = lines
+      .slice(lo, hi)
+      .map((l) => l.trim().slice(0, 100))
+      .filter(Boolean);
     withContext.push(c);
   }
 
   if (candidates.length === 0 && !external) {
     const suggestions = await suggestDefs(q, files, cache);
-    if (suggestions.length > 0) note.push(`no definition found — did you mean: ${suggestions.join(", ")}?`);
+    if (suggestions.length > 0)
+      note.push(`no definition found — did you mean: ${suggestions.join(", ")}?`);
   }
 
   return {
@@ -305,7 +330,11 @@ export async function resolveDefinition({
 }
 
 /** Follow a re-export chain from `startRel` looking for `name`. */
-function followReexports(startRel, name, { cache, fileSet, tsconfig, workspaceMap, depth, visited, alsoName }) {
+function followReexports(
+  startRel,
+  name,
+  { cache, fileSet, tsconfig, workspaceMap, depth, visited, alsoName },
+) {
   if (depth > REEXPORT_DEPTH || visited.has(startRel)) return null;
   visited.add(startRel);
   const entry = cache.files[startRel];
@@ -328,7 +357,12 @@ function followReexports(startRel, name, { cache, fileSet, tsconfig, workspaceMa
       const nm = re.names?.find((n) => n.imported === name || n.local === name);
       const nextName = nm ? nm.imported : name;
       return followReexports(resolved.rel, nextName, {
-        cache, fileSet, tsconfig, workspaceMap, depth: depth + 1, visited,
+        cache,
+        fileSet,
+        tsconfig,
+        workspaceMap,
+        depth: depth + 1,
+        visited,
       });
     }
     if (resolved.type === "external") return { external: resolved.pkg };
@@ -347,4 +381,3 @@ async function suggestDefs(q, files, cache) {
   }
   return [...seen].sort((a, b) => levenshtein(q, a) - levenshtein(q, b)).slice(0, 3);
 }
-

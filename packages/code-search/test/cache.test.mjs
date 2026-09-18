@@ -26,7 +26,10 @@ test("cachePathFor nests under .pi/cache", () => {
 test("parseFilePayload extracts TS symbols and fallback symbols", () => {
   const ts = parseFilePayload("export function foo() {}\nexport class Bar {}", "src/a.ts");
   assert.equal(ts.lang, "ts");
-  assert.deepEqual(ts.symbols.list.map((s) => s.name), ["foo", "Bar"]);
+  assert.deepEqual(
+    ts.symbols.list.map((s) => s.name),
+    ["foo", "Bar"],
+  );
   assert.equal(ts.symbols.truncated, false);
 
   const py = parseFilePayload("def hello():\n    pass", "main.py");
@@ -92,25 +95,49 @@ test("refreshCache builds from scratch, reuses unchanged, re-parses changed, dro
     };
     const readFn = (rel) => readFile(join(dir, rel), "utf8");
 
-    const first = await refreshCache({ cache: null, root: dir, list, stat: statFn, readFile: readFn });
+    const first = await refreshCache({
+      cache: null,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: readFn,
+    });
     assert.deepEqual(first.changed.sort(), ["src/a.ts", "src/b.ts", "src/c.ts"]);
     assert.equal(Object.keys(first.cache.files).length, 3);
     assert.equal(first.cache.files["src/a.ts"].symbols[0].name, "alpha");
 
     // Second refresh: nothing changed → no re-parse
-    const second = await refreshCache({ cache: first.cache, root: dir, list, stat: statFn, readFile: readFn });
+    const second = await refreshCache({
+      cache: first.cache,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: readFn,
+    });
     assert.deepEqual(second.changed, []);
     assert.equal(second.cache.files["src/a.ts"].symbols[0].name, "alpha");
 
     // Touch b.ts → only b re-parsed
     await writeFile(join(dir, "src/b.ts"), "export function beta2() {}");
-    const third = await refreshCache({ cache: second.cache, root: dir, list, stat: statFn, readFile: readFn });
+    const third = await refreshCache({
+      cache: second.cache,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: readFn,
+    });
     assert.deepEqual(third.changed, ["src/b.ts"]);
     assert.equal(third.cache.files["src/b.ts"].symbols[0].name, "beta2");
 
     // Remove c.ts from the listing → dropped
     const shrunkList = async () => ({ files: ["src/a.ts", "src/b.ts"], truncated: false });
-    const fourth = await refreshCache({ cache: third.cache, root: dir, list: shrunkList, stat: statFn, readFile: readFn });
+    const fourth = await refreshCache({
+      cache: third.cache,
+      root: dir,
+      list: shrunkList,
+      stat: statFn,
+      readFile: readFn,
+    });
     assert.deepEqual(fourth.removed, ["src/c.ts"]);
     assert.equal(fourth.cache.files["src/c.ts"], undefined);
   } finally {
@@ -123,7 +150,13 @@ test("refreshCache skips files that vanish between listing and stat", async () =
   try {
     const statFn = async () => null; // everything "missing"
     const list = async () => ({ files: ["a.ts"], truncated: false });
-    const { cache } = await refreshCache({ cache: null, root: dir, list, stat: statFn, readFile: async () => null });
+    const { cache } = await refreshCache({
+      cache: null,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: async () => null,
+    });
     assert.equal(Object.keys(cache.files).length, 0);
   } finally {
     await cleanup();
@@ -143,16 +176,36 @@ test("cacheStats counts files and symbols", () => {
 
 test("shrinkIfNeeded strips symbols from the largest entries first until under an injected byte cap, keeping smaller entries intact", () => {
   const bigSymbols = Array.from({ length: 50 }, (_, i) => ({
-    name: `sym${i}`, kind: "function", startLine: i + 1, endLine: i + 1, signature: "x".repeat(50),
+    name: `sym${i}`,
+    kind: "function",
+    startLine: i + 1,
+    endLine: i + 1,
+    signature: "x".repeat(50),
   }));
-  const smallSymbols = [{ name: "tiny", kind: "function", startLine: 1, endLine: 1, signature: "y" }];
+  const smallSymbols = [
+    { name: "tiny", kind: "function", startLine: 1, endLine: 1, signature: "y" },
+  ];
   const cache = {
     version: CACHE_VERSION,
     root: "/r",
     builtAt: 1,
     files: {
-      "big.ts": { mtimeMs: 1, size: 10000, lang: "ts", symbols: bigSymbols, imports: [], reexports: [] },
-      "small.ts": { mtimeMs: 1, size: 10, lang: "ts", symbols: smallSymbols, imports: [], reexports: [] },
+      "big.ts": {
+        mtimeMs: 1,
+        size: 10000,
+        lang: "ts",
+        symbols: bigSymbols,
+        imports: [],
+        reexports: [],
+      },
+      "small.ts": {
+        mtimeMs: 1,
+        size: 10,
+        lang: "ts",
+        symbols: smallSymbols,
+        imports: [],
+        reexports: [],
+      },
     },
   };
   const fullSize = JSON.stringify(cache).length;
@@ -172,7 +225,16 @@ test("shrinkIfNeeded is a no-op under the cap", () => {
     version: CACHE_VERSION,
     root: "/r",
     builtAt: 1,
-    files: { "a.ts": { mtimeMs: 1, size: 10, lang: "ts", symbols: [{ name: "a" }], imports: [], reexports: [] } },
+    files: {
+      "a.ts": {
+        mtimeMs: 1,
+        size: 10,
+        lang: "ts",
+        symbols: [{ name: "a" }],
+        imports: [],
+        reexports: [],
+      },
+    },
   };
   shrinkIfNeeded(cache, 10 * 1024 * 1024);
   assert.equal(cache.files["a.ts"].symbolsDropped, undefined);
@@ -182,7 +244,10 @@ test("refreshCache threads an injectable maxCacheBytes cap through to shrinkIfNe
   const { dir, cleanup } = await tmpDir();
   try {
     await mkdir(join(dir, "src"), { recursive: true });
-    const bigSrc = Array.from({ length: 80 }, (_, i) => `function bigFn${i}() { return ${i}; }`).join("\n");
+    const bigSrc = Array.from(
+      { length: 80 },
+      (_, i) => `function bigFn${i}() { return ${i}; }`,
+    ).join("\n");
     await writeFile(join(dir, "src/big.ts"), bigSrc);
     await writeFile(join(dir, "src/small.ts"), "export function tiny() {}");
 
@@ -194,12 +259,25 @@ test("refreshCache threads an injectable maxCacheBytes cap through to shrinkIfNe
     };
     const readFn = (rel) => readFile(join(dir, rel), "utf8");
 
-    const unbounded = await refreshCache({ cache: null, root: dir, list, stat: statFn, readFile: readFn });
+    const unbounded = await refreshCache({
+      cache: null,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: readFn,
+    });
     assert.equal(unbounded.cache.files["src/big.ts"].symbolsDropped, undefined); // nowhere near the default 20MB cap
     const fullSize = JSON.stringify(unbounded.cache).length;
 
     const cap = Math.floor(fullSize / 2); // well below full size, but small.ts alone easily fits
-    const bounded = await refreshCache({ cache: null, root: dir, list, stat: statFn, readFile: readFn, maxCacheBytes: cap });
+    const bounded = await refreshCache({
+      cache: null,
+      root: dir,
+      list,
+      stat: statFn,
+      readFile: readFn,
+      maxCacheBytes: cap,
+    });
     assert.equal(bounded.cache.files["src/big.ts"].symbolsDropped, true);
     assert.deepEqual(bounded.cache.files["src/big.ts"].symbols, []);
     assert.equal(bounded.cache.files["src/small.ts"].symbolsDropped, undefined);

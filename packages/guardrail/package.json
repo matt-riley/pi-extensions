@@ -2,6 +2,6 @@
   "name": "pi-guardrail",
   "version": "0.1.0",
   "description": "Prevent destructive tool use: deterministic rules, TypeSafe judgment for the ambiguous middle, human confirm for the rest.",
-  "type": "module",
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module"
 }

@@ -34,7 +34,10 @@ test("running and queued rows plus a queued count", () => {
 });
 
 test("formatLastTool previews common tools", () => {
-  assert.equal(formatLastTool({ toolName: "bash", args: { command: "git log -1" } }), "$ git log -1");
+  assert.equal(
+    formatLastTool({ toolName: "bash", args: { command: "git log -1" } }),
+    "$ git log -1",
+  );
   assert.equal(formatLastTool({ toolName: "read", args: { path: "src/a.ts" } }), "read src/a.ts");
   assert.equal(formatLastTool({ toolName: "grep", input: { pattern: "TODO" } }), "grep TODO");
 });

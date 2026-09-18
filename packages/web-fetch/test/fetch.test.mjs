@@ -25,7 +25,10 @@ test("buildHeaders: defaults + overrides", () => {
   const h = buildHeaders();
   assert.match(h["user-agent"], /Mozilla\/5\.0/);
   assert.equal(h["sec-fetch-dest"], "document");
-  const custom = buildHeaders({ userAgent: "custom", extraHeaders: { Accept: "text/plain", "x-token": "1" } });
+  const custom = buildHeaders({
+    userAgent: "custom",
+    extraHeaders: { Accept: "text/plain", "x-token": "1" },
+  });
   assert.equal(custom["user-agent"], "custom");
   assert.equal(custom.accept, "text/plain"); // case-insensitive override
   assert.equal(custom["x-token"], "1");
@@ -34,19 +37,34 @@ test("buildHeaders: defaults + overrides", () => {
 test("detectCharset: header > meta > http-equiv > default", () => {
   assert.equal(detectCharset({ headerCharset: "shift_jis" }), "shift_jis");
   assert.equal(detectCharset({ bodyPrefix: '<meta charset="iso-8859-1">' }), "windows-1252");
-  assert.equal(detectCharset({ bodyPrefix: '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' }), "utf-8");
+  assert.equal(
+    detectCharset({
+      bodyPrefix: '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+    }),
+    "utf-8",
+  );
   assert.equal(detectCharset({ mime: "text/html" }), "utf-8");
 });
 
 test("parseMetaRefresh: forms", () => {
-  assert.deepEqual(parseMetaRefresh('<meta http-equiv="refresh" content="0; url=/new">'), { delay: 0, url: "/new" });
-  assert.deepEqual(parseMetaRefresh(`<meta http-equiv='refresh' content='5; url="https://x.com/"'>`), { delay: 5, url: "https://x.com/" });
-  assert.deepEqual(parseMetaRefresh('<meta http-equiv="refresh" content="30">'), { delay: 30, url: "" });
+  assert.deepEqual(parseMetaRefresh('<meta http-equiv="refresh" content="0; url=/new">'), {
+    delay: 0,
+    url: "/new",
+  });
+  assert.deepEqual(
+    parseMetaRefresh(`<meta http-equiv='refresh' content='5; url="https://x.com/"'>`),
+    { delay: 5, url: "https://x.com/" },
+  );
+  assert.deepEqual(parseMetaRefresh('<meta http-equiv="refresh" content="30">'), {
+    delay: 30,
+    url: "",
+  });
   assert.equal(parseMetaRefresh("<meta name=description content=x>"), null);
 });
 
 test("parseAlternates + alternateForFormat", () => {
-  const html = '<head><link rel="alternate" type="text/markdown" href="/doc.md">' +
+  const html =
+    '<head><link rel="alternate" type="text/markdown" href="/doc.md">' +
     '<link rel="alternate" type="application/atom+xml" href="/feed">' +
     '<link rel="stylesheet" href="/s.css"></head>';
   const alts = parseAlternates(html);
@@ -65,7 +83,8 @@ function route(routes) {
     const u = new URL(String(url));
     const key = u.pathname + u.search;
     const hit = routes[key] ?? routes["*"];
-    if (!hit) return new Response("not found", { status: 404, headers: { "content-type": "text/plain" } });
+    if (!hit)
+      return new Response("not found", { status: 404, headers: { "content-type": "text/plain" } });
     if (typeof hit === "function") return hit(url, init);
     const headers = { "content-type": hit.ct ?? "text/html" };
     if (hit.location) headers.location = hit.location;
@@ -75,8 +94,10 @@ function route(routes) {
   return fn;
 }
 
-const PAGE = "<html><head><title>Doc</title></head><body><article><h1>Heading</h1><p>" +
-  "Some real content that is long enough to extract. ".repeat(10) + "</p></article></body></html>";
+const PAGE =
+  "<html><head><title>Doc</title></head><body><article><h1>Heading</h1><p>" +
+  "Some real content that is long enough to extract. ".repeat(10) +
+  "</p></article></body></html>";
 
 test("fetchPage: simple html page", async () => {
   const fetcher = route({ "/": { body: PAGE } });
@@ -108,7 +129,9 @@ test("fetchPage: redirect loop errors", async () => {
 
 test("fetchPage: meta refresh followed", async () => {
   const fetcher = route({
-    "/": { body: '<html><head><meta http-equiv="refresh" content="0; url=/real"></head><body></body></html>' },
+    "/": {
+      body: '<html><head><meta http-equiv="refresh" content="0; url=/real"></head><body></body></html>',
+    },
     "/real": { body: PAGE },
   });
   const out = await fetchPage({ url: "https://example.com/", timeoutMs: 5000 }, fetcher);
@@ -119,7 +142,12 @@ test("fetchPage: meta refresh followed", async () => {
 
 test("fetchPage: self meta refresh ignored", async () => {
   const fetcher = route({
-    "/": { body: '<html><head><meta http-equiv="refresh" content="30; url=/"></head><body>' + PAGE + "</body></html>" },
+    "/": {
+      body:
+        '<html><head><meta http-equiv="refresh" content="30; url=/"></head><body>' +
+        PAGE +
+        "</body></html>",
+    },
   });
   const out = await fetchPage({ url: "https://example.com/", timeoutMs: 5000 }, fetcher);
   assert.equal(fetcher.calls.length, 1);
@@ -128,7 +156,9 @@ test("fetchPage: self meta refresh ignored", async () => {
 
 test("fetchPage: alternate fallback when thin", async () => {
   const fetcher = route({
-    "/": { body: '<html><head><link rel="alternate" type="text/markdown" href="/alt.md"></head><body><p>thin</p></body></html>' },
+    "/": {
+      body: '<html><head><link rel="alternate" type="text/markdown" href="/alt.md"></head><body><p>thin</p></body></html>',
+    },
     "/alt.md": { body: "# Rich content\n\nLots of markdown here.", ct: "text/markdown" },
   });
   const out = await fetchPage({ url: "https://example.com/", timeoutMs: 5000 }, fetcher);
@@ -139,7 +169,12 @@ test("fetchPage: alternate fallback when thin", async () => {
 
 test("fetchPage: no alternate when content is thick", async () => {
   const fetcher = route({
-    "/": { body: '<html><head><link rel="alternate" type="text/markdown" href="/alt.md"></head><body>' + PAGE + "</body></html>" },
+    "/": {
+      body:
+        '<html><head><link rel="alternate" type="text/markdown" href="/alt.md"></head><body>' +
+        PAGE +
+        "</body></html>",
+    },
   });
   const out = await fetchPage({ url: "https://example.com/", timeoutMs: 5000 }, fetcher);
   assert.equal(fetcher.calls.length, 1);
@@ -173,7 +208,11 @@ test("fetchPage: http error status throws with snippet", async () => {
 test("fetchPage: timeout aborts", async () => {
   const hanging = (url, init) =>
     new Promise((resolve, reject) => {
-      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      init.signal?.addEventListener(
+        "abort",
+        () => reject(new DOMException("aborted", "AbortError")),
+        { once: true },
+      );
     });
   await assert.rejects(
     fetchPage({ url: "https://example.com/slow", timeoutMs: 50 }, hanging),

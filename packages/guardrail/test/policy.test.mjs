@@ -145,13 +145,22 @@ test("destructive shape in the workspace goes to the judge", () => {
 
 test("unread scripts are judged, read scripts are classified", () => {
   assert.equal(evaluateBashCommand("node scripts/build.mjs", { cwd: CWD }).verdict, "judge");
-  assert.equal(evaluateBashCommand("node scripts/build.mjs", { cwd: CWD, scriptTexts: {} }).verdict, "allow");
   assert.equal(
-    evaluateBashCommand("node scripts/build.mjs", { cwd: CWD, scriptTexts: { "scripts/build.mjs": "rmSync('src', {recursive:true})" } }).verdict,
+    evaluateBashCommand("node scripts/build.mjs", { cwd: CWD, scriptTexts: {} }).verdict,
+    "allow",
+  );
+  assert.equal(
+    evaluateBashCommand("node scripts/build.mjs", {
+      cwd: CWD,
+      scriptTexts: { "scripts/build.mjs": "rmSync('src', {recursive:true})" },
+    }).verdict,
     "judge",
   );
   assert.equal(
-    evaluateBashCommand("node scripts/build.mjs", { cwd: CWD, unresolvedScripts: ["scripts/build.mjs"] }).verdict,
+    evaluateBashCommand("node scripts/build.mjs", {
+      cwd: CWD,
+      unresolvedScripts: ["scripts/build.mjs"],
+    }).verdict,
     "judge",
   );
 });
@@ -239,14 +248,29 @@ test("file tools refuse secrets and system paths, ask about the rest", () => {
   assert.equal(tool("write", { path: "~/settings.json", content: "{}" }), "judge");
   // Cross-repo editing is routine work, not destruction.
   assert.equal(tool("write", { path: "~/Documents/notes.md", content: "x" }), "allow");
-  assert.equal(tool("edit", { path: "/Users/mattriley/Documents/projects/personal/other-repo/app.ts", edits: [] }), "allow");
+  assert.equal(
+    tool("edit", {
+      path: "/Users/mattriley/Documents/projects/personal/other-repo/app.ts",
+      edits: [],
+    }),
+    "allow",
+  );
 });
 
 // ---------------------------------------------------------------------------
 // Tool dispatch
 
 test("read-only tools are never inspected", () => {
-  for (const name of ["read", "grep", "code_search", "web_fetch", "typesafe_ask", "lore_recall", "skill_select", "plan_mode_question"]) {
+  for (const name of [
+    "read",
+    "grep",
+    "code_search",
+    "web_fetch",
+    "typesafe_ask",
+    "lore_recall",
+    "skill_select",
+    "plan_mode_question",
+  ]) {
     assert.equal(tool(name, { path: "~/.ssh/id_rsa", command: "rm -rf ~" }), "allow", name);
   }
 });

@@ -45,7 +45,11 @@ declare module "@earendil-works/pi-coding-agent" {
 
   /** Callback passed to `ctx.ui.setFooter`. */
   export interface FooterCallback {
-    (tui: FooterTui, theme: ExtensionUIContext["theme"], footerData: FooterData): {
+    (
+      tui: FooterTui,
+      theme: ExtensionUIContext["theme"],
+      footerData: FooterData,
+    ): {
       invalidate(): void;
       render(width: number): string[];
       dispose?: () => void;
@@ -130,7 +134,9 @@ declare module "@earendil-works/pi-coding-agent" {
   /** The object every extension's default export receives. */
   export interface ExtensionAPI {
     registerCommand(name: string, def: CommandDefinition): void;
-    registerTool<TParams = unknown, TDetails = unknown>(def: ToolDefinition<TParams, TDetails>): void;
+    registerTool<TParams = unknown, TDetails = unknown>(
+      def: ToolDefinition<TParams, TDetails>,
+    ): void;
     registerFlag(name: string, def: FlagDefinition): void;
     registerShortcut(keybinding: string, def: ShortcutDefinition): void;
     on(event: string, handler: (event: any, ctx: ExtensionContext) => any): void;
@@ -146,7 +152,10 @@ declare module "@earendil-works/pi-coding-agent" {
   export function getAgentDir(): string;
 
   /** Splits `---\nyaml\n---\nbody` frontmatter from a Markdown file's text. */
-  export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string };
+  export function parseFrontmatter(content: string): {
+    frontmatter: Record<string, unknown>;
+    body: string;
+  };
 
   // --- pi-subagents' spawn.mjs also value-imports these at runtime. spawn.mjs
   // itself is untyped (see types/mjs-modules.d.ts), so these only need to

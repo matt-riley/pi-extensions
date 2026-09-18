@@ -153,6 +153,12 @@ qux()`;
 
 test("fallback symbols carry line numbers and open-ended ranges", () => {
   const syms = parseFallbackSource("def a():\n    pass\n\ndef b():\n    pass", { lang: "py" });
-  assert.deepEqual(syms.map((s) => [s.name, s.startLine]), [["a", 1], ["b", 4]]);
+  assert.deepEqual(
+    syms.map((s) => [s.name, s.startLine]),
+    [
+      ["a", 1],
+      ["b", 4],
+    ],
+  );
   assert.equal(syms[0].endLine, -1); // no reliable range
 });

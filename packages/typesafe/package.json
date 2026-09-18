@@ -2,6 +2,6 @@
   "name": "pi-typesafe",
   "version": "0.1.0",
   "description": "TypeSafe System One judgments for pi: one typesafe_ask tool that turns state plus typed choice/noul/score questions into calibrated probabilities the agent can act on. Zero runtime dependencies.",
-  "type": "module",
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module"
 }

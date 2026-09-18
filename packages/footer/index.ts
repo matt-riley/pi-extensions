@@ -125,16 +125,22 @@ export default function (pi: ExtensionAPI) {
               color: "accent",
             });
           }
-          if (left.length) left.push({ text: ` ${icons.brain} ~${level}`, color: thinkColor(level) });
+          if (left.length)
+            left.push({ text: ` ${icons.brain} ~${level}`, color: thinkColor(level) });
 
           const right: Seg[] = [];
           const statuses = footerData.getExtensionStatuses?.();
           if (statuses?.size) {
             right.push({ text: ` ${Array.from(statuses.values()).join(" · ")}`, color: "dim" });
           }
-          const usage = (ctx as { getContextUsage?: () => ContextUsage | undefined }).getContextUsage?.();
+          const usage = (
+            ctx as { getContextUsage?: () => ContextUsage | undefined }
+          ).getContextUsage?.();
           if (usage && usage.percent != null) {
-            right.push({ text: ` ${icons.gauge} ${Math.round(usage.percent)}%`, color: ctxColorSafe(usage.percent) });
+            right.push({
+              text: ` ${icons.gauge} ${Math.round(usage.percent)}%`,
+              color: ctxColorSafe(usage.percent),
+            });
           }
           right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
           right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });

@@ -44,7 +44,10 @@ const FIXTURE = `<!DOCTYPE html>
 </body></html>`;
 
 test("buildDdgSearchUrl: encodes the query and appends region", () => {
-  assert.equal(buildDdgSearchUrl("pi coding agent"), "https://html.duckduckgo.com/html/?q=pi+coding+agent");
+  assert.equal(
+    buildDdgSearchUrl("pi coding agent"),
+    "https://html.duckduckgo.com/html/?q=pi+coding+agent",
+  );
   assert.equal(
     buildDdgSearchUrl("hello", { region: "us-en" }),
     "https://html.duckduckgo.com/html/?q=hello&kl=us-en",
@@ -218,7 +221,13 @@ test("isDdgBlocked: challenge markers and status 202", () => {
   assert.equal(isDdgBlocked({ status: 202 }), true);
   assert.equal(isDdgBlocked({ status: 200, body: "<script src='/anomaly.js'></script>" }), true);
   assert.equal(isDdgBlocked({ status: 200, body: "jschallenge detect" }), true);
-  assert.equal(isDdgBlocked({ status: 200, body: "We've detected unusual traffic from your computer network." }), true);
+  assert.equal(
+    isDdgBlocked({
+      status: 200,
+      body: "We've detected unusual traffic from your computer network.",
+    }),
+    true,
+  );
   // The bare word "anomaly" in results text is NOT a challenge marker.
   assert.equal(isDdgBlocked({ status: 200, body: FIXTURE }), false);
   assert.equal(isDdgBlocked({ status: 200, body: "" }), false);
@@ -256,8 +265,17 @@ const SEARXNG_JSON = JSON.stringify({
   query: "pi coding agent",
   number_of_results: 2,
   results: [
-    { title: "Pi Coding Agent", url: "https://pi.dev/", content: "A terminal-based <b>coding</b> agent.", engine: "duckduckgo" },
-    { title: "Docs", url: "https://pi.dev/docs/latest", content: "Extensions, skills, and themes." },
+    {
+      title: "Pi Coding Agent",
+      url: "https://pi.dev/",
+      content: "A terminal-based <b>coding</b> agent.",
+      engine: "duckduckgo",
+    },
+    {
+      title: "Docs",
+      url: "https://pi.dev/docs/latest",
+      content: "Extensions, skills, and themes.",
+    },
     { title: "No URL entry", content: "skipped" },
     { title: "", url: "https://empty-title.example", content: "skipped" },
   ],
@@ -277,7 +295,10 @@ test("parseSearxngResults: extracts results and caps the limit", () => {
 });
 
 test("parseSearxngResults: error responses and non-JSON bodies", () => {
-  assert.match(parseSearxngResults(JSON.stringify({ error: "Invalid request" })).error, /SearXNG: Invalid request/);
+  assert.match(
+    parseSearxngResults(JSON.stringify({ error: "Invalid request" })).error,
+    /SearXNG: Invalid request/,
+  );
   assert.match(parseSearxngResults("<html>rate limited</html>").error, /non-JSON/);
   assert.match(parseSearxngResults("").error, /non-JSON/);
   assert.deepEqual(parseSearxngResults(JSON.stringify({ results: null })), { results: [] });
@@ -310,6 +331,11 @@ test("formatSearchResults: marks the cap and labels the engine", () => {
 
   const searxng = formatSearchResults({ query: "q", results, limit: 1, engine: "SearXNG" });
   assert.match(searxng, /— SearXNG/);
-  const blockedSearxng = formatSearchResults({ query: "q", results: [], blocked: true, engine: "SearXNG" });
+  const blockedSearxng = formatSearchResults({
+    query: "q",
+    results: [],
+    blocked: true,
+    engine: "SearXNG",
+  });
   assert.match(blockedSearxng, /blocked by SearXNG/);
 });

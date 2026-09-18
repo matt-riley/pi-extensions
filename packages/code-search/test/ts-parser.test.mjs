@@ -6,7 +6,17 @@ const syms = (src) => parseTsSource(src).symbols;
 const find = (src, name) => syms(src).find((s) => s.name === name);
 
 test("isTsFile recognizes the ts/js family", () => {
-  for (const f of ["a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs", "types.d.ts"]) {
+  for (const f of [
+    "a.ts",
+    "a.tsx",
+    "a.mts",
+    "a.cts",
+    "a.js",
+    "a.jsx",
+    "a.mjs",
+    "a.cjs",
+    "types.d.ts",
+  ]) {
     assert.equal(isTsFile(f), true, f);
   }
   assert.equal(isTsFile("a.py"), false);
@@ -105,13 +115,19 @@ const { r = {}, s = fn(1) } = thing;`;
   assert.equal(find(src, "r").kind, "const");
   assert.equal(find(src, "s").kind, "const");
   // destructuring inside default values must not leak names
-  assert.equal(syms(src).some((s) => s.name === "fn"), false);
+  assert.equal(
+    syms(src).some((s) => s.name === "fn"),
+    false,
+  );
 });
 
 test("renamed destructuring binds the inner name", () => {
   const src = `const { a: renamedA, b } = opts;`;
   assert.equal(find(src, "renamedA").name, "renamedA");
-  assert.equal(syms(src).some((s) => s.name === "a"), false);
+  assert.equal(
+    syms(src).some((s) => s.name === "a"),
+    false,
+  );
   assert.equal(find(src, "b").name, "b");
 });
 
@@ -138,8 +154,14 @@ test("require imports (CJS)", () => {
 const { readFile, writeFile } = require("node:fs");`);
   assert.equal(imports.length, 2);
   assert.equal(imports[0].source, "node:http");
-  assert.deepEqual(imports[1].names.map((n) => n.local), ["readFile", "writeFile"]);
-  assert.equal(symbols.some((s) => s.name === "http"), true);
+  assert.deepEqual(
+    imports[1].names.map((n) => n.local),
+    ["readFile", "writeFile"],
+  );
+  assert.equal(
+    symbols.some((s) => s.name === "http"),
+    true,
+  );
 });
 
 test("re-exports: named, star, namespace", () => {

@@ -22,10 +22,7 @@ import { SKILL_SELECT_TOOLS } from "../packages/skill-select/tools.mjs";
 import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
 import { TYPESAFE_TOOLS } from "../packages/typesafe/tools.mjs";
 
-const SAMPLE_QUERIES = [
-  "typescript any eliminator",
-  "acquire codebase knowledge",
-];
+const SAMPLE_QUERIES = ["typescript any eliminator", "acquire codebase knowledge"];
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -52,7 +49,11 @@ try {
     check(`${tool} registers with pi`, registered.includes(tool));
   }
 } catch (error) {
-  check("extension entrypoints load", false, error instanceof Error ? error.message : String(error));
+  check(
+    "extension entrypoints load",
+    false,
+    error instanceof Error ? error.message : String(error),
+  );
 }
 
 // 2. Skill library: real roots, real files.
@@ -70,9 +71,14 @@ try {
 }
 
 // 3. Credentials, and optionally a real round trip.
-const apiKey = String(process.env.TYPESAFE_API_KEY ?? "").trim()
-  || String(process.env.LORE_TYPESAFE_API_KEY ?? "").trim();
-check("TypeSafe key visible", Boolean(apiKey), apiKey ? "found" : "set TYPESAFE_API_KEY or LORE_TYPESAFE_API_KEY");
+const apiKey =
+  String(process.env.TYPESAFE_API_KEY ?? "").trim() ||
+  String(process.env.LORE_TYPESAFE_API_KEY ?? "").trim();
+check(
+  "TypeSafe key visible",
+  Boolean(apiKey),
+  apiKey ? "found" : "set TYPESAFE_API_KEY or LORE_TYPESAFE_API_KEY",
+);
 
 if (process.argv.includes("--live")) {
   if (!apiKey) {
@@ -86,7 +92,11 @@ if (process.argv.includes("--live")) {
         },
       });
       const answer = result.answers?.complete?.noul;
-      check("live TypeSafe call", Number.isFinite(Number(answer)), `${result.model} noul=${answer}`);
+      check(
+        "live TypeSafe call",
+        Number.isFinite(Number(answer)),
+        `${result.model} noul=${answer}`,
+      );
       console.log(formatAnswers(result));
     } catch (error) {
       check("live TypeSafe call", false, error instanceof Error ? error.message : String(error));

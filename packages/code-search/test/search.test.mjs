@@ -1,19 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildGitGrepArgs, checkRegexSafety, enclosingSymbol, levenshtein, parseGitGrepLine, searchRepo } from "../search.mjs";
+import {
+  buildGitGrepArgs,
+  checkRegexSafety,
+  enclosingSymbol,
+  levenshtein,
+  parseGitGrepLine,
+  searchRepo,
+} from "../search.mjs";
 
 // Minimal cache shape: relPath → entry { size, lang, symbols, ... }
 function entry(symbols, size = 100) {
   return { size, lang: "ts", symbols, imports: [], reexports: [] };
 }
-const sym = (name, startLine, endLine = startLine, kind = "function") =>
-  ({ name, kind, startLine, endLine, signature: "" });
+const sym = (name, startLine, endLine = startLine, kind = "function") => ({
+  name,
+  kind,
+  startLine,
+  endLine,
+  signature: "",
+});
 
 const FILES = {
-  "src/a.ts": entry([
-    sym("greet", 1, 10),
-    sym("inner", 4, 6),
-  ]),
+  "src/a.ts": entry([sym("greet", 1, 10), sym("inner", 4, 6)]),
   "src/b.ts": entry([sym("greet", 2, 20), sym("other", 8, 9)]),
   "src/c.ts": entry([sym("greeter", 1, 30)]),
   "notes.txt": entry([], 50),
@@ -36,7 +45,12 @@ test("searchRepo finds substring matches with case-insensitivity", async () => {
 });
 
 test("definitions rank first", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "greet", opts: { wholeWord: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "greet",
+    opts: { wholeWord: true },
+    readFile,
+  });
   assert.ok(r.hits.length >= 2);
   const top = r.hits[0];
   assert.equal(top.rel, "src/a.ts");
@@ -45,7 +59,12 @@ test("definitions rank first", async () => {
 });
 
 test("comment-only lines score zero and sort last", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "greet", opts: { wholeWord: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "greet",
+    opts: { wholeWord: true },
+    readFile,
+  });
   const commentHit = r.hits.find((h) => h.text.includes("comment"));
   assert.ok(commentHit);
   assert.equal(commentHit.score, 0);
@@ -57,16 +76,31 @@ test("comment-only lines score zero and sort last", async () => {
 });
 
 test("path scoping narrows results", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "greet", opts: { path: "src" }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "greet",
+    opts: { path: "src" },
+    readFile,
+  });
   assert.equal(r.total, 6);
   assert.ok(r.hits.every((h) => h.rel.startsWith("src/")));
-  const single = await searchRepo({ cache: { files: FILES }, query: "greet", opts: { path: "src/b.ts" }, readFile });
+  const single = await searchRepo({
+    cache: { files: FILES },
+    query: "greet",
+    opts: { path: "src/b.ts" },
+    readFile,
+  });
   assert.equal(single.total, 2);
   assert.ok(single.hits.every((h) => h.rel === "src/b.ts"));
 });
 
 test("regex option supports patterns", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "gr(eet|eeter)", opts: { regex: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "gr(eet|eeter)",
+    opts: { regex: true },
+    readFile,
+  });
   assert.equal(r.total, 7);
 });
 
@@ -78,13 +112,23 @@ test("invalid regex is reported as a thrown error", async () => {
 });
 
 test("caseSensitive excludes wrong-case matches and still suggests", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "GREET", opts: { caseSensitive: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "GREET",
+    opts: { caseSensitive: true },
+    readFile,
+  });
   assert.equal(r.total, 0);
   assert.deepEqual(r.suggestion, ["greeter"]);
 });
 
 test("wholeWord avoids prefix matches", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "greet", opts: { wholeWord: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "greet",
+    opts: { wholeWord: true },
+    readFile,
+  });
   // "greeter" is a different word — c.ts's line 1 is not a whole-word match
   assert.equal(r.total, 6);
 });
@@ -119,8 +163,15 @@ test("per-file cap and global truncation note", async () => {
 });
 
 test("did-you-mean suggests near symbol names on zero hits", async () => {
-  const files = { "src/a.ts": entry([sym("greeter", 1, 1), sym("greets", 2, 2), sym("green", 3, 3)]) };
-  const r = await searchRepo({ cache: { files }, query: "greet", opts: { caseSensitive: true }, readFile: async () => "x" });
+  const files = {
+    "src/a.ts": entry([sym("greeter", 1, 1), sym("greets", 2, 2), sym("green", 3, 3)]),
+  };
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: { caseSensitive: true },
+    readFile: async () => "x",
+  });
   assert.equal(r.total, 0);
   assert.deepEqual(r.suggestion, ["greets", "green", "greeter"]);
 });
@@ -149,7 +200,12 @@ test("levenshtein distances", () => {
 test("default mode ranks exact word-boundary matches above substring-in-longer-identifier matches", async () => {
   const files = { "a.ts": entry([], 50) };
   const content = "const greeting = 1;\nconst greet = 2;\n";
-  const r = await searchRepo({ cache: { files }, query: "greet", opts: {}, readFile: async () => content });
+  const r = await searchRepo({
+    cache: { files },
+    query: "greet",
+    opts: {},
+    readFile: async () => content,
+  });
   assert.equal(r.hits[0].text.trim(), "const greet = 2;");
   assert.equal(r.hits[0].score, 50);
   const substringHit = r.hits.find((h) => h.text.includes("greeting"));
@@ -161,42 +217,92 @@ test("default mode ranks exact word-boundary matches above substring-in-longer-i
 // --- git-grep fast path (task 1) -------------------------------------------
 
 test("buildGitGrepArgs maps search options to git grep flags", () => {
-  assert.deepEqual(
-    buildGitGrepArgs({ query: "foo", opts: {}, root: "/r" }),
-    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-e", "foo"],
-  );
-  assert.deepEqual(
-    buildGitGrepArgs({ query: "foo", opts: { caseSensitive: true }, root: "/r" }),
-    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "--fixed-strings", "-e", "foo"],
-  );
-  assert.deepEqual(
-    buildGitGrepArgs({ query: "f(oo)", opts: { regex: true }, root: "/r" }),
-    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "-E", "-e", "f(oo)"],
-  );
-  assert.deepEqual(
-    buildGitGrepArgs({ query: "foo", opts: { wholeWord: true }, root: "/r" }),
-    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-w", "-e", "foo"],
-  );
-  assert.deepEqual(
-    buildGitGrepArgs({ query: "foo", opts: { path: "src" }, root: "/r" }),
-    ["-C", "/r", "grep", "-I", "-n", "--column", "--untracked", "-i", "--fixed-strings", "-e", "foo", "--", "src"],
-  );
+  assert.deepEqual(buildGitGrepArgs({ query: "foo", opts: {}, root: "/r" }), [
+    "-C",
+    "/r",
+    "grep",
+    "-I",
+    "-n",
+    "--column",
+    "--untracked",
+    "-i",
+    "--fixed-strings",
+    "-e",
+    "foo",
+  ]);
+  assert.deepEqual(buildGitGrepArgs({ query: "foo", opts: { caseSensitive: true }, root: "/r" }), [
+    "-C",
+    "/r",
+    "grep",
+    "-I",
+    "-n",
+    "--column",
+    "--untracked",
+    "--fixed-strings",
+    "-e",
+    "foo",
+  ]);
+  assert.deepEqual(buildGitGrepArgs({ query: "f(oo)", opts: { regex: true }, root: "/r" }), [
+    "-C",
+    "/r",
+    "grep",
+    "-I",
+    "-n",
+    "--column",
+    "--untracked",
+    "-i",
+    "-E",
+    "-e",
+    "f(oo)",
+  ]);
+  assert.deepEqual(buildGitGrepArgs({ query: "foo", opts: { wholeWord: true }, root: "/r" }), [
+    "-C",
+    "/r",
+    "grep",
+    "-I",
+    "-n",
+    "--column",
+    "--untracked",
+    "-i",
+    "--fixed-strings",
+    "-w",
+    "-e",
+    "foo",
+  ]);
+  assert.deepEqual(buildGitGrepArgs({ query: "foo", opts: { path: "src" }, root: "/r" }), [
+    "-C",
+    "/r",
+    "grep",
+    "-I",
+    "-n",
+    "--column",
+    "--untracked",
+    "-i",
+    "--fixed-strings",
+    "-e",
+    "foo",
+    "--",
+    "src",
+  ]);
 });
 
 test("parseGitGrepLine splits only file:line:col, keeps colons in the text field", () => {
-  assert.deepEqual(
-    parseGitGrepLine("src/a.ts:12:5:const x = 'a:b:c';"),
-    { rel: "src/a.ts", lineNo: 12, col: 5, text: "const x = 'a:b:c';" },
-  );
+  assert.deepEqual(parseGitGrepLine("src/a.ts:12:5:const x = 'a:b:c';"), {
+    rel: "src/a.ts",
+    lineNo: 12,
+    col: 5,
+    text: "const x = 'a:b:c';",
+  });
   assert.equal(parseGitGrepLine("not a match"), null);
 });
 
 test("git-grep fast path parses hits (incl. colons in text) and reuses the scoring/framing pipeline", async () => {
   const files = { "src/a.ts": entry([sym("greet", 1, 3)]) };
-  const stdout = [
-    "src/a.ts:1:1:function greet() { return 'x:y:z'; }",
-    "src/a.ts:2:3:  greet(); // calls greet",
-  ].join("\n") + "\n";
+  const stdout =
+    [
+      "src/a.ts:1:1:function greet() { return 'x:y:z'; }",
+      "src/a.ts:2:3:  greet(); // calls greet",
+    ].join("\n") + "\n";
   const exec = async (cmd) => {
     assert.equal(cmd, "git");
     return { code: 0, stdout, stderr: "" };
@@ -307,7 +413,12 @@ test("searchRepo rejects catastrophic regex patterns with a clear message instea
 });
 
 test("searchRepo still accepts normal regexes under the guard", async () => {
-  const r = await searchRepo({ cache: { files: FILES }, query: "gr(eet|eeter)", opts: { regex: true }, readFile });
+  const r = await searchRepo({
+    cache: { files: FILES },
+    query: "gr(eet|eeter)",
+    opts: { regex: true },
+    readFile,
+  });
   assert.equal(r.total, 7);
 });
 

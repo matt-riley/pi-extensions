@@ -31,7 +31,13 @@ test("existing equals the new plan -> base (idempotent, survives restart)", () =
 
 test("existing differs from lastWritten -> .2", () => {
   assert.equal(
-    resolvePlanFile({ base: BASE, plan: "p2", existing: "edited", lastWritten: "p1", altTaken: noAlt }),
+    resolvePlanFile({
+      base: BASE,
+      plan: "p2",
+      existing: "edited",
+      lastWritten: "p1",
+      altTaken: noAlt,
+    }),
     `${BASE}.2`,
   );
 });
@@ -39,14 +45,26 @@ test("existing differs from lastWritten -> .2", () => {
 test("repeated revisions after an edit -> .2 then .3", () => {
   const taken = new Set([2]);
   assert.equal(
-    resolvePlanFile({ base: BASE, plan: "p3", existing: "edited", lastWritten: "p2", altTaken: (n) => taken.has(n) }),
+    resolvePlanFile({
+      base: BASE,
+      plan: "p3",
+      existing: "edited",
+      lastWritten: "p2",
+      altTaken: (n) => taken.has(n),
+    }),
     `${BASE}.3`,
   );
 });
 
 test("unknown existing (lastWritten null) -> .2", () => {
   assert.equal(
-    resolvePlanFile({ base: BASE, plan: "p2", existing: "stale", lastWritten: null, altTaken: noAlt }),
+    resolvePlanFile({
+      base: BASE,
+      plan: "p2",
+      existing: "stale",
+      lastWritten: null,
+      altTaken: noAlt,
+    }),
     `${BASE}.2`,
   );
 });
@@ -116,7 +134,13 @@ test("owned file missing (deleted) -> recreate owned path", () => {
 test("alt collision loop skips taken numbers", () => {
   const taken = new Set([2, 3]);
   assert.equal(
-    resolvePlanFile({ base: BASE, plan: "p", existing: "edited", lastWritten: "p0", altTaken: (n) => taken.has(n) }),
+    resolvePlanFile({
+      base: BASE,
+      plan: "p",
+      existing: "edited",
+      lastWritten: "p0",
+      altTaken: (n) => taken.has(n),
+    }),
     `${BASE}.4`,
   );
 });

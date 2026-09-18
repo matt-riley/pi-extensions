@@ -54,7 +54,9 @@ test("blockquote", () => {
 });
 
 test("table with header", () => {
-  const out = md("<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>");
+  const out = md(
+    "<table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>",
+  );
   assert.equal(out, "| A | B |\n| --- | --- |\n| 1 | 2 |");
 });
 
@@ -84,9 +86,13 @@ test("whitespace collapse and trimming", () => {
 });
 
 test("treeToText strips markdown syntax", () => {
-  const tree = stripBoilerplate(buildTree(tokenize(
-    "<body><h1>Title</h1><p>Some <b>bold</b> text with a <a href='https://x'>link</a>.</p><ul><li>item</li></ul></body>",
-  )));
+  const tree = stripBoilerplate(
+    buildTree(
+      tokenize(
+        "<body><h1>Title</h1><p>Some <b>bold</b> text with a <a href='https://x'>link</a>.</p><ul><li>item</li></ul></body>",
+      ),
+    ),
+  );
   const text = treeToText(tree);
   assert.equal(text, "Title\n\nSome bold text with a link.\n\nitem");
 });

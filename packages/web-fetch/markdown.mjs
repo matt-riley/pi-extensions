@@ -114,7 +114,12 @@ function renderBlocks(node, ctx) {
     // The virtual tree root is a tag-less container; text leaves have no children.
     if (node.children.length > 0) return childrenBlocks(node, ctx);
     const t = node.text.trim();
-    return t ? t.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+    return t
+      ? t
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+      : [];
   }
   switch (node.tag) {
     case "h1":
@@ -253,7 +258,12 @@ function tableBlocks(node) {
   const cellLines = (tr) =>
     tr.children
       .filter((c) => c.tag === "td" || c.tag === "th")
-      .map((c) => childrenInline(c, { includeImages: false }).trim().replace(/\|/g, "\\|").replace(/\n/g, " "));
+      .map((c) =>
+        childrenInline(c, { includeImages: false })
+          .trim()
+          .replace(/\|/g, "\\|")
+          .replace(/\n/g, " "),
+      );
 
   const header = cellLines(rows[0]);
   const body = rows.slice(1).map(cellLines);

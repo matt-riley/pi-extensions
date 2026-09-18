@@ -1,11 +1,7 @@
 // pi-subagents — in-process parallel children. Off by default; /subagents on.
 // When off, the tool is inactive and zero orchestrator text reaches the model.
 
-import {
-  type ExtensionAPI,
-  getAgentDir,
-  parseFrontmatter,
-} from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,12 +11,7 @@ import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { withOrchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
-import {
-  fallbackDescription,
-  formatResult,
-  resolveMaxTurns,
-  resolveTimeoutMs,
-} from "./result.mjs";
+import { fallbackDescription, formatResult, resolveMaxTurns, resolveTimeoutMs } from "./result.mjs";
 import { CHILD_ENV } from "./child-env.mjs";
 import { runChild } from "./spawn.mjs";
 import { formatWidgetLines } from "./widget.mjs";
@@ -60,7 +51,6 @@ interface UiCtx {
 function notify(ctx: UiCtx | undefined, message: string, level = "info") {
   if (ctx?.hasUI) ctx.ui?.notify?.(message, level);
 }
-
 
 export default function piSubagentsExtension(pi: ExtensionAPI) {
   if (process.env[CHILD_ENV] === "1") return;
@@ -154,8 +144,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
     promptSnippet:
       "Spawn a specialist subagent (scout, reviewer, oracle, worker, researcher, or a custom type)",
     parameters: Type.Object({
-      agent: Type.String({ description: "Agent type (scout, reviewer, oracle, worker, researcher, or a custom name)" }),
-      task: Type.String({ description: "The full task for the child. It cannot see this conversation." }),
+      agent: Type.String({
+        description: "Agent type (scout, reviewer, oracle, worker, researcher, or a custom name)",
+      }),
+      task: Type.String({
+        description: "The full task for the child. It cannot see this conversation.",
+      }),
       description: Type.Optional(
         Type.String({ description: "Short 3-5 word summary shown in the widget" }),
       ),
@@ -170,7 +164,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         Type.Integer({
           minimum: 1,
           maximum: 7200000,
-          description: "Wall-clock cap for this child (ms, up to 2h). May only lower the resolved cap.",
+          description:
+            "Wall-clock cap for this child (ms, up to 2h). May only lower the resolved cap.",
         }),
       ),
     }),
@@ -249,7 +244,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             const current = pool.get(entry.id);
             if (!current) return;
             const turns =
-              current.maxTurns != null ? `↻${current.turns}≤${current.maxTurns}` : `↻${current.turns}`;
+              current.maxTurns != null
+                ? `↻${current.turns}≤${current.maxTurns}`
+                : `↻${current.turns}`;
             const line = current.lastTool
               ? `${current.type}  ${current.description} · ${turns} · ${current.lastTool}`
               : `${current.type}  ${current.description} · ${turns}`;
@@ -306,7 +303,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   pi.registerCommand("subagents", {
     description: "Toggle subagents on/off, or steer/stop a running child",
     handler: async (args, ctx) => {
-      const arg = String(args ?? "").trim().toLowerCase();
+      const arg = String(args ?? "")
+        .trim()
+        .toLowerCase();
       if (arg === "on" || arg === "off") {
         if (arg === "on") {
           if (isReadOnlyMode()) {
@@ -316,7 +315,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           const active = pi.getActiveTools();
           const readOnlyToolset = !active.includes("edit") && !active.includes("write");
           if (readOnlyToolset) {
-            notify(ctx, "Can't enable subagents in a read-only toolset (plan mode?) — exit it first.");
+            notify(
+              ctx,
+              "Can't enable subagents in a read-only toolset (plan mode?) — exit it first.",
+            );
             return;
           }
         }
@@ -324,7 +326,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         applySubagentState();
         updateStatus(ctx);
         if (enabled) {
-          const roster = loadAgents(ctx).map((item) => item.name).join(", ") || "none";
+          const roster =
+            loadAgents(ctx)
+              .map((item) => item.name)
+              .join(", ") || "none";
           notify(ctx, `Subagents on — available: ${roster}. /subagents off to disable.`);
         } else {
           notify(ctx, "Subagents off — tool and orchestrator brief removed.");
@@ -341,7 +346,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             notify(ctx, "Subagents enabled but unavailable in this read-only toolset");
           }
         } else {
-          notify(ctx, enabled ? "No running subagents" : "Subagents are off — /subagents on to enable");
+          notify(
+            ctx,
+            enabled ? "No running subagents" : "Subagents are off — /subagents on to enable",
+          );
         }
         return;
       }

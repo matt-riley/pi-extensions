@@ -57,7 +57,10 @@ test("resolveConfig ignores blank values and rejects non-http base urls", () => 
   const config = resolveConfig({ TYPESAFE_API_KEY: "  k  ", TYPESAFE_MODEL: "   " });
   assert.equal(config.apiKey, "k");
   assert.equal(config.model, "jev-latest");
-  assert.throws(() => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test", ...NO_KEY_ENV }), /http/i);
+  assert.throws(
+    () => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test", ...NO_KEY_ENV }),
+    /http/i,
+  );
 });
 
 test("resolveConfig accepts LORE_TYPESAFE_API_KEY as a fallback name", () => {
@@ -81,7 +84,10 @@ test("resolveConfig falls back to the lore config file when no env key is set", 
       "from-env",
       "the environment still wins",
     );
-    assert.equal(resolveConfig({ ...NO_KEY_ENV, HOME: dir, LORE_CONFIG: join(dir, "missing.json") }).apiKey, "");
+    assert.equal(
+      resolveConfig({ ...NO_KEY_ENV, HOME: dir, LORE_CONFIG: join(dir, "missing.json") }).apiKey,
+      "",
+    );
 
     writeFileSync(configPath, "{ not json");
     assert.equal(resolveConfig({ ...NO_KEY_ENV, LORE_CONFIG: configPath }).apiKey, "");
@@ -99,14 +105,20 @@ test("resolveConfig checks the same config locations lore does", () => {
     const xdg = join(dir, "xdg");
     mkdirSync(join(home, ".copilot"), { recursive: true });
     mkdirSync(join(xdg, "lore"), { recursive: true });
-    writeFileSync(join(home, ".copilot", "lore.json"), JSON.stringify({ typesafe: { apiKey: "legacy" } }));
+    writeFileSync(
+      join(home, ".copilot", "lore.json"),
+      JSON.stringify({ typesafe: { apiKey: "legacy" } }),
+    );
     writeFileSync(join(xdg, "lore", "lore.json"), JSON.stringify({ typesafe: { apiKey: "xdg" } }));
 
     assert.equal(resolveConfig({ HOME: home, XDG_CONFIG_HOME: xdg }).apiKey, "xdg");
 
     const loreHome = join(dir, "lorehome");
     mkdirSync(loreHome, { recursive: true });
-    writeFileSync(join(loreHome, "lore.json"), JSON.stringify({ typesafe: { apiKey: "from-lore-home" } }));
+    writeFileSync(
+      join(loreHome, "lore.json"),
+      JSON.stringify({ typesafe: { apiKey: "from-lore-home" } }),
+    );
     assert.equal(
       resolveConfig({ HOME: home, XDG_CONFIG_HOME: xdg, LORE_HOME: loreHome }).apiKey,
       "from-lore-home",
@@ -179,7 +191,10 @@ test("an explicit LORE_CONFIG is the only file consulted", () => {
   try {
     const home = join(dir, "home");
     mkdirSync(join(home, ".config", "lore"), { recursive: true });
-    writeFileSync(join(home, ".config", "lore", "lore.json"), JSON.stringify({ typesafe: { apiKey: "current" } }));
+    writeFileSync(
+      join(home, ".config", "lore", "lore.json"),
+      JSON.stringify({ typesafe: { apiKey: "current" } }),
+    );
     const broken = join(dir, "broken.json");
     writeFileSync(broken, "{ not json");
 
@@ -195,38 +210,70 @@ test("is not shadowed by a stale legacy config once migrated", () => {
   try {
     const home = join(dir, "home");
     mkdirSync(join(home, ".copilot"), { recursive: true });
-    writeFileSync(join(home, ".copilot", "lore.json"), JSON.stringify({ typesafe: { apiKey: "stale-legacy" } }));
-    assert.equal(resolveConfig({ HOME: home }).apiKey, "stale-legacy", "unmigrated installs keep working");
+    writeFileSync(
+      join(home, ".copilot", "lore.json"),
+      JSON.stringify({ typesafe: { apiKey: "stale-legacy" } }),
+    );
+    assert.equal(
+      resolveConfig({ HOME: home }).apiKey,
+      "stale-legacy",
+      "unmigrated installs keep working",
+    );
 
     mkdirSync(join(home, ".config", "lore"), { recursive: true });
     writeFileSync(join(home, ".config", "lore", "lore.json"), JSON.stringify({ typesafe: {} }));
-    assert.equal(resolveConfig({ HOME: home }).apiKey, "", "a migrated config must not fall back to the legacy key");
+    assert.equal(
+      resolveConfig({ HOME: home }).apiKey,
+      "",
+      "a migrated config must not fall back to the legacy key",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("validateQuestions accepts the three primitives and rejects malformed ones", () => {
-  assert.doesNotThrow(() => validateQuestions({
-    urgent: { type: "noul", instructions: "Does this convey urgency?" },
-    team: { type: "choice", instructions: "Which team?", criteria: { billing: "Payments", tech: null } },
-    risk: { type: "score", instructions: "How risky?", criteria: ["Low", "Medium", "High"] },
-  }));
+  assert.doesNotThrow(() =>
+    validateQuestions({
+      urgent: { type: "noul", instructions: "Does this convey urgency?" },
+      team: {
+        type: "choice",
+        instructions: "Which team?",
+        criteria: { billing: "Payments", tech: null },
+      },
+      risk: { type: "score", instructions: "How risky?", criteria: ["Low", "Medium", "High"] },
+    }),
+  );
   assert.throws(() => validateQuestions({}), /at least one question/i);
   assert.throws(() => validateQuestions(null), /at least one question/i);
-  assert.throws(() => validateQuestions({ a: { type: "vote", instructions: "?" } }), /unknown question type/i);
+  assert.throws(
+    () => validateQuestions({ a: { type: "vote", instructions: "?" } }),
+    /unknown question type/i,
+  );
   assert.throws(() => validateQuestions({ a: { type: "noul" } }), /instructions/i);
-  assert.throws(() => validateQuestions({ a: { type: "choice", instructions: "?", criteria: { only: "one" } } }), /at least two options/i);
-  assert.throws(() => validateQuestions({ a: { type: "score", instructions: "?", criteria: ["only"] } }), /at least two ordered levels/i);
-  assert.throws(() => validateQuestions({ a: { type: "score", instructions: "?", criteria: "not-an-array" } }), /at least two ordered levels/i);
+  assert.throws(
+    () =>
+      validateQuestions({ a: { type: "choice", instructions: "?", criteria: { only: "one" } } }),
+    /at least two options/i,
+  );
+  assert.throws(
+    () => validateQuestions({ a: { type: "score", instructions: "?", criteria: ["only"] } }),
+    /at least two ordered levels/i,
+  );
+  assert.throws(
+    () => validateQuestions({ a: { type: "score", instructions: "?", criteria: "not-an-array" } }),
+    /at least two ordered levels/i,
+  );
 });
 
 test("askSystemOne posts state and questions verbatim and returns answers", async () => {
-  const { fetchImpl, calls } = capturingFetch(() => jsonResponse({
-    model: "jev-latest",
-    answers: { urgent: { type: "noul", noul: 0.92 } },
-    usage: { input_tokens: 12, output_tokens: 2 },
-  }));
+  const { fetchImpl, calls } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-latest",
+      answers: { urgent: { type: "noul", noul: 0.92 } },
+      usage: { input_tokens: 12, output_tokens: 2 },
+    }),
+  );
   const questions = { urgent: { type: "noul", instructions: "Does this convey urgency?" } };
   const state = { ticket: { messages: ["Payouts failing for 3 days"] } };
 
@@ -261,7 +308,12 @@ test("askSystemOne honors a per-call model override", async () => {
 test("askSystemOne fails fast on a missing key without calling the provider", async () => {
   const { fetchImpl, calls } = capturingFetch(() => jsonResponse({}));
   await assert.rejects(
-    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: NO_KEY_ENV, fetchImpl }),
+    askSystemOne({
+      state: "s",
+      questions: { a: { type: "noul", instructions: "?" } },
+      env: NO_KEY_ENV,
+      fetchImpl,
+    }),
     (error) => {
       assert.match(error.message, /TYPESAFE_API_KEY/);
       return true;
@@ -288,10 +340,15 @@ test("askSystemOne surfaces HTTP failures with status detail and no key", async 
   const fetchImpl = async () => ({
     ok: false,
     status: 422,
-    text: async () => "{\"detail\":\"unknown question type\"}",
+    text: async () => '{"detail":"unknown question type"}',
   });
   await assert.rejects(
-    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: ENV, fetchImpl }),
+    askSystemOne({
+      state: "s",
+      questions: { a: { type: "noul", instructions: "?" } },
+      env: ENV,
+      fetchImpl,
+    }),
     (error) => {
       assert.match(error.message, /422/);
       assert.match(error.message, /unknown question type/);
@@ -306,7 +363,12 @@ test("askSystemOne surfaces network failures", async () => {
     throw new Error("socket hang up");
   };
   await assert.rejects(
-    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: ENV, fetchImpl }),
+    askSystemOne({
+      state: "s",
+      questions: { a: { type: "noul", instructions: "?" } },
+      env: ENV,
+      fetchImpl,
+    }),
     /socket hang up/,
   );
 });
@@ -320,19 +382,29 @@ test("askSystemOne surfaces invalid JSON responses", async () => {
     },
   });
   await assert.rejects(
-    askSystemOne({ state: "s", questions: { a: { type: "noul", instructions: "?" } }, env: ENV, fetchImpl }),
+    askSystemOne({
+      state: "s",
+      questions: { a: { type: "noul", instructions: "?" } },
+      env: ENV,
+      fetchImpl,
+    }),
     /invalid JSON/i,
   );
 });
 
 test("askSystemOne times out and aborts the request", async () => {
   let aborted = false;
-  const fetchImpl = async (_url, init) => new Promise((_, reject) => {
-    init.signal.addEventListener("abort", () => {
-      aborted = true;
-      reject(new Error("aborted"));
-    }, { once: true });
-  });
+  const fetchImpl = async (_url, init) =>
+    new Promise((_, reject) => {
+      init.signal.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        },
+        { once: true },
+      );
+    });
   await assert.rejects(
     askSystemOne({
       state: "s",
@@ -347,9 +419,10 @@ test("askSystemOne times out and aborts the request", async () => {
 
 test("askSystemOne forwards an external abort signal", async () => {
   const controller = new AbortController();
-  const fetchImpl = async (_url, init) => new Promise((_, reject) => {
-    init.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
-  });
+  const fetchImpl = async (_url, init) =>
+    new Promise((_, reject) => {
+      init.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
   const pending = askSystemOne({
     state: "s",
     questions: { a: { type: "noul", instructions: "?" } },
@@ -367,8 +440,19 @@ test("formatAnswers renders each primitive with its distribution", () => {
     usage: { input_tokens: 100, output_tokens: 9 },
     answers: {
       urgent: { type: "noul", noul: 0.92 },
-      team: { type: "choice", choice: "technical", confidence: 0.82, probabilities: { billing: 0.08, technical: 0.85, sales: 0.07 } },
-      risk: { type: "score", score: 1.6, confidence: 0.78, legend: { 0: "Low", 1: "Medium", 2: "High" }, probabilities: { 0: 0.05, 1: 0.3, 2: 0.65 } },
+      team: {
+        type: "choice",
+        choice: "technical",
+        confidence: 0.82,
+        probabilities: { billing: 0.08, technical: 0.85, sales: 0.07 },
+      },
+      risk: {
+        type: "score",
+        score: 1.6,
+        confidence: 0.78,
+        legend: { 0: "Low", 1: "Medium", 2: "High" },
+        probabilities: { 0: 0.05, 1: 0.3, 2: 0.65 },
+      },
     },
   });
   assert.match(text, /jev-latest/);

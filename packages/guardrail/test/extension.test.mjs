@@ -58,7 +58,12 @@ function harness({ hasUI = true, cwd = process.cwd(), choices = [], inputs = [] 
     },
     notify: (title, level) => notifications.push({ title, level }),
   };
-  const ctx = { hasUI, cwd, ui, sessionManager: { getBranch: () => [{ message: { role: "user", content: "do the thing" } }] } };
+  const ctx = {
+    hasUI,
+    cwd,
+    ui,
+    sessionManager: { getBranch: () => [{ message: { role: "user", content: "do the thing" } }] },
+  };
 
   piGuardrailExtension(pi);
 
@@ -104,7 +109,10 @@ test("denying returns a reason the model can act on", async () => {
 });
 
 test("suggesting an alternative carries the suggestion back to the model", async () => {
-  const h = harness({ choices: [SUGGEST], inputs: ["delete only the dist folder in this project"] });
+  const h = harness({
+    choices: [SUGGEST],
+    inputs: ["delete only the dist folder in this project"],
+  });
   const result = await h.run("bash", { command: "rm -rf ~/Documents/projects/other-repo" });
   assert.equal(result.block, true);
   assert.match(result.reason, /delete only the dist folder in this project/);
@@ -145,7 +153,10 @@ test("script indirection is followed: a destructive script escalates", async () 
   const dir = mkdtempSync(join(tmpdir(), "guardrail-"));
   try {
     mkdirSync(join(dir, "scripts"), { recursive: true });
-    writeFileSync(join(dir, "scripts", "deploy.mjs"), "import { rmSync } from 'node:fs';\nrmSync('build', { recursive: true });\n");
+    writeFileSync(
+      join(dir, "scripts", "deploy.mjs"),
+      "import { rmSync } from 'node:fs';\nrmSync('build', { recursive: true });\n",
+    );
     const h = harness({ cwd: dir, hasUI: false });
     const result = await h.run("bash", { command: "node scripts/deploy.mjs" });
     assert.equal(result.block, true, "a script that deletes should not pass unread");

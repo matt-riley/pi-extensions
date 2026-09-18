@@ -19,7 +19,12 @@ const score = (value) => ({ type: "score", score: value });
 
 test("the battery is four typed questions with thresholds in code", () => {
   const questions = buildQuestionSet();
-  assert.deepEqual(Object.keys(questions).sort(), ["blast_radius", "credentials", "destructive", "intent_mismatch"]);
+  assert.deepEqual(Object.keys(questions).sort(), [
+    "blast_radius",
+    "credentials",
+    "destructive",
+    "intent_mismatch",
+  ]);
   assert.equal(questions.destructive.type, "noul");
   assert.equal(questions.intent_mismatch.type, "noul");
   assert.equal(questions.credentials.type, "noul");
@@ -55,10 +60,18 @@ test("extractUserRequest reads the last user turn from a branch", () => {
     { type: "message", message: { role: "user", content: [{ type: "text", text: "first ask" }] } },
     { type: "message", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
     { type: "message", message: { role: "user", content: "second ask" } },
-    { type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }] } },
+    {
+      type: "message",
+      message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }] },
+    },
   ];
   assert.equal(extractUserRequest(branch), "second ask");
-  assert.equal(extractUserRequest([{ message: { role: "user", content: [{ type: "text", text: "  padded  " }] } }]), "padded");
+  assert.equal(
+    extractUserRequest([
+      { message: { role: "user", content: [{ type: "text", text: "  padded  " }] } },
+    ]),
+    "padded",
+  );
   assert.equal(extractUserRequest([{ message: { role: "assistant", content: "hi" } }]), null);
   assert.equal(extractUserRequest(undefined), null);
   assert.equal(extractUserRequest([{ message: { role: "user", content: 42 } }]), null);
@@ -84,8 +97,15 @@ test("quiet answers allow", () => {
 });
 
 test("destructive but scoped asks the human", () => {
-  assert.equal(routeVerdict({ destructive: noul(0.72), blast_radius: score(1) }).verdict, "confirm");
-  assert.equal(routeVerdict({ destructive: noul(0.3), intent_mismatch: noul(0.81), blast_radius: score(0) }).verdict, "confirm");
+  assert.equal(
+    routeVerdict({ destructive: noul(0.72), blast_radius: score(1) }).verdict,
+    "confirm",
+  );
+  assert.equal(
+    routeVerdict({ destructive: noul(0.3), intent_mismatch: noul(0.81), blast_radius: score(0) })
+      .verdict,
+    "confirm",
+  );
   assert.equal(routeVerdict({ blast_radius: score(2) }).verdict, "confirm");
 });
 
@@ -103,11 +123,17 @@ test("credentials leaving the machine refuse, credentials alone ask", () => {
 test("boundary values sit on the threshold, not past it", () => {
   assert.equal(routeVerdict({ destructive: noul(0.5), blast_radius: score(0) }).verdict, "confirm");
   assert.equal(routeVerdict({ destructive: noul(0.49), blast_radius: score(0) }).verdict, "allow");
-  assert.equal(routeVerdict({ intent_mismatch: noul(0.59), blast_radius: score(0) }).verdict, "allow");
+  assert.equal(
+    routeVerdict({ intent_mismatch: noul(0.59), blast_radius: score(0) }).verdict,
+    "allow",
+  );
 });
 
 test("unusable answers never silently approve", () => {
-  const routed = routeVerdict({ destructive: { type: "noul", noul: null }, blast_radius: { type: "score" } });
+  const routed = routeVerdict({
+    destructive: { type: "noul", noul: null },
+    blast_radius: { type: "score" },
+  });
   assert.equal(routed.verdict, null);
   assert.match(routed.reason, /no usable answers/);
 });
@@ -116,15 +142,39 @@ test("unusable answers never silently approve", () => {
 // Recommendations: offered only when the judgment is clear
 
 test("recommendedAction stays quiet when the answers disagree", () => {
-  assert.equal(recommendedAction({ destructive: 0.62, blast_radius: 2, credentials: 0.01, intent_mismatch: 0.3 }), null);
-  assert.equal(recommendedAction({ destructive: 0.45, blast_radius: 1, credentials: 0.02, intent_mismatch: 0.5 }), null);
+  assert.equal(
+    recommendedAction({
+      destructive: 0.62,
+      blast_radius: 2,
+      credentials: 0.01,
+      intent_mismatch: 0.3,
+    }),
+    null,
+  );
+  assert.equal(
+    recommendedAction({
+      destructive: 0.45,
+      blast_radius: 1,
+      credentials: 0.02,
+      intent_mismatch: 0.5,
+    }),
+    null,
+  );
   assert.equal(recommendedAction(null), null);
 });
 
 test("recommendedAction denies clear danger and approves clear safety", () => {
   assert.equal(recommendedAction({ destructive: 0.9, blast_radius: 3 }), "Deny");
   assert.equal(recommendedAction({ destructive: 0.1, credentials: 0.9, blast_radius: 0 }), "Deny");
-  assert.equal(recommendedAction({ destructive: 0.05, blast_radius: 1, credentials: 0.01, intent_mismatch: 0.1 }), "Approve");
+  assert.equal(
+    recommendedAction({
+      destructive: 0.05,
+      blast_radius: 1,
+      credentials: 0.01,
+      intent_mismatch: 0.1,
+    }),
+    "Approve",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -136,7 +186,12 @@ test("judgeToolCall routes real answers through the thresholds", async () => {
     toolName: "bash",
     ask: async () => ({
       model: "jev-test",
-      answers: { destructive: noul(0.62), intent_mismatch: noul(0.2), blast_radius: score(2), credentials: noul(0.01) },
+      answers: {
+        destructive: noul(0.62),
+        intent_mismatch: noul(0.2),
+        blast_radius: score(2),
+        credentials: noul(0.01),
+      },
     }),
   });
   assert.equal(result.verdict, "confirm");

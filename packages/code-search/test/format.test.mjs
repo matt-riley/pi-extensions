@@ -22,7 +22,11 @@ test("fmtBytes", () => {
 
 test("languageBreakdown counts by extension", () => {
   const counts = languageBreakdown(["a.ts", "b.ts", "c.py", "README"]);
-  assert.deepEqual(counts, [["ts", 2], ["py", 1], ["?", 1]]);
+  assert.deepEqual(counts, [
+    ["ts", 2],
+    ["py", 1],
+    ["?", 1],
+  ]);
 });
 
 test("buildTreeLines renders dirs collapsed and files", () => {
@@ -38,7 +42,14 @@ test("buildTreeLines renders dirs collapsed and files", () => {
 });
 
 test("findKeyFiles and findTestFiles", () => {
-  const files = ["README.md", "package.json", "tsconfig.json", "src/a.test.ts", "test/x.ts", "src/b.ts"];
+  const files = [
+    "README.md",
+    "package.json",
+    "tsconfig.json",
+    "src/a.test.ts",
+    "test/x.ts",
+    "src/b.ts",
+  ];
   assert.ok(findKeyFiles(files).includes("README.md"));
   assert.ok(findKeyFiles(files).includes("package.json"));
   assert.ok(findTestFiles(files).includes("src/a.test.ts"));
@@ -67,7 +78,10 @@ test("formatRepoMap includes sections and caps lines", () => {
     root: "/repo",
     branch: "main",
     viaGit: true,
-    files: [{ rel: "a.ts", size: 10 }, { rel: "b.ts", size: 20 }],
+    files: [
+      { rel: "a.ts", size: 10 },
+      { rel: "b.ts", size: 20 },
+    ],
     truncated: false,
     languages: [["ts", 2]],
     tree: ["src/", "  a.ts"],
@@ -84,9 +98,19 @@ test("formatRepoMap includes sections and caps lines", () => {
   assert.ok(text.includes("## Key files"));
   // cap: feed a huge tree
   const capped = formatRepoMap({
-    root: "/r", branch: "", viaGit: false, files: [], truncated: false,
-    languages: [], tree: Array.from({ length: 500 }, (_, i) => `f${i}`),
-    keyFiles: [], testFiles: [], pkg: null, newest: [], largest: [], symbolCount: 0,
+    root: "/r",
+    branch: "",
+    viaGit: false,
+    files: [],
+    truncated: false,
+    languages: [],
+    tree: Array.from({ length: 500 }, (_, i) => `f${i}`),
+    keyFiles: [],
+    testFiles: [],
+    pkg: null,
+    newest: [],
+    largest: [],
+    symbolCount: 0,
   });
   assert.ok(capped.includes("truncated at 150 lines"));
 });
@@ -106,7 +130,12 @@ test("formatOutline sorts by line and strips redundant kind/name prefixes", () =
 });
 
 test("formatOutline notes truncation", () => {
-  const symbols = Array.from({ length: 210 }, (_, i) => ({ name: `f${i}`, kind: "function", signature: "", startLine: i + 1 }));
+  const symbols = Array.from({ length: 210 }, (_, i) => ({
+    name: `f${i}`,
+    kind: "function",
+    signature: "",
+    startLine: i + 1,
+  }));
   const text = formatOutline({ relPath: "a.ts", symbols, truncated: true });
   assert.ok(text.includes("more symbols"));
 });
@@ -117,7 +146,9 @@ test("formatSearchHits frames hits and reports truncation", () => {
     lineNo: 3,
     col: 5,
     text: "  const x = greet();",
-    entry: { symbols: [{ name: "run", kind: "function", signature: "run()", startLine: 1, endLine: 9 }] },
+    entry: {
+      symbols: [{ name: "run", kind: "function", signature: "run()", startLine: 1, endLine: 9 }],
+    },
   };
   const text = formatSearchHits({
     query: "greet",
@@ -140,10 +171,42 @@ test("formatDefinitions lists candidates with context and external notes", () =>
     symbol: "foo",
     external: null,
     candidates: [
-      { rel: "src/foo.ts", line: 4, kind: "function", name: "foo", signature: "foo(a: string)", exported: true, context: ["export function foo(a: string) {"] },
-      { rel: "src/bar.ts", line: 9, kind: "class", name: "foo", signature: "", exported: false, context: [] },
-      { rel: "src/baz.ts", line: 2, kind: "type", name: "foo", signature: "", exported: false, context: [] },
-      { rel: "src/qux.ts", line: 1, kind: "function", name: "foo", signature: "", exported: false, context: [] },
+      {
+        rel: "src/foo.ts",
+        line: 4,
+        kind: "function",
+        name: "foo",
+        signature: "foo(a: string)",
+        exported: true,
+        context: ["export function foo(a: string) {"],
+      },
+      {
+        rel: "src/bar.ts",
+        line: 9,
+        kind: "class",
+        name: "foo",
+        signature: "",
+        exported: false,
+        context: [],
+      },
+      {
+        rel: "src/baz.ts",
+        line: 2,
+        kind: "type",
+        name: "foo",
+        signature: "",
+        exported: false,
+        context: [],
+      },
+      {
+        rel: "src/qux.ts",
+        line: 1,
+        kind: "function",
+        name: "foo",
+        signature: "",
+        exported: false,
+        context: [],
+      },
     ],
     note: null,
   });

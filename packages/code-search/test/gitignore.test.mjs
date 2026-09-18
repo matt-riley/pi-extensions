@@ -1,11 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  compilePattern,
-  collectRules,
-  matchPath,
-  parseGitignore,
-} from "../gitignore.mjs";
+import { compilePattern, collectRules, matchPath, parseGitignore } from "../gitignore.mjs";
 
 const rules = (text, base = "") => parseGitignore(text, { base });
 

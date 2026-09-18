@@ -2,6 +2,6 @@
   "name": "pi-diagnosis-nudge",
   "version": "0.1.0",
   "description": "Attach a diagnosis-check reminder to failed tool results in pi, so a plausible root cause is checked against the evidence before it becomes a fix. Text only; no dependencies.",
-  "type": "module",
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module"
 }

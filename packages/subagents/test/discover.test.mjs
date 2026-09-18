@@ -4,7 +4,15 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverAgents, findAgent, isWriteCapable, parseAgentContent, parseToolList, resolveChildTools, usesAllowlistedBash } from "../discover.mjs";
+import {
+  discoverAgents,
+  findAgent,
+  isWriteCapable,
+  parseAgentContent,
+  parseToolList,
+  resolveChildTools,
+  usesAllowlistedBash,
+} from "../discover.mjs";
 
 function tempDir() {
   return mkdtempSync(path.join(tmpdir(), "pi-subagents-"));
@@ -127,12 +135,16 @@ test("bad files are skipped and reported", () => {
 
 test("lookup is case-insensitive", () => {
   const builtinDir = tempDir();
-  writeAgent(builtinDir, "reviewer", `---
+  writeAgent(
+    builtinDir,
+    "reviewer",
+    `---
 name: Reviewer
 description: reviews
 ---
 body
-`);
+`,
+  );
   const { agents } = discoverAgents({ builtinDir });
   assert.equal(findAgent(agents, "REVIEWER").name, "Reviewer");
 });
@@ -173,7 +185,16 @@ test("resolveChildTools falls back to the read-only allowlist when no tools are 
   const bare = parseAgentContent("just a body", "/tmp/bare.md");
   const resolved = resolveChildTools(bare);
   assert.deepEqual(resolved.excludeTools, ["subagent"]);
-  for (const tool of ["read", "grep", "find", "ls", "bash", "repo_map", "code_search", "web_search"]) {
+  for (const tool of [
+    "read",
+    "grep",
+    "find",
+    "ls",
+    "bash",
+    "repo_map",
+    "code_search",
+    "web_search",
+  ]) {
     assert.ok(resolved.tools.includes(tool), `missing ${tool}`);
   }
   assert.ok(!resolved.tools.includes("edit"));
@@ -181,24 +202,30 @@ test("resolveChildTools falls back to the read-only allowlist when no tools are 
 });
 
 test("usesAllowlistedBash: builtins are read-only unless they declare write tools", () => {
-  const scout = { ...parseAgentContent(
-    `---
+  const scout = {
+    ...parseAgentContent(
+      `---
 name: scout
 tools: read, grep
 ---
 body
 `,
-    "/tmp/scout.md",
-  ), source: "builtin" };
-  const worker = { ...parseAgentContent(
-    `---
+      "/tmp/scout.md",
+    ),
+    source: "builtin",
+  };
+  const worker = {
+    ...parseAgentContent(
+      `---
 name: worker
 tools: read, edit, write, bash
 ---
 body
 `,
-    "/tmp/worker.md",
-  ), source: "builtin" };
+      "/tmp/worker.md",
+    ),
+    source: "builtin",
+  };
   assert.equal(usesAllowlistedBash(scout), true);
   assert.equal(usesAllowlistedBash(worker), false);
 });
@@ -270,10 +297,13 @@ body
 test("shipped builtins resolve with the expected fleet and policy", () => {
   const builtinDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "agents");
   const { agents } = discoverAgents({ builtinDir });
-  assert.deepEqual(
-    agents.map((agent) => agent.name).sort(),
-    ["oracle", "researcher", "reviewer", "scout", "worker"],
-  );
+  assert.deepEqual(agents.map((agent) => agent.name).sort(), [
+    "oracle",
+    "researcher",
+    "reviewer",
+    "scout",
+    "worker",
+  ]);
 
   const worker = findAgent(agents, "worker");
   const researcher = findAgent(agents, "researcher");

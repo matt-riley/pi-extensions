@@ -40,5 +40,8 @@ test("write-capable path does not apply the bash allowlist", () => {
     evaluateChildToolCall({ toolName: "bash", input: { command: "git checkout main" } }, open),
     undefined,
   );
-  assert.equal(evaluateChildToolCall({ toolName: "edit", input: { path: "a.ts" } }, open), undefined);
+  assert.equal(
+    evaluateChildToolCall({ toolName: "edit", input: { path: "a.ts" } }, open),
+    undefined,
+  );
 });

@@ -28,25 +28,30 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
     name: SELECT_TOOL,
     label: "skill_select",
     description:
-      "Find a specialist skill by task. Searches the whole local skill library — including skills deliberately kept "
-      + "out of the system prompt — and returns the closest matches with the path to each SKILL.md. Call it before "
-      + "improvising a workflow a skill may already cover (for example Cloudflare, sandboxes, reviews, prompt "
-      + "crafting), then read the chosen SKILL.md and follow it. Treat the returned description as a hint, not the "
-      + "skill itself: the file is the source of truth.",
+      "Find a specialist skill by task. Searches the whole local skill library — including skills deliberately kept " +
+      "out of the system prompt — and returns the closest matches with the path to each SKILL.md. Call it before " +
+      "improvising a workflow a skill may already cover (for example Cloudflare, sandboxes, reviews, prompt " +
+      "crafting), then read the chosen SKILL.md and follow it. Treat the returned description as a hint, not the " +
+      "skill itself: the file is the source of truth.",
     promptSnippet:
       "skill_select(query, limit?): find a skill by task from the full local library — returns name, description and SKILL.md path; read the chosen file and follow it",
     promptGuidelines: [
       "Call skill_select when a task matches a specialist workflow (Cloudflare, sandboxes, code review, prompt crafting, and similar): select the skill, read its SKILL.md, then follow it. The full skill library is not listed in the system prompt.",
     ],
     parameters: Type.Object({
-      query: Type.Optional(Type.String({
-        description: "Plain-language description of the task, e.g. \"migrate a sandbox app to @cloudflare/sandbox@next\".",
-      })),
-      limit: Type.Optional(Type.Integer({
-        minimum: 1,
-        maximum: MAX_LIMIT,
-        description: `Maximum matches to return (default ${DEFAULT_LIMIT}).`,
-      })),
+      query: Type.Optional(
+        Type.String({
+          description:
+            'Plain-language description of the task, e.g. "migrate a sandbox app to @cloudflare/sandbox@next".',
+        }),
+      ),
+      limit: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: MAX_LIMIT,
+          description: `Maximum matches to return (default ${DEFAULT_LIMIT}).`,
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const roots = resolveRoots({
@@ -62,7 +67,12 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
         ? `TypeSafe chose "${adjusted.chosen}" over "${adjusted.over}" (lexical scores ${adjusted.chosenScore} vs ${adjusted.overScore} were too close to call).`
         : null;
       return {
-        content: [{ type: "text", text: formatMatches(adjusted.matches, { query, total: skills.length, note }) }],
+        content: [
+          {
+            type: "text",
+            text: formatMatches(adjusted.matches, { query, total: skills.length, note }),
+          },
+        ],
       };
     },
   });

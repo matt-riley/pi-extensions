@@ -82,7 +82,9 @@ function firstPath(input) {
 }
 
 function preview(text, width = 100) {
-  return String(text ?? "").replace(/\s+/g, " ").slice(0, width);
+  return String(text ?? "")
+    .replace(/\s+/g, " ")
+    .slice(0, width);
 }
 
 function main() {
@@ -93,7 +95,9 @@ function main() {
   }
 
   const calls = readCalls(walk(SESSIONS_DIR));
-  const mutating = calls.filter((c) => ["bash", "shell", "edit", "write"].includes(String(c.name).toLowerCase()));
+  const mutating = calls.filter((c) =>
+    ["bash", "shell", "edit", "write"].includes(String(c.name).toLowerCase()),
+  );
 
   const counts = { allow: 0, judge: 0, confirm: 0, block: 0 };
   const reasons = new Map();
@@ -113,7 +117,9 @@ function main() {
       const key = `${decision.verdict}: ${decision.reason ?? "(no reason)"}`;
       reasons.set(key, (reasons.get(key) ?? 0) + 1);
       if (byVerdict[decision.verdict] && byVerdict[decision.verdict].length < opts.samples) {
-        byVerdict[decision.verdict].push(preview(shellCommand(call.input) ?? firstPath(call.input) ?? ""));
+        byVerdict[decision.verdict].push(
+          preview(shellCommand(call.input) ?? firstPath(call.input) ?? ""),
+        );
       }
     }
   }
@@ -121,13 +127,19 @@ function main() {
   const total = mutating.length || 1;
   const pct = (n) => `${((100 * n) / total).toFixed(2)}%`;
 
-  console.log(`corpus: ${calls.length} tool calls, ${mutating.length} mutating (bash/edit/write)\n`);
+  console.log(
+    `corpus: ${calls.length} tool calls, ${mutating.length} mutating (bash/edit/write)\n`,
+  );
   for (const verdict of ["allow", "judge", "confirm", "block"]) {
-    console.log(`  ${verdict.padEnd(8)} ${String(counts[verdict]).padStart(7)}  ${pct(counts[verdict])}`);
+    console.log(
+      `  ${verdict.padEnd(8)} ${String(counts[verdict]).padStart(7)}  ${pct(counts[verdict])}`,
+    );
   }
   const judged = counts.judge + counts.confirm + counts.block;
   console.log(`\n  interrupted (judge + confirm + block): ${judged} = ${pct(judged)}`);
-  console.log(`  judge calls only: ${counts.judge} = ${pct(counts.judge)}  (~1 per ${Math.round(total / Math.max(counts.judge, 1))} mutating calls)`);
+  console.log(
+    `  judge calls only: ${counts.judge} = ${pct(counts.judge)}  (~1 per ${Math.round(total / Math.max(counts.judge, 1))} mutating calls)`,
+  );
 
   const top = [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (top.length) {
@@ -146,10 +158,17 @@ function main() {
     console.log(`\n--- ${opts.list} ---`);
     let shown = 0;
     for (const call of mutating) {
-      const decision = evaluateToolCall({ toolName: call.name, input: call.input, cwd: call.cwd, scriptTexts: {} });
+      const decision = evaluateToolCall({
+        toolName: call.name,
+        input: call.input,
+        cwd: call.cwd,
+        scriptTexts: {},
+      });
       if (!wanted.includes(decision.verdict)) continue;
       if (shown++ >= opts.max) break;
-      console.log(`  [${decision.verdict}] ${preview(shellCommand(call.input) ?? firstPath(call.input) ?? "", 130)}`);
+      console.log(
+        `  [${decision.verdict}] ${preview(shellCommand(call.input) ?? firstPath(call.input) ?? "", 130)}`,
+      );
       console.log(`        ${decision.reason}`);
     }
   }

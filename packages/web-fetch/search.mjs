@@ -59,10 +59,14 @@ export function parseSearxngResults(body, { limit = 5 } = {}) {
   const list = Array.isArray(data?.results) ? data.results : [];
   for (const r of list) {
     if (results.length >= limit) break;
-    const title = String(r?.title ?? "").replace(/\s+/g, " ").trim();
+    const title = String(r?.title ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
     const url = String(r?.url ?? "").trim();
     if (!title || !url) continue;
-    const snippet = String(r?.content ?? "").replace(/\s+/g, " ").trim();
+    const snippet = String(r?.content ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
     results.push({ title, url, snippet });
   }
   return { results };

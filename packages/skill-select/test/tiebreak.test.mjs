@@ -3,12 +3,7 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  TIEBREAK_ENV,
-  needsTiebreak,
-  tiebreakEnabled,
-  tiebreakMatches,
-} from "../tiebreak.mjs";
+import { TIEBREAK_ENV, needsTiebreak, tiebreakEnabled, tiebreakMatches } from "../tiebreak.mjs";
 
 const ENV = { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "tb-key" };
 // Guaranteed-absent home and config path: the key-less cases must not read a
@@ -53,12 +48,20 @@ test("asks one choice question over the close candidates and promotes the winner
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].questions.best.type, "choice");
-  assert.deepEqual(Object.keys(calls[0].questions.best.criteria), ["cloudflare", "sandbox-next", "wrangler", "none_of_these"]);
+  assert.deepEqual(Object.keys(calls[0].questions.best.criteria), [
+    "cloudflare",
+    "sandbox-next",
+    "wrangler",
+    "none_of_these",
+  ]);
   assert.equal(calls[0].state.task, "run untrusted code");
   assert.equal(result.applied, true);
   assert.equal(result.reason, "reordered");
   assert.equal(result.chosen, "sandbox-next");
-  assert.deepEqual(result.matches.map((entry) => entry.name), ["sandbox-next", "cloudflare", "wrangler"]);
+  assert.deepEqual(
+    result.matches.map((entry) => entry.name),
+    ["sandbox-next", "cloudflare", "wrangler"],
+  );
 });
 
 test("leaves the order alone when the model declines", async () => {
@@ -68,12 +71,20 @@ test("leaves the order alone when the model declines", async () => {
   assert.equal(calls.length, 1);
   assert.equal(result.applied, false);
   assert.equal(result.reason, "declined");
-  assert.deepEqual(result.matches.map((entry) => entry.name), ["cloudflare", "sandbox-next"]);
+  assert.deepEqual(
+    result.matches.map((entry) => entry.name),
+    ["cloudflare", "sandbox-next"],
+  );
 });
 
 test("does not call the provider when disabled or when scores are separated", async () => {
   const { ask, calls } = fakeAsk("sandbox-next");
-  const disabled = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 8.9)], env: NO_KEY_ENV, ask });
+  const disabled = await tiebreakMatches({
+    query: "q",
+    matches: [match("a", 9), match("b", 8.9)],
+    env: NO_KEY_ENV,
+    ask,
+  });
   assert.equal(disabled.reason, "disabled");
   const optedOut = await tiebreakMatches({
     query: "q",
@@ -82,23 +93,35 @@ test("does not call the provider when disabled or when scores are separated", as
     ask,
   });
   assert.equal(optedOut.reason, "disabled");
-  const separated = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 2)], env: ENV, ask });
+  const separated = await tiebreakMatches({
+    query: "q",
+    matches: [match("a", 9), match("b", 2)],
+    env: ENV,
+    ask,
+  });
   assert.equal(separated.reason, "scores_separated");
   assert.equal(calls.length, 0);
 });
 
 test("fails open when the provider errors", async () => {
   const matches = [match("cloudflare", 9), match("sandbox-next", 8.6)];
-  const ask = async () => { throw new Error("socket hang up"); };
+  const ask = async () => {
+    throw new Error("socket hang up");
+  };
   const result = await tiebreakMatches({ query: "q", matches, env: ENV, ask });
   assert.equal(result.applied, false);
   assert.equal(result.reason, "request_failed");
   assert.match(result.error, /socket hang up/);
-  assert.deepEqual(result.matches.map((entry) => entry.name), ["cloudflare", "sandbox-next"]);
+  assert.deepEqual(
+    result.matches.map((entry) => entry.name),
+    ["cloudflare", "sandbox-next"],
+  );
 });
 
 test("caps the candidate list sent to the provider", async () => {
-  const matches = Array.from({ length: 12 }, (_, index) => match(`skill-${index}`, 9 - index * 0.1));
+  const matches = Array.from({ length: 12 }, (_, index) =>
+    match(`skill-${index}`, 9 - index * 0.1),
+  );
   const { ask, calls } = fakeAsk("skill-3");
   await tiebreakMatches({ query: "q", matches, env: ENV, ask });
   assert.equal(Object.keys(calls[0].questions.best.criteria).length, 8 + 1);
@@ -106,8 +129,14 @@ test("caps the candidate list sent to the provider", async () => {
 
 test("cannot promote a skill outside the candidate window", async () => {
   const matches = [
-    match("a", 9), match("b", 8.6), match("c", 8.5), match("d", 8.4),
-    match("e", 8.3), match("f", 8.2), match("g", 8.1), match("h", 8.0),
+    match("a", 9),
+    match("b", 8.6),
+    match("c", 8.5),
+    match("d", 8.4),
+    match("e", 8.3),
+    match("f", 8.2),
+    match("g", 8.1),
+    match("h", 8.0),
     match("outside", 7.9),
   ];
   const { ask, calls } = fakeAsk("outside");
@@ -123,16 +152,29 @@ test("reports already_top instead of a no-op reorder", async () => {
   const result = await tiebreakMatches({ query: "q", matches, env: ENV, ask });
   assert.equal(result.applied, false);
   assert.equal(result.reason, "already_top");
-  assert.deepEqual(result.matches.map((entry) => entry.name), ["a", "b"]);
+  assert.deepEqual(
+    result.matches.map((entry) => entry.name),
+    ["a", "b"],
+  );
 });
 
 test("fires exactly at the gap boundary", async () => {
   const atBoundary = fakeAsk("b");
-  await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 7.5)], env: ENV, ask: atBoundary.ask });
+  await tiebreakMatches({
+    query: "q",
+    matches: [match("a", 9), match("b", 7.5)],
+    env: ENV,
+    ask: atBoundary.ask,
+  });
   assert.equal(atBoundary.calls.length, 1, "1.5 apart still counts as close");
 
   const beyondBoundary = fakeAsk("b");
-  await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 7.4)], env: ENV, ask: beyondBoundary.ask });
+  await tiebreakMatches({
+    query: "q",
+    matches: [match("a", 9), match("b", 7.4)],
+    env: ENV,
+    ask: beyondBoundary.ask,
+  });
   assert.equal(beyondBoundary.calls.length, 0, "1.6 apart is a clear lexical winner");
 });
 
@@ -143,7 +185,10 @@ test("does not spend a call browsing the catalog", async () => {
   assert.equal(calls.length, 0);
   assert.equal(result.applied, false);
   assert.equal(result.reason, "no_query");
-  assert.deepEqual(result.matches.map((entry) => entry.name), ["alpha", "beta"]);
+  assert.deepEqual(
+    result.matches.map((entry) => entry.name),
+    ["alpha", "beta"],
+  );
 
   const whitespace = fakeAsk("beta");
   await tiebreakMatches({ query: "   ", matches, env: ENV, ask: whitespace.ask });
@@ -173,7 +218,10 @@ test("ignores a junk timeout override instead of inheriting 30s", async () => {
   for (const junk of ["", "soon", "0", "-5"]) {
     await tiebreakMatches({ query: "q", matches, env: { ...ENV, TYPESAFE_TIMEOUT_MS: junk }, ask });
   }
-  assert.deepEqual(seen.map((request) => request.env.TYPESAFE_TIMEOUT_MS), ["3000", "3000", "3000", "3000"]);
+  assert.deepEqual(
+    seen.map((request) => request.env.TYPESAFE_TIMEOUT_MS),
+    ["3000", "3000", "3000", "3000"],
+  );
 
   await tiebreakMatches({ query: "q", matches, env: { ...ENV, TYPESAFE_TIMEOUT_MS: "7000" }, ask });
   assert.equal(seen.at(-1).env.TYPESAFE_TIMEOUT_MS, "7000");

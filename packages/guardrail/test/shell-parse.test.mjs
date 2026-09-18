@@ -51,7 +51,9 @@ test("stripHeredocs: nothing to strip leaves the text alone", () => {
 test("collectSubstitutions: $() and backticks, including inside double quotes", () => {
   assert.deepEqual(collectSubstitutions("echo $(date)"), ["date"]);
   assert.deepEqual(collectSubstitutions("echo `date`"), ["date"]);
-  assert.deepEqual(collectSubstitutions('echo "$(git rev-parse --short HEAD)"'), ["git rev-parse --short HEAD"]);
+  assert.deepEqual(collectSubstitutions('echo "$(git rev-parse --short HEAD)"'), [
+    "git rev-parse --short HEAD",
+  ]);
   assert.deepEqual(collectSubstitutions("echo $(a $(b))"), ["a $(b)"]);
   assert.deepEqual(collectSubstitutions('echo "literal $(not this)"'), ["not this"]);
 });
@@ -66,16 +68,22 @@ test("collectSubstitutions: an apostrophe inside double quotes does not open a s
   // on ", so \"don't\" left it believing a single-quoted string had started —
   // and every substitution after the apostrophe went unseen.
   assert.deepEqual(collectSubstitutions('echo "don\'t $(date)"'), ["date"]);
-  assert.deepEqual(collectSubstitutions('git commit -m "doesn\'t matter" && echo $(whoami)'), ["whoami"]);
-  assert.deepEqual(collectSubstitutions('echo "it\'s" \'$(not this)\''), []);
+  assert.deepEqual(collectSubstitutions('git commit -m "doesn\'t matter" && echo $(whoami)'), [
+    "whoami",
+  ]);
+  assert.deepEqual(collectSubstitutions("echo \"it's\" '$(not this)'"), []);
 });
 
 // ---------------------------------------------------------------------------
 // Redirects: the false positives that matter
 
 test("redirectTargets: quotes are literal, fd duplication has no path", () => {
-  assert.deepEqual(redirectTargets("npm test > /tmp/out.txt"), [{ op: ">", target: "/tmp/out.txt" }]);
-  assert.deepEqual(redirectTargets("npm test >> /tmp/out.txt"), [{ op: ">>", target: "/tmp/out.txt" }]);
+  assert.deepEqual(redirectTargets("npm test > /tmp/out.txt"), [
+    { op: ">", target: "/tmp/out.txt" },
+  ]);
+  assert.deepEqual(redirectTargets("npm test >> /tmp/out.txt"), [
+    { op: ">>", target: "/tmp/out.txt" },
+  ]);
   assert.deepEqual(redirectTargets('grep "<div" index.html'), []);
   assert.deepEqual(redirectTargets("node -e 'a -> b'"), []);
   assert.deepEqual(redirectTargets("cmd 2>&1"), [{ op: ">", target: null }]);
@@ -92,8 +100,12 @@ test("redirectTargets: a redirect inside a substitution belongs to the substitut
 });
 
 test("redirectTargets: trailing shell punctuation is not part of the path", () => {
-  assert.deepEqual(redirectTargets("curl -s -o /tmp/x -w \"%{http_code}\" url 2>/dev/null)"), [{ op: ">", target: "/dev/null" }]);
-  assert.deepEqual(redirectTargets('time (node x.mjs > /dev/null)'), [{ op: ">", target: "/dev/null" }]);
+  assert.deepEqual(redirectTargets('curl -s -o /tmp/x -w "%{http_code}" url 2>/dev/null)'), [
+    { op: ">", target: "/dev/null" },
+  ]);
+  assert.deepEqual(redirectTargets("time (node x.mjs > /dev/null)"), [
+    { op: ">", target: "/dev/null" },
+  ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -102,7 +114,13 @@ test("redirectTargets: trailing shell punctuation is not part of the path", () =
 test("splitSegments and tokenize stay quote-aware", () => {
   assert.deepEqual(splitSegments("git status && rm -rf ~"), ["git status ", " rm -rf ~"]);
   assert.deepEqual(splitSegments('grep -E "a|b" file'), ['grep -E "a|b" file']);
-  assert.deepEqual(tokenize(`sed -i '' 's|a|b|' file.txt`), ["sed", "-i", "", "s|a|b|", "file.txt"]);
+  assert.deepEqual(tokenize(`sed -i '' 's|a|b|' file.txt`), [
+    "sed",
+    "-i",
+    "",
+    "s|a|b|",
+    "file.txt",
+  ]);
 });
 
 test("findHead skips env assignments and leading flags", () => {

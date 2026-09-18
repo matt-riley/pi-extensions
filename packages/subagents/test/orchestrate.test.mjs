@@ -5,10 +5,7 @@ import { formatAgentRoster, orchestratorPrompt, withOrchestratorPrompt } from ".
 test("formatAgentRoster lists names and descriptions", () => {
   assert.equal(formatAgentRoster([]), "none");
   assert.equal(
-    formatAgentRoster([
-      { name: "scout", description: "Fast recon" },
-      { name: "reviewer" },
-    ]),
+    formatAgentRoster([{ name: "scout", description: "Fast recon" }, { name: "reviewer" }]),
     "- scout — Fast recon\n- reviewer",
   );
 });

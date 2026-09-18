@@ -13,7 +13,10 @@ test("reconcileActiveTools adds, removes, and no-ops", () => {
 
 test("resolveChildModel inherits the parent or pins a provider/id", () => {
   const parent = { id: "parent-model" };
-  assert.deepEqual(resolveChildModel(undefined, parent, undefined), { model: parent, note: undefined });
+  assert.deepEqual(resolveChildModel(undefined, parent, undefined), {
+    model: parent,
+    note: undefined,
+  });
   assert.deepEqual(resolveChildModel(undefined, parent, "sonnet"), {
     model: parent,
     note: 'unresolved model "sonnet"; inherited parent',

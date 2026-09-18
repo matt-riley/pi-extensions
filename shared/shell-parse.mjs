@@ -23,13 +23,23 @@ export function splitSegments(input) {
   while (i < n) {
     const ch = input[i];
     if (quote) {
-      if (quote === '"' && ch === "\\") { i += 2; continue; }
+      if (quote === '"' && ch === "\\") {
+        i += 2;
+        continue;
+      }
       if (ch === quote) quote = null;
       i++;
       continue;
     }
-    if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
-    if (ch === "\\") { i += 2; continue; }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
     const op = CHAIN_OPS.find((o) => input.startsWith(o, i));
     if (op) {
       parts.push(input.slice(segStart, i));
@@ -57,15 +67,33 @@ export function tokenize(segment) {
     while (i < n) {
       const ch = segment[i];
       if (quote) {
-        if (quote === '"' && ch === "\\") { tok += segment[i + 1] ?? ""; i += 2; continue; }
-        if (ch === quote) { quote = null; i++; continue; }
-        tok += ch; i++;
+        if (quote === '"' && ch === "\\") {
+          tok += segment[i + 1] ?? "";
+          i += 2;
+          continue;
+        }
+        if (ch === quote) {
+          quote = null;
+          i++;
+          continue;
+        }
+        tok += ch;
+        i++;
         continue;
       }
-      if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
+      if (ch === "'" || ch === '"') {
+        quote = ch;
+        i++;
+        continue;
+      }
       if (/\s/.test(ch)) break;
-      if (ch === "\\") { tok += segment[i + 1] ?? ""; i += 2; continue; }
-      tok += ch; i++;
+      if (ch === "\\") {
+        tok += segment[i + 1] ?? "";
+        i += 2;
+        continue;
+      }
+      tok += ch;
+      i++;
     }
     tokens.push(tok);
   }
@@ -81,13 +109,23 @@ export function hasRedirectOutsideQuotes(segment) {
   while (i < n) {
     const ch = segment[i];
     if (quote) {
-      if (quote === '"' && ch === "\\") { i += 2; continue; }
+      if (quote === '"' && ch === "\\") {
+        i += 2;
+        continue;
+      }
       if (ch === quote) quote = null;
       i++;
       continue;
     }
-    if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
-    if (ch === "\\") { i += 2; continue; }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
     if (ch === "<" || ch === ">") return true;
     i++;
   }
@@ -111,13 +149,23 @@ export function redirectTargets(segment) {
   while (i < n) {
     const ch = scannable[i];
     if (quote) {
-      if (quote === '"' && ch === "\\") { i += 2; continue; }
+      if (quote === '"' && ch === "\\") {
+        i += 2;
+        continue;
+      }
       if (ch === quote) quote = null;
       i++;
       continue;
     }
-    if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
-    if (ch === "\\") { i += 2; continue; }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
     if (ch === ">") {
       const append = scannable[i + 1] === ">";
       const op = append ? ">>" : ">";
@@ -190,7 +238,9 @@ export function stripHeredocs(input) {
 // is a delete with an audience, and a parser that stops at the first word
 // would see only `echo`.
 export function collectSubstitutions(segment) {
-  return substitutionSpans(segment).map(([start, end, inner]) => inner ?? segment.slice(start, end));
+  return substitutionSpans(segment).map(
+    ([start, end, inner]) => inner ?? segment.slice(start, end),
+  );
 }
 
 /** [start, end, inner] for every $() and backtick body, quote-aware. */
@@ -201,7 +251,10 @@ function substitutionSpans(segment) {
   let i = 0;
   while (i < n) {
     const ch = segment[i];
-    if (ch === "\\") { i += 2; continue; }
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
     if (quote === "'") {
       if (ch === "'") quote = null;
       i++;
@@ -222,7 +275,10 @@ function substitutionSpans(segment) {
 
     if (ch === "`") {
       const end = segment.indexOf("`", i + 1);
-      if (end < 0) { out.push([i, n, segment.slice(i + 1)]); break; }
+      if (end < 0) {
+        out.push([i, n, segment.slice(i + 1)]);
+        break;
+      }
       out.push([i, end + 1, segment.slice(i + 1, end)]);
       i = end + 1;
       continue;
@@ -232,9 +288,21 @@ function substitutionSpans(segment) {
       let j = i + 2;
       while (j < n && depth > 0) {
         const c = segment[j];
-        if (c === "\\") { j += 2; continue; }
-        if (c === "(") { depth++; j++; continue; }
-        if (c === ")") { depth--; if (depth === 0) break; j++; continue; }
+        if (c === "\\") {
+          j += 2;
+          continue;
+        }
+        if (c === "(") {
+          depth++;
+          j++;
+          continue;
+        }
+        if (c === ")") {
+          depth--;
+          if (depth === 0) break;
+          j++;
+          continue;
+        }
         j++;
       }
       out.push([i, j + 1, segment.slice(i + 2, j)]);
@@ -251,8 +319,14 @@ export function findHead(tokens) {
   let i = 0;
   while (i < tokens.length) {
     const t = tokens[i];
-    if (t.includes("=") && !t.startsWith("=") && i < tokens.length - 1) { i++; continue; }
-    if (t.startsWith("-")) { i++; continue; }
+    if (t.includes("=") && !t.startsWith("=") && i < tokens.length - 1) {
+      i++;
+      continue;
+    }
+    if (t.startsWith("-")) {
+      i++;
+      continue;
+    }
     break;
   }
   return { head: tokens[i]?.toLowerCase(), args: tokens.slice(i + 1) };
