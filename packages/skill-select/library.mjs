@@ -280,7 +280,7 @@ function truncate(text, max = DESCRIPTION_CHARS) {
 }
 
 /** Render matches as compact text with the path the model should read next. */
-export function formatMatches(matches, { query = "", total = 0 } = {}) {
+export function formatMatches(matches, { query = "", total = 0, note = null } = {}) {
   if (matches.length === 0) {
     const quoted = String(query ?? "").trim();
     return quoted
@@ -296,6 +296,10 @@ export function formatMatches(matches, { query = "", total = 0 } = {}) {
     lines.push(`${index + 1}. ${match.name}${score} — ${truncate(match.description)}`);
     lines.push(`   ${match.path}`);
   });
+  if (note) {
+    lines.push("");
+    lines.push(note);
+  }
   lines.push("");
   lines.push("Read the chosen SKILL.md with the read tool, then follow its instructions.");
   return lines.join("\n");

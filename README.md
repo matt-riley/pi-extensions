@@ -30,6 +30,9 @@ renaming one can break another:
   plan mode's toolset), plus `SKILL_SELECT_TOOLS` from **`pi-skill-select`**'s
   `tools.mjs` (so planning can pull in a specialist skill without it living
   in the system prompt).
+- **`pi-skill-select`** imports `askSystemOne` from **`pi-typesafe`**'s
+  `systemone.mjs` for its optional tiebreaker, so it reuses the same request
+  validation, timeout and error handling instead of duplicating transport.
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root.
 

@@ -18,6 +18,7 @@ import {
   rankSkills,
   resolveRoots,
 } from "./library.mjs";
+import { tiebreakMatches } from "./tiebreak.mjs";
 import { SKILL_SELECT_TOOLS } from "./tools.mjs";
 
 const SELECT_TOOL = SKILL_SELECT_TOOLS[0];
@@ -56,8 +57,12 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
       const skills = await discoverSkills({ roots });
       const query = String(params?.query ?? "");
       const matches = rankSkills(skills, query, { limit: params?.limit ?? DEFAULT_LIMIT });
+      const adjusted = await tiebreakMatches({ query, matches, env: process.env });
+      const note = adjusted.applied
+        ? `TypeSafe promoted "${adjusted.chosen}" because the lexical scores were close.`
+        : null;
       return {
-        content: [{ type: "text", text: formatMatches(matches, { query, total: skills.length }) }],
+        content: [{ type: "text", text: formatMatches(adjusted.matches, { query, total: skills.length, note }) }],
       };
     },
   });
