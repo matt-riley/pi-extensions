@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { clampMaxTurns, clampTimeoutMs } from "./result.mjs";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const WRITE_TOOLS = new Set(["edit", "write"]);
 
 // Read-only fallback when an agent omits tools:. Explicit allowlist of known-safe
@@ -81,23 +81,31 @@ export function parseAgentContent(content, filePath, parseFrontmatter) {
   let body = "";
   try {
     const parsed = parseFrontmatter ? parseFrontmatter(content) : parseSimpleFrontmatter(content);
-    frontmatter = parsed?.frontmatter && typeof parsed.frontmatter === "object" ? parsed.frontmatter : {};
+    frontmatter =
+      parsed?.frontmatter && typeof parsed.frontmatter === "object" ? parsed.frontmatter : {};
     body = typeof parsed?.body === "string" ? parsed.body : "";
   } catch {
     return null;
   }
 
   const slug = slugName(filePath);
-  const name = typeof frontmatter.name === "string" && frontmatter.name.trim() ? frontmatter.name.trim() : slug;
+  const name =
+    typeof frontmatter.name === "string" && frontmatter.name.trim()
+      ? frontmatter.name.trim()
+      : slug;
   const description =
     typeof frontmatter.description === "string" && frontmatter.description.trim()
       ? frontmatter.description.trim()
       : slug;
-  const toolsListed = frontmatter.tools !== undefined && frontmatter.tools !== null && frontmatter.tools !== "";
+  const toolsListed =
+    frontmatter.tools !== undefined && frontmatter.tools !== null && frontmatter.tools !== "";
   const tools = parseToolList(frontmatter.tools);
-  const model = typeof frontmatter.model === "string" && frontmatter.model.trim() ? frontmatter.model.trim() : undefined;
+  const model =
+    typeof frontmatter.model === "string" && frontmatter.model.trim()
+      ? frontmatter.model.trim()
+      : undefined;
   const thinkingRaw = typeof frontmatter.thinking === "string" ? frontmatter.thinking.trim() : "";
-  const thinking = THINKING_LEVELS.includes(thinkingRaw) ? thinkingRaw : undefined;
+  const thinking = THINKING_LEVELS.has(thinkingRaw) ? thinkingRaw : undefined;
   const maxTurns = clampMaxTurns(frontmatter.max_turns);
   const timeoutMs = clampTimeoutMs(frontmatter.timeout_ms);
   const enabled = frontmatter.enabled !== false && frontmatter.enabled !== "false";
@@ -179,7 +187,9 @@ export function discoverAgents({
 }
 
 export function findAgent(agents, name) {
-  const key = String(name ?? "").trim().toLowerCase();
+  const key = String(name ?? "")
+    .trim()
+    .toLowerCase();
   if (!key) return undefined;
   return agents.find((agent) => agent.name.toLowerCase() === key);
 }

@@ -74,7 +74,10 @@ export function detectCharset({ mime = "", headerCharset = "", bodyPrefix = "" }
   if (headerCharset) return normalizeCharset(headerCharset);
   const meta = /<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_-]+)/i.exec(bodyPrefix);
   if (meta) return normalizeCharset(meta[1]);
-  const metaCt = /<meta[^>]+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-zA-Z0-9_-]+)/i.exec(bodyPrefix);
+  const metaCt =
+    /<meta[^>]+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-zA-Z0-9_-]+)/i.exec(
+      bodyPrefix,
+    );
   if (metaCt) return normalizeCharset(metaCt[1]);
   return mime.includes("text/") || mime.includes("xml") ? "utf-8" : "";
 }
@@ -82,7 +85,8 @@ export function detectCharset({ mime = "", headerCharset = "", bodyPrefix = "" }
 function normalizeCharset(cs) {
   const c = cs.toLowerCase();
   if (c === "utf8") return "utf-8";
-  if (c === "latin1" || c === "iso-8859-1" || c === "ascii" || c === "us-ascii") return "windows-1252";
+  if (c === "latin1" || c === "iso-8859-1" || c === "ascii" || c === "us-ascii")
+    return "windows-1252";
   return c;
 }
 
@@ -105,7 +109,10 @@ export function parseMetaRefresh(html) {
     const content = tagAttr(tag, "content");
     const dm = /^\s*(\d+)\s*(?:;\s*url\s*=\s*(.+?))?\s*$/i.exec(content.trim());
     if (!dm) continue;
-    const url = (dm[2] ?? "").trim().replace(/^["']|["']$/g, "").trim();
+    const url = (dm[2] ?? "")
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .trim();
     return { delay: Number(dm[1]), url };
   }
   return null;
@@ -133,7 +140,11 @@ export function alternateForFormat(alternates, format) {
   const match = (type) => {
     switch (format) {
       case "markdown":
-        return type.startsWith("text/markdown") || type.startsWith("application/markdown") || type.endsWith("+markdown");
+        return (
+          type.startsWith("text/markdown") ||
+          type.startsWith("application/markdown") ||
+          type.endsWith("+markdown")
+        );
       case "text":
         return type === "text/plain" || type.endsWith("+text");
       case "json":
@@ -189,7 +200,11 @@ async function httpGet(url, opts, state, fetcher) {
     if (status >= 400) {
       // Read a small snippet for the error message, then bail.
       const snippet = await readBody(response, 2000, controller.signal);
-      const text = new TextDecoder("utf-8").decode(snippet).replace(/\s+/g, " ").trim().slice(0, 300);
+      const text = new TextDecoder("utf-8")
+        .decode(snippet)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
       throw new Error(
         `HTTP ${status} ${response.statusText ?? ""} for ${finalUrl}${text ? ` — ${text}` : ""}`,
       );
@@ -216,11 +231,22 @@ async function httpGet(url, opts, state, fetcher) {
     const charset = detectCharset({ mime, headerCharset, bodyPrefix: prefix });
     const body = new TextDecoder(charset || "utf-8").decode(buf);
     const kind = isHtmlContent({ mime, body }) ? "html" : "text";
-    return { kind, finalUrl, status, statusText: response.statusText ?? "", mime, charset: charset || "utf-8", body };
+    return {
+      kind,
+      finalUrl,
+      status,
+      statusText: response.statusText ?? "",
+      mime,
+      charset: charset || "utf-8",
+      body,
+    };
   } catch (err) {
     if (timedOut()) {
       const ms = opts.timeoutMs ?? 15000;
-      throw new Error(`Request timed out after ${ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`}.`);
+      throw new Error(
+        `Request timed out after ${ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`}.`,
+        { cause: err },
+      );
     }
     throw err;
   } finally {
@@ -337,16 +363,16 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
     maxChars ?? (format === "raw" ? RAW_DEFAULT_MAX_CHARS : DEFAULT_MAX_CHARS);
   const state = { steps: 0, via: undefined };
 
-  let payload = await fetchChain(url, { ...options, timeoutMs, userAgent, extraHeaders }, state, fetcher);
+  let payload = await fetchChain(
+    url,
+    { ...options, timeoutMs, userAgent, extraHeaders },
+    state,
+    fetcher,
+  );
   onStatus?.("extracting");
 
   // Alternate-content fallback for thin pages.
-  if (
-    payload.kind === "html" &&
-    followAlternates &&
-    format !== "html" &&
-    format !== "raw"
-  ) {
+  if (payload.kind === "html" && followAlternates && format !== "html" && format !== "raw") {
     const alternates = parseAlternates(payload.body);
     const alt = alternateForFormat(alternates, format);
     if (alt) {
@@ -362,7 +388,12 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
         state.steps += 1;
         state.via = `alternate ${alt.type}`;
         onStatus?.(`following alternate ${alt.type}`);
-        payload = await fetchChain(target, { ...options, timeoutMs, userAgent, extraHeaders }, state, fetcher);
+        payload = await fetchChain(
+          target,
+          { ...options, timeoutMs, userAgent, extraHeaders },
+          state,
+          fetcher,
+        );
       }
     }
   }
@@ -385,7 +416,10 @@ function finalize(payload, { format, maxChars, includeImages, via }) {
   }
 
   if (payload.kind === "text") {
-    const capped = truncateText(payload.body, format === "raw" ? Math.max(maxChars, 100000) : maxChars);
+    const capped = truncateText(
+      payload.body,
+      format === "raw" ? Math.max(maxChars, 100000) : maxChars,
+    );
     return {
       kind: "text",
       finalUrl: payload.finalUrl,

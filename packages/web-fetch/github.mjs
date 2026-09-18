@@ -175,7 +175,7 @@ async function ghApi(args, { timeoutMs = 15000, signal } = {}) {
 // Test hook: replace the gh subprocess call with a fake that returns fixture
 // payloads keyed by endpoint.
 let ghApiImpl = ghApi;
-export function _setGhApi(fn) {
+export function setGhApiForTests(fn) {
   ghApiImpl = fn;
 }
 // --- Fetch + render ---------------------------------------------------------
@@ -185,20 +185,33 @@ export function _setGhApi(fn) {
 // not handled (usedGh false).
 export async function fetchGithub(parsed, opts = {}) {
   switch (parsed.kind) {
-    case "repo": return { usedGh: true, outcome: await fetchRepo(parsed, opts) };
-    case "profile": return { usedGh: true, outcome: await fetchProfile(parsed, opts) };
-    case "gist": return { usedGh: true, outcome: await fetchGist(parsed, opts) };
+    case "repo":
+      return { usedGh: true, outcome: await fetchRepo(parsed, opts) };
+    case "profile":
+      return { usedGh: true, outcome: await fetchProfile(parsed, opts) };
+    case "gist":
+      return { usedGh: true, outcome: await fetchGist(parsed, opts) };
     case "blob":
-    case "raw": return { usedGh: true, outcome: await fetchFile(parsed, opts) };
-    case "tree": return { usedGh: true, outcome: await fetchTree(parsed, opts) };
-    case "issue": return { usedGh: true, outcome: await fetchIssue(parsed, opts) };
-    case "pull": return { usedGh: true, outcome: await fetchPull(parsed, opts) };
-    case "discussion": return { usedGh: true, outcome: await fetchDiscussion(parsed, opts) };
-    case "release": return { usedGh: true, outcome: await fetchRelease(parsed, opts) };
-    case "releases": return { usedGh: true, outcome: await fetchReleases(parsed, opts) };
-    case "commit": return { usedGh: true, outcome: await fetchCommit(parsed, opts) };
-    case "commits": return { usedGh: true, outcome: await fetchCommits(parsed, opts) };
-    default: return { usedGh: false };
+    case "raw":
+      return { usedGh: true, outcome: await fetchFile(parsed, opts) };
+    case "tree":
+      return { usedGh: true, outcome: await fetchTree(parsed, opts) };
+    case "issue":
+      return { usedGh: true, outcome: await fetchIssue(parsed, opts) };
+    case "pull":
+      return { usedGh: true, outcome: await fetchPull(parsed, opts) };
+    case "discussion":
+      return { usedGh: true, outcome: await fetchDiscussion(parsed, opts) };
+    case "release":
+      return { usedGh: true, outcome: await fetchRelease(parsed, opts) };
+    case "releases":
+      return { usedGh: true, outcome: await fetchReleases(parsed, opts) };
+    case "commit":
+      return { usedGh: true, outcome: await fetchCommit(parsed, opts) };
+    case "commits":
+      return { usedGh: true, outcome: await fetchCommits(parsed, opts) };
+    default:
+      return { usedGh: false };
   }
 }
 
@@ -285,6 +298,9 @@ async function fetchFile(parsed, opts) {
   for (const { ref, path } of refPathCandidates(parsed.ref, parsed.path)) {
     const endpoint = `repos/${parsed.owner}/${parsed.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
     try {
+      // Sequential on purpose: candidates are probed in order and the first hit
+      // wins, so a 404 decides whether the next one is even tried.
+      // eslint-disable-next-line no-await-in-loop
       body = await ghApiImpl(["-H", "Accept: application/vnd.github.raw", endpoint], opts);
       used = { ref, path };
       break;
@@ -340,6 +356,8 @@ async function fetchTree(parsed, opts) {
   for (const { ref, path } of refPathCandidates(parsed.ref, parsed.path)) {
     const endpoint = `repos/${parsed.owner}/${parsed.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
     try {
+      // Same ordered-candidate probe as the raw fetch above.
+      // eslint-disable-next-line no-await-in-loop
       listing = JSON.parse(await ghApiImpl([endpoint], opts));
       used = { ref, path };
       break;
@@ -387,11 +405,16 @@ async function fetchTree(parsed, opts) {
 
 async function fetchIssue(parsed, opts) {
   validateNames(parsed.owner, parsed.repo);
-  const issue = JSON.parse(await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}`], opts));
+  const issue = JSON.parse(
+    await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}`], opts),
+  );
   let comments = [];
   try {
     comments = JSON.parse(
-      await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}/comments?per_page=50`], opts),
+      await ghApiImpl(
+        [`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}/comments?per_page=50`],
+        opts,
+      ),
     );
   } catch (err) {
     if (err.status !== 404) throw err;
@@ -401,11 +424,16 @@ async function fetchIssue(parsed, opts) {
 
 async function fetchPull(parsed, opts) {
   validateNames(parsed.owner, parsed.repo);
-  const pull = JSON.parse(await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}`], opts));
+  const pull = JSON.parse(
+    await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/pulls/${parsed.number}`], opts),
+  );
   let comments = [];
   try {
     comments = JSON.parse(
-      await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}/comments?per_page=50`], opts),
+      await ghApiImpl(
+        [`repos/${parsed.owner}/${parsed.repo}/issues/${parsed.number}/comments?per_page=50`],
+        opts,
+      ),
     );
   } catch (err) {
     if (err.status !== 404) throw err;
@@ -435,12 +463,17 @@ function issueOutcome(parsed, kind, data, comments, opts) {
     "",
     data.body?.trim() || "_No description._",
     ...(comments.length
-      ? ["", "## Comments", "", ...comments.flatMap((c) => [
-          `### ${c.user?.login ?? "?"} — ${(c.created_at ?? "").slice(0, 10)}`,
+      ? [
           "",
-          (c.body ?? "").trim() || "_empty_",
+          "## Comments",
           "",
-        ])]
+          ...comments.flatMap((c) => [
+            `### ${c.user?.login ?? "?"} — ${(c.created_at ?? "").slice(0, 10)}`,
+            "",
+            (c.body ?? "").trim() || "_empty_",
+            "",
+          ]),
+        ]
       : []),
   ].join("\n");
 
@@ -515,7 +548,9 @@ async function fetchRelease(parsed, opts) {
 
 async function fetchReleases(parsed, opts) {
   validateNames(parsed.owner, parsed.repo);
-  const rels = JSON.parse(await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/releases?per_page=20`], opts));
+  const rels = JSON.parse(
+    await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/releases?per_page=20`], opts),
+  );
   const md = [
     `# Releases (${parsed.owner}/${parsed.repo})`,
     "",
@@ -543,7 +578,10 @@ async function fetchReleases(parsed, opts) {
 async function fetchCommit(parsed, opts) {
   validateNames(parsed.owner, parsed.repo);
   const c = JSON.parse(
-    await ghApiImpl([`repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(parsed.ref)}`], opts),
+    await ghApiImpl(
+      [`repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(parsed.ref)}`],
+      opts,
+    ),
   );
   const author = c.commit?.author?.name ?? c.author?.login ?? "?";
   const stats = c.stats ?? {};
@@ -666,20 +704,78 @@ function formatBytes(bytes) {
 }
 
 const EXT_LANG = {
-  md: "", markdown: "", mdx: "", txt: "", text: "", license: "",
-  js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "jsx",
-  ts: "typescript", tsx: "tsx", py: "python", rb: "ruby", go: "go",
-  rs: "rust", java: "java", c: "c", h: "c", cpp: "cpp", hpp: "cpp",
-  cc: "cpp", cs: "csharp", php: "php", swift: "swift", kt: "kotlin",
-  scala: "scala", sh: "bash", bash: "bash", zsh: "bash", fish: "fish",
-  yaml: "yaml", yml: "yaml", toml: "toml", json: "json", jsonc: "jsonc",
-  xml: "xml", html: "html", htm: "html", css: "css", scss: "scss",
-  sql: "sql", r: "r", dart: "dart", lua: "lua", zig: "zig",
-  elixir: "elixir", ex: "elixir", exs: "elixir", erl: "erlang",
-  hs: "haskell", ml: "ocaml", fs: "fsharp", vue: "vue", svelte: "svelte",
-  dockerfile: "dockerfile", makefile: "makefile", cmake: "cmake",
-  diff: "diff", patch: "diff", ini: "ini", conf: "ini", env: "ini",
-  csv: "csv", tsv: "tsv", graphql: "graphql", gql: "graphql",
-  proto: "protobuf", gradle: "gradle", kts: "kotlin", tf: "hcl",
-  hcl: "hcl", dockerignore: "", gitignore: "",
+  md: "",
+  markdown: "",
+  mdx: "",
+  txt: "",
+  text: "",
+  license: "",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "jsx",
+  ts: "typescript",
+  tsx: "tsx",
+  py: "python",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  hpp: "cpp",
+  cc: "cpp",
+  cs: "csharp",
+  php: "php",
+  swift: "swift",
+  kt: "kotlin",
+  scala: "scala",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "fish",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  json: "json",
+  jsonc: "jsonc",
+  xml: "xml",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  sql: "sql",
+  r: "r",
+  dart: "dart",
+  lua: "lua",
+  zig: "zig",
+  elixir: "elixir",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hs: "haskell",
+  ml: "ocaml",
+  fs: "fsharp",
+  vue: "vue",
+  svelte: "svelte",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  cmake: "cmake",
+  diff: "diff",
+  patch: "diff",
+  ini: "ini",
+  conf: "ini",
+  env: "ini",
+  csv: "csv",
+  tsv: "tsv",
+  graphql: "graphql",
+  gql: "graphql",
+  proto: "protobuf",
+  gradle: "gradle",
+  kts: "kotlin",
+  tf: "hcl",
+  hcl: "hcl",
+  dockerignore: "",
+  gitignore: "",
 };

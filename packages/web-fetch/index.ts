@@ -82,12 +82,12 @@ function buildFetchOptions(params, settings, { format, maxChars, timeoutMs }) {
     maxChars,
     timeoutMs,
     headers,
-    includeImages: typeof params?.includeImages === "boolean"
-      ? params.includeImages
-      : settings.includeImages,
-    followAlternates: typeof params?.followAlternates === "boolean"
-      ? params.followAlternates
-      : settings.followAlternates,
+    includeImages:
+      typeof params?.includeImages === "boolean" ? params.includeImages : settings.includeImages,
+    followAlternates:
+      typeof params?.followAlternates === "boolean"
+        ? params.followAlternates
+        : settings.followAlternates,
     useGh: settings.useGh,
     userAgent: settings.userAgent,
     extraHeaders: settings.extraHeaders,
@@ -108,11 +108,33 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       url: Type.String({ description: "The http(s) URL to fetch" }),
       format: Type.Optional(Type.String({ description: FORMAT_DESC })),
-      maxChars: Type.Optional(Type.Integer({ minimum: 1000, description: "Maximum characters of extracted content (default 60000; format=raw defaults to 200000)." })),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, description: "Request timeout in milliseconds (default 15000)." })),
-      headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Extra HTTP headers, e.g. { cookie: \"...\" } or a custom user-agent." })),
-      includeImages: Type.Optional(Type.Boolean({ description: "Keep markdown image references (default false)." })),
-      followAlternates: Type.Optional(Type.Boolean({ description: "Follow <link rel=alternate> content (text/markdown, text/plain, application/json) when a page extracts thin (default true)." })),
+      maxChars: Type.Optional(
+        Type.Integer({
+          minimum: 1000,
+          description:
+            "Maximum characters of extracted content (default 60000; format=raw defaults to 200000).",
+        }),
+      ),
+      timeoutMs: Type.Optional(
+        Type.Integer({
+          minimum: 1000,
+          description: "Request timeout in milliseconds (default 15000).",
+        }),
+      ),
+      headers: Type.Optional(
+        Type.Record(Type.String(), Type.String(), {
+          description: 'Extra HTTP headers, e.g. { cookie: "..." } or a custom user-agent.',
+        }),
+      ),
+      includeImages: Type.Optional(
+        Type.Boolean({ description: "Keep markdown image references (default false)." }),
+      ),
+      followAlternates: Type.Optional(
+        Type.Boolean({
+          description:
+            "Follow <link rel=alternate> content (text/markdown, text/plain, application/json) when a page extracts thin (default true).",
+        }),
+      ),
     }),
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -124,10 +146,12 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
 
       if (typeof params?.format === "string" && !isKnownFormat(params.format)) {
         return {
-          content: [{
-            type: "text",
-            text: `Rejected: format must be one of ${FORMATS.join(", ")}. Got "${params.format}".`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Rejected: format must be one of ${FORMATS.join(", ")}. Got "${params.format}".`,
+            },
+          ],
         };
       }
 
@@ -142,26 +166,28 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
 
       const options = buildFetchOptions(params, settings, { format, maxChars, timeoutMs });
 
-      try {
-        new URL(options.url);
-      } catch {
-        return { content: [{ type: "text", text: `Rejected: "${options.url}" is not a valid URL.` }] };
+      if (!URL.canParse(options.url)) {
+        return {
+          content: [{ type: "text", text: `Rejected: "${options.url}" is not a valid URL.` }],
+        };
       }
 
       onUpdate?.({ content: [{ type: "text", text: `Fetching ${options.url}…` }] });
       try {
-        const outcome = await fetchSmart(
-          {
-            ...options,
-            signal,
-            onStatus: (status: string) =>
-              onUpdate?.({ content: [{ type: "text", text: `web_fetch ${options.url}: ${status}` }] }),
-          },
-        );
+        const outcome = await fetchSmart({
+          ...options,
+          signal,
+          onStatus: (status: string) =>
+            onUpdate?.({
+              content: [{ type: "text", text: `web_fetch ${options.url}: ${status}` }],
+            }),
+        });
         const text = formatWebFetchResult(outcome, { format, maxChars });
         return { content: [{ type: "text", text }] };
       } catch (err) {
-        return { content: [{ type: "text", text: errorText(`web_fetch failed for ${options.url}`, err) }] };
+        return {
+          content: [{ type: "text", text: errorText(`web_fetch failed for ${options.url}`, err) }],
+        };
       }
     },
   });
@@ -180,15 +206,32 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         Type.Object({
           url: Type.String({ description: "The http(s) URL to fetch" }),
           format: Type.Optional(Type.String({ description: FORMAT_DESC })),
-          maxChars: Type.Optional(Type.Integer({ minimum: 1000, description: "Per-item character cap (default 60000)." })),
-          headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Extra HTTP headers for this item." })),
-          includeImages: Type.Optional(Type.Boolean({ description: "Keep markdown image references (default false)." })),
-          followAlternates: Type.Optional(Type.Boolean({ description: "Alternate-content fallback (default true)." })),
+          maxChars: Type.Optional(
+            Type.Integer({ minimum: 1000, description: "Per-item character cap (default 60000)." }),
+          ),
+          headers: Type.Optional(
+            Type.Record(Type.String(), Type.String(), {
+              description: "Extra HTTP headers for this item.",
+            }),
+          ),
+          includeImages: Type.Optional(
+            Type.Boolean({ description: "Keep markdown image references (default false)." }),
+          ),
+          followAlternates: Type.Optional(
+            Type.Boolean({ description: "Alternate-content fallback (default true)." }),
+          ),
         }),
         { description: "1-25 URLs to fetch" },
       ),
-      concurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Bounded concurrency (default 4)." })),
-      totalMaxChars: Type.Optional(Type.Integer({ minimum: 10000, description: "Total output budget across all items (default 300000)." })),
+      concurrency: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 10, description: "Bounded concurrency (default 4)." }),
+      ),
+      totalMaxChars: Type.Optional(
+        Type.Integer({
+          minimum: 10000,
+          description: "Total output budget across all items (default 300000).",
+        }),
+      ),
     }),
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -198,7 +241,11 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         return { content: [{ type: "text", text: "Rejected: requests is empty." }] };
       }
       if (requests.length > 25) {
-        return { content: [{ type: "text", text: `Rejected: at most 25 URLs per batch, got ${requests.length}.` }] };
+        return {
+          content: [
+            { type: "text", text: `Rejected: at most 25 URLs per batch, got ${requests.length}.` },
+          ],
+        };
       }
 
       const concurrency = clampInt(params?.concurrency, settings.batchConcurrency, 1, 10);
@@ -237,7 +284,9 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
             };
             doneCount += 1;
             onUpdate?.({
-              content: [{ type: "text", text: `batch_web_fetch: ${doneCount}/${items.length} done` }],
+              content: [
+                { type: "text", text: `batch_web_fetch: ${doneCount}/${items.length} done` },
+              ],
             });
             continue;
           }
@@ -251,7 +300,10 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
             const outcome = await fetchSmart({ ...options, signal });
             // Charge the budget by content ACTUALLY emitted for this item,
             // not by the reservation — so unused headroom rolls forward.
-            const emitted = formatWebFetchResult(outcome, { format: request.format, maxChars: allocation.cap });
+            const emitted = formatWebFetchResult(outcome, {
+              format: request.format,
+              maxChars: allocation.cap,
+            });
             remainingBudget = chargeBudget(remainingBudget, emitted.length);
             results[i] = { index, request, outcome, cap: allocation.cap };
           } catch (err) {
@@ -280,8 +332,17 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
       "After a search, synthesize an answer and cite the returned sources with markdown hyperlinks; do not invent URLs not present in the results.",
     ],
     parameters: Type.Object({
-      query: Type.String({ minLength: 2, description: "The search query. Be specific and include relevant keywords." }),
-      max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Max results to return (default 5)." })),
+      query: Type.String({
+        minLength: 2,
+        description: "The search query. Be specific and include relevant keywords.",
+      }),
+      max_results: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: 10,
+          description: "Max results to return (default 5).",
+        }),
+      ),
     }),
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -302,10 +363,12 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           url = buildSearxngUrl(searxngUrl, query);
         } catch {
           return {
-            content: [{
-              type: "text",
-              text: `Rejected: webFetchSearxngUrl "${searxngUrl}" is not a valid http(s) URL.`,
-            }],
+            content: [
+              {
+                type: "text",
+                text: `Rejected: webFetchSearxngUrl "${searxngUrl}" is not a valid http(s) URL.`,
+              },
+            ],
           };
         }
       } else {
@@ -334,23 +397,36 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         if (searxngUrl) {
           const parsed = parseSearxngResults(body, { limit });
           if (parsed.error) {
-            return { content: [{ type: "text", text: `Search failed: ${parsed.error}` }], isError: true };
+            return {
+              content: [{ type: "text", text: `Search failed: ${parsed.error}` }],
+              isError: true,
+            };
           }
           results = parsed.results;
         } else {
           const parsed = parseDdgResults(body, { limit });
           results = parsed.results;
           blocked = isDdgBlocked({ status: outcome.status, body });
-          redirected =
-            results.length === 0 && isDdgHomepageRedirect(outcome.finalUrl);
+          redirected = results.length === 0 && isDdgHomepageRedirect(outcome.finalUrl);
           // Only surface parse-failure when it isn't better explained by a
           // block/redirect (those already tell the model what happened).
           parseFailed = parsed.parseFailed && !blocked && !redirected;
         }
-        const text = formatSearchResults({ query, results, blocked, redirected, parseFailed, limit, engine });
+        const text = formatSearchResults({
+          query,
+          results,
+          blocked,
+          redirected,
+          parseFailed,
+          limit,
+          engine,
+        });
         return { content: [{ type: "text", text }], details: { engine, results } };
       } catch (err) {
-        return { content: [{ type: "text", text: errorText("web_search failed", err) }], isError: true };
+        return {
+          content: [{ type: "text", text: errorText("web_search failed", err) }],
+          isError: true,
+        };
       }
     },
   });

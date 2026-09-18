@@ -38,11 +38,14 @@ test("parseFrontmatter handles plain, folded, literal and quoted values", () => 
     { name: "literal", description: "Keep\nbreaks." },
   );
   assert.deepEqual(
-    parseFrontmatter('---\nname: "quoted"\ndescription: \'single quoted\'\n---\nbody'),
+    parseFrontmatter("---\nname: \"quoted\"\ndescription: 'single quoted'\n---\nbody"),
     { name: "quoted", description: "single quoted" },
   );
   assert.deepEqual(parseFrontmatter("no frontmatter here"), { name: "", description: "" });
-  assert.deepEqual(parseFrontmatter("\uFEFF---\r\nname: crlf\r\ndescription: ok\r\n---\r\n"), { name: "crlf", description: "ok" });
+  assert.deepEqual(parseFrontmatter("\uFEFF---\r\nname: crlf\r\ndescription: ok\r\n---\r\n"), {
+    name: "crlf",
+    description: "ok",
+  });
 });
 
 test("resolveRoots puts the explicit library first and dedupes", () => {
@@ -75,11 +78,14 @@ test("discoverSkills finds nested skills, falls back to the directory name and s
     await writeSkill(dir, "no-frontmatter", { frontmatter: "" });
 
     const skills = await discoverSkills({ roots: [dir, join(dir, "missing")] });
-    const byName = Object.fromEntries(skills.map((skill) => [skill.name, skill]));
+    const byName = Object.fromEntries(skills.map((s) => [s.name, s]));
 
     assert.deepEqual(Object.keys(byName).sort(), ["alpha", "hidden-but-real", "no-frontmatter"]);
     assert.equal(byName.alpha.description, "alpha skill");
-    assert.equal(byName["hidden-but-real"].path, join(dir, ".system", "hidden-but-real", "SKILL.md"));
+    assert.equal(
+      byName["hidden-but-real"].path,
+      join(dir, ".system", "hidden-but-real", "SKILL.md"),
+    );
     assert.equal(byName["no-frontmatter"].description, "");
     assert.equal(byName["no-frontmatter"].path, join(dir, "no-frontmatter", "SKILL.md"));
   } finally {
@@ -114,7 +120,10 @@ test("rankSkills scores names above descriptions and phrases above tokens", () =
     skill("unrelated", "Nothing to do with the query."),
   ];
   const ranked = rankSkills(skills, "sandbox");
-  assert.deepEqual(ranked.map((entry) => entry.name), ["sandbox-next", "deploy-helper"]);
+  assert.deepEqual(
+    ranked.map((entry) => entry.name),
+    ["sandbox-next", "deploy-helper"],
+  );
   assert.ok(ranked[0].score > ranked[1].score);
 
   const phrase = rankSkills(skills, "sandbox next");
@@ -125,19 +134,31 @@ test("rankSkills matches word variants like migration and migrations", () => {
   // Faithful to the real entries: the AWS blurb contains "migration", so exact
   // token scoring ties them and alphabetical order wrongly wins.
   const skills = [
-    skill("aws-sdk-v2-to-v3-migration", "The codebase needs a safe modular v3 migration with minimal downtime."),
-    skill("sandbox-migrate-to-next", "Use when porting a Cloudflare Sandbox app, or when the user asks to migrate to Sandbox 1.0."),
+    skill(
+      "aws-sdk-v2-to-v3-migration",
+      "The codebase needs a safe modular v3 migration with minimal downtime.",
+    ),
+    skill(
+      "sandbox-migrate-to-next",
+      "Use when porting a Cloudflare Sandbox app, or when the user asks to migrate to Sandbox 1.0.",
+    ),
   ];
-  assert.deepEqual(rankSkills(skills, "sandbox migration").map((entry) => entry.name), [
-    "sandbox-migrate-to-next",
-    "aws-sdk-v2-to-v3-migration",
-  ]);
-  assert.ok(rankSkills(skills, "sandbox migration")[0].score > rankSkills(skills, "sandbox migration")[1].score);
+  assert.deepEqual(
+    rankSkills(skills, "sandbox migration").map((entry) => entry.name),
+    ["sandbox-migrate-to-next", "aws-sdk-v2-to-v3-migration"],
+  );
+  assert.ok(
+    rankSkills(skills, "sandbox migration")[0].score >
+      rankSkills(skills, "sandbox migration")[1].score,
+  );
 });
 
 test("rankSkills with an empty query browses the catalog alphabetically", () => {
   const ranked = rankSkills([skill("zeta", "z"), skill("alpha", "a")], "", { limit: 1 });
-  assert.deepEqual(ranked.map((entry) => entry.name), ["alpha"]);
+  assert.deepEqual(
+    ranked.map((entry) => entry.name),
+    ["alpha"],
+  );
 });
 
 test("discoverSkills skips archived directories at any depth", async () => {
@@ -149,7 +170,10 @@ test("discoverSkills skips archived directories at any depth", async () => {
     await writeSkill(join(dir, "Archived"), "case-insensitive");
 
     const skills = await discoverSkills({ roots: [dir] });
-    assert.deepEqual(skills.map((skill) => skill.name), ["active-skill"]);
+    assert.deepEqual(
+      skills.map((s) => s.name),
+      ["active-skill"],
+    );
   } finally {
     await cleanup();
   }
@@ -167,7 +191,10 @@ test("discoverSkills follows symlinked directories once, without looping", async
     await symlink(library, join(real, "loop"));
 
     const skills = await discoverSkills({ roots: [library] });
-    assert.deepEqual(skills.map((skill) => skill.name), ["linked-skill"]);
+    assert.deepEqual(
+      skills.map((s) => s.name),
+      ["linked-skill"],
+    );
     assert.equal(skills[0].path, join(library, "alias", "linked-skill", "SKILL.md"));
   } finally {
     await cleanup();
@@ -175,10 +202,10 @@ test("discoverSkills follows symlinked directories once, without looping", async
 });
 
 test("formatMatches renders ranked matches with paths and a read hint", () => {
-  const text = formatMatches(
-    [{ ...skill("pdf-tools", "Extract text from PDFs."), score: 12 }],
-    { query: "pdf", total: 3 },
-  );
+  const text = formatMatches([{ ...skill("pdf-tools", "Extract text from PDFs."), score: 12 }], {
+    query: "pdf",
+    total: 3,
+  });
   assert.match(text, /1\. pdf-tools/);
   assert.match(text, /Extract text from PDFs\./);
   assert.match(text, /\/lib\/pdf-tools\/SKILL\.md/);

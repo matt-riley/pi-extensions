@@ -57,9 +57,10 @@ function loreConfigPaths(env) {
     return [explicitConfig];
   }
   const home = typeof env?.HOME === "string" && env.HOME.trim() ? env.HOME.trim() : homedir();
-  const copilotHome = typeof env?.LORE_COPILOT_HOME === "string" && env.LORE_COPILOT_HOME.trim()
-    ? env.LORE_COPILOT_HOME.trim()
-    : join(home, ".copilot");
+  const copilotHome =
+    typeof env?.LORE_COPILOT_HOME === "string" && env.LORE_COPILOT_HOME.trim()
+      ? env.LORE_COPILOT_HOME.trim()
+      : join(home, ".copilot");
   const xdgHome = typeof env?.XDG_CONFIG_HOME === "string" ? env.XDG_CONFIG_HOME.trim() : "";
   const configHome = xdgHome && isAbsolute(xdgHome) ? xdgHome : join(home, ".config");
   const explicitHome = typeof env?.LORE_HOME === "string" ? env.LORE_HOME.trim() : "";
@@ -104,7 +105,8 @@ function apiKeySources(env) {
  */
 export function resolveApiKey(env = process.env) {
   const primaryKey = typeof env?.TYPESAFE_API_KEY === "string" ? env.TYPESAFE_API_KEY.trim() : "";
-  const loreKey = typeof env?.LORE_TYPESAFE_API_KEY === "string" ? env.LORE_TYPESAFE_API_KEY.trim() : "";
+  const loreKey =
+    typeof env?.LORE_TYPESAFE_API_KEY === "string" ? env.LORE_TYPESAFE_API_KEY.trim() : "";
   return primaryKey || loreKey || apiKeySources(env).key;
 }
 
@@ -148,7 +150,9 @@ export function validateQuestions(questions) {
       throw new Error(`Question "${id}" must be an object with type, instructions and criteria.`);
     }
     if (!QUESTION_TYPES.has(question.type)) {
-      throw new Error(`Question "${id}" has unknown question type "${question.type}". Use choice, noul or score.`);
+      throw new Error(
+        `Question "${id}" has unknown question type "${question.type}". Use choice, noul or score.`,
+      );
     }
     if (!hasInstructions(question)) {
       throw new Error(`Question "${id}" needs instructions — the actual judgment to make.`);
@@ -198,7 +202,9 @@ export async function askSystemOne({
   if (!config.apiKey) {
     const sources = apiKeySources(env);
     const detail = sources.parseError ? ` (unreadable config: ${sources.parseError})` : "";
-    throw new Error(`TYPESAFE_API_KEY is not set. Set it in the environment or as typesafe.apiKey in ${sources.checked.join(" or ")}${detail}.`);
+    throw new Error(
+      `TYPESAFE_API_KEY is not set. Set it in the environment or as typesafe.apiKey in ${sources.checked.join(" or ")}${detail}.`,
+    );
   }
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required to call TypeSafe.");
@@ -234,26 +240,29 @@ export async function askSystemOne({
     });
     if (!response?.ok) {
       const detail = await readErrorBody(response);
-      throw new Error(`TypeSafe request failed with status ${response?.status ?? "unknown"}${detail}`);
+      throw new Error(
+        `TypeSafe request failed with status ${response?.status ?? "unknown"}${detail}`,
+      );
     }
     let payload;
     try {
       payload = await response.json();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`TypeSafe returned invalid JSON: ${message}`);
+      throw new Error(`TypeSafe returned invalid JSON: ${message}`, { cause: error });
     }
     return {
-      model: typeof payload?.model === "string" && payload.model.trim() ? payload.model : requestedModel,
+      model:
+        typeof payload?.model === "string" && payload.model.trim() ? payload.model : requestedModel,
       answers: isPlainObject(payload?.answers) ? payload.answers : {},
       usage: isPlainObject(payload?.usage) ? payload.usage : null,
     };
   } catch (error) {
     if (timedOut) {
-      throw new Error(`TypeSafe request timed out after ${config.timeoutMs}ms`);
+      throw new Error(`TypeSafe request timed out after ${config.timeoutMs}ms`, { cause: error });
     }
     if (signal?.aborted) {
-      throw new Error("TypeSafe request aborted");
+      throw new Error("TypeSafe request aborted", { cause: error });
     }
     throw error;
   } finally {
@@ -264,7 +273,8 @@ export async function askSystemOne({
   }
 }
 
-function formatProbabilities(probabilities, legend) {  const entries = Object.entries(probabilities ?? {});
+function formatProbabilities(probabilities, legend) {
+  const entries = Object.entries(probabilities ?? {});
   // Score levels come back keyed "0".."n" — keep numeric order and label them.
   const numeric = entries.every(([key]) => /^\d+$/.test(key));
   const ordered = numeric
@@ -273,7 +283,9 @@ function formatProbabilities(probabilities, legend) {  const entries = Object.en
   return ordered
     .map(([key, value]) => {
       const probability = Number(value).toFixed(2);
-      return numeric && legend?.[key] ? `${key}=${legend[key]} (${probability})` : `${key}=${probability}`;
+      return numeric && legend?.[key]
+        ? `${key}=${legend[key]} (${probability})`
+        : `${key}=${probability}`;
     })
     .join(" ");
 }
@@ -305,7 +317,11 @@ export function formatAnswers({ model, usage, answers } = {}) {
   for (const [id, answer] of entries) {
     if (answer?.type === "noul") {
       const value = finiteAnswerValue(answer.noul);
-      lines.push(value === null ? `${id}: unusable answer (no noul value)` : `${id}: noul ${value.toFixed(2)}`);
+      lines.push(
+        value === null
+          ? `${id}: unusable answer (no noul value)`
+          : `${id}: noul ${value.toFixed(2)}`,
+      );
       continue;
     }
     if (answer?.type === "choice") {
@@ -313,7 +329,9 @@ export function formatAnswers({ model, usage, answers } = {}) {
         lines.push(`${id}: unusable answer (no choice value)`);
         continue;
       }
-      const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
+      const confidence = Number.isFinite(Number(answer.confidence))
+        ? ` (confidence ${Number(answer.confidence).toFixed(2)})`
+        : "";
       lines.push(`${id}: choice "${answer.choice}"${confidence}`);
       const probabilities = formatProbabilities(answer.probabilities);
       if (probabilities) {
@@ -327,7 +345,9 @@ export function formatAnswers({ model, usage, answers } = {}) {
         lines.push(`${id}: unusable answer (no score value)`);
         continue;
       }
-      const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
+      const confidence = Number.isFinite(Number(answer.confidence))
+        ? ` (confidence ${Number(answer.confidence).toFixed(2)})`
+        : "";
       lines.push(`${id}: score ${value.toFixed(2)}${confidence}`);
       const probabilities = formatProbabilities(answer.probabilities, answer.legend);
       if (probabilities) {

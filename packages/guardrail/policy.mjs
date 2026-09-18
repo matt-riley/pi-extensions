@@ -83,12 +83,30 @@ const SECRET = [
 ];
 
 const SYSTEM_PREFIXES = [
-  "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/sys",
-  "/proc", "/dev", "/System", "/Library", "/Applications", "/opt",
-  "/private/etc", "/private/var",
+  "/etc",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/lib",
+  "/lib64",
+  "/boot",
+  "/sys",
+  "/proc",
+  "/dev",
+  "/System",
+  "/Library",
+  "/Applications",
+  "/opt",
+  "/private/etc",
+  "/private/var",
 ];
 
-const HOME_PREFIXES = [/^~(\/|$)/, /^\$HOME(\/|$)/, /^\$\{HOME\}(\/|$)/, /^\/(Users|home)\/[^/]+(\/|$)/];
+const HOME_PREFIXES = [
+  /^~(\/|$)/,
+  /^\$HOME(\/|$)/,
+  /^\$\{HOME\}(\/|$)/,
+  /^\/(Users|home)\/[^/]+(\/|$)/,
+];
 
 function isRegenerablePath(token) {
   return REGENERABLE.some((re) => re.test(token));
@@ -100,7 +118,10 @@ export function isSecretPath(token) {
 
 /** A dotenv file: secrets, but a routine one to create and overwrite. */
 export function isEnvFile(token) {
-  return /(^|\/)\.env(\.[^/]*)?$/.test(token) || /(^|\/)\.env\.(local|development|production|test)$/.test(token);
+  return (
+    /(^|\/)\.env(\.[^/]*)?$/.test(token) ||
+    /(^|\/)\.env\.(local|development|production|test)$/.test(token)
+  );
 }
 
 /**
@@ -111,10 +132,15 @@ export function isEnvFile(token) {
  * `~/.zshrc` and a stray `settings.json` are where a mistake actually hurts.
  */
 function isConfigLike(token) {
-  const base = String(token ?? "").split("/").pop() ?? "";
+  const base =
+    String(token ?? "")
+      .split("/")
+      .pop() ?? "";
   if (!base) return false;
   if (base.startsWith(".") && base !== ".") return true;
-  return /\.(json|ya?ml|toml|conf|cfg|ini|rc|sh|zsh|bash|fish|plist|sqlite|db|pem|key|p12)$/i.test(base);
+  return /\.(json|ya?ml|toml|conf|cfg|ini|rc|sh|zsh|bash|fish|plist|sqlite|db|pem|key|p12)$/i.test(
+    base,
+  );
 }
 
 /**
@@ -135,7 +161,9 @@ function isConfigLike(token) {
  * workspace delete, while `cd /tmp && rm -rf src` is still your src.
  */
 export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
-  const token = String(rawToken ?? "").trim().replace(/^["']|["']$/g, "");
+  const token = String(rawToken ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
   if (!token) return "unknown";
   if (token === "/dev/null") return "regenerable";
 
@@ -156,7 +184,8 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
     if (base && typeof base === "string" && base.trim()) {
       const resolved = path.resolve(base, token);
       if (isRegenerablePath(resolved)) return "regenerable";
-      const root = typeof rootCwd === "string" && rootCwd.trim() ? path.resolve(rootCwd) : undefined;
+      const root =
+        typeof rootCwd === "string" && rootCwd.trim() ? path.resolve(rootCwd) : undefined;
       if (root && (resolved === root || resolved.startsWith(root + path.sep))) return "workspace";
       if (home && (resolved === home || resolved.startsWith(home + path.sep))) return "home";
     }
@@ -198,11 +227,69 @@ const SHAPE_DEFAULT = {
   wipe: "block", // mkfs, fdisk, diskutil erase: no judgment makes this fine
 };
 
-const READ_HEADS = new Set(["cat", "head", "tail", "less", "more", "base64", "xxd", "od", "strings", "openssl", "dd", "cp", "rsync", "scp", "tar", "zip"]);
-const NETWORK_HEADS = new Set(["curl", "wget", "nc", "ncat", "netcat", "telnet", "ssh", "scp", "sftp", "rsync", "http", "httpie"]);
-const UPLOAD_FLAGS = new Set(["-d", "--data", "--data-binary", "--data-raw", "-T", "--upload-file", "-F", "--form", "--post-file"]);
+const READ_HEADS = new Set([
+  "cat",
+  "head",
+  "tail",
+  "less",
+  "more",
+  "base64",
+  "xxd",
+  "od",
+  "strings",
+  "openssl",
+  "dd",
+  "cp",
+  "rsync",
+  "scp",
+  "tar",
+  "zip",
+]);
+const NETWORK_HEADS = new Set([
+  "curl",
+  "wget",
+  "nc",
+  "ncat",
+  "netcat",
+  "telnet",
+  "ssh",
+  "scp",
+  "sftp",
+  "rsync",
+  "http",
+  "httpie",
+]);
+const UPLOAD_FLAGS = new Set([
+  "-d",
+  "--data",
+  "--data-binary",
+  "--data-raw",
+  "-T",
+  "--upload-file",
+  "-F",
+  "--form",
+  "--post-file",
+]);
 
-const INTERPRETER_HEADS = new Set(["node", "nodejs", "deno", "bun", "tsx", "ts-node", "python", "python3", "ruby", "perl", "php", "bash", "sh", "zsh", "fish", "osascript", "awk"]);
+const INTERPRETER_HEADS = new Set([
+  "node",
+  "nodejs",
+  "deno",
+  "bun",
+  "tsx",
+  "ts-node",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+  "php",
+  "bash",
+  "sh",
+  "zsh",
+  "fish",
+  "osascript",
+  "awk",
+]);
 
 function nonFlagArgs(args) {
   const out = [];
@@ -238,41 +325,62 @@ function gitShape(head, args) {
   if (sub === "branch" && hasFlag(rest, "-D", "--delete")) {
     return { id: "delete", detail: "git branch -D", targets: nonFlagArgs(rest) };
   }
-  if (sub === "reset" && rest.includes("--hard")) return { id: "history", detail: "git reset --hard", targets: ["."] };
-  if (sub === "checkout" && (rest.includes("--") || rest.includes("."))) return { id: "history", detail: "git checkout -- (discards uncommitted work)", targets: ["."] };
-  if (sub === "restore") return { id: "history", detail: "git restore (discards uncommitted work)", targets: ["."] };
-  if (sub === "stash" && hasFlag(rest, "drop", "clear")) return { id: "delete", detail: `git stash ${rest[0]}`, targets: ["."] };
-  if (sub === "filter-branch" || sub === "reflog") return { id: "history", detail: `git ${sub}`, targets: ["."] };
+  if (sub === "reset" && rest.includes("--hard"))
+    return { id: "history", detail: "git reset --hard", targets: ["."] };
+  if (sub === "checkout" && (rest.includes("--") || rest.includes(".")))
+    return { id: "history", detail: "git checkout -- (discards uncommitted work)", targets: ["."] };
+  if (sub === "restore")
+    return { id: "history", detail: "git restore (discards uncommitted work)", targets: ["."] };
+  if (sub === "stash" && hasFlag(rest, "drop", "clear"))
+    return { id: "delete", detail: `git stash ${rest[0]}`, targets: ["."] };
+  if (sub === "filter-branch" || sub === "reflog")
+    return { id: "history", detail: `git ${sub}`, targets: ["."] };
   if (sub === "push") {
     const forced = hasFlag(rest, "-f", "--force");
     const leases = rest.some((a) => a.startsWith("--force-with-lease"));
-    if (forced && !leases) return { id: "remote", detail: "git push --force (rewrites remote history)", targets: [] };
+    if (forced && !leases)
+      return { id: "remote", detail: "git push --force (rewrites remote history)", targets: [] };
   }
   return null;
 }
 
 function remoteShape(head, whole) {
-  if (/\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)/i.test(whole)) return { id: "remote", detail: "SQL DROP/TRUNCATE", targets: [] };
-  if (head === "kubectl" && /\bdelete\b/.test(whole)) return { id: "remote", detail: "kubectl delete", targets: [] };
-  if (head === "terraform" && /\bdestroy\b/.test(whole)) return { id: "remote", detail: "terraform destroy", targets: [] };
-  if (head === "docker" && /\b(system\s+prune|rm\s+-f|volume\s+rm)\b/.test(whole)) return { id: "remote", detail: "docker prune/force-remove", targets: [] };
-  if (head === "npm" && /\bpublish\b/.test(whole)) return { id: "remote", detail: "npm publish", targets: [] };
-  if (head === "gh" && /\b(repo|release)\s+delete\b/.test(whole)) return { id: "remote", detail: "gh delete", targets: [] };
-  if ((head === "aws" || head === "gcloud") && /\b(s3\s+rm|delete-|rm\b)/.test(whole)) return { id: "remote", detail: `${head} delete`, targets: [] };
+  if (/\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)/i.test(whole))
+    return { id: "remote", detail: "SQL DROP/TRUNCATE", targets: [] };
+  if (head === "kubectl" && /\bdelete\b/.test(whole))
+    return { id: "remote", detail: "kubectl delete", targets: [] };
+  if (head === "terraform" && /\bdestroy\b/.test(whole))
+    return { id: "remote", detail: "terraform destroy", targets: [] };
+  if (head === "docker" && /\b(system\s+prune|rm\s+-f|volume\s+rm)\b/.test(whole))
+    return { id: "remote", detail: "docker prune/force-remove", targets: [] };
+  if (head === "npm" && /\bpublish\b/.test(whole))
+    return { id: "remote", detail: "npm publish", targets: [] };
+  if (head === "gh" && /\b(repo|release)\s+delete\b/.test(whole))
+    return { id: "remote", detail: "gh delete", targets: [] };
+  if ((head === "aws" || head === "gcloud") && /\b(s3\s+rm|delete-|rm\b)/.test(whole))
+    return { id: "remote", detail: `${head} delete`, targets: [] };
   return null;
 }
 
 function privilegeShape(head, args, whole) {
   if (head === "sudo" || head === "su") return { id: "privilege", detail: head, targets: [] };
-  if ((head === "chmod" || head === "chown" || head === "chgrp") && hasFlag(args, "-R", "--recursive")) {
+  if (
+    (head === "chmod" || head === "chown" || head === "chgrp") &&
+    hasFlag(args, "-R", "--recursive")
+  ) {
     return { id: "privilege", detail: `${head} -R`, targets: nonFlagArgs(args) };
   }
   if (head === "killall" || head === "pkill") return { id: "privilege", detail: head, targets: [] };
-  if (["shutdown", "reboot", "halt", "poweroff"].includes(head)) return { id: "privilege", detail: head, targets: [] };
-  if (head === "launchctl" && /\b(bootout|unload|remove|disable)\b/.test(whole)) return { id: "privilege", detail: "launchctl", targets: [] };
-  if (head === "defaults" && /\bwrite\b/.test(whole)) return { id: "privilege", detail: "defaults write", targets: [] };
-  if (head === "diskutil" && /erase|reformat|zeroDisk|partitionDisk/i.test(whole)) return { id: "wipe", detail: "diskutil erase", targets: [] };
-  if (/^mkfs(\.|$)/.test(head ?? "") || head === "fdisk" || head === "newfs") return { id: "wipe", detail: head, targets: [] };
+  if (["shutdown", "reboot", "halt", "poweroff"].includes(head))
+    return { id: "privilege", detail: head, targets: [] };
+  if (head === "launchctl" && /\b(bootout|unload|remove|disable)\b/.test(whole))
+    return { id: "privilege", detail: "launchctl", targets: [] };
+  if (head === "defaults" && /\bwrite\b/.test(whole))
+    return { id: "privilege", detail: "defaults write", targets: [] };
+  if (head === "diskutil" && /erase|reformat|zeroDisk|partitionDisk/i.test(whole))
+    return { id: "wipe", detail: "diskutil erase", targets: [] };
+  if (/^mkfs(\.|$)/.test(head ?? "") || head === "fdisk" || head === "newfs")
+    return { id: "wipe", detail: head, targets: [] };
   return null;
 }
 
@@ -281,7 +389,11 @@ function deleteShape(head, args, whole) {
     return { id: "delete", detail: head, targets: nonFlagArgs(args) };
   }
   if (head === "find" && /\s-delete\b/.test(whole)) {
-    return { id: "delete", detail: "find -delete", targets: nonFlagArgs(args).filter((a) => a !== "-delete") };
+    return {
+      id: "delete",
+      detail: "find -delete",
+      targets: nonFlagArgs(args).filter((a) => a !== "-delete"),
+    };
   }
   if (head === "truncate" && /\s-s\s*0\b|\s--size[= ]0\b/.test(whole)) {
     return { id: "delete", detail: "truncate -s 0", targets: nonFlagArgs(args) };
@@ -302,13 +414,20 @@ function overwriteShape(head, args, segment) {
   if (head === "sed" && args.some((a) => a === "-i" || a.startsWith("-i") || a === "--in-place")) {
     // The script is not a target: `sed -i s|a|b| file.txt` writes file.txt.
     const values = nonFlagArgs(args);
-    const explicit = args.some((a) => a === "-e" || a === "--expression" || a === "-f" || a === "--file");
-    return { id: "overwrite", detail: "sed -i (in-place edit)", targets: explicit ? values : values.slice(-1) };
+    const explicit = args.some(
+      (a) => a === "-e" || a === "--expression" || a === "-f" || a === "--file",
+    );
+    return {
+      id: "overwrite",
+      detail: "sed -i (in-place edit)",
+      targets: explicit ? values : values.slice(-1),
+    };
   }
   if (head === "tee" && !args.some((a) => a === "-a" || a === "--append")) {
     return { id: "overwrite", detail: "tee (truncates)", targets: nonFlagArgs(args) };
   }
-  if (writes.length) return { id: "overwrite", detail: "output redirect truncates", targets: writes };
+  if (writes.length)
+    return { id: "overwrite", detail: "output redirect truncates", targets: writes };
   return null;
 }
 
@@ -349,7 +468,9 @@ function collectIndirection(command) {
       if (value) inline.push({ head, text: value });
       continue;
     }
-    const file = nonFlagArgs(args).find((a) => /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/.test(a));
+    const file = nonFlagArgs(args).find((a) =>
+      /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/.test(a),
+    );
     if (file) scriptRefs.push(file);
     else if (tokens.length > 1) inline.push({ head, text: args.join(" ") });
   }
@@ -359,11 +480,17 @@ function collectIndirection(command) {
 // Destructive APIs in source text, for the one level of indirection the
 // command line cannot show (node -e "fs.rmSync(x,{recursive:true})").
 const SOURCE_SHAPES = [
-  [/\b(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(\s*[^)]*recursive/i, "filesystem delete (recursive)"],
+  [
+    /\b(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(\s*[^)]*recursive/i,
+    "filesystem delete (recursive)",
+  ],
   [/\bshutil\.rmtree\s*\(/i, "shutil.rmtree"],
   [/\bos\.(remove|unlink|rmdir)\s*\(/i, "os.remove"],
   [/\b(rimraf|fs\.rm|fs\.rmdir|fs\.unlink)\b/i, "filesystem delete"],
-  [/\b(child_process|subprocess|execSync|spawnSync|system)\s*[.(][^)]*\brm\s+-/i, "shells out to rm"],
+  [
+    /\b(child_process|subprocess|execSync|spawnSync|system)\s*[.(][^)]*\brm\s+-/i,
+    "shells out to rm",
+  ],
   [/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i, "SQL DROP"],
   [/\bTRUNCATE\s+TABLE\b/i, "SQL TRUNCATE"],
   [/\bgit\s+push\b[^\n"'`]*--force/i, "force push"],
@@ -423,7 +550,8 @@ function evaluateSourceText(text, label = "inline code") {
 // ---------------------------------------------------------------------------
 // Shell command evaluation
 
-const READ_TOKEN = /(^|\/)(\.ssh|\.aws|\.gnupg)(\/|$)|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|authorized_keys/;
+const READ_TOKEN =
+  /(^|\/)(\.ssh|\.aws|\.gnupg)(\/|$)|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|authorized_keys/;
 
 // Wiping a filesystem or home root is the one deletion that no judgment makes
 // acceptable: there is no "was this what the user meant?" that ends in yes.
@@ -454,7 +582,8 @@ function secretReadVsNetwork(segments) {
     const { head, args } = findHead(tokens);
     const touchesSecret = tokens
       .filter((t) => !t.endsWith(".pub") && !t.startsWith("-"))
-      .some((t) => READ_TOKEN.test(t) || isSecretPath(t) || isEnvFile(t));    if (NETWORK_HEADS.has(head)) {
+      .some((t) => READ_TOKEN.test(t) || isSecretPath(t) || isEnvFile(t));
+    if (NETWORK_HEADS.has(head)) {
       network = true;
       const uploadIdx = args.findIndex((a) => UPLOAD_FLAGS.has(a) || a.startsWith("@"));
       if (uploadIdx >= 0) {
@@ -494,7 +623,11 @@ export function evaluateBashCommand(command, options = {}) {
     if (head.head === "cd" && effectiveCwd) {
       const dest = nonFlagArgs(head.args)[0];
       if (!dest) effectiveCwd = undefined; // bare `cd` lands in $HOME: unknowable
-      else if (dest !== "-") effectiveCwd = path.resolve(/^(~|\$HOME|\$\{HOME\})(\/|$)/.test(dest) ? homedir() : effectiveCwd, dest);
+      else if (dest !== "-")
+        effectiveCwd = path.resolve(
+          /^(~|\$HOME|\$\{HOME\})(\/|$)/.test(dest) ? homedir() : effectiveCwd,
+          dest,
+        );
       continue;
     }
     for (const shape of detectShapes(segment)) {
@@ -507,13 +640,18 @@ export function evaluateBashCommand(command, options = {}) {
         // A target class both raises and lowers the shape's default: rm -rf
         // dist is harmless and rm -rf .git is not, yet both are "delete".
         const byClass = klass
-          ? SHAPE_CLASS_OVERRIDE[shape.id]?.[klass] ?? CLASS_VERDICT[klass]
+          ? (SHAPE_CLASS_OVERRIDE[shape.id]?.[klass] ?? CLASS_VERDICT[klass])
           : null;
         return { target, klass, verdict: byClass ?? fallback };
       });
       let shapeVerdict = worstOf(perTarget.map((t) => t.verdict));
-      const wipe = perTarget.find((t) => t.target !== null && CATASTROPHIC_TARGETS.some((re) => re.test(String(t.target).trim())));
-      const touchesSecret = shape.targets.some((t) => classifyTarget(t, effectiveCwd, cwd) === "secret");
+      const wipe = perTarget.find(
+        (t) =>
+          t.target !== null && CATASTROPHIC_TARGETS.some((re) => re.test(String(t.target).trim())),
+      );
+      const touchesSecret = shape.targets.some(
+        (t) => classifyTarget(t, effectiveCwd, cwd) === "secret",
+      );
       if (shape.id === "delete" && wipe) {
         shapeVerdict = "block";
         reason = `refusing to delete ${String(wipe.target).trim()}`;
@@ -561,7 +699,9 @@ export function evaluateBashCommand(command, options = {}) {
   for (const inner of substitutions) {
     const sub = evaluateBashCommand(inner, { cwd: effectiveCwd, scriptTexts: {} });
     if (sub.verdict !== "allow") {
-      reason ??= sub.reason ? `substitution: ${sub.reason}` : `substitution runs ${inner.trim().slice(0, 60)}`;
+      reason ??= sub.reason
+        ? `substitution: ${sub.reason}`
+        : `substitution runs ${inner.trim().slice(0, 60)}`;
       verdict = worst(verdict, sub.verdict);
     }
   }
@@ -572,8 +712,8 @@ export function evaluateBashCommand(command, options = {}) {
   // unread code is judged rather than waved through.
   const unresolved = Array.isArray(options.unresolvedScripts) ? options.unresolvedScripts : [];
   if (scriptTexts && typeof scriptTexts === "object") {
-    for (const [scriptPath, text] of Object.entries(scriptTexts)) {
-      const scriptVerdict = evaluateSourceText(text, scriptPath).verdict;
+    for (const [scriptPath, scriptSrc] of Object.entries(scriptTexts)) {
+      const scriptVerdict = evaluateSourceText(scriptSrc, scriptPath).verdict;
       if (scriptVerdict !== "allow") {
         reason ??= `${scriptPath} contains destructive operations`;
         verdict = worst(verdict, scriptVerdict);
@@ -594,13 +734,13 @@ export function evaluateBashCommand(command, options = {}) {
 // ---------------------------------------------------------------------------
 // File tools (edit / write) and unknown tools
 
-const PATH_KEYS = ["path", "file_path", "filePath", "target", "filename", "destination"];
-const COMMAND_KEYS = ["command", "cmd", "script", "shell"];
+const PATH_KEYS = new Set(["path", "file_path", "filePath", "target", "filename", "destination"]);
+const COMMAND_KEYS = new Set(["command", "cmd", "script", "shell"]);
 
 function collectPaths(input, out = []) {
   if (!input || typeof input !== "object") return out;
   for (const [key, value] of Object.entries(input)) {
-    if (typeof value === "string" && PATH_KEYS.includes(key)) out.push(value);
+    if (typeof value === "string" && PATH_KEYS.has(key)) out.push(value);
     else if (value && typeof value === "object") collectPaths(value, out);
   }
   return out;
@@ -609,7 +749,7 @@ function collectPaths(input, out = []) {
 function collectCommands(input, out = []) {
   if (!input || typeof input !== "object") return out;
   for (const [key, value] of Object.entries(input)) {
-    if (typeof value === "string" && COMMAND_KEYS.includes(key)) out.push(value);
+    if (typeof value === "string" && COMMAND_KEYS.has(key)) out.push(value);
     else if (value && typeof value === "object") collectCommands(value, out);
   }
   return out;
@@ -655,18 +795,50 @@ function evaluateFileTool(toolName, input, { cwd, outsideWorkspace = "judge" } =
 // Tools that only ever read. Anything not listed here and not a known writer
 // is inspected for command- or path-shaped arguments instead of being trusted.
 const READ_ONLY_TOOLS = new Set([
-  "read", "grep", "ls", "find", "glob", "read_file", "list_dir",
-  "code_search", "file_outline", "find_definition", "repo_map",
-  "web_fetch", "batch_web_fetch", "web_search", "plan_fetch_url",
-  "typesafe_ask", "skill_select", "plan_mode_question", "plan_mode_complete",
-  "todo_read", "task_list",
+  "read",
+  "grep",
+  "ls",
+  "find",
+  "glob",
+  "read_file",
+  "list_dir",
+  "code_search",
+  "file_outline",
+  "find_definition",
+  "repo_map",
+  "web_fetch",
+  "batch_web_fetch",
+  "web_search",
+  "plan_fetch_url",
+  "typesafe_ask",
+  "skill_select",
+  "plan_mode_question",
+  "plan_mode_complete",
+  "todo_read",
+  "task_list",
 ]);
 
-const MUTATING_TOOLS = new Set(["bash", "shell", "edit", "write", "apply_patch", "multiedit", "notebook_edit", "create_file", "delete_file", "move_file", "str_replace_editor"]);
+const MUTATING_TOOLS = new Set([
+  "bash",
+  "shell",
+  "edit",
+  "write",
+  "apply_patch",
+  "multiedit",
+  "notebook_edit",
+  "create_file",
+  "delete_file",
+  "move_file",
+  "str_replace_editor",
+]);
 
 function isReadOnlyToolName(name) {
   const n = String(name ?? "").toLowerCase();
-  return READ_ONLY_TOOLS.has(n) || /^(get|list|search|read|fetch|query|describe|show|recall)_/.test(n) || n.startsWith("lore_");
+  return (
+    READ_ONLY_TOOLS.has(n) ||
+    /^(get|list|search|read|fetch|query|describe|show|recall)_/.test(n) ||
+    n.startsWith("lore_")
+  );
 }
 
 /**
@@ -677,7 +849,8 @@ export function evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolved
   const name = String(toolName ?? "");
   const lower = name.toLowerCase();
 
-  if (isReadOnlyToolName(lower)) return { verdict: "allow", reason: null, evidence: { shapes: [] } };
+  if (isReadOnlyToolName(lower))
+    return { verdict: "allow", reason: null, evidence: { shapes: [] } };
 
   // Command-shaped arguments run the shell rules, whatever the tool is called.
   // That covers bash, and any future extension tool that shells out — a

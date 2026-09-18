@@ -3,10 +3,10 @@
 
 import { truncateText } from "./extract.mjs";
 
-const FORMAT_LABELS = ["markdown", "html", "text", "json", "raw"];
+const FORMAT_LABELS = new Set(["markdown", "html", "text", "json", "raw"]);
 
 export function isKnownFormat(value) {
-  return FORMAT_LABELS.includes(value);
+  return FORMAT_LABELS.has(value);
 }
 
 function metadataHeader(outcome) {
@@ -101,11 +101,12 @@ function isPlainTextMime(mime) {
 }
 
 function formatBinary(outcome) {
-  const size = outcome.sizeHint != null
-    ? `${outcome.sizeHint} bytes`
-    : outcome.probedBytes != null
-      ? `≥ ${outcome.probedBytes} bytes`
-      : "unknown size";
+  const size =
+    outcome.sizeHint != null
+      ? `${outcome.sizeHint} bytes`
+      : outcome.probedBytes != null
+        ? `≥ ${outcome.probedBytes} bytes`
+        : "unknown size";
   const lines = [
     `Binary payload — not extracted (${outcome.mime || "unknown content-type"}, ${size}).`,
     `URL: ${outcome.finalUrl ?? ""}`,
@@ -138,10 +139,12 @@ export function formatBatchResult(items, { concurrency } = {}) {
     } else if (item.skipped) {
       lines.push(`Skipped: ${item.skipped}`);
     } else {
-      lines.push(formatWebFetchResult(item.outcome, {
-        format: item.request.format ?? "markdown",
-        maxChars: item.cap ?? item.request.maxChars,
-      }));
+      lines.push(
+        formatWebFetchResult(item.outcome, {
+          format: item.request.format ?? "markdown",
+          maxChars: item.cap ?? item.request.maxChars,
+        }),
+      );
     }
   }
   return lines.join("\n");

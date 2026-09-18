@@ -10,16 +10,13 @@
 //
 // Pure module — no fs, no deps; testable with node --test.
 
-const TS_EXTENSIONS = new Set([
-  ".ts", ".tsx", ".mts", ".cts",
-  ".js", ".jsx", ".mjs", ".cjs",
-]);
+const TS_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 
 export function isTsFile(relPath) {
   const dot = relPath.lastIndexOf(".");
   if (dot <= 0) return false;
   const ext = relPath.slice(dot).toLowerCase();
-  return TS_EXTENSIONS.has(ext) || (relPath.endsWith(".d.ts"));
+  return TS_EXTENSIONS.has(ext) || relPath.endsWith(".d.ts");
 }
 
 // --- Tokenizer --------------------------------------------------------------
@@ -38,14 +35,37 @@ const DECL_KINDS = {
 };
 
 const CLASS_MODIFIERS = new Set([
-  "static", "async", "get", "set", "public", "private", "protected",
-  "readonly", "abstract", "override", "accessor", "declare",
+  "static",
+  "async",
+  "get",
+  "set",
+  "public",
+  "private",
+  "protected",
+  "readonly",
+  "abstract",
+  "override",
+  "accessor",
+  "declare",
 ]);
 
 // Tokens after which a `/` starts a regex literal (expression position).
 const REGEX_PREV = new Set([
-  "return", "typeof", "instanceof", "in", "of", "new", "delete",
-  "void", "throw", "case", "do", "else", "yield", "await", "extends",
+  "return",
+  "typeof",
+  "instanceof",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "case",
+  "do",
+  "else",
+  "yield",
+  "await",
+  "extends",
 ]);
 // Puncts after which a `/` is division, not a regex.
 const DIV_PREV = new Set([")", "]", "}", "+", "-"]);
@@ -113,8 +133,14 @@ function tokenizeTs(source) {
       const quote = ch;
       i++;
       while (i < n) {
-        if (source[i] === "\\") { i += 2; continue; }
-        if (source[i] === quote) { i++; break; }
+        if (source[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          i++;
+          break;
+        }
         i++;
       }
       push("str", source.slice(start, i), start, i);
@@ -135,23 +161,52 @@ function tokenizeTs(source) {
       while (i < n && stack.length > 0) {
         const tc = source[i];
         const top = stack[stack.length - 1];
-        if (tc === "\\") { i += 2; continue; }
+        if (tc === "\\") {
+          i += 2;
+          continue;
+        }
         if (top.mode === "template") {
-          if (tc === "`") { stack.pop(); i++; continue; }
-          if (tc === "$" && source[i + 1] === "{") { stack.push({ mode: "code" }); i += 2; continue; }
+          if (tc === "`") {
+            stack.pop();
+            i++;
+            continue;
+          }
+          if (tc === "$" && source[i + 1] === "{") {
+            stack.push({ mode: "code" });
+            i += 2;
+            continue;
+          }
           i++;
           continue;
         }
         // code mode (inside ${...}): brace balance + nested constructs
-        if (tc === "`") { stack.push({ mode: "template" }); i++; continue; }
-        if (tc === "{") { stack.push({ mode: "code" }); i++; continue; }
-        if (tc === "}") { stack.pop(); i++; continue; }
+        if (tc === "`") {
+          stack.push({ mode: "template" });
+          i++;
+          continue;
+        }
+        if (tc === "{") {
+          stack.push({ mode: "code" });
+          i++;
+          continue;
+        }
+        if (tc === "}") {
+          stack.pop();
+          i++;
+          continue;
+        }
         if (tc === "'" || tc === '"') {
           const q = tc;
           i++;
           while (i < n) {
-            if (source[i] === "\\") { i += 2; continue; }
-            if (source[i] === q) { i++; break; }
+            if (source[i] === "\\") {
+              i += 2;
+              continue;
+            }
+            if (source[i] === q) {
+              i++;
+              break;
+            }
             i++;
           }
           continue;
@@ -185,10 +240,16 @@ function tokenizeTs(source) {
         let inClass = false;
         while (i < n) {
           const rc = source[i];
-          if (rc === "\\") { i += 2; continue; }
+          if (rc === "\\") {
+            i += 2;
+            continue;
+          }
           if (rc === "[") inClass = true;
           if (rc === "]") inClass = false;
-          if (rc === "/" && !inClass) { i++; break; }
+          if (rc === "/" && !inClass) {
+            i++;
+            break;
+          }
           if (rc === "\n") break; // unterminated — bail
           i++;
         }
@@ -206,7 +267,10 @@ function tokenizeTs(source) {
     if (isIdStart(ch)) {
       const start = i;
       let value = "";
-      while (i < n && isIdChar(source[i])) { value += source[i]; i++; }
+      while (i < n && isIdChar(source[i])) {
+        value += source[i];
+        i++;
+      }
       push("id", value, start, i);
       continue;
     }
@@ -247,8 +311,7 @@ export function parseTsSource(source) {
   };
 
   // `=>` tokenizes as two punct tokens: "=" followed by ">".
-  const isArrow = (idx) =>
-    tokens[idx]?.value === "=" && tokens[idx + 1]?.value === ">";
+  const isArrow = (idx) => tokens[idx]?.value === "=" && tokens[idx + 1]?.value === ">";
 
   const atStatementStart = (idx) => {
     if (idx <= 0) return true;
@@ -291,14 +354,18 @@ export function parseTsSource(source) {
     let depth = 0;
     while (d < n) {
       const t = tokens[d];
-      if (t.type !== "punct") { d++; continue; }
+      if (t.type !== "punct") {
+        d++;
+        continue;
+      }
       if (t.value === "{" && depth === 0) break;
       if (t.value === ";" && depth === 0) break;
       // `=>` arrow in a const initializer ends the return type. (An arrow
       // TYPE as the return value is ambiguous — accepted approximation.)
       if (t.value === "=" && tokens[d + 1]?.value === ">" && depth === 0) break;
       if (t.value === "(" || t.value === "[" || t.value === "{" || t.value === "<") depth++;
-      else if (t.value === ")" || t.value === "]" || t.value === "}" || t.value === ">") depth = Math.max(0, depth - 1);
+      else if (t.value === ")" || t.value === "]" || t.value === "}" || t.value === ">")
+        depth = Math.max(0, depth - 1);
       d++;
     }
     return d;
@@ -361,8 +428,14 @@ export function parseTsSource(source) {
       const t = tokens[k];
       if (!t) break;
       if (t.type === "punct" && t.value === "}") return { names, end: k + 1 };
-      if (t.type === "punct" && t.value === ",") { k++; continue; }
-      if (t.type !== "id") { k++; continue; }
+      if (t.type === "punct" && t.value === ",") {
+        k++;
+        continue;
+      }
+      if (t.type !== "id") {
+        k++;
+        continue;
+      }
       if (t.value === "type" && tokens[k + 1]?.type === "id") {
         // inline `type` modifier inside a list — skip it
         k++;
@@ -444,7 +517,10 @@ export function parseTsSource(source) {
     let depth = 0;
     while (j < n) {
       const t = tokens[j];
-      if (t.type !== "punct") { j++; continue; }
+      if (t.type !== "punct") {
+        j++;
+        continue;
+      }
       if (t.value === "{" && depth === 0) break;
       if (t.value === "(") depth++;
       else if (t.value === ")") depth--;
@@ -514,7 +590,10 @@ export function parseTsSource(source) {
           if (t.value === "{" || t.value === "[") depth++;
           else if (t.value === "}" || t.value === "]") {
             depth--;
-            if (depth === 0) { d++; break; }
+            if (depth === 0) {
+              d++;
+              break;
+            }
           } else if (t.value === ":" && depth === 1 && tokens[d + 1]?.type === "id") {
             // Renamed binding `a: inner` — replace the last collected name.
             if (names.length > 0) names[names.length - 1] = tokens[d + 1].value;
@@ -544,10 +623,14 @@ export function parseTsSource(source) {
       let depth = 0;
       while (d < n) {
         const t = tokens[d];
-        if (t.type !== "punct") { d++; continue; }
+        if (t.type !== "punct") {
+          d++;
+          continue;
+        }
         if ((t.value === "=" || t.value === ";") && depth === 0) break;
         if (t.value === "(" || t.value === "[" || t.value === "{" || t.value === "<") depth++;
-        else if (t.value === ")" || t.value === "]" || t.value === "}" || t.value === ">") depth = Math.max(0, depth - 1);
+        else if (t.value === ")" || t.value === "]" || t.value === "}" || t.value === ">")
+          depth = Math.max(0, depth - 1);
         d++;
       }
       j = d;
@@ -558,10 +641,15 @@ export function parseTsSource(source) {
       const end = consumeStatement(j);
       for (const name of names) {
         addSymbol({
-          name, kind, line: tokens[start].line, col: tokens[start].col,
+          name,
+          kind,
+          line: tokens[start].line,
+          col: tokens[start].col,
           signature: sig(start, Math.max(end, start + 1)),
-          startLine: tokens[start].line, endLine: end > start ? tokens[end - 1].line : tokens[start].line,
-          exported, defaultExport: false,
+          startLine: tokens[start].line,
+          endLine: end > start ? tokens[end - 1].line : tokens[start].line,
+          exported,
+          defaultExport: false,
         });
       }
       return end;
@@ -573,10 +661,10 @@ export function parseTsSource(source) {
       const afterParen = matchParen(j + 1);
       const srcTok = tokens[j + 2];
       if (srcTok?.type === "str" && afterParen > 0) {
-        const source = srcTok.value.replace(/^['"]|['"]$/g, "");
+        const srcPath = srcTok.value.replace(/^['"]|['"]$/g, "");
         imports.push({
           names: names.map((nm) => ({ imported: nm, local: nm })),
-          source,
+          source: srcPath,
           typeOnly: false,
           line: tokens[start].line,
         });
@@ -585,9 +673,15 @@ export function parseTsSource(source) {
 
     const syms = names.map((name) =>
       addSymbol({
-        name, kind, line: tokens[start].line, col: tokens[start].col,
-        signature: "", startLine: tokens[start].line, endLine: -1,
-        exported, defaultExport: false,
+        name,
+        kind,
+        line: tokens[start].line,
+        col: tokens[start].col,
+        signature: "",
+        startLine: tokens[start].line,
+        endLine: -1,
+        exported,
+        defaultExport: false,
       }),
     );
     const primary = syms[0];
@@ -720,12 +814,12 @@ export function parseTsSource(source) {
     if (tokens[j]?.value === "{") {
       const { names, end } = parseNameList(j);
       j = end;
-      let source = null;
+      let entrySource = null;
       if (isKw(j, "from") && tokens[j + 1]?.type === "str") {
-        source = String(tokens[j + 1].value).replace(/^['"]|['"]$/g, "");
+        entrySource = String(tokens[j + 1].value).replace(/^['"]|['"]$/g, "");
         j += 2;
       }
-      reexports.push({ names, source, line: tokens[start].line });
+      reexports.push({ names, source: entrySource, line: tokens[start].line });
       return consumeStatement(j);
     }
     if (tokens[j]?.value === "*") {
@@ -736,10 +830,10 @@ export function parseTsSource(source) {
         j += 2;
       }
       if (isKw(j, "from") && tokens[j + 1]?.type === "str") {
-        const source = String(tokens[j + 1].value).replace(/^['"]|['"]$/g, "");
+        const fromSource = String(tokens[j + 1].value).replace(/^['"]|['"]$/g, "");
         reexports.push({
           names: asName ? [{ imported: "*", local: asName }] : null,
-          source,
+          source: fromSource,
           line: tokens[start].line,
         });
         return consumeStatement(j + 2);
@@ -774,7 +868,13 @@ export function parseTsSource(source) {
     if (kw === "function" || (kw === "async" && isKw(start + 1, "function"))) {
       return parseFunctionDecl(start, opts);
     }
-    if (kw === "class" || kw === "interface" || kw === "enum" || kw === "namespace" || kw === "module") {
+    if (
+      kw === "class" ||
+      kw === "interface" ||
+      kw === "enum" ||
+      kw === "namespace" ||
+      kw === "module"
+    ) {
       return parseClassLike(start, opts);
     }
     if (kw === "type") return parseTypeAlias(start, opts);
@@ -792,11 +892,21 @@ export function parseTsSource(source) {
     for (; k < n; k++) {
       const t = tokens[k];
       if (t.type !== "punct") {
-        if (depth === 0 && (t.line > startLine || t.value === "export" || t.value === "async" || DECL_KINDS[t.value])) return k;
+        if (
+          depth === 0 &&
+          (t.line > startLine || t.value === "export" || t.value === "async" || DECL_KINDS[t.value])
+        )
+          return k;
         continue;
       }
-      if (t.value === "(" || t.value === "[" || t.value === "{") { depth++; continue; }
-      if (t.value === ")" || t.value === "]" || t.value === "}") { depth = Math.max(0, depth - 1); continue; }
+      if (t.value === "(" || t.value === "[" || t.value === "{") {
+        depth++;
+        continue;
+      }
+      if (t.value === ")" || t.value === "]" || t.value === "}") {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
       if (depth === 0) {
         if (t.value === ",") continue; // trailing decorator args
         if (t.line > startLine) return k;
@@ -887,7 +997,10 @@ export function parseTsSource(source) {
     let depth = 0;
     while (k < n) {
       const t = tokens[k];
-      if (t.type !== "punct") { k++; continue; }
+      if (t.type !== "punct") {
+        k++;
+        continue;
+      }
       if (t.value === "=" && depth === 0) break;
       if (t.value === ";" && depth === 0) {
         symbol.endLine = t.line;
@@ -926,7 +1039,10 @@ export function parseTsSource(source) {
         let e = k;
         while (e < n) {
           const t = tokens[e];
-          if (t.type !== "punct") { e++; continue; }
+          if (t.type !== "punct") {
+            e++;
+            continue;
+          }
           if (t.value === "(" || t.value === "[" || t.value === "{") depth2++;
           else if (t.value === ")" || t.value === "]" || t.value === "}") {
             if (depth2 === 0) break;
@@ -950,10 +1066,7 @@ export function parseTsSource(source) {
 
   const isMemberBoundary = (idx) => {
     const prev = tokens[idx - 1];
-    return (
-      idx <= 0 ||
-      (prev?.type === "punct" && ["{", ";", "}", ","].includes(prev.value))
-    );
+    return idx <= 0 || (prev?.type === "punct" && ["{", ";", "}", ","].includes(prev.value));
   };
 
   // --- Main loop ------------------------------------------------------------
@@ -999,9 +1112,15 @@ export function parseTsSource(source) {
     // `#private` fields, modifiers, and computed members are handled here.
     {
       const top = topScope();
-      if ((top.type === "class" || top.type === "interface" || top.type === "enum") && isMemberBoundary(i)) {
+      if (
+        (top.type === "class" || top.type === "interface" || top.type === "enum") &&
+        isMemberBoundary(i)
+      ) {
         const r = parseMember(i);
-        if (r != null && r > i) { i = r; continue; }
+        if (r != null && r > i) {
+          i = r;
+          continue;
+        }
       }
     }
 
@@ -1012,17 +1131,26 @@ export function parseTsSource(source) {
 
     const v = tok.value;
 
-    if (!atStatementStart(i)) { i++; continue; }
+    if (!atStatementStart(i)) {
+      i++;
+      continue;
+    }
 
     if (v === "export") {
       const r = parseExport(i);
-      if (r != null && r > i) { i = r; continue; }
+      if (r != null && r > i) {
+        i = r;
+        continue;
+      }
       i++;
       continue;
     }
     if (v === "import") {
       const r = parseImport(i);
-      if (r != null && r > i) { i = r; continue; }
+      if (r != null && r > i) {
+        i = r;
+        continue;
+      }
       i++;
       continue;
     }
@@ -1030,7 +1158,10 @@ export function parseTsSource(source) {
       // Ambient declaration: parse the following declaration normally.
       if (tokens[i + 1]?.type === "id" && DECL_KINDS[tokens[i + 1].value]) {
         const r = parseDecl(i + 1, {});
-        if (r != null && r > i + 1) { i = r; continue; }
+        if (r != null && r > i + 1) {
+          i = r;
+          continue;
+        }
       }
       i++;
       continue;
@@ -1052,19 +1183,28 @@ export function parseTsSource(source) {
     if (DECL_KINDS[v] && v !== "type") {
       // skip `type` here: handled by parseTypeAlias via parseDecl below
       const r = parseDecl(i, {});
-      if (r != null && r > i) { i = r; continue; }
+      if (r != null && r > i) {
+        i = r;
+        continue;
+      }
       i++;
       continue;
     }
     if (v === "async" && isKw(i + 1, "function")) {
       const r = parseFunctionDecl(i, {});
-      if (r != null && r > i) { i = r; continue; }
+      if (r != null && r > i) {
+        i = r;
+        continue;
+      }
       i++;
       continue;
     }
     if (v === "type") {
       const r = parseTypeAlias(i, {});
-      if (r != null && r > i) { i = r; continue; }
+      if (r != null && r > i) {
+        i = r;
+        continue;
+      }
       i++;
       continue;
     }

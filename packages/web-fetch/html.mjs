@@ -7,45 +7,111 @@
 // not a spec-perfect DOM.
 
 export const VOID_TAGS = new Set([
-  "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
-  "meta", "param", "source", "track", "wbr",
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
 ]);
 
 const NAMED_ENTITIES = {
-  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0",
-  hellip: "…", mdash: "—", ndash: "–", lsquo: "‘", rsquo: "’",
-  ldquo: "“", rdquo: "”", copy: "©", reg: "®", trade: "™",
-  bull: "•", middot: "·", times: "×", divide: "÷", para: "¶",
-  sect: "§", deg: "°", micro: "µ", ensp: "\u2002", emsp: "\u2003",
-  thinsp: "\u2009", zwnj: "\u200c", zwj: "\u200d", shy: "\u00ad",
-  euro: "€", pound: "£", yen: "¥", cent: "¢", frac12: "½", frac14: "¼",
-  frac34: "¾", iexcl: "¡", iquest: "¿", laquo: "«", raquo: "»",
-  dagger: "†", permil: "‰", prime: "′", larr: "←", uarr: "↑",
-  rarr: "→", darr: "↓", harr: "↔", plusmn: "±", sup2: "²", sup3: "³",
-  acute: "´", cedil: "¸", macr: "¯", uml: "¨", ordf: "ª", ordm: "º",
-  not: "¬", infin: "∞", ne: "≠", le: "≤", ge: "≥", sum: "∑",
-  prod: "∏", radic: "√", int: "∫", sim: "∼", asymp: "≈", equiv: "≡",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+  hellip: "…",
+  mdash: "—",
+  ndash: "–",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+  copy: "©",
+  reg: "®",
+  trade: "™",
+  bull: "•",
+  middot: "·",
+  times: "×",
+  divide: "÷",
+  para: "¶",
+  sect: "§",
+  deg: "°",
+  micro: "µ",
+  ensp: "\u2002",
+  emsp: "\u2003",
+  thinsp: "\u2009",
+  zwnj: "\u200c",
+  zwj: "\u200d",
+  shy: "\u00ad",
+  euro: "€",
+  pound: "£",
+  yen: "¥",
+  cent: "¢",
+  frac12: "½",
+  frac14: "¼",
+  frac34: "¾",
+  iexcl: "¡",
+  iquest: "¿",
+  laquo: "«",
+  raquo: "»",
+  dagger: "†",
+  permil: "‰",
+  prime: "′",
+  larr: "←",
+  uarr: "↑",
+  rarr: "→",
+  darr: "↓",
+  harr: "↔",
+  plusmn: "±",
+  sup2: "²",
+  sup3: "³",
+  acute: "´",
+  cedil: "¸",
+  macr: "¯",
+  uml: "¨",
+  ordf: "ª",
+  ordm: "º",
+  not: "¬",
+  infin: "∞",
+  ne: "≠",
+  le: "≤",
+  ge: "≥",
+  sum: "∑",
+  prod: "∏",
+  radic: "√",
+  int: "∫",
+  sim: "∼",
+  asymp: "≈",
+  equiv: "≡",
 };
 
 export function decodeEntities(text) {
-  return String(text).replace(
-    /&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,
-    (match, entity) => {
-      if (entity.startsWith("#")) {
-        const hex = entity[1] === "x" || entity[1] === "X";
-        const code = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
-        if (Number.isFinite(code) && code > 0 && code <= 0x10ffff) {
-          try {
-            return String.fromCodePoint(code);
-          } catch {
-            return match;
-          }
+  return String(text).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, entity) => {
+    if (entity.startsWith("#")) {
+      const hex = entity[1] === "x" || entity[1] === "X";
+      const code = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (Number.isFinite(code) && code > 0 && code <= 0x10ffff) {
+        try {
+          return String.fromCodePoint(code);
+        } catch {
+          return match;
         }
-        return match;
       }
-      return NAMED_ENTITIES[entity.toLowerCase()] ?? match;
-    },
-  );
+      return match;
+    }
+    return NAMED_ENTITIES[entity.toLowerCase()] ?? match;
+  });
 }
 
 // --- Tokenizer --------------------------------------------------------------
@@ -231,20 +297,83 @@ const AUTO_CLOSE = {
 
 // Block elements that implicitly close an open <p>.
 const P_ENDERS = new Set([
-  "h1", "h2", "h3", "h4", "h5", "h6", "div", "section", "article", "aside",
-  "header", "footer", "nav", "main", "ul", "ol", "table", "blockquote",
-  "pre", "figure", "hr", "form", "address", "fieldset", "dl", "details",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "div",
+  "section",
+  "article",
+  "aside",
+  "header",
+  "footer",
+  "nav",
+  "main",
+  "ul",
+  "ol",
+  "table",
+  "blockquote",
+  "pre",
+  "figure",
+  "hr",
+  "form",
+  "address",
+  "fieldset",
+  "dl",
+  "details",
 ]);
 
 // Nested same-name elements are almost always broken markup (a div inside a
 // div with no closer); browsers close the outer one. Mirror that to keep the
 // tree from growing pathological chains.
 const SAME_NAME_CLOSE = new Set([
-  "div", "span", "p", "section", "article", "aside", "header", "footer",
-  "nav", "main", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr",
-  "td", "th", "blockquote", "figure", "a", "button", "h1", "h2", "h3", "h4",
-  "h5", "h6", "strong", "em", "b", "i", "u", "s", "small", "sub", "sup",
-  "code", "pre", "form", "label", "select", "textarea",
+  "div",
+  "span",
+  "p",
+  "section",
+  "article",
+  "aside",
+  "header",
+  "footer",
+  "nav",
+  "main",
+  "ul",
+  "ol",
+  "li",
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "td",
+  "th",
+  "blockquote",
+  "figure",
+  "a",
+  "button",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "strong",
+  "em",
+  "b",
+  "i",
+  "u",
+  "s",
+  "small",
+  "sub",
+  "sup",
+  "code",
+  "pre",
+  "form",
+  "label",
+  "select",
+  "textarea",
 ]);
 
 const MAX_DEPTH = 200;
@@ -262,7 +391,10 @@ export function buildTree(tokens) {
   for (const tok of tokens) {
     if (tok.type === "text") {
       stack[stack.length - 1].children.push({
-        tag: null, attrs: {}, children: [], text: tok.text,
+        tag: null,
+        attrs: {},
+        children: [],
+        text: tok.text,
       });
       continue;
     }
@@ -279,7 +411,10 @@ export function buildTree(tokens) {
     const { name, attrs, selfClosing } = tok;
     if (VOID_TAGS.has(name)) {
       stack[stack.length - 1].children.push({
-        tag: name, attrs: attrsToMap(attrs), children: [], text: "",
+        tag: name,
+        attrs: attrsToMap(attrs),
+        children: [],
+        text: "",
       });
       continue;
     }
@@ -318,26 +453,68 @@ export function textLength(node) {
   return total;
 }
 
-function nodeText(node) {
-  if (node.tag === null) return node.text;
-  let out = "";
-  for (const c of node.children) out += nodeText(c);
-  return out;
-}
-
 // --- Serialization ----------------------------------------------------------
 
 const BLOCK_TAGS = new Set([
-  "html", "body", "head", "div", "section", "article", "aside", "header",
-  "footer", "nav", "main", "h1", "h2", "h3", "h4", "h5", "h6", "p", "ul",
-  "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "dl",
-  "dt", "dd", "blockquote", "pre", "figure", "figcaption", "hr", "form",
-  "fieldset", "address", "details", "summary", "table", "caption", "colgroup",
+  "html",
+  "body",
+  "head",
+  "div",
+  "section",
+  "article",
+  "aside",
+  "header",
+  "footer",
+  "nav",
+  "main",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "p",
+  "ul",
+  "ol",
+  "li",
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "td",
+  "th",
+  "dl",
+  "dt",
+  "dd",
+  "blockquote",
+  "pre",
+  "figure",
+  "figcaption",
+  "hr",
+  "form",
+  "fieldset",
+  "address",
+  "details",
+  "summary",
+  "table",
+  "caption",
+  "colgroup",
 ]);
 
 const BOOLEAN_ATTRS = new Set([
-  "hidden", "disabled", "checked", "selected", "readonly", "required",
-  "multiple", "autofocus", "defer", "async", "novalidate", "open",
+  "hidden",
+  "disabled",
+  "checked",
+  "selected",
+  "readonly",
+  "required",
+  "multiple",
+  "autofocus",
+  "defer",
+  "async",
+  "novalidate",
+  "open",
 ]);
 
 function escapeHtmlText(s) {
@@ -421,10 +598,35 @@ export function serializeTree(root, { pretty = true } = {}) {
 
 // Tags whose content is never readable article content.
 const STRIP_TAGS = new Set([
-  "script", "style", "noscript", "template", "iframe", "frame", "frameset",
-  "object", "embed", "form", "button", "input", "select", "textarea",
-  "option", "optgroup", "svg", "math", "canvas", "audio", "video", "source",
-  "track", "dialog", "map", "area", "datalist", "slot", "portal",
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "iframe",
+  "frame",
+  "frameset",
+  "object",
+  "embed",
+  "form",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "option",
+  "optgroup",
+  "svg",
+  "math",
+  "canvas",
+  "audio",
+  "video",
+  "source",
+  "track",
+  "dialog",
+  "map",
+  "area",
+  "datalist",
+  "slot",
+  "portal",
 ]);
 
 // class/id tokens that mark page chrome. Boundary-anchored so "nav" does not
@@ -521,8 +723,7 @@ export function selectMain(root, { minChars = MIN_MAIN_CHARS } = {}) {
   if (semantic) return semantic;
 
   // Score direct block children of the body (or the root when body is absent).
-  const body =
-    root.tag === "body" ? root : findChild(root, (n) => n.tag === "body") ?? root;
+  const body = root.tag === "body" ? root : (findChild(root, (n) => n.tag === "body") ?? root);
   let best = null;
   let bestLen = 0;
   for (const c of body.children) {
@@ -564,9 +765,11 @@ function metaContent(html, key, value) {
   let m;
   while ((m = re.exec(html))) {
     const tag = m[0];
-    if ((metaAttr(tag, "name").toLowerCase() === value) ||
-        (metaAttr(tag, "property").toLowerCase() === value) ||
-        (metaAttr(tag, "itemprop").toLowerCase() === value)) {
+    if (
+      metaAttr(tag, "name").toLowerCase() === value ||
+      metaAttr(tag, "property").toLowerCase() === value ||
+      metaAttr(tag, "itemprop").toLowerCase() === value
+    ) {
       return metaAttr(tag, "content");
     }
   }
@@ -583,9 +786,7 @@ export function extractMetadata(html) {
   const src = String(html ?? "");
 
   const titleMatch = src.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  let title = titleMatch
-    ? cleanMeta(titleMatch[1].replace(/<[^>]*>/g, ""))
-    : "";
+  let title = titleMatch ? cleanMeta(titleMatch[1].replace(/<[^>]*>/g, "")) : "";
   if (!title) title = cleanMeta(metaContent(src, "property", "og:title"));
 
   const description =
