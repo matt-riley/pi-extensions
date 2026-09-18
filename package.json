@@ -3,8 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "description": "Personal pi extension collection: /exit, /plan, ...",
-  "type": "module",
   "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit && oxlint --deny-warnings . && oxfmt --check . && knip && fallow dead-code && node --test 'packages/**/*.test.mjs'",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "knip": "knip",
+    "fallow": "fallow dead-code",
+    "fallow:report": "fallow",
+    "test": "node --test 'packages/**/*.test.mjs'",
+    "verify": "node scripts/verify-tools.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "fallow": "^3.27.0",
+    "knip": "^6.37.0",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "typebox": "^1.3.16",
+    "typescript": "^5.7.0"
+  },
   "pi": {
     "extensions": [
       "./packages/exit/index.ts",
@@ -21,19 +42,5 @@
     "prompts": [
       "./prompts"
     ]
-  },
-  "scripts": {
-    "check": "tsc --noEmit && node --test 'packages/**/*.test.mjs'",
-    "verify": "node scripts/verify-tools.mjs",
-    "test": "node --test 'packages/**/*.test.mjs'"
-  },
-  "devDependencies": {
-    "@types/node": "^26.2.0",
-    "fallow": "^3.27.0",
-    "knip": "^6.37.0",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
-    "typebox": "^1.3.16",
-    "typescript": "^5.7.0"
   }
 }

@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  // Markdown is prose that is wrapped by hand and read in diffs; reflowing 26
+  // documents would bury every real change. Code and JSON are formatted.
+  "ignorePatterns": ["**/*.md", "package-lock.json", ".pi/"]
+}

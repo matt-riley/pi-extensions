@@ -35,7 +35,24 @@ package is published to npm on its own.
 ## Commands
 
 - `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs'`).
-- `npm run check` — type-check (`tsc --noEmit`) and run tests.
+- `npm run check` — the full gate, in order: `tsc --noEmit`, `oxlint
+  --deny-warnings`, `oxfmt --check`, `knip`, `fallow dead-code`, then the tests.
+  This is what has to pass before pushing.
+- `npm run lint` / `lint:fix` — oxlint (`.oxlintrc.json`). Warnings fail too, so
+  a finding is never left for later.
+- `npm run format` / `format:check` — oxfmt (`.oxfmtrc.json`): 100 columns, code
+  and JSON only. Markdown is excluded because reflowing prose buries real
+  changes in a diff.
+- `npm run knip` — unused files, exports and dependencies (`knip.json`).
+- `npm run fallow` — dead code, cycles and dependency hygiene (`.fallowrc.json`).
+  `npm run fallow:report` adds duplication and complexity: reported, not gated,
+  because both are judgement calls rather than pass/fail.
+- `npm run verify` — checks tool registration against a stub pi.
+
+Fixing beats suppressing: the only rule exceptions are the five in
+`.oxlintrc.json`, each with its reason next to it. `fallow fix` can remove unused
+exports automatically, but it edited re-exports without their imports once — run
+the tests after any auto-fix.
 
 ## Commits
 

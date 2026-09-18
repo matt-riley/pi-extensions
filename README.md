@@ -100,6 +100,21 @@ Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
   `node:` core modules. Most packages type-only-import `@earendil-works/pi-coding-agent`;
   `pi-subagents` also imports the host SDK at runtime (`createAgentSession`).
 
+## Development
+
+Dev tooling only — none of it ships with an extension:
+
+| Command | Tool | What it guards |
+| --- | --- | --- |
+| `npm run lint` | [oxlint](https://oxc.rs) | correctness and suspicious patterns, warnings included |
+| `npm run format` | [oxfmt](https://oxc.rs) | code and JSON at 100 columns |
+| `npm run knip` | [knip](https://knip.dev) | unused files, exports and dependencies |
+| `npm run fallow` | [fallow](https://docs.fallow.tools) | dead code, cycles, dependency hygiene; `fallow:report` adds duplication and complexity |
+
+`npm run check` runs all four plus `tsc --noEmit` and the test suite. Every rule
+exception is written down in the config next to the rule it disables, so the gate
+stays honest instead of collecting suppress-comments.
+
 ## Related
 
 - [matt-riley/lore](https://github.com/matt-riley/lore) — local-first memory

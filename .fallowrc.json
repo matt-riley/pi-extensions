@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // pi loads packages/*/index.ts as extension entrypoints and the operator runs
+  // scripts/*.mjs by hand — neither is discoverable from a package.json field,
+  // so both have to be declared or every module they reach looks unused.
+  "entry": ["packages/*/index.ts", "scripts/*.mjs"],
+  "ignorePatterns": ["**/*.d.ts"],
+  // Provided by the pi host at runtime and typed by types/pi-coding-agent.d.ts:
+  // this repo deliberately does not depend on the SDK package (see AGENTS.md).
+  // typebox is the same story — pi's built-in, imported by extensions, so it is
+  // a devDependency here rather than a runtime dependency.
+  "ignoreDependencies": ["@earendil-works/pi-coding-agent", "typebox"],
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-dependencies": "error",
+    "unresolved-imports": "error",
+    "unlisted-dependencies": "error",
+    "circular-dependencies": "error",
+    "duplicate-exports": "warn"
+  },
+  "ignoreExports": [
+    {
+      "file": "packages/guardrail/judge.mjs",
+      "exports": ["*"]
+    },
+    {
+      "file": "shared/systemone.mjs",
+      "exports": ["*"]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    // A leading underscore marks a parameter that exists for the signature (an
+    // optional hook, a positional contract) rather than for its value.
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    // Sequential awaits are deliberate in this codebase: ordered candidate
+    // probes where a 404 decides whether the next one is tried, and rate-limited
+    // API calls. Parallelising them would change behaviour, not just speed.
+    "no-await-in-loop": "off",
+    // Helpers are defined next to the closure that uses them. Hoisting every
+    // one to module scope is churn with no behavioural benefit.
+    "unicorn/consistent-function-scoping": "off",
+    // Sorting a freshly built array in place is the clearer form here;
+    // toSorted() would rewrite 23 call sites for no measurable gain.
+    "unicorn/no-array-sort": "off",
+    // `_name` is this repo's marker for test hooks and internal fields.
+    "no-underscore-dangle": "off",
+    // `{ ...record, key }` inside map() is the readable way to extend an object.
+    "oxc/no-map-spread": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["node_modules", "types/**/*.d.ts"]
+}
