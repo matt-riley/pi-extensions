@@ -6,7 +6,7 @@
 // keyless, separated scores, provider errors, or a declined answer all leave
 // the lexical order untouched.
 
-import { askSystemOne, resolveApiKey } from "../typesafe/systemone.mjs";
+import { askSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
 
 export const TIEBREAK_ENV = "PI_SKILL_SELECT_TIEBREAK";
 export const MAX_CANDIDATES = 8;

@@ -10,7 +10,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { askSystemOne, formatAnswers } from "./systemone.mjs";
+import { askSystemOne, formatAnswers } from "../../shared/systemone.mjs";
 import { TYPESAFE_TOOLS } from "./tools.mjs";
 
 const ASK_TOOL = TYPESAFE_TOOLS[0];

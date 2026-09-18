@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 
 import { discoverSkills, rankSkills, resolveRoots } from "../packages/skill-select/library.mjs";
 import { SKILL_SELECT_TOOLS } from "../packages/skill-select/tools.mjs";
-import { askSystemOne, formatAnswers } from "../packages/typesafe/systemone.mjs";
+import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
 import { TYPESAFE_TOOLS } from "../packages/typesafe/tools.mjs";
 
 const SAMPLE_QUERIES = [

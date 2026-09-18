@@ -9,7 +9,7 @@ import {
   formatAnswers,
   resolveConfig,
   validateQuestions,
-} from "../systemone.mjs";
+} from "../../../shared/systemone.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
 // A guaranteed-absent home and config path keep the file fallback out of every

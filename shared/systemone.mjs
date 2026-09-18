@@ -1,5 +1,10 @@
 // systemone.mjs — TypeSafe System One ("Jev") request logic.
 //
+// Lives in shared/ because three packages consume it: pi-typesafe's
+// typesafe_ask tool, pi-skill-select's optional tiebreaker, and the guardrail's
+// destructive-action judge. One transport, one set of validation and timeout
+// rules, one place to fix a bug.
+//
 // Plain .mjs so node --test can cover it without a TS loader (see AGENTS.md).
 // The extension entrypoint owns tool registration; everything here is pure
 // request building, validation, transport and formatting so it stays testable.
