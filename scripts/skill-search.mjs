@@ -108,7 +108,7 @@ if (args.json) {
   }, null, 2));
 } else {
   const note = adjusted.applied
-    ? `TypeSafe promoted "${adjusted.chosen}" because the lexical scores were close.`
+    ? `TypeSafe chose "${adjusted.chosen}" over "${adjusted.over}" (lexical scores ${adjusted.chosenScore} vs ${adjusted.overScore} were too close to call).`
     : null;
   console.log(formatMatches(adjusted.matches, { query: args.query, total: skills.length, note }));
 }

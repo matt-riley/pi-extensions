@@ -11,6 +11,9 @@ import { askSystemOne, resolveApiKey } from "../typesafe/systemone.mjs";
 export const TIEBREAK_ENV = "PI_SKILL_SELECT_TIEBREAK";
 export const MAX_CANDIDATES = 8;
 export const DEFAULT_MIN_GAP = 1.5;
+// Selection is an interactive read: a slow provider must not stall the tool,
+// so tiebreaks get a much shorter budget than a deliberate agent question.
+export const TIEBREAK_TIMEOUT_MS = 3000;
 export const DECLINE_OPTION = "none_of_these";
 
 /**
@@ -52,6 +55,7 @@ export async function tiebreakMatches({
   matches,
   env = process.env,
   ask = askSystemOne,
+  signal,
   minGap = DEFAULT_MIN_GAP,
 } = {}) {
   const list = Array.isArray(matches) ? matches : [];
@@ -62,15 +66,17 @@ export async function tiebreakMatches({
     return { matches: list, applied: false, reason: "scores_separated" };
   }
 
-  const candidates = list.slice(0, MAX_CANDIDATES);
-  const criteria = Object.fromEntries(
-    candidates.map((entry) => [entry.name, entry.description ? String(entry.description).slice(0, 300) : null]),
-  );
-  criteria[DECLINE_OPTION] = "None of the listed skills fits the task";
-
-  let result;
   try {
-    result = await ask({
+    const candidates = list.slice(0, MAX_CANDIDATES).filter((entry) => entry && typeof entry.name === "string");
+    if (candidates.length < 2) {
+      return { matches: list, applied: false, reason: "too_few_candidates" };
+    }
+    const criteria = Object.fromEntries(
+      candidates.map((entry) => [entry.name, entry.description ? String(entry.description).slice(0, 300) : null]),
+    );
+    criteria[DECLINE_OPTION] = "None of the listed skills fits the task";
+
+    const result = await ask({
       state: { task: String(query ?? "") },
       questions: {
         best: {
@@ -79,8 +85,36 @@ export async function tiebreakMatches({
           criteria,
         },
       },
-      env,
+      env: {
+        ...env,
+        TYPESAFE_TIMEOUT_MS: env?.TYPESAFE_TIMEOUT_MS ?? String(TIEBREAK_TIMEOUT_MS),
+      },
+      signal,
     });
+
+    const choice = result?.answers?.best?.choice;
+    if (typeof choice !== "string" || choice === DECLINE_OPTION) {
+      return { matches: list, applied: false, reason: "declined", chosen: null };
+    }
+    // Only a candidate the model was actually shown can be promoted.
+    const index = candidates.findIndex((entry) => entry.name === choice);
+    if (index < 0) {
+      return { matches: list, applied: false, reason: "unknown_choice", chosen: choice };
+    }
+    if (index === 0) {
+      return { matches: list, applied: false, reason: "already_top", chosen: choice };
+    }
+    const chosen = candidates[index];
+    const chosenIndex = list.indexOf(chosen);
+    return {
+      matches: [chosen, ...list.filter((_, position) => position !== chosenIndex)],
+      applied: true,
+      reason: "reordered",
+      chosen: chosen.name,
+      over: list[0]?.name ?? null,
+      chosenScore: chosen.score ?? null,
+      overScore: list[0]?.score ?? null,
+    };
   } catch (error) {
     return {
       matches: list,
@@ -89,15 +123,4 @@ export async function tiebreakMatches({
       error: error instanceof Error ? error.message : String(error),
     };
   }
-
-  const choice = result?.answers?.best?.choice;
-  if (typeof choice !== "string" || choice === DECLINE_OPTION) {
-    return { matches: list, applied: false, reason: "declined", chosen: null };
-  }
-  const index = list.findIndex((entry) => entry.name === choice);
-  if (index < 0) {
-    return { matches: list, applied: false, reason: "unknown_choice", chosen: choice };
-  }
-  const promoted = [list[index], ...list.filter((_, position) => position !== index)];
-  return { matches: promoted, applied: true, reason: "reordered", chosen: choice };
 }

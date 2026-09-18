@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,9 +12,10 @@ import {
 } from "../systemone.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
-// A guaranteed-absent config path keeps the file fallback out of every case
-// that is asserting what happens without a key.
-const NO_KEY_ENV = { LORE_CONFIG: join(tmpdir(), "pi-typesafe-absent", "lore.json") };
+// A guaranteed-absent home and config path keep the file fallback out of every
+// case that is asserting what happens without a key.
+const NO_KEY_HOME = join(tmpdir(), "pi-typesafe-no-home");
+const NO_KEY_ENV = { HOME: NO_KEY_HOME, LORE_CONFIG: join(NO_KEY_HOME, "lore.json") };
 
 function jsonResponse(body, { status = 200 } = {}) {
   return {
@@ -56,7 +57,7 @@ test("resolveConfig ignores blank values and rejects non-http base urls", () => 
   const config = resolveConfig({ TYPESAFE_API_KEY: "  k  ", TYPESAFE_MODEL: "   " });
   assert.equal(config.apiKey, "k");
   assert.equal(config.model, "jev-latest");
-  assert.throws(() => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test" }), /http/i);
+  assert.throws(() => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test", ...NO_KEY_ENV }), /http/i);
 });
 
 test("resolveConfig accepts LORE_TYPESAFE_API_KEY as a fallback name", () => {
@@ -80,15 +81,76 @@ test("resolveConfig falls back to the lore config file when no env key is set", 
       "from-env",
       "the environment still wins",
     );
-    assert.equal(resolveConfig({ LORE_CONFIG: join(dir, "missing.json") }).apiKey, "");
+    assert.equal(resolveConfig({ ...NO_KEY_ENV, HOME: dir, LORE_CONFIG: join(dir, "missing.json") }).apiKey, "");
 
     writeFileSync(configPath, "{ not json");
-    assert.equal(resolveConfig({ LORE_CONFIG: configPath }).apiKey, "");
+    assert.equal(resolveConfig({ ...NO_KEY_ENV, LORE_CONFIG: configPath }).apiKey, "");
     writeFileSync(configPath, JSON.stringify({ typesafe: { apiKey: "   " } }));
-    assert.equal(resolveConfig({ LORE_CONFIG: configPath }).apiKey, "");
+    assert.equal(resolveConfig({ ...NO_KEY_ENV, LORE_CONFIG: configPath }).apiKey, "");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("resolveConfig checks the same config locations lore does", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-typesafe-paths-"));
+  try {
+    const home = join(dir, "home");
+    const xdg = join(dir, "xdg");
+    mkdirSync(join(home, ".copilot"), { recursive: true });
+    mkdirSync(join(xdg, "lore"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "lore.json"), JSON.stringify({ typesafe: { apiKey: "legacy" } }));
+    writeFileSync(join(xdg, "lore", "lore.json"), JSON.stringify({ typesafe: { apiKey: "xdg" } }));
+
+    assert.equal(resolveConfig({ HOME: home, XDG_CONFIG_HOME: xdg }).apiKey, "xdg");
+
+    const loreHome = join(dir, "lorehome");
+    mkdirSync(loreHome, { recursive: true });
+    writeFileSync(join(loreHome, "lore.json"), JSON.stringify({ typesafe: { apiKey: "from-lore-home" } }));
+    assert.equal(
+      resolveConfig({ HOME: home, XDG_CONFIG_HOME: xdg, LORE_HOME: loreHome }).apiKey,
+      "from-lore-home",
+      "LORE_HOME wins over XDG",
+    );
+    assert.equal(
+      resolveConfig({ HOME: home, LORE_CONFIG: join(loreHome, "lore.json") }).apiKey,
+      "from-lore-home",
+      "LORE_CONFIG wins over everything",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("names the config paths it checked when no key is found", async () => {
+  const missing = join(tmpdir(), "pi-typesafe-absent", "lore.json");
+  await assert.rejects(
+    askSystemOne({
+      state: "s",
+      questions: { a: { type: "noul", instructions: "?" } },
+      env: { ...NO_KEY_ENV, LORE_CONFIG: missing },
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) }),
+    }),
+    (error) => {
+      assert.ok(error.message.includes(missing), "message should name the path checked");
+      return true;
+    },
+  );
+});
+
+test("renders unusable answers instead of NaN", () => {
+  const text = formatAnswers({
+    model: "jev-latest",
+    answers: {
+      missing: { type: "noul" },
+      nameless: { type: "choice", confidence: 0.5 },
+      blank_score: { type: "score", score: "" },
+    },
+  });
+  assert.doesNotMatch(text, /NaN|"undefined"/);
+  assert.match(text, /missing: unusable answer/);
+  assert.match(text, /nameless: unusable answer/);
+  assert.match(text, /blank_score: unusable answer/);
 });
 
 test("validateQuestions accepts the three primitives and rejects malformed ones", () => {

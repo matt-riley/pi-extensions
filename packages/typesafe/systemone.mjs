@@ -6,7 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 export const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
 export const DEFAULT_MODEL = "jev-latest";
@@ -39,21 +39,53 @@ function normalizeBaseUrl(value) {
 }
 
 /**
- * Last-resort key source: the lore config already carries a `typesafe.apiKey`
- * field, so a machine that launches pi from a GUI — where shell exports never
- * arrive — only has to set the key in one place.
+ * Candidate lore config paths, mirroring lore's own resolver
+ * (lib/core/lore-paths.mjs): LORE_CONFIG, then LORE_HOME or
+ * XDG_CONFIG_HOME/lore, with the legacy ~/.copilot fallback kept for installs
+ * that have not been migrated.
  */
-function apiKeyFromLoreConfig(env) {
-  const override = typeof env?.LORE_CONFIG === "string" ? env.LORE_CONFIG.trim() : "";
+function loreConfigPaths(env) {
   const home = typeof env?.HOME === "string" && env.HOME.trim() ? env.HOME.trim() : homedir();
-  const configPath = override || join(home, ".config", "lore", "lore.json");
-  try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-    const key = parsed?.typesafe?.apiKey;
-    return typeof key === "string" ? key.trim() : "";
-  } catch {
-    return "";
+  const copilotHome = typeof env?.LORE_COPILOT_HOME === "string" && env.LORE_COPILOT_HOME.trim()
+    ? env.LORE_COPILOT_HOME.trim()
+    : join(home, ".copilot");
+  const xdgHome = typeof env?.XDG_CONFIG_HOME === "string" ? env.XDG_CONFIG_HOME.trim() : "";
+  const configHome = xdgHome && isAbsolute(xdgHome) ? xdgHome : join(home, ".config");
+  const explicitHome = typeof env?.LORE_HOME === "string" ? env.LORE_HOME.trim() : "";
+  const preferredHome = explicitHome || join(configHome, "lore");
+  const explicitConfig = typeof env?.LORE_CONFIG === "string" ? env.LORE_CONFIG.trim() : "";
+  return [...new Set([
+    ...(explicitConfig ? [explicitConfig] : []),
+    join(preferredHome, "lore.json"),
+    join(copilotHome, "lore.json"),
+  ])];
+}
+
+/**
+ * Last-resort key source: the lore config. Returns the paths checked and any
+ * parse failure so the caller can say what it looked at instead of blaming the
+ * environment for a config typo.
+ */
+function apiKeySources(env) {
+  const checked = loreConfigPaths(env);
+  let parseError = null;
+  for (const configPath of checked) {
+    let raw;
+    try {
+      raw = readFileSync(configPath, "utf8");
+    } catch {
+      continue; // absent or unreadable: keep looking
+    }
+    try {
+      const key = JSON.parse(raw)?.typesafe?.apiKey;
+      if (typeof key === "string" && key.trim()) {
+        return { key: key.trim(), checked, parseError };
+      }
+    } catch (error) {
+      parseError = `${configPath}: ${error instanceof Error ? error.message : String(error)}`;
+    }
   }
+  return { key: "", checked, parseError };
 }
 
 /**
@@ -63,7 +95,7 @@ function apiKeyFromLoreConfig(env) {
 export function resolveApiKey(env = process.env) {
   const primaryKey = typeof env?.TYPESAFE_API_KEY === "string" ? env.TYPESAFE_API_KEY.trim() : "";
   const loreKey = typeof env?.LORE_TYPESAFE_API_KEY === "string" ? env.LORE_TYPESAFE_API_KEY.trim() : "";
-  return primaryKey || loreKey || apiKeyFromLoreConfig(env);
+  return primaryKey || loreKey || apiKeySources(env).key;
 }
 
 /** Resolve runtime configuration from the environment. */
@@ -154,7 +186,9 @@ export async function askSystemOne({
   validateQuestions(questions);
   const config = resolveConfig(env);
   if (!config.apiKey) {
-    throw new Error("TYPESAFE_API_KEY is not set. Add it to the environment that launches pi.");
+    const sources = apiKeySources(env);
+    const detail = sources.parseError ? ` (unreadable config: ${sources.parseError})` : "";
+    throw new Error(`TYPESAFE_API_KEY is not set. Set it in the environment or as typesafe.apiKey in ${sources.checked.join(" or ")}${detail}.`);
   }
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required to call TypeSafe.");
@@ -249,18 +283,30 @@ export function formatAnswers({ model, usage, answers } = {}) {
   }
   for (const [id, answer] of entries) {
     if (answer?.type === "noul") {
-      lines.push(`${id}: noul ${Number(answer.noul).toFixed(2)}`);
+      const value = answer.noul;
+      lines.push(typeof value === "number" && Number.isFinite(value)
+        ? `${id}: noul ${value.toFixed(2)}`
+        : `${id}: unusable answer (no noul value)`);
       continue;
     }
     if (answer?.type === "choice") {
+      if (typeof answer.choice !== "string" || !answer.choice.trim()) {
+        lines.push(`${id}: unusable answer (no choice value)`);
+        continue;
+      }
       const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
       lines.push(`${id}: choice "${answer.choice}"${confidence}`);
       lines.push(`  probabilities: ${formatProbabilities(answer.probabilities)}`);
       continue;
     }
     if (answer?.type === "score") {
+      const value = answer.score;
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        lines.push(`${id}: unusable answer (no score value)`);
+        continue;
+      }
       const confidence = Number.isFinite(Number(answer.confidence)) ? ` (confidence ${Number(answer.confidence).toFixed(2)})` : "";
-      lines.push(`${id}: score ${Number(answer.score).toFixed(2)}${confidence}`);
+      lines.push(`${id}: score ${value.toFixed(2)}${confidence}`);
       lines.push(`  probabilities: ${formatProbabilities(answer.probabilities, answer.legend)}`);
       continue;
     }

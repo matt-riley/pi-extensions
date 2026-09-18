@@ -48,7 +48,7 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
         description: `Maximum matches to return (default ${DEFAULT_LIMIT}).`,
       })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const roots = resolveRoots({
         cwd: ctx?.cwd ?? process.cwd(),
         home: homedir(),
@@ -57,9 +57,9 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
       const skills = await discoverSkills({ roots });
       const query = String(params?.query ?? "");
       const matches = rankSkills(skills, query, { limit: params?.limit ?? DEFAULT_LIMIT });
-      const adjusted = await tiebreakMatches({ query, matches, env: process.env });
+      const adjusted = await tiebreakMatches({ query, matches, env: process.env, signal });
       const note = adjusted.applied
-        ? `TypeSafe promoted "${adjusted.chosen}" because the lexical scores were close.`
+        ? `TypeSafe chose "${adjusted.chosen}" over "${adjusted.over}" (lexical scores ${adjusted.chosenScore} vs ${adjusted.overScore} were too close to call).`
         : null;
       return {
         content: [{ type: "text", text: formatMatches(adjusted.matches, { query, total: skills.length, note }) }],

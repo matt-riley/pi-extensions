@@ -11,9 +11,10 @@ import {
 } from "../tiebreak.mjs";
 
 const ENV = { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "tb-key" };
-// Guaranteed-absent config path: the key-less cases must not read a real
-// machine's lore config, or the suite passes and fails by environment.
-const NO_KEY_ENV = { LORE_CONFIG: join(tmpdir(), "pi-tiebreak-absent", "lore.json") };
+// Guaranteed-absent home and config path: the key-less cases must not read a
+// real machine's lore config, or the suite passes and fails by environment.
+const NO_KEY_HOME = join(tmpdir(), "pi-tiebreak-no-home");
+const NO_KEY_ENV = { HOME: NO_KEY_HOME, LORE_CONFIG: join(NO_KEY_HOME, "lore.json") };
 
 function match(name, score) {
   return { name, score, description: `${name} description`, path: `/lib/${name}/SKILL.md` };
@@ -101,4 +102,60 @@ test("caps the candidate list sent to the provider", async () => {
   const { ask, calls } = fakeAsk("skill-3");
   await tiebreakMatches({ query: "q", matches, env: ENV, ask });
   assert.equal(Object.keys(calls[0].questions.best.criteria).length, 8 + 1);
+});
+
+test("cannot promote a skill outside the candidate window", async () => {
+  const matches = [
+    match("a", 9), match("b", 8.6), match("c", 8.5), match("d", 8.4),
+    match("e", 8.3), match("f", 8.2), match("g", 8.1), match("h", 8.0),
+    match("outside", 7.9),
+  ];
+  const { ask, calls } = fakeAsk("outside");
+  const result = await tiebreakMatches({ query: "q", matches, env: ENV, ask });
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "unknown_choice");
+  assert.equal(Object.keys(calls[0].questions.best.criteria).includes("outside"), false);
+});
+
+test("reports already_top instead of a no-op reorder", async () => {
+  const matches = [match("a", 9), match("b", 8.6)];
+  const { ask } = fakeAsk("a");
+  const result = await tiebreakMatches({ query: "q", matches, env: ENV, ask });
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "already_top");
+  assert.deepEqual(result.matches.map((entry) => entry.name), ["a", "b"]);
+});
+
+test("fires exactly at the gap boundary", async () => {
+  const atBoundary = fakeAsk("b");
+  await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 7.5)], env: ENV, ask: atBoundary.ask });
+  assert.equal(atBoundary.calls.length, 1, "1.5 apart still counts as close");
+
+  const beyondBoundary = fakeAsk("b");
+  await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 7.4)], env: ENV, ask: beyondBoundary.ask });
+  assert.equal(beyondBoundary.calls.length, 0, "1.6 apart is a clear lexical winner");
+});
+
+test("gives the provider a short budget and forwards cancellation", async () => {
+  const matches = [match("a", 9), match("b", 8.6)];
+  const controller = new AbortController();
+  const seen = [];
+  const ask = async (request) => {
+    seen.push(request);
+    return { answers: { best: { type: "choice", choice: "b" } } };
+  };
+  await tiebreakMatches({ query: "q", matches, env: ENV, ask, signal: controller.signal });
+  assert.equal(seen[0].signal, controller.signal);
+  assert.equal(seen[0].env.TYPESAFE_TIMEOUT_MS, "3000");
+});
+
+test("reports the inversion so the model can trust the order", async () => {
+  const matches = [match("cloudflare", 9), match("sandbox-next", 8.6)];
+  const { ask } = fakeAsk("sandbox-next");
+  const result = await tiebreakMatches({ query: "q", matches, env: ENV, ask });
+  assert.equal(result.applied, true);
+  assert.equal(result.chosen, "sandbox-next");
+  assert.equal(result.over, "cloudflare");
+  assert.equal(result.chosenScore, 8.6);
+  assert.equal(result.overScore, 9);
 });

@@ -84,6 +84,11 @@ Only the task text and the candidate names/descriptions are sent — never the
 library. It fails open: no key, separated scores, a provider error, or the model
 answering `none_of_these` all leave the lexical order untouched.
 
+Tiebreaks get a **3-second budget** (override with `TYPESAFE_TIMEOUT_MS`) and
+honour the tool's cancellation signal, so a slow provider cannot stall a search.
+Only candidates the model was shown can be promoted, and the result explains the
+inversion — a lower lexical score appearing first is deliberate, not a bug.
+
 ## Ranking
 
 Deterministic, no model, no network:
