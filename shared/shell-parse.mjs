@@ -100,12 +100,16 @@ export function hasRedirectOutsideQuotes(segment) {
 // the caller can judge". Targets are unquoted via tokenize, so
 // `> "my file.txt"` reports `my file.txt`.
 export function redirectTargets(segment) {
+  // Redirects inside a command substitution belong to the substitution, which
+  // is classified separately — scanning them here desynchronises the quote
+  // state (`"$(cmd 2>/dev/null)" = ""` is not a redirect into a weird path).
+  const scannable = blankSpans(segment, substitutionSpans(segment));
   const out = [];
   let quote = null;
   let i = 0;
-  const n = segment.length;
+  const n = scannable.length;
   while (i < n) {
-    const ch = segment[i];
+    const ch = scannable[i];
     if (quote) {
       if (quote === '"' && ch === "\\") { i += 2; continue; }
       if (ch === quote) quote = null;
@@ -115,13 +119,15 @@ export function redirectTargets(segment) {
     if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
     if (ch === "\\") { i += 2; continue; }
     if (ch === ">") {
-      const append = segment[i + 1] === ">";
+      const append = scannable[i + 1] === ">";
       const op = append ? ">>" : ">";
       const rest = segment.slice(i + op.length);
-      const token = tokenize(rest)[0] ?? "";
+      // Trim shell punctuation glued to the path: `> /dev/null)` (a redirect
+      // inside $( )) and `;` terminators are syntax, not part of the filename.
+      const raw = (tokenize(rest)[0] ?? "").replace(/[);,]+$/, "");
       // `2>&1`, `>&2`, `>&-` and bare trailing `>` carry no path.
-      const isFdDup = token.startsWith("&") || /^-?$/.test(token);
-      out.push({ op, target: token && !isFdDup ? token : null });
+      const isFdDup = raw.startsWith("&") || raw === "" || raw === "-";
+      out.push({ op, target: raw && !isFdDup ? raw : null });
       i += op.length;
       continue;
     }
@@ -130,35 +136,110 @@ export function redirectTargets(segment) {
   return out;
 }
 
+function blankSpans(text, spans) {
+  if (!spans.length) return text;
+  const chars = [...text];
+  for (const [start, end] of spans) {
+    for (let i = start; i < end && i < chars.length; i++) chars[i] = " ";
+  }
+  return chars.join("");
+}
+
 // Command substitution ($(…) or backticks) executes code. Single quotes
 // suppress it; double quotes and unquoted positions do not.
 export function hasCommandSubstitution(segment) {
+  return collectSubstitutions(segment).length > 0;
+}
+
+/**
+ * Split a command into the lines that are shell and the heredoc bodies that
+ * are data.
+ *
+ * A heredoc body is not parsed as shell — `cat > x.js <<'EOF'` followed by
+ * JavaScript full of `>` comparisons would otherwise read as a pile of output
+ * redirects into whatever the right-hand side happens to look like. Bodies
+ * are returned separately, because an *unquoted* heredoc still expands $()
+ * before it is written, so it can carry a command even though it is not one.
+ *
+ *   { text: lines with bodies removed, bodies: [{ marker, quoted, body }] }
+ */
+export function stripHeredocs(input) {
+  const lines = String(input ?? "").split("\n");
+  const kept = [];
+  const bodies = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = /<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(line);
+    kept.push(line);
+    if (!match) continue;
+    const [, dash, quote, marker] = match;
+    const body = [];
+    i++;
+    for (; i < lines.length; i++) {
+      const candidate = dash ? lines[i].replace(/^\t+/, "") : lines[i];
+      if (candidate.trim() === marker) break;
+      body.push(lines[i]);
+    }
+    bodies.push({ marker, quoted: quote !== "", body: body.join("\n") });
+  }
+  return { text: kept.join("\n"), bodies };
+}
+
+// The bodies of $() and backtick substitutions, quote-aware, outermost only.
+// The guardrail evaluates these as commands of their own: `echo $(rm -rf ~)`
+// is a delete with an audience, and a parser that stops at the first word
+// would see only `echo`.
+export function collectSubstitutions(segment) {
+  return substitutionSpans(segment).map(([start, end, inner]) => inner ?? segment.slice(start, end));
+}
+
+/** [start, end, inner] for every $() and backtick body, quote-aware. */
+function substitutionSpans(segment) {
+  const out = [];
+  const n = segment.length;
   let quote = null;
   let i = 0;
-  const n = segment.length;
   while (i < n) {
     const ch = segment[i];
+    if (ch === "\\") { i += 2; continue; }
     if (quote === "'") {
       if (ch === "'") quote = null;
       i++;
       continue;
     }
-    if (quote === '"') {
-      if (ch === "\\") { i += 2; continue; }
-      if (ch === '"') { quote = null; i++; continue; }
-      // $() and backticks expand inside double quotes too.
-      if (ch === "`") return true;
-      if (ch === "$" && segment[i + 1] === "(") return true;
-      i++;
+    if (ch === '"') {
+      if (quote === '"') { quote = null; i++; continue; }
+      // $() and backticks still expand inside double quotes, so keep scanning.
+    } else if (ch === "'") {
+      quote = "'"; i++; continue;
+    } else if (ch === '"') {
+      quote = '"'; i++; continue;
+    }
+
+    if (ch === "`") {
+      const end = segment.indexOf("`", i + 1);
+      if (end < 0) { out.push([i, n, segment.slice(i + 1)]); break; }
+      out.push([i, end + 1, segment.slice(i + 1, end)]);
+      i = end + 1;
       continue;
     }
-    if (ch === "'" || ch === '"') { quote = ch; i++; continue; }
-    if (ch === "\\") { i += 2; continue; }
-    if (ch === "`") return true;
-    if (ch === "$" && segment[i + 1] === "(") return true;
+    if (ch === "$" && segment[i + 1] === "(") {
+      let depth = 1;
+      let j = i + 2;
+      while (j < n && depth > 0) {
+        const c = segment[j];
+        if (c === "\\") { j += 2; continue; }
+        if (c === "(") { depth++; j++; continue; }
+        if (c === ")") { depth--; if (depth === 0) break; j++; continue; }
+        j++;
+      }
+      out.push([i, j + 1, segment.slice(i + 2, j)]);
+      i = j + 1;
+      continue;
+    }
     i++;
   }
-  return false;
+  return out;
 }
 
 // Find the command head: skip leading env assignments (FOO=bar) and flags.
