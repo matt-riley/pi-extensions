@@ -19,8 +19,9 @@
  *                  .agents/skills.
  *   -h, --help     Show this help.
  *
- * Set PI_SKILL_SELECT_TIEBREAK=1 to let TypeSafe break close calls (needs a
- * TypeSafe key); the lexical order is kept whenever that decision fails.
+ * Close calls are broken by TypeSafe when a key is reachable (set
+ * PI_SKILL_SELECT_TIEBREAK=0 to keep selection entirely local); the lexical
+ * order is kept whenever that decision fails or is declined.
  *
  * Exit codes: 0 when matches were found, 1 when none, 2 on bad usage.
  */

@@ -22,13 +22,15 @@ function fakeAsk(choice, calls = []) {
   return { ask, calls };
 }
 
-test("tiebreakEnabled requires the switch and a key", () => {
-  assert.equal(tiebreakEnabled(ENV), true);
-  assert.equal(tiebreakEnabled({ TYPESAFE_API_KEY: "k" }), false);
+test("tiebreakEnabled is on by default with a key and off on request", () => {
+  assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "k" }), true);
+  assert.equal(tiebreakEnabled({ TYPESAFE_API_KEY: "k" }), true);
+  assert.equal(tiebreakEnabled({ LORE_TYPESAFE_API_KEY: "k" }), true);
+  assert.equal(tiebreakEnabled({}), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1" }), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "0", TYPESAFE_API_KEY: "k" }), false);
   assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "off", TYPESAFE_API_KEY: "k" }), false);
-  assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "1", LORE_TYPESAFE_API_KEY: "k" }), true);
+  assert.equal(tiebreakEnabled({ [TIEBREAK_ENV]: "false", TYPESAFE_API_KEY: "k" }), false);
 });
 
 test("needsTiebreak only fires when the top scores are close", () => {
@@ -67,6 +69,13 @@ test("does not call the provider when disabled or when scores are separated", as
   const { ask, calls } = fakeAsk("sandbox-next");
   const disabled = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 8.9)], env: {}, ask });
   assert.equal(disabled.reason, "disabled");
+  const optedOut = await tiebreakMatches({
+    query: "q",
+    matches: [match("a", 9), match("b", 8.9)],
+    env: { ...ENV, [TIEBREAK_ENV]: "0" },
+    ask,
+  });
+  assert.equal(optedOut.reason, "disabled");
   const separated = await tiebreakMatches({ query: "q", matches: [match("a", 9), match("b", 2)], env: ENV, ask });
   assert.equal(separated.reason, "scores_separated");
   assert.equal(calls.length, 0);

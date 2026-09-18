@@ -67,21 +67,21 @@ instruction — *skill library at `~/.pi/agent/skill-library`; search it before
 improvising a specialist workflow* — and read the returned `SKILL.md`. The file
 format is already the Agent Skills standard, so nothing else is needed.
 
-## Optional TypeSafe tiebreaker
+## TypeSafe tiebreaker
 
 Lexical ranking is deterministic and offline. When it is genuinely torn — the
 top two scores within 1.5 points — one choice question over the top eight
-candidates can promote the better fit:
+candidates promotes the better fit. This is **on by default whenever a TypeSafe
+key is reachable** (`TYPESAFE_API_KEY` or `LORE_TYPESAFE_API_KEY`); set
+`PI_SKILL_SELECT_TIEBREAK=0` to keep selection entirely local.
 
 ```sh
-PI_SKILL_SELECT_TIEBREAK=1 node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "review my code"
+PI_SKILL_SELECT_TIEBREAK=0 node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "review my code"
 ```
 
-Off by default, needs a TypeSafe key (`TYPESAFE_API_KEY` or
-`LORE_TYPESAFE_API_KEY`), and never sends the library: only the task text and
-the candidate names/descriptions. It fails open — disabled, keyless, separated
-scores, a provider error, or the model answering `none_of_these` all leave the
-lexical order untouched.
+Only the task text and the candidate names/descriptions are sent — never the
+library. It fails open: no key, separated scores, a provider error, or the model
+answering `none_of_these` all leave the lexical order untouched.
 
 ## Ranking
 

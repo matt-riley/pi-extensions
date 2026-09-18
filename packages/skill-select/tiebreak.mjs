@@ -13,14 +13,17 @@ export const MAX_CANDIDATES = 8;
 export const DEFAULT_MIN_GAP = 1.5;
 export const DECLINE_OPTION = "none_of_these";
 
-/** Whether tiebreaking is switched on and can reach a provider. */
+/**
+ * Tiebreaking is on by default whenever a TypeSafe key is reachable. Set
+ * PI_SKILL_SELECT_TIEBREAK to 0/false/off/no to keep selection fully local.
+ */
 export function tiebreakEnabled(env = process.env) {
-  const flag = String(env?.[TIEBREAK_ENV] ?? "").trim().toLowerCase();
-  if (!flag || flag === "0" || flag === "false" || flag === "off" || flag === "no") {
+  const key = env?.TYPESAFE_API_KEY || env?.LORE_TYPESAFE_API_KEY;
+  if (!String(key ?? "").trim()) {
     return false;
   }
-  const key = env?.TYPESAFE_API_KEY || env?.LORE_TYPESAFE_API_KEY;
-  return Boolean(String(key ?? "").trim());
+  const flag = String(env?.[TIEBREAK_ENV] ?? "").trim().toLowerCase();
+  return !["0", "false", "off", "no"].includes(flag);
 }
 
 /** Close top scores mean the lexical order is not a clear answer. */
