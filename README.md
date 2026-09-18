@@ -15,6 +15,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed choice/noul/score questions over state and returns probabilities instead of prose. Environment-only config (`TYPESAFE_API_KEY`). |
 | [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
 | [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Attaches one line to failed tool results: name the root cause, then check the evidence with `typesafe_ask`. Text only, never blocks a call. |
+| [`pi-guardrail`](./packages/guardrail) | Stops destructive tool use before it runs: deterministic rules for the 97% that are obviously fine, a TypeSafe judgment for the ambiguous middle, and an Approve / Deny / Suggest-an-alternative dialog for the rest. Refuses the catastrophic set outright. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
@@ -31,11 +32,20 @@ renaming one can break another:
   plan mode's toolset), plus `SKILL_SELECT_TOOLS` from **`pi-skill-select`**'s
   `tools.mjs` (so planning can pull in a specialist skill without it living
   in the system prompt).
-- **`pi-skill-select`** imports `askSystemOne` from the shared
-  `shared/systemone.mjs` for its optional tiebreaker, so it reuses the same request
-  validation, timeout and error handling instead of duplicating transport.
+- **`pi-skill-select`**, **`pi-typesafe`** and **`pi-guardrail`** all import
+  `askSystemOne` from the shared `shared/systemone.mjs` for the tiebreaker,
+  `typesafe_ask` and the destructive-action judge respectively, so they share
+  one request validation, timeout and error handling instead of duplicating
+  transport.
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
-  allowlist from `shared/bash-policy.mjs` at the repo root.
+  allowlist from `shared/bash-policy.mjs` at the repo root, and both
+  `pi-plan-mode` and **`pi-guardrail`** import the FIFO dialog serializer from
+  `shared/dialog-queue.mjs` — two dialogs open at once stack and hang the tool
+  batch.
+- **`pi-plan-mode`** and **`pi-guardrail`** parse commands with
+  `shared/shell-parse.mjs`, which is quote-aware and knows heredocs from shell:
+  one answers "is this provably read-only?", the other "what could this
+  destroy?", and both need to tell operators from literal text.
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
 `pi-diagnosis-nudge`, and `pi-footer` have no dependencies on other packages in

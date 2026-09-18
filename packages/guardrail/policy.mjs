@@ -686,13 +686,17 @@ export function evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolved
   if (commands.length) {
     let verdict = "allow";
     let reason = null;
-    const evidence = { shapes: [], targets: [] };
+    const evidence = { shapes: [], targets: [], scriptRefs: [], inline: [] };
     for (const command of commands) {
       const result = evaluateBashCommand(command, { cwd, scriptTexts, unresolvedScripts });
       verdict = worst(verdict, result.verdict);
       reason ??= result.reason;
-      evidence.shapes.push(...result.evidence.shapes);
-      evidence.targets.push(...result.evidence.targets);
+      evidence.shapes.push(...(result.evidence.shapes ?? []));
+      evidence.targets.push(...(result.evidence.targets ?? []));
+      // The caller needs these to follow one level of indirection: dropping
+      // them here means scripts are never read and never reclassified.
+      evidence.scriptRefs.push(...(result.evidence.scriptRefs ?? []));
+      evidence.inline.push(...(result.evidence.inline ?? []));
     }
     return { verdict, reason, evidence };
   }
