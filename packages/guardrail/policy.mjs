@@ -125,22 +125,27 @@ export function isEnvFile(token) {
 }
 
 /**
- * Dotfiles and config-ish files wherever they live.
+/**
+ * Directories that count as "the workspace": the session's cwd, plus wherever
+ * this command `cd`-ed to before acting.
  *
- * Used for writes outside the workspace, where the corpus says ordinary
- * source files are routine (editing another repo from this session) but
- * `~/.zshrc` and a stray `settings.json` are where a mistake actually hurts.
+ * The session cwd alone is not enough. A session often runs from a parent
+ * directory (or one repo) while the work happens in another: every write to
+ * ~/.pi/agent/extensions/pi-extensions/knip.json then looked like an edit
+ * outside the workspace and prompted. $HOME and the filesystem root are never
+ * workspace roots — `cd ~ && rm -rf Documents` is still a home delete.
  */
-function isConfigLike(token) {
-  const base =
-    String(token ?? "")
-      .split("/")
-      .pop() ?? "";
-  if (!base) return false;
-  if (base.startsWith(".") && base !== ".") return true;
-  return /\.(json|ya?ml|toml|conf|cfg|ini|rc|sh|zsh|bash|fish|plist|sqlite|db|pem|key|p12)$/i.test(
-    base,
-  );
+function workspaceRoots(roots, cwd) {
+  const candidates = Array.isArray(roots) ? roots : [roots, cwd];
+  const out = [];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string" || !candidate.trim()) continue;
+    const resolved = path.resolve(candidate);
+    if (resolved === path.parse(resolved).root) continue;
+    if (homedir() === resolved) continue;
+    if (!out.includes(resolved)) out.push(resolved);
+  }
+  return out;
 }
 
 /**
@@ -156,9 +161,8 @@ function isConfigLike(token) {
  *   regenerable | secret | system | workspace | home | unknown
  *
  * `cwd` is the directory the command will actually run in (after any leading
- * `cd`); `rootCwd` is the session's project directory. They differ when a
- * chain moves somewhere first — `cd /tmp && rm -rf scratch` is scratch, not a
- * workspace delete, while `cd /tmp && rm -rf src` is still your src.
+ * `cd`); the third argument is the workspace root, or the set of roots, and
+ * defaults to `cwd`. A path inside any root is workspace.
  */
 export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
   const token = String(rawToken ?? "")
@@ -184,9 +188,9 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
     if (base && typeof base === "string" && base.trim()) {
       const resolved = path.resolve(base, token);
       if (isRegenerablePath(resolved)) return "regenerable";
-      const root =
-        typeof rootCwd === "string" && rootCwd.trim() ? path.resolve(rootCwd) : undefined;
-      if (root && (resolved === root || resolved.startsWith(root + path.sep))) return "workspace";
+      for (const root of workspaceRoots(rootCwd, cwd)) {
+        if (resolved === root || resolved.startsWith(root + path.sep)) return "workspace";
+      }
       if (home && (resolved === home || resolved.startsWith(home + path.sep))) return "home";
     }
   }
@@ -215,7 +219,11 @@ const CLASS_VERDICT = {
 // class means: truncating a file with `>` is how a report gets written, so a
 // home-directory target is a judgment rather than an interruption.
 const SHAPE_CLASS_OVERRIDE = {
-  overwrite: { home: "judge" },
+  // Truncating a file with a redirect is how output gets written, not a
+  // destructive act: `> ~/notes.md` names its target and the TUI shows it. Same
+  // conclusion the file tools reached, for the same reason. Deleting from home
+  // still asks, and secrets or system paths still refuse.
+  overwrite: { home: "allow" },
 };
 
 const SHAPE_DEFAULT = {
@@ -478,8 +486,9 @@ function collectIndirection(command) {
 }
 
 // Destructive APIs in source text, for the one level of indirection the
-// command line cannot show (node -e "fs.rmSync(x,{recursive:true})").
-const SOURCE_SHAPES = [
+// command line cannot show (node -e "fs.rmSync(x,{recursive:true})"). These are
+// API-shaped, so a match is a match wherever it appears, quotes and all.
+const SOURCE_API_SHAPES = [
   [
     /\b(rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(\s*[^)]*recursive/i,
     "filesystem delete (recursive)",
@@ -491,11 +500,23 @@ const SOURCE_SHAPES = [
     /\b(child_process|subprocess|execSync|spawnSync|system)\s*[.(][^)]*\brm\s+-/i,
     "shells out to rm",
   ],
-  [/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i, "SQL DROP"],
-  [/\bTRUNCATE\s+TABLE\b/i, "SQL TRUNCATE"],
+];
+
+// Command-shaped patterns are also what a fixture or a help string contains,
+// so they are matched against source with string literals blanked: a script
+// that *mentions* `rm -rf` is not a script that runs one. Measured: three of
+// the fifteen prompts in one session came from this repo's own measurement
+// scripts quoting the commands they classify.
+const SOURCE_TEXT_SHAPES = [
   [/\bgit\s+push\b[^\n"'`]*--force/i, "force push"],
   [/\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*f|\brm\s+-[a-zA-Z]*f[a-zA-Z]*[rR]/i, "rm -rf"],
   [/\bchmod\s+-R\s+777\b/i, "chmod -R 777"],
+];
+
+/** SQL statements, which only ever appear inside string literals. */
+const SOURCE_RAW_SHAPES = [
+  [/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i, "SQL DROP"],
+  [/\bTRUNCATE\s+TABLE\b/i, "SQL TRUNCATE"],
 ];
 
 const SOURCE_CATASTROPHIC = [
@@ -507,32 +528,93 @@ const SOURCE_CATASTROPHIC = [
 ];
 
 /**
- * Source text with string literals blanked out.
+ * Source text with string literals and comments blanked out.
  *
- * Catastrophic patterns are matched against this, not the raw text: a test
- * fixture (or this guardrail's own test suite) is full of `"rm -rf ~"`
- * strings that would otherwise be refused as though they were going to run.
- * The consequence of the blanking is deliberate — `shutil.rmtree('/Users')`
- * becomes a judgment and a dialog rather than a refusal, which is the safer
- * way to be wrong.
+ * Patterns are matched against this rather than the raw text, because a
+ * fixture, a help string, or this repo's own measurement scripts quote the
+ * commands they classify — and quoting a command is not running one. Written
+ * as a scanner rather than a regex: a regex cannot tell a quote inside a
+ * template literal from one that opens a string, so `\`node -e "…"\`` used to
+ * leak its contents once the inner quotes were stripped.
+ *
+ * Length is preserved (blanked, not removed) so nothing sensitive is glued
+ * together by the removal.
  */
-function unquotedSource(src) {
-  return String(src ?? "").replace(/'[^']*'|"[^"]*"|`[^`]*`/g, " ");
+function stripSourceLiterals(src) {
+  const text = String(src ?? "");
+  let out = "";
+  let quote = null;
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === "\\") {
+        out += "  ";
+        i += 2;
+        continue;
+      }
+      if (ch === quote) {
+        quote = null;
+        out += " ";
+        i++;
+        continue;
+      }
+      out += " ";
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      out += " ";
+      i++;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      while (i < n && text[i] !== "\n") {
+        out += " ";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      out += "  ";
+      i += 2;
+      while (i < n && !(text[i] === "*" && text[i + 1] === "/")) {
+        out += " ";
+        i++;
+      }
+      out += i < n ? "  " : "";
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 /** Classify source text (a script, or an inline -e/-c payload). */
 function evaluateSourceText(text, label = "inline code") {
   const src = String(text ?? "");
+  const code = stripSourceLiterals(src);
   const hits = [];
-  for (const [re, name] of SOURCE_SHAPES) {
+  // SQL is written inside string literals, so blanking them would hide every
+  // statement: those patterns read the raw text.
+  for (const [re, name] of SOURCE_RAW_SHAPES) {
     if (re.test(src)) hits.push(name);
   }
-  const unquoted = unquotedSource(src);
+  for (const [re, name] of SOURCE_API_SHAPES) {
+    if (re.test(code)) hits.push(name);
+  }
+  for (const [re, name] of SOURCE_TEXT_SHAPES) {
+    if (re.test(code)) hits.push(name);
+  }
 
   if (!hits.length) {
     return { verdict: "allow", reason: null, evidence: { source: label, shapes: [] } };
   }
-  const cats = SOURCE_CATASTROPHIC.filter((re) => re.test(unquoted));
+  const cats = SOURCE_CATASTROPHIC.filter((re) => re.test(code));
   if (cats.length) {
     return {
       verdict: "block",
@@ -566,10 +648,13 @@ const CATASTROPHIC_TARGETS = [
 ];
 
 /** Inline code is either a shell command (classify precisely) or source. */
-function evaluateInline(text, cwd) {
-  const shell = evaluateBashCommand(text, { cwd });
-  if (shell.evidence.shapes.length > 0) return shell;
-  return evaluateSourceText(text, "inline code");
+// Interpreters whose payload is code, not shell. Reading `node -e` source with
+// the shell rules made every `=>` look like a redirect.
+const SHELL_HEADS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh"]);
+
+function evaluateInline(interpreter, text, cwd) {
+  if (SHELL_HEADS.has(interpreter)) return evaluateBashCommand(text, { cwd });
+  return evaluateSourceText(text, `${interpreter} inline`);
 }
 
 function secretReadVsNetwork(segments) {
@@ -617,17 +702,26 @@ export function evaluateBashCommand(command, options = {}) {
   // follow — without it the most common cleanup idiom in real sessions looks
   // like an attack on the repo.
   let effectiveCwd = typeof cwd === "string" ? cwd : undefined;
+  // Every directory this command works in counts as a workspace root: the
+  // session cwd, and each `cd` destination along the way. Without this, work in
+  // a repo other than the session's cwd reads as "outside the workspace".
+  const roots = typeof cwd === "string" && cwd.trim() ? [path.resolve(cwd)] : [];
 
   for (const segment of segments) {
     const head = findHead(tokenize(segment));
     if (head.head === "cd" && effectiveCwd) {
       const dest = nonFlagArgs(head.args)[0];
       if (!dest) effectiveCwd = undefined; // bare `cd` lands in $HOME: unknowable
-      else if (dest !== "-")
-        effectiveCwd = path.resolve(
-          /^(~|\$HOME|\$\{HOME\})(\/|$)/.test(dest) ? homedir() : effectiveCwd,
-          dest,
-        );
+      else if (dest !== "-") {
+        // Expand a leading ~ rather than resolving it: path.resolve(home, "~")
+        // would invent a directory named `~` inside the home directory, and
+        // then treat everything under it as the workspace.
+        const tilde = /^(~|\$HOME|\$\{HOME\})(?=\/|$)/.exec(dest);
+        effectiveCwd = tilde
+          ? path.join(homedir(), dest.slice(tilde[1].length))
+          : path.resolve(effectiveCwd, dest);
+        roots.push(effectiveCwd);
+      }
       continue;
     }
     for (const shape of detectShapes(segment)) {
@@ -635,7 +729,7 @@ export function evaluateBashCommand(command, options = {}) {
       const fallback = SHAPE_DEFAULT[shape.id] ?? "judge";
       const targets = shape.targets.length ? shape.targets : [null];
       const perTarget = targets.map((target) => {
-        const klass = target === null ? null : classifyTarget(target, effectiveCwd, cwd);
+        const klass = target === null ? null : classifyTarget(target, effectiveCwd, roots);
         if (target !== null) evidence.targets.push(`${target} → ${klass}`);
         // A target class both raises and lowers the shape's default: rm -rf
         // dist is harmless and rm -rf .git is not, yet both are "delete".
@@ -650,7 +744,7 @@ export function evaluateBashCommand(command, options = {}) {
           t.target !== null && CATASTROPHIC_TARGETS.some((re) => re.test(String(t.target).trim())),
       );
       const touchesSecret = shape.targets.some(
-        (t) => classifyTarget(t, effectiveCwd, cwd) === "secret",
+        (t) => classifyTarget(t, effectiveCwd, roots) === "secret",
       );
       if (shape.id === "delete" && wipe) {
         shapeVerdict = "block";
@@ -682,7 +776,7 @@ export function evaluateBashCommand(command, options = {}) {
   evidence.scriptRefs = indirection.scriptRefs;
   evidence.inline = indirection.inline.map((i) => `${i.head}: ${String(i.text).slice(0, 80)}`);
   for (const item of indirection.inline) {
-    const inlineVerdict = evaluateInline(item.text, effectiveCwd);
+    const inlineVerdict = evaluateInline(item.head, item.text, effectiveCwd);
     if (inlineVerdict.verdict !== "allow") {
       reason ??= `${item.head} runs inline code with destructive operations`;
       verdict = worst(verdict, inlineVerdict.verdict);
@@ -755,7 +849,7 @@ function collectCommands(input, out = []) {
   return out;
 }
 
-function evaluateFileTool(toolName, input, { cwd, outsideWorkspace = "judge" } = {}) {
+function evaluateFileTool(toolName, input, { cwd } = {}) {
   const evidence = { targets: [], shapes: [] };
   let verdict = "allow";
   let reason = null;
@@ -777,13 +871,11 @@ function evaluateFileTool(toolName, input, { cwd, outsideWorkspace = "judge" } =
       // Dotenv secrets are a human decision wherever they live.
       targetVerdict = "confirm";
       reason ??= `${toolName} would overwrite ${target} (dotenv secrets)`;
-    } else if (klass === "home" && isConfigLike(target)) {
-      targetVerdict = outsideWorkspace;
-      reason ??= `${toolName} would overwrite ${target} (config or dotfile outside the workspace)`;
     } else if (klass === "home") {
-      // Writing ordinary files outside the workspace is routine: this session
-      // may be working across repositories. The classes above are the ones
-      // that lose something a rebuild cannot bring back.
+      // Anything else outside the workspace is routine: sessions work across
+      // repositories, and a config file is not a secret. Measured: the rule
+      // that used to judge these produced 8 of the 15 prompts in one session,
+      // every one of them a legitimate config write in a sibling repo.
       targetVerdict = "allow";
     }
     if (targetVerdict !== "allow") evidence.shapes.push(`${toolName}: ${target}`);
@@ -816,20 +908,6 @@ const READ_ONLY_TOOLS = new Set([
   "plan_mode_complete",
   "todo_read",
   "task_list",
-]);
-
-const MUTATING_TOOLS = new Set([
-  "bash",
-  "shell",
-  "edit",
-  "write",
-  "apply_patch",
-  "multiedit",
-  "notebook_edit",
-  "create_file",
-  "delete_file",
-  "move_file",
-  "str_replace_editor",
 ]);
 
 function isReadOnlyToolName(name) {
@@ -874,13 +952,10 @@ export function evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolved
     return { verdict, reason, evidence };
   }
 
-  // Path-shaped arguments: known writers get the full outside-the-workspace
-  // rules; an unknown tool only has to answer for the unrecoverable classes,
+  // Path-shaped arguments: secrets and system paths are refused whoever is
+  // asking; anything else is routine, because sessions work across repos.
   // because nagging about every read of a home-directory path would be noise.
-  const fileish = evaluateFileTool(name, input, {
-    cwd,
-    outsideWorkspace: MUTATING_TOOLS.has(lower) ? "judge" : "allow",
-  });
+  const fileish = evaluateFileTool(name, input, { cwd });
   if (fileish.verdict !== "allow") return fileish;
   return { verdict: "allow", reason: null, evidence: { shapes: [] } };
 }

@@ -231,6 +231,55 @@ test("chained commands take the worst segment", () => {
   assert.equal(verdict("cd packages/guardrail && rm policy.mjs"), "judge");
 });
 
+test("a cd makes the directory it enters part of the workspace", () => {
+  // The second measured regression: a session running from ~/Documents/projects/
+  // personal did its work in ~/.pi/agent/extensions/pi-extensions, and every
+  // target there resolved outside the session cwd — so config writes and
+  // redirects read as home-directory damage.
+  assert.equal(
+    verdict("cd /Users/mattriley/.pi/agent/extensions/pi-extensions && echo x > knip.json"),
+    "allow",
+  );
+  assert.equal(verdict(`cd ${CWD}/../other-repo && rm -rf dist`), "allow");
+  // $HOME stays off the roots list: `cd ~` does not make home a workspace.
+  assert.equal(verdict("cd ~ && rm -rf Documents"), "confirm");
+  assert.equal(verdict("cd ~/Documents && rm -rf notes"), "judge");
+});
+
+test("inline code that only mentions a destructive command is not destructive", () => {
+  // Third measured regression: this repo's own measurement scripts quote the
+  // commands they classify, so `node -e "…'rm -rf'…"` was prompting.
+  assert.equal(verdict(`node -e "console.log('rm -rf is just a string')"`), "allow");
+  assert.equal(verdict(`node -e "const p = 'git push --force'"`), "allow");
+  // An actual API call still is.
+  assert.equal(verdict(`node -e "require('fs').rmSync('/tmp/x',{recursive:true})"`), "judge");
+});
+
+test("JS syntax in an inline payload is not shell syntax", () => {
+  // Fourth measured regression: `=>` and `>` in inline JS were parsed as output
+  // redirects by the shell rules, so any arrow function prompted.
+  assert.equal(verdict(`node -e "const f = (x) => x > 0; console.log(f(1))"`), "allow");
+  assert.equal(verdict(`node -e "arr.filter((v) => v.length > 2)"`), "allow");
+  // A shell interpreter's payload is still shell.
+  assert.equal(verdict(`bash -c "rm -rf /"`), "block");
+  assert.equal(verdict(`sh -c "rm -rf ~/Documents"`), "confirm");
+});
+
+test("a script is read as source, not as the commands it quotes", () => {
+  const file = "packages/guardrail/test/policy.test.mjs";
+  const text = [
+    "assert.equal(verdict(`node -e \"require('fs').rmSync('/tmp/x',{recursive:true})\"`), \"judge\");",
+    'const example = "rm -rf ~/Documents";',
+  ].join("\n");
+  const d = evaluateBashCommand(`node ${file}`, {
+    cwd: "/Users/mattriley/.pi/agent/extensions/pi-extensions",
+    scriptTexts: { [file]: text },
+  });
+  // Quoting a destructive call is not making one — including when the file is
+  // this guardrail's own test suite, which must not prompt on itself.
+  assert.equal(d.verdict, "allow");
+});
+
 // ---------------------------------------------------------------------------
 // File tools
 
@@ -240,21 +289,29 @@ test("workspace edits are invisible to the guardrail", () => {
   assert.equal(tool("write", { path: "/tmp/scratch/out.txt", content: "x" }), "allow");
 });
 
-test("file tools refuse secrets and system paths, ask about the rest", () => {
+test("file tools refuse secrets and system paths, ask about dotenv", () => {
   assert.equal(tool("write", { path: "~/.ssh/authorized_keys", content: "ssh-rsa AAAA" }), "block");
   assert.equal(tool("edit", { path: "/etc/hosts", edits: [] }), "block");
   assert.equal(tool("write", { path: ".env", content: "A=1" }), "confirm");
-  assert.equal(tool("write", { path: "~/.zshrc", content: "x" }), "judge");
-  assert.equal(tool("write", { path: "~/settings.json", content: "{}" }), "judge");
-  // Cross-repo editing is routine work, not destruction.
-  assert.equal(tool("write", { path: "~/Documents/notes.md", content: "x" }), "allow");
-  assert.equal(
-    tool("edit", {
-      path: "/Users/mattriley/Documents/projects/personal/other-repo/app.ts",
-      edits: [],
-    }),
-    "allow",
-  );
+});
+
+test("a write outside the session's cwd is routine, not suspicious", () => {
+  // Measured regression: a session running from a parent directory (or a
+  // different repo) flagged every write in the repo it was actually working
+  // in. Eight of the fifteen prompts in one session were exactly this —
+  // .fallowrc.json, knip.json, .oxlintrc.json, package.json — all legitimate.
+  // Location alone is not a signal; the dangerous classes above are what the
+  // guardrail is for.
+  for (const path of [
+    "~/Documents/notes.md",
+    "~/.zshrc",
+    "~/settings.json",
+    `${CWD}/../other-repo/app.ts`,
+    "/Users/mattriley/.pi/agent/extensions/pi-extensions/knip.json",
+    "/Users/mattriley/.pi/agent/extensions/pi-extensions/.fallowrc.json",
+  ]) {
+    assert.equal(tool("write", { path, content: "x" }), "allow", path);
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -45,12 +45,22 @@ calls in one assistant message must not stack two prompts.
 `node scripts/replay-corpus.mjs` replays every bash/edit/write call in
 `~/.pi/agent/sessions` and reports what the guardrail would have done:
 
-| | 19,470 tool calls (132 sessions) |
+| | 19,702 tool calls (133 sessions) |
 | --- | --- |
-| allow | 97.66% |
-| judge | 1.50% (~1 per 67 mutating calls) |
-| confirm | 0.84% (~1 dialog per session) |
+| allow | 98.16% |
+| judge | 1.37% (~1 per 73 mutating calls) |
+| confirm | 0.46% (~1 dialog every two sessions) |
 | block | 0.01% |
+
+The aggregate hides where it matters. Replaying the one session that set up
+this repo's oxlint/oxfmt/knip/fallow config — a session running from a *parent*
+directory while working in `~/.pi/.../pi-extensions` — went from 15 flagged
+calls (5.1%, eight of them dialogs about writing `knip.json`, `.fallowrc.json`,
+`.oxlintrc.json` and `package.json`) to **1 flagged call (0.3%)**, and that one
+is a silent judgment rather than a prompt. Three bugs, each now a regression
+test: a `cd` did not make the directory it entered part of the workspace; `~`
+resolved to a literal directory named `~`; and inline JS was read with the shell
+rules, so every `=>` looked like a redirect.
 
 `node scripts/validate-judge.mjs` runs 24 labeled cases through the **whole**
 pipeline against the live judge and exits non-zero on a miss: **24/24, 0 too
@@ -102,13 +112,22 @@ binary or an obfuscated payload does.
 
 ## Known tradeoffs
 
+- **Location is not a signal.** A write outside the session's cwd is allowed —
+  the guardrail does not care which repo you are in, only whether the target is
+  a secret, a system path, or a dotenv file. The rule that did care produced
+  eight prompts in one session, all legitimate config writes in a sibling repo.
+- **A script that discusses destructive commands may still be judged.** Quoted
+  text is blanked before matching, so a fixture or a comment mentioning
+  `rm -rf` is ignored; a file that *defines* those patterns (including this
+  guardrail's own source) can still be read as suspicious. The result is a
+  silent judgment, never a prompt.
 - **`rm src/app.ts` is allowed.** The judge scores it 0.46 destructive with
   blast radius "this working directory, recoverable from version control".
   Disagreeing costs one line (`THRESHOLDS.destructive = 0.45`) and buys a prompt
   on every deliberate cleanup; the case is recorded in `scripts/validate-judge.mjs`
   so the choice stays visible rather than accidental.
 - **No session memory.** Approving the same action twice asks twice. The
-  measured cost is about one dialog per session, so an allowlist would add
+  measured cost is one dialog every two sessions, so an allowlist would add
   state and drift for very little; add `Approve for this session` as a fourth
   option if that stops being true.
 - **`PATH`-level classifiers are heuristics.** `dist`, `build`, `coverage`,
