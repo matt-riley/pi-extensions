@@ -61,6 +61,15 @@ test("collectSubstitutions: single quotes suppress both forms", () => {
   assert.deepEqual(collectSubstitutions("echo '`date`'"), []);
 });
 
+test("collectSubstitutions: an apostrophe inside double quotes does not open a string", () => {
+  // Regression: the scanner used to fall through without entering quote mode
+  // on ", so \"don't\" left it believing a single-quoted string had started —
+  // and every substitution after the apostrophe went unseen.
+  assert.deepEqual(collectSubstitutions('echo "don\'t $(date)"'), ["date"]);
+  assert.deepEqual(collectSubstitutions('git commit -m "doesn\'t matter" && echo $(whoami)'), ["whoami"]);
+  assert.deepEqual(collectSubstitutions('echo "it\'s" \'$(not this)\''), []);
+});
+
 // ---------------------------------------------------------------------------
 // Redirects: the false positives that matter
 

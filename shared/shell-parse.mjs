@@ -207,13 +207,17 @@ function substitutionSpans(segment) {
       i++;
       continue;
     }
+    if (quote === null && ch === "'") {
+      quote = "'";
+      i++;
+      continue;
+    }
     if (ch === '"') {
-      if (quote === '"') { quote = null; i++; continue; }
-      // $() and backticks still expand inside double quotes, so keep scanning.
-    } else if (ch === "'") {
-      quote = "'"; i++; continue;
-    } else if (ch === '"') {
-      quote = '"'; i++; continue;
+      // Toggle: entering and leaving are both handled here (an apostrophe
+      // inside double quotes, as in "don't", must not start a string).
+      quote = quote === '"' ? null : '"';
+      i++;
+      continue;
     }
 
     if (ch === "`") {
