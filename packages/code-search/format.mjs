@@ -19,7 +19,6 @@ const KEY_FILES = [
   "lerna.json", "pnpm-workspace.yaml",
 ];
 
-const MANIFEST_KEYS = ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "deno.json", "deno.jsonc"];
 
 export function fmtBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;

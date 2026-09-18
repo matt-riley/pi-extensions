@@ -1,6 +1,8 @@
 // Pure footer layout logic for the pi-footer extension. No pi imports —
 // testable with `node --test`, colors applied via the injected `apply` fn.
 
+// ANSI SGR sequences are exactly what this strips, control characters and all.
+// eslint-disable-next-line no-control-regex
 const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
 /** Visible width of a string with ANSI color codes stripped. */

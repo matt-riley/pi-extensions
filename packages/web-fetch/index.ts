@@ -214,7 +214,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         return { index, request };
       });
 
-      const results = new Array(items.length);
+      const results = Array.from({ length: items.length });
       let next = 0;
       let doneCount = 0;
       const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {

@@ -202,7 +202,7 @@ function after() { return 1; }`;
 
 test("regex literals do not confuse brace tracking", () => {
   const src = `function strip(s) {
-  const re = /[{}\/]/g;
+  const re = /[{}/]/g;
   const re2 = /}/;
   return s.replace(re, "");
 }`;

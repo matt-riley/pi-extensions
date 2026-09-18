@@ -12,7 +12,6 @@ import {
   extractPage,
   isBinaryMime,
   isHtmlContent,
-  isTextMime,
   parseContentType,
   truncateText,
   THIN_CONTENT_CHARS,
@@ -73,9 +72,9 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export function detectCharset({ mime = "", headerCharset = "", bodyPrefix = "" } = {}) {
   if (headerCharset) return normalizeCharset(headerCharset);
-  const meta = /<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_\-]+)/i.exec(bodyPrefix);
+  const meta = /<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_-]+)/i.exec(bodyPrefix);
   if (meta) return normalizeCharset(meta[1]);
-  const metaCt = /<meta[^>]+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-zA-Z0-9_\-]+)/i.exec(bodyPrefix);
+  const metaCt = /<meta[^>]+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-zA-Z0-9_-]+)/i.exec(bodyPrefix);
   if (metaCt) return normalizeCharset(metaCt[1]);
   return mime.includes("text/") || mime.includes("xml") ? "utf-8" : "";
 }
@@ -229,7 +228,7 @@ async function httpGet(url, opts, state, fetcher) {
   }
 }
 
-async function readBody(response, capBytes, signal) {
+async function readBody(response, capBytes, _signal) {
   if (!response.body) {
     const text = await response.text();
     const buf = new TextEncoder().encode(text);
@@ -331,7 +330,6 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
     extraHeaders = {},
     includeImages = false,
     followAlternates = true,
-    signal,
     onStatus,
   } = options;
 

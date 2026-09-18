@@ -553,8 +553,6 @@ function findChild(node, predicate) {
 
 // --- Metadata ---------------------------------------------------------------
 
-const META_RE = /<meta\b[^>]*>/gi;
-
 function metaAttr(tag, attr) {
   const re = new RegExp(`\\b${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
   const m = re.exec(tag);

@@ -8,16 +8,16 @@
 // Pure-ish module: fs access via injected functions so tests can use temp
 // dirs and fakes. All fs goes through node:fs/promises.
 
-import { mkdir, readFile, rename, stat, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { MAX_FILES } from "./inventory.mjs";
 import { langForFile, parseFallbackSource } from "./fallback-parser.mjs";
-import { isTsFile, parseTsSource } from "./ts-parser.mjs";
+import { parseTsSource } from "./ts-parser.mjs";
 
 export const CACHE_VERSION = 1;
 export const CACHE_DIR = ".pi/cache";
 export const CACHE_FILE = "pi-code-search.json";
-export const MAX_SYMBOLS_PER_FILE = 500;
+const MAX_SYMBOLS_PER_FILE = 500;
 // Hard cap on serialized cache size; beyond it, symbols of the largest files
 // are dropped (inventory entries are kept, so search/repo_map still work).
 export const MAX_CACHE_BYTES = 20 * 1024 * 1024;
@@ -30,7 +30,7 @@ export function cachePathFor(root) {
 export function parseFilePayload(source, relPath) {
   const lang = langForFile(relPath);
   if (lang === "ts") {
-    const { symbols, imports, reexports } = parseTsSource(source, { filePath: relPath });
+    const { symbols, imports, reexports } = parseTsSource(source);
     return {
       lang,
       symbols: capSymbols(symbols),
@@ -93,7 +93,6 @@ export async function refreshCache({
   stat: statFn,
   readFile: readFileFn,
   onProgress,
-  maxSymbolsPerFile = MAX_SYMBOLS_PER_FILE,
   maxCacheBytes = MAX_CACHE_BYTES,
 }) {
   const { files, truncated } = await list();

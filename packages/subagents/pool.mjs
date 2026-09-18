@@ -132,7 +132,7 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
   }
 
   function abortAll() {
-    for (const entry of [...entries.values()]) {
+    for (const entry of entries.values()) {
       if (entry.status === "queued" && entry._queued) {
         const queued = entry._queued;
         entry._queued = null;

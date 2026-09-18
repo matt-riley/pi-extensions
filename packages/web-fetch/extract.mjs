@@ -39,7 +39,7 @@ export function isHtmlContent({ mime = "", body = "" } = {}) {
 export function isTextMime(mime) {
   if (!mime) return false;
   return (
-    /^text\//.test(mime) ||
+    mime.startsWith("text/") ||
     /json/.test(mime) ||
     /xml/.test(mime) ||
     /javascript/.test(mime) ||

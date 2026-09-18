@@ -530,7 +530,7 @@ export default function planMode(pi: ExtensionAPI) {
         Type.Integer({ minimum: 1000, description: "Content cap in characters (default 40000)." }),
       ),
     }),
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, _ctx) {
       if (!state.enabled) {
         return { content: [{ type: "text", text: "Not in plan mode — plan_fetch_url is inactive." }] };
       }

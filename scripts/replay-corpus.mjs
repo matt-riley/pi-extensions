@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 
-import { evaluateToolCall, evaluateBashCommand } from "../packages/guardrail/policy.mjs";
+import { evaluateToolCall } from "../packages/guardrail/policy.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
 const CONFIG_KEYS = new Set(["command", "cmd", "script", "shell"]);

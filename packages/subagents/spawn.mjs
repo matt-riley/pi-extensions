@@ -6,7 +6,7 @@ import {
   SessionManager,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { CHILD_ENV, acquireChildEnv, releaseChildEnv } from "./child-env.mjs";
+import { acquireChildEnv, releaseChildEnv } from "./child-env.mjs";
 import { createChildPolicyExtension } from "./child-policy.mjs";
 import { resolveChildTools, usesAllowlistedBash } from "./discover.mjs";
 import {

@@ -116,7 +116,6 @@ function renderBlocks(node, ctx) {
     const t = node.text.trim();
     return t ? t.split("\n").map((l) => l.trim()).filter(Boolean) : [];
   }
-  const attrs = node.attrs;
   switch (node.tag) {
     case "h1":
     case "h2":

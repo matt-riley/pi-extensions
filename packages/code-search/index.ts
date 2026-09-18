@@ -31,9 +31,6 @@ import {
   packageHighlights,
 } from "./format.mjs";
 import { loadWorkspaceMap, parseTsconfigPaths, resolveDefinition } from "./resolve.mjs";
-import { CODE_SEARCH_TOOLS } from "./tools.mjs";
-
-const TOOLS = CODE_SEARCH_TOOLS;
 
 interface CacheEntry {
   mtimeMs: number;

@@ -43,8 +43,8 @@ export function levenshtein(a, b) {
   const n = b.length;
   if (m === 0) return n;
   if (n === 0) return m;
-  let prev = new Array(n + 1);
-  let curr = new Array(n + 1);
+  let prev = Array.from({ length: n + 1 });
+  let curr = Array.from({ length: n + 1 });
   for (let j = 0; j <= n; j++) prev[j] = j;
   for (let i = 1; i <= m; i++) {
     curr[0] = i;

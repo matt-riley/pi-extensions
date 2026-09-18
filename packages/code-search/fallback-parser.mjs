@@ -101,7 +101,7 @@ const FAMILIES = {
   ],
   java: [
     [/^\s*(?:public|private|protected|static|final|abstract|sealed|non-sealed|strictfp|synchronized|native|transient|volatile|default|@\w+\s+)*\s*(?:class|interface|enum|record|@interface)\s+(\w+)/, "class", 1],
-    [/^\s*(?:public|private|protected|static|final|abstract|synchronized|native|default|\s)*[\w<>\[\],.\s]+\([^;{]*\)\s*(?:throws\s+[\w.,\s]+)?\s*[{;]/, "method", 0],
+    [/^\s*(?:public|private|protected|static|final|abstract|synchronized|native|default|\s)*[\w<>[\],.\s]+\([^;{]*\)\s*(?:throws\s+[\w.,\s]+)?\s*[{;]/, "method", 0],
     [/^\s*import\s+(?:static\s+)?([\w.]+);/, "import", 1],
   ],
   kt: [

@@ -232,7 +232,7 @@ export function tokenizeTs(source) {
 // --- Parser -----------------------------------------------------------------
 
 /** Parse TS/JS source into { symbols, imports, reexports }. */
-export function parseTsSource(source, { filePath = "" } = {}) {
+export function parseTsSource(source) {
   const tokens = tokenizeTs(source);
   const symbols = [];
   const imports = [];
@@ -391,10 +391,8 @@ export function parseTsSource(source, { filePath = "" } = {}) {
     j++;
     if (tokens[j]?.value === "*") j++;
     let name = "(anonymous)";
-    let nameIdx = -1;
     if (tokens[j]?.type === "id") {
       name = tokens[j].value;
-      nameIdx = j;
       j++;
     } else if (!defaultExport) {
       return null; // anonymous function expression without export default
@@ -476,7 +474,7 @@ export function parseTsSource(source, { filePath = "" } = {}) {
     const name = tokens[start + 1].value;
     if (tokens[start + 2]?.value !== "=") return null;
     const end = consumeStatement(start + 3);
-    const symbol = addSymbol({
+    addSymbol({
       name,
       kind: "type",
       line: tokens[start].line,
@@ -1013,7 +1011,6 @@ export function parseTsSource(source, { filePath = "" } = {}) {
     }
 
     const v = tok.value;
-    const top = topScope();
 
     if (!atStatementStart(i)) { i++; continue; }
 
