@@ -257,13 +257,24 @@ export function decisionStats(session, { patterns, window = 3, linkMs = 5000 } =
  * Rating buckets and what followed, for tuning the threshold from live use
  * rather than from the enriched historical sample.
  */
+/** Below this many judgements in a band, the band is noise and says so. */
+export const MIN_BAND_SAMPLE = 10;
+
 export function ratingBuckets(sessions, { patterns, window = 3 } = {}) {
   const buckets = [
     { label: "0–0.9", test: (r) => r < 1 },
     { label: "1.0–1.4", test: (r) => r >= 1 && r < 1.5 },
     { label: "1.5–1.9", test: (r) => r >= 1.5 && r < 2 },
     { label: "2.0+", test: (r) => r >= 2 },
-  ].map((bucket) => ({ ...bucket, escalated: 0, held: 0, missed: 0, needless: 0 }));
+  ].map((bucket) => ({
+    ...bucket,
+    decisions: 0,
+    escalated: 0,
+    held: 0,
+    missed: 0,
+    needless: 0,
+    enoughData: false,
+  }));
 
   for (const session of sessions) {
     const stats = decisionStats(session, { patterns, window });
@@ -275,6 +286,7 @@ export function ratingBuckets(sessions, { patterns, window = 3 } = {}) {
       if (!Number.isFinite(decision.difficulty)) continue;
       const bucket = buckets.find((candidate) => candidate.test(decision.difficulty));
       if (!bucket) continue;
+      bucket.decisions++;
       if (decision.outcome === "escalated") bucket.escalated++;
       if (decision.outcome === "held") bucket.held++;
       for (const miss of stats.missed) {
@@ -285,5 +297,21 @@ export function ratingBuckets(sessions, { patterns, window = 3 } = {}) {
       }
     }
   }
+  for (const bucket of buckets) bucket.enoughData = bucket.decisions >= MIN_BAND_SAMPLE;
   return buckets;
+}
+
+/**
+ * Where a threshold sits in the observed ratings, as a percentile.
+ *
+ * This is the cheapest possible sanity check on the dial, and it needs only a
+ * handful of decisions: a threshold below the 10th percentile escalates almost
+ * everything, one above the 95th almost never escalates. Either way the router
+ * is not routing, it is a fixed setting with extra steps.
+ */
+export function thresholdPosition(ratings, threshold) {
+  const clean = ratings.filter((value) => Number.isFinite(value));
+  if (!clean.length) return null;
+  const below = clean.filter((value) => value < threshold).length;
+  return { n: clean.length, below, percentile: below / clean.length };
 }

@@ -21,9 +21,11 @@ import { homedir } from "node:os";
 import {
   decisionStats,
   frontierEpisodes,
+  MIN_BAND_SAMPLE,
   percentile,
   ratingBuckets,
   switchCosts,
+  thresholdPosition,
 } from "../packages/router/metrics.mjs";
 import { DEFAULT_FRONTIER_PATTERNS } from "../packages/router/model-battery.mjs";
 import { findSessionFiles, readSession } from "./lib/sessions.mjs";
@@ -158,6 +160,9 @@ function main() {
       rating: { p50: percentile(ratings, 0.5), p90: percentile(ratings, 0.9) },
       latency: { p50: percentile(latencies, 0.5), p95: percentile(latencies, 0.95) },
       buckets: ratingBuckets(sessions, { patterns: PATTERNS }),
+      // Where the dial sits in the observed ratings: the cheapest check that it
+      // is doing anything at all.
+      thresholdPosition: thresholdPosition(ratings, Number(process.env.PI_ROUTER_THRESHOLD ?? 1.5)),
     },
   };
 
@@ -217,14 +222,29 @@ function main() {
     `   needless escalations     ${report.decisions.needless}   (escalated, then you retreated)`,
   );
   if (report.decisions.count) {
-    console.log("\n   rating band   escalated   held   missed   needless");
-    for (const bucket of report.decisions.buckets) {
+    const position = report.decisions.thresholdPosition;
+    if (position) {
       console.log(
-        `   ${bucket.label.padEnd(12)} ${String(bucket.escalated).padStart(9)} ${String(bucket.held).padStart(6)} ${String(bucket.missed).padStart(8)} ${String(bucket.needless).padStart(10)}`,
+        `\n   the threshold sits above ${pct(position.percentile)} of ${num(position.n)} observed ratings` +
+          (position.percentile < 0.1
+            ? "  <- escalates almost everything"
+            : position.percentile > 0.95
+              ? "  <- escalates almost nothing"
+              : ""),
       );
     }
+    console.log("\n   rating band   n   escalated   held   missed   needless");
+    for (const bucket of report.decisions.buckets) {
+      console.log(
+        `   ${bucket.label.padEnd(12)} ${String(bucket.decisions).padStart(2)} ${String(bucket.escalated).padStart(10)} ${String(bucket.held).padStart(6)} ${String(bucket.missed).padStart(8)} ${String(bucket.needless).padStart(10)}` +
+          (bucket.enoughData ? "" : "   (too few)"),
+      );
+    }
+    console.log("\n   How to read it - the only tuning rule this report supports:");
+    console.log("     misses in a band, none needless  -> lower the threshold into it");
+    console.log("     needless in a band               -> raise the threshold above it");
     console.log(
-      "\n   Tune from these: misses in a band mean the threshold is above it, needless\n   escalations in a band mean it is below. Both need a few dozen judgements first.",
+      `     under ${MIN_BAND_SAMPLE} judgements in a band, change nothing: the band is noise.`,
     );
   } else {
     console.log(

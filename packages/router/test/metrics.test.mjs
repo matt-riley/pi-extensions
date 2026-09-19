@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   decisionStats,
+  MIN_BAND_SAMPLE,
+  thresholdPosition,
   frontierEpisodes,
   isFrontierModel,
   percentile,
@@ -283,4 +285,33 @@ test("ratingBuckets pairs each rating band with what actually followed", () => {
 test("percentile tolerates an empty set", () => {
   assert.equal(percentile([], 0.5), null);
   assert.equal(percentile([1, null, undefined, 3], 0.5), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Keeping the dial honest
+
+test("thresholdPosition says where the threshold sits in the observed ratings", () => {
+  const position = thresholdPosition([0.5, 1.0, 1.2, 2.0], 1.5);
+  assert.equal(position.n, 4);
+  assert.equal(position.below, 3);
+  assert.equal(position.percentile, 0.75);
+  assert.equal(thresholdPosition([], 1.5), null);
+  // A threshold nothing clears is not routing, it is a fixed setting.
+  assert.equal(thresholdPosition([0.2, 0.4], 1.5).percentile, 1);
+});
+
+test("a band is marked as too few until it has enough decisions", () => {
+  const entries = Array.from({ length: MIN_BAND_SAMPLE }, (_, index) => ({
+    customType: "router-decision",
+    at: 1000 + index,
+    data: { outcome: "held", difficulty: 0.5 },
+  }));
+  const [thin] = ratingBuckets([sessionWith([], { entries: entries.slice(0, 3) })], {
+    patterns: PATTERNS,
+  });
+  const [enough] = ratingBuckets([sessionWith([], { entries })], { patterns: PATTERNS });
+  assert.equal(thin.decisions, 3);
+  assert.equal(thin.enoughData, false);
+  assert.equal(enough.decisions, MIN_BAND_SAMPLE);
+  assert.equal(enough.enoughData, true);
 });
