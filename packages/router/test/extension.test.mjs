@@ -10,6 +10,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import piRouterExtension from "../index.ts";
+import { readFileSync } from "node:fs";
 import { DIFFICULTY_THRESHOLD } from "../model-battery.mjs";
 
 const LUNA = { provider: "openai-codex", id: "gpt-5.6-luna" };
@@ -36,6 +37,7 @@ function harness({
   const handlers = {};
   const commands = {};
   const notifications = [];
+  const statuses = [];
   const setModelCalls = [];
   const branch = [];
   let askCalls = 0;
@@ -65,7 +67,10 @@ function harness({
     scopedModels,
     modelRegistry: { getAvailable: () => available },
     sessionManager: { getBranch: () => branch },
-    ui: { notify: (title, level) => notifications.push({ title, level }) },
+    ui: {
+      notify: (title, level) => notifications.push({ title, level }),
+      setStatus: (id, text) => statuses.push({ id, text }),
+    },
   };
 
   piRouterExtension(pi, {
@@ -80,6 +85,7 @@ function harness({
   return {
     branch,
     notifications,
+    statuses,
     setModelCalls,
     askCount: () => askCalls,
     run: (prompt, overrides = {}) =>
@@ -240,6 +246,19 @@ test("escalates when the session still fits the frontier window", async () => {
   });
   await h.run("and now finish the analysis of the whole thing for me");
   assert.equal(h.setModelCalls.length, 1);
+});
+
+test("the footer status says what the router is doing", async () => {
+  const h = harness({ difficulty: 2.2 });
+  // The status line is how a loaded-but-holding router is told apart from one
+  // that was never loaded, which is exactly what a stale session looked like.
+  const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+  assert.match(source, /setStatus\(ctx, state\.enabled \? "router: armed" : "router: off"\)/);
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.ok(
+    h.statuses.some((entry) => /^router: gpt-6-astra @ 2\.2$/.test(entry.text)),
+    JSON.stringify(h.statuses),
+  );
 });
 
 test("/route off disarms it, /route on re-arms it", async () => {

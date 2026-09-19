@@ -101,6 +101,19 @@ export default function piRouterExtension(
     }
   };
 
+  // The footer shows extension statuses joined with " · ", so the router keeps
+  // one short line there. Without it there is no way to tell a loaded router
+  // that is deliberately holding from a router that is not loaded at all —
+  // which is exactly how a session started before this extension existed
+  // behaved.
+  const setStatus = (ctx: ExtensionContext, text: string) => {
+    try {
+      ctx?.ui?.setStatus?.("router", text);
+    } catch {
+      // Status is decoration; losing it must not affect routing.
+    }
+  };
+
   /** Models the router may choose from: the session's own scope wins. */
   async function candidates(ctx: ExtensionContext) {
     const scoped = ctx?.scopedModels;
@@ -125,6 +138,7 @@ export default function piRouterExtension(
     state.judgementsThisTask = 0;
     state.taskIndex = 0;
     state.lastPrompt = null;
+    setStatus(ctx, state.enabled ? "router: armed" : "router: off");
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -185,6 +199,10 @@ export default function piRouterExtension(
       escalate: decision.escalate === true,
       reason: decision.reason,
     };
+    setStatus(
+      ctx,
+      `router: ${decision.difficulty === null ? "?" : decision.difficulty.toFixed(1)} ${decision.escalate ? "hard" : "held"}`,
+    );
 
     // No usable rating: keep what is running. Never a reason to spend less.
     if (decision.escalate === null) return undefined;
@@ -208,6 +226,10 @@ export default function piRouterExtension(
       const used = latestContextTokens(history);
       if (Number.isFinite(targetWindow) && targetWindow > 0 && used > targetWindow) {
         state.counters.tooBig++;
+        setStatus(
+          ctx,
+          `router: ${Math.round(used / 1000)}k > ${Math.round(targetWindow / 1000)}k, held`,
+        );
         notify(
           ctx,
           `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(used / 1000)}k tokens and ${pick.key} holds ${Math.round(targetWindow / 1000)}k`,
@@ -228,6 +250,7 @@ export default function piRouterExtension(
       }
       state.routerChosenKey = pick.key;
       state.counters.escalated++;
+      setStatus(ctx, `router: ${pick.key.split("/").pop()} @ ${decision.difficulty.toFixed(1)}`);
       notify(
         ctx,
         `Router: ${pick.key} — difficulty ${decision.difficulty.toFixed(2)} (${boundary.route ? boundary.reason : "task continues"})`,
@@ -244,6 +267,7 @@ export default function piRouterExtension(
         if (ok !== false) {
           state.routerChosenKey = null;
           state.counters.steppedDown++;
+          setStatus(ctx, `router: back to ${modelKey(state.userModel)?.split("/").pop()}`);
           notify(
             ctx,
             `Router: back to ${modelKey(state.userModel)} — difficulty ${decision.difficulty.toFixed(2)}`,
@@ -263,11 +287,13 @@ export default function piRouterExtension(
         .toLowerCase();
       if (action === "off" || action === "disable") {
         state.enabled = false;
+        setStatus(ctx, "router: off");
         notify(ctx, "Router off. /route on to re-arm.", "warning");
         return;
       }
       if (action === "on" || action === "enable") {
         state.enabled = true;
+        setStatus(ctx, "router: armed");
         notify(ctx, "Router on.", "info");
         return;
       }
