@@ -38,6 +38,7 @@ function harness({
   const commands = {};
   const notifications = [];
   const statuses = [];
+  const entries = [];
   const setModelCalls = [];
   const branch = [];
   let askCalls = 0;
@@ -51,6 +52,7 @@ function harness({
     registerCommand: (name, def) => {
       commands[name] = def;
     },
+    appendEntry: (customType, data) => entries.push({ customType, data }),
     setModel: async (value) => {
       setModelCalls.push(value);
       if (setModelOk) currentModel = value;
@@ -88,6 +90,7 @@ function harness({
     branch,
     notifications,
     statuses,
+    entries,
     setModelCalls,
     askCount: () => askCalls,
     run: (prompt, overrides = {}) =>
@@ -253,6 +256,42 @@ test("escalates when the session still fits the frontier window", async () => {
   });
   await h.run("and now finish the analysis of the whole thing for me");
   assert.equal(h.setModelCalls.length, 1);
+});
+
+test("every judgement is recorded as a non-context entry", async () => {
+  // The report joins these to what happened later: a held decision followed by
+  // a manual escalation is a miss, an escalation followed by a retreat is not.
+  const h = harness({ difficulty: 2.2 });
+  await h.run("audit the routing design and tell me what is wrong with it");
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.ok(entry, JSON.stringify(h.entries));
+  assert.equal(entry.data.outcome, "escalated");
+  assert.equal(entry.data.to, "openai-codex/gpt-6-astra");
+  assert.equal(entry.data.from, "openai-codex/gpt-5.6-luna");
+  assert.ok(entry.data.difficulty >= 2);
+  assert.equal(typeof entry.data.latencyMs, "number");
+});
+
+test("a held judgement records its rating and threshold", async () => {
+  const h = harness({ difficulty: 0.8 });
+  await h.run("what does this function do");
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.equal(entry.data.outcome, "held");
+  assert.equal(entry.data.difficulty, 0.8);
+  assert.equal(entry.data.threshold, 1.5);
+});
+
+test("a failed judgement is recorded too", async () => {
+  const h = harness({
+    askImpl: async () => {
+      throw new Error("judge down");
+    },
+  });
+  await h.run("audit the routing design");
+  assert.equal(
+    h.entries.find((e) => e.customType === "router-decision").data.outcome,
+    "judge-failed",
+  );
 });
 
 test("the footer status says what the router is doing", async () => {

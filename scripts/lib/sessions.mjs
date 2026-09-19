@@ -68,6 +68,10 @@ function usageOf(usage) {
 export function readSession(file) {
   const turns = [];
   const compactions = [];
+  /** Model switches, including the session start and any router escalation. */
+  const modelChanges = [];
+  /** Custom entries extensions persisted: telemetry that never enters context. */
+  const entries = [];
   let cwd;
   let turn = null;
   let pending = new Map(); // toolCallId -> call, to attach its result
@@ -88,6 +92,24 @@ export function readSession(file) {
     }
 
     cwd ??= record.cwd;
+
+    if (record.type === "model_change") {
+      modelChanges.push({
+        file,
+        at: Date.parse(record.timestamp ?? "") || null,
+        provider: record.provider ?? null,
+        model: record.modelId ?? record.model ?? null,
+      });
+    }
+
+    if (record.type === "custom" && record.customType) {
+      entries.push({
+        file,
+        customType: record.customType,
+        data: record.data ?? null,
+        at: Date.parse(record.timestamp ?? "") || null,
+      });
+    }
 
     if (record.type === "compaction") {
       compactions.push({
@@ -168,7 +190,7 @@ export function readSession(file) {
   }
 
   finish();
-  return { file, cwd, turns, compactions };
+  return { file, cwd, turns, compactions, modelChanges, entries };
 }
 
 /** Percentile of a numeric list (0 = min, 1 = max). */

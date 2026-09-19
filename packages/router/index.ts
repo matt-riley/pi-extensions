@@ -137,6 +137,18 @@ export default function piRouterExtension(
     }
   };
 
+  // Every judgement is persisted as a custom entry, which does not enter LLM
+  // context, so the report can join decisions to what actually happened later:
+  // a held decision followed by a manual escalation is a missed one, and an
+  // escalation followed by a manual retreat is a needless one.
+  const record = (fields: Record<string, unknown>) => {
+    try {
+      pi.appendEntry?.("router-decision", fields);
+    } catch {
+      // Telemetry is never worth failing a turn over.
+    }
+  };
+
   /** Models the router may choose from: the session's own scope wins. */
   async function candidates(ctx: ExtensionContext) {
     const scoped = ctx?.scopedModels;
@@ -236,6 +248,8 @@ export default function piRouterExtension(
     }
 
     const currentKey = modelKey(ctx?.model ?? null);
+    const startedAt = Date.now();
+    const contextTokens = latestContextTokens(history);
     state.attemptsThisTask++;
     let decision;
     try {
@@ -248,6 +262,15 @@ export default function piRouterExtension(
     } catch (error) {
       // A judgement that fails keeps the model that was working.
       state.failureCooldown = FAILURE_COOLDOWN_TURNS;
+      record({
+        at: Date.now(),
+        latencyMs: Date.now() - startedAt,
+        boundary: boundary.route,
+        contextTokens,
+        from: currentKey,
+        outcome: "judge-failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
       state.last = {
         difficulty: 0,
         escalate: false,
@@ -264,6 +287,17 @@ export default function piRouterExtension(
 
     state.judgementsThisTask++;
     state.counters.judged++;
+    // The shared fields every decision record carries, so the report can join a
+    // rating to what happened next within the same turn.
+    const decided = {
+      at: Date.now(),
+      latencyMs: Date.now() - startedAt,
+      difficulty: decision.difficulty,
+      threshold: state.threshold,
+      boundary: boundary.route,
+      contextTokens,
+      from: currentKey,
+    };
     state.last = {
       difficulty: decision.difficulty ?? 0,
       escalate: decision.escalate === true,
@@ -275,7 +309,10 @@ export default function piRouterExtension(
     );
 
     // No usable rating: keep what is running. Never a reason to spend less.
-    if (decision.escalate === null) return undefined;
+    if (decision.escalate === null) {
+      record({ ...decided, outcome: "no-rating" });
+      return undefined;
+    }
 
     if (decision.escalate && !isFrontier(ctx?.model)) {
       // Filter before choosing: the best-ranked model is useless if the session
@@ -309,6 +346,7 @@ export default function piRouterExtension(
             "warning",
           );
         }
+        record({ ...decided, outcome: "no-frontier-model" });
         return undefined;
       }
       if (modelKey(pick.model) === currentKey) return undefined;
@@ -331,10 +369,12 @@ export default function piRouterExtension(
           `Router: no authentication for ${pick.key} — staying on ${currentKey ?? "the current model"}`,
           "error",
         );
+        record({ ...decided, outcome: "no-auth", to: pick.key });
         return undefined;
       }
       state.routerChosenKey = pick.key;
       state.counters.escalated++;
+      record({ ...decided, outcome: "escalated", to: pick.key });
       setStatus(ctx, `router: ${pick.key.split("/").pop()} @ ${decision.difficulty.toFixed(1)}`);
       notify(
         ctx,
@@ -354,6 +394,7 @@ export default function piRouterExtension(
         if (ok !== false) {
           state.routerChosenKey = null;
           state.counters.steppedDown++;
+          record({ ...decided, outcome: "stepped-down", to: modelKey(state.userModel) });
           setStatus(ctx, `router: back to ${modelKey(state.userModel)?.split("/").pop()}`);
           notify(
             ctx,
@@ -363,6 +404,7 @@ export default function piRouterExtension(
         }
       }
     }
+    record({ ...decided, outcome: "held" });
     return undefined;
   });
 

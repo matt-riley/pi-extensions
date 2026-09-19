@@ -160,3 +160,42 @@ complexity with the cost of being wrong; a 2,000-character prompt truncation can
 hide the real requirement; a rating is not a prompt-injection boundary; and a
 queued or steered prompt can bypass `before_agent_start` entirely, so a long
 autonomous loop cannot be rescued from here.
+
+## Metrics
+
+`node scripts/router-report.mjs` reads the session transcripts plus the router's
+own decision entries and reports what the routing is costing and how it is
+landing. Everything in it is arithmetic over recorded facts; estimates say so.
+
+Measured over 142 sessions, at the time of writing:
+
+| Measure | Value |
+| --- | --- |
+| Model switches followed by a request | 35 (22 more were selected and never used) |
+| Cold tokens paid at a switch (p50) | 38k, at p50 $0.0075 |
+| Requests until the destination is warm again | p50 **1** |
+| Frontier episodes | 17 covering 1,086 requests, $154.87 |
+| Cost per frontier request vs the same sessions' cheaper model | $0.0365 vs $0.0041 |
+| Estimated extra cost of those episodes | $82.85 (same tokens at the cheap rate; quality not compared) |
+| Cache share inside episodes | 79% (corpus-wide: 98.6%) |
+
+Two things this settled by measuring rather than arguing:
+
+- **A switch is cheap and quickly amortised.** It pays full price for the prefix
+  once — p50 38k tokens, three-quarters of a cent — and the next request is
+  already mostly cache reads again. The audit's warning was right in principle
+  and small in practice *at these context sizes*; the arithmetic changes at
+  450k-token contexts, which is why the capacity filter exists.
+- **A failed tool call is not a difficulty signal.** Turns inside frontier
+  episodes fail *less* than the corpus average (11% vs 32%), because routine
+  test-fail-edit loops run on the cheap model and design work does not. Anyone
+  tempted to use tool failures as a quality label — including an earlier draft
+  of this report — is measuring churn.
+
+Each decision also records a `router-decision` custom entry (which does not
+enter LLM context) with the rating, threshold, latency and outcome. That gives
+the calibration loop the report prints: a *held* judgement followed by a manual
+escalation is a miss, an *escalated* one followed by a manual retreat is
+needless. Both are counted per rating band, so the threshold can be tuned from
+live use rather than from the enriched historical sample. It needs a few dozen
+judgements before the bands mean anything.
