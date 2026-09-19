@@ -17,6 +17,7 @@ import {
   thinkingForTier,
   thinkingRank,
   tierOf,
+  tierRank,
   turnsFromBranch,
   WINDOW,
 } from "../model-battery.mjs";
@@ -268,6 +269,12 @@ test("tierOf classifies a key, frontier first, and unknown keys are null", () =>
   assert.equal(tierOf(null), null);
   // Frontier is checked first, so a key in both lists is frontier.
   assert.equal(tierOf("x/y", { frontier: ["y"], mid: ["y"] }), "frontier");
+});
+
+test("tierRank orders the tiers and ranks anything unknown below mid", () => {
+  assert.ok(tierRank("frontier") > tierRank("mid"));
+  assert.ok(tierRank("mid") > tierRank(null));
+  assert.equal(tierRank("economy"), 0);
 });
 
 test("a GPT model comes from openai-codex even when another provider lists it first", () => {

@@ -41,6 +41,7 @@ import {
   thinkingForTier,
   thinkingRank,
   tierOf,
+  tierRank,
   turnsFromBranch,
   WINDOW,
 } from "./model-battery.mjs";
@@ -57,9 +58,6 @@ const FAILURE_COOLDOWN_TURNS = 3;
 const CONTEXT_GROWTH_MARGIN = 1.05;
 /** Output and reasoning tokens to keep free in the target window. */
 const OUTPUT_RESERVE = 16000;
-/** Tier order: a target escalates only when it outranks the model in use. */
-const TIER_RANK: Record<string, number> = { mid: 1, frontier: 2 };
-
 function envFlag(env = process.env) {
   const value = String(env?.PI_ROUTER ?? "")
     .trim()
@@ -383,8 +381,8 @@ export default function piRouterExtension(
     // ranks 0 and moves to whatever the rating asks for. Nothing here ever
     // downgrades a task in flight.
     const currentTier = tierOf(modelKey(ctx?.model ?? null), state.tiers);
-    const currentRank = TIER_RANK[currentTier ?? ""] ?? 0;
-    const targetRank = TIER_RANK[decision.tier ?? ""] ?? 0;
+    const currentRank = tierRank(currentTier);
+    const targetRank = tierRank(decision.tier);
     // Read before any setModel: a model switch can clamp thinking, and the
     // user baseline is whatever was in effect before we touched the pair.
     const thinkingBefore = readThinking(ctx) ?? null;

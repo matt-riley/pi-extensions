@@ -110,6 +110,17 @@ export function tierOf(key, tiers = DEFAULT_TIERS) {
 }
 
 /**
+ * Escalation rank of a tier name. A target applies only when it outranks the
+ * model in use, so anything unknown — including no tier at all — ranks below
+ * mid.
+ */
+const TIER_RANK = { mid: 1, frontier: 2 };
+
+export function tierRank(tier) {
+  return TIER_RANK[tier] ?? 0;
+}
+
+/**
  * Providers to prefer when several candidates match the same pattern.
  *
  * Patterns are only half the rule: a GPT pattern can still match a reseller,
@@ -218,7 +229,7 @@ export function turnsFromBranch(branch, limit = WINDOW) {
       current.toolCalls.push({ name: message.toolName ?? "unknown", isError: true });
     }
   }
-  return turns.slice(-limit);
+  return turns;
 }
 
 /**
