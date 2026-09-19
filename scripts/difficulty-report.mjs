@@ -23,40 +23,16 @@ import path from "node:path";
 import { homedir } from "node:os";
 
 import { askSystemOne } from "../shared/systemone.mjs";
-import { groundTruth, looksInjected } from "../packages/router/lib.mjs";
+import { looksInjected } from "../packages/router/lib.mjs";
 import { tierFor } from "../packages/router/model-tier.mjs";
+import {
+  buildDifficultyState as buildState,
+  buildQuestions as modelQuestions,
+} from "../packages/router/model-battery.mjs";
 import { findSessionFiles, percentile, readSession } from "./lib/sessions.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
 const WINDOW = 4;
-
-const QUESTIONS = {
-  difficulty: {
-    type: "score",
-    instructions:
-      "How hard is `prompt` to satisfy well, given `conversation`? Judge the work involved, not the length of the " +
-      "message. A short message can be hard: it may be a follow-up inside a long, difficult task, or a rejection " +
-      "of several failed attempts. A long message can be easy: it may be a paste of context with a simple ask.",
-    criteria: [
-      "Any capable small model would satisfy this in one attempt.",
-      "A mid-tier model would satisfy this; a small one might need a retry.",
-      "A strong model is needed: multi-step reasoning over this codebase, or several constraints to hold at once.",
-      "Frontier territory: subtle design or debugging where a weak answer costs a lot and nobody will notice it is wrong.",
-    ],
-  },
-  needs_frontier: {
-    type: "noul",
-    instructions:
-      "Considering `conversation` as well as `prompt`: is a cheaper or mid-tier model likely to fail at this, or need " +
-      "several attempts, where a frontier model would get it right? Answer no when a cheaper model would very " +
-      "likely handle it.",
-    criteria: {
-      true: "The work involves subtle diagnosis, design, or many interacting constraints; several failed attempts are already visible in the conversation.",
-      false:
-        "Ordinary implementation, mechanical edits, lookups, or short confirmations that any capable model handles.",
-    },
-  },
-};
 
 function parseArgs(argv) {
   const opts = { limit: 50, json: false, cache: "/tmp/difficulty-report.json", fromCache: false };
@@ -67,23 +43,6 @@ function parseArgs(argv) {
     else if (argv[i] === "--limit") opts.limit = Number(argv[++i]) || 50;
   }
   return opts;
-}
-
-function sessionSlice(window) {
-  return window.map((turn) => ({
-    prompt: String(turn.prompt ?? "").slice(0, 400),
-    assistant_response: String(turn.lastResponse ?? "").slice(-400),
-    failures: groundTruth(turn).failedCalls,
-    tools_used: [...new Set(turn.toolCalls.map((call) => call.name))].slice(0, 12),
-  }));
-}
-
-function buildState(prompt, window, cwd) {
-  return {
-    prompt: String(prompt ?? "").slice(0, 2000),
-    working_directory: cwd ?? null,
-    conversation: sessionSlice(window),
-  };
 }
 
 /** Mann-Whitney AUC: how well a score separates two classes. */
@@ -206,7 +165,7 @@ async function main() {
       try {
         const result = await askSystemOne({
           state: buildState(row.prompt, row.window, row.cwd),
-          questions: QUESTIONS,
+          questions: modelQuestions(),
         });
         const difficulty = Number(result?.answers?.difficulty?.score);
         const needs = Number(result?.answers?.needs_frontier?.noul);

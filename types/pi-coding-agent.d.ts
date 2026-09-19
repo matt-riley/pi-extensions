@@ -76,7 +76,13 @@ declare module "@earendil-works/pi-coding-agent" {
     hasUI?: boolean;
     isProjectTrusted?(): boolean;
     model?: { id?: string; provider?: string; [key: string]: unknown };
-    modelRegistry?: { getModel?: (provider: string, id: string) => unknown };
+    /** Session-scoped models ([{ model, thinkingLevel? }]); empty means all. */
+    scopedModels?: Array<{ model?: unknown; thinkingLevel?: string }>;
+    modelRegistry?: {
+      getModel?: (provider: string, id: string) => unknown;
+      find?: (provider: string, id: string) => unknown;
+      getAvailable?: () => unknown[] | Promise<unknown[]>;
+    };
     sessionManager?: { getBranch?(): unknown[] };
     signal?: AbortSignal;
     thinkingLevel?: string;
@@ -143,6 +149,8 @@ declare module "@earendil-works/pi-coding-agent" {
     exec(cmd: string, args: string[], opts?: { timeout?: number }): Promise<ExecResult>;
     getActiveTools(): string[];
     setActiveTools(tools: string[]): void;
+    /** Switch the session model; false means no authentication for it. */
+    setModel(model: unknown): Promise<boolean> | boolean;
     getFlag(name: string): unknown;
     sendUserMessage(text: string, opts?: { deliverAs?: string }): Promise<void>;
     events: EventBus;
