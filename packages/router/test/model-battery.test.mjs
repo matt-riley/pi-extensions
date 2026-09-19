@@ -4,11 +4,19 @@ import assert from "node:assert/strict";
 import {
   buildDifficultyState,
   buildQuestions,
-  chooseFrontierModel,
+  chooseModelForTier,
+  DEFAULT_MID_PATTERNS,
+  DEFAULT_TIERS,
+  DEFAULT_TIER_THINKING,
   DIFFICULTY_THRESHOLD,
+  FRONTIER_THRESHOLD,
   latestContextTokens,
   modelKey,
   routeFromDifficulty,
+  THINKING_LEVELS,
+  thinkingForTier,
+  thinkingRank,
+  tierOf,
   turnsFromBranch,
   WINDOW,
 } from "../model-battery.mjs";
@@ -141,6 +149,41 @@ test("routeFromDifficulty escalates at the measured threshold", () => {
   assert.match(routeFromDifficulty({ difficulty: score(2.18) }).reason, /2\.18/);
 });
 
+test("routeFromDifficulty splits escalation into mid and frontier tiers", () => {
+  const mid = routeFromDifficulty({ difficulty: score(DIFFICULTY_THRESHOLD) });
+  assert.equal(mid.escalate, true);
+  assert.equal(mid.tier, "mid");
+  assert.match(mid.reason, /1\.50/);
+  assert.match(mid.reason, /mid/);
+
+  const frontier = routeFromDifficulty({ difficulty: score(FRONTIER_THRESHOLD) });
+  assert.equal(frontier.escalate, true);
+  assert.equal(frontier.tier, "frontier");
+  assert.match(frontier.reason, /2\.50/);
+  assert.match(frontier.reason, /frontier/);
+
+  const held = routeFromDifficulty({ difficulty: score(0.6) });
+  assert.equal(held.escalate, false);
+  assert.equal(held.tier, null);
+
+  const unusable = routeFromDifficulty({ difficulty: score(null) });
+  assert.equal(unusable.escalate, null);
+  assert.equal(unusable.tier, null);
+
+  // The frontier line is a dial, not a constant, and defaults to 2.5.
+  assert.equal(FRONTIER_THRESHOLD, 2.5);
+  assert.equal(
+    routeFromDifficulty({ difficulty: score(2) }, { frontierThreshold: 1.9 }).tier,
+    "frontier",
+  );
+});
+
+test("a frontier line below the escalate line cannot make mid unreachable", () => {
+  const thresholds = { threshold: 2.0, frontierThreshold: 1.0 };
+  assert.equal(routeFromDifficulty({ difficulty: score(1.5) }, thresholds).tier, "mid");
+  assert.equal(routeFromDifficulty({ difficulty: score(2.5) }, thresholds).tier, "frontier");
+});
+
 test("a rating outside the scale, or of the wrong type, is no decision", () => {
   // Number(true) is 1 and Number([2]) is 2; neither may authorise a switch.
   for (const raw of [true, false, [2], { value: 2 }, 5, -1, NaN, Infinity, null, "2"]) {
@@ -187,18 +230,44 @@ test("the question set keeps both instruments, the router using the score", () =
 // ---------------------------------------------------------------------------
 // Choosing which model
 
-test("chooseFrontierModel follows the preference order and reports what matched", () => {
+test("chooseModelForTier follows the preference order and reports what matched", () => {
   const available = [
     { provider: "openai-codex", id: "gpt-5.6-luna" },
     { provider: "openai-codex", id: "gpt-5.6-sol" },
     { provider: "openai-codex", id: "gpt-6-astra" },
   ];
-  const chosen = chooseFrontierModel(available);
+  const chosen = chooseModelForTier(available, "frontier");
   assert.equal(chosen.key, "openai-codex/gpt-6-astra");
   assert.equal(chosen.model.id, "gpt-6-astra");
+  assert.equal(chosen.tier, "frontier");
 
-  const narrowed = chooseFrontierModel(available, ["gpt-5.6-sol"]);
+  const narrowed = chooseModelForTier(available, "frontier", { frontier: ["gpt-5.6-sol"] });
   assert.equal(narrowed.key, "openai-codex/gpt-5.6-sol");
+});
+
+test("a mid-tier selection comes from the mid list, not the frontier one", () => {
+  const available = [
+    { provider: "openai-codex", id: "gpt-6-astra" },
+    { provider: "openai-codex", id: "gpt-5.6-luna" },
+  ];
+  const chosen = chooseModelForTier(available, "mid");
+  assert.equal(chosen.key, "openai-codex/gpt-5.6-luna");
+  assert.equal(chosen.pattern, "openai-codex/gpt-5.6-luna");
+  assert.equal(chosen.tier, "mid");
+});
+
+test("DEFAULT_MID_PATTERNS is the curated mid preference order", () => {
+  assert.deepEqual(DEFAULT_MID_PATTERNS, ["openai-codex/gpt-5.6-luna"]);
+  assert.equal(DEFAULT_TIERS.mid, DEFAULT_MID_PATTERNS);
+});
+
+test("tierOf classifies a key, frontier first, and unknown keys are null", () => {
+  assert.equal(tierOf("openai-codex/gpt-6-astra"), "frontier");
+  assert.equal(tierOf("openai-codex/gpt-5.6-luna"), "mid");
+  assert.equal(tierOf("deepseek/deepseek-flash"), null);
+  assert.equal(tierOf(null), null);
+  // Frontier is checked first, so a key in both lists is frontier.
+  assert.equal(tierOf("x/y", { frontier: ["y"], mid: ["y"] }), "frontier");
 });
 
 test("a GPT model comes from openai-codex even when another provider lists it first", () => {
@@ -209,7 +278,7 @@ test("a GPT model comes from openai-codex even when another provider lists it fi
     { provider: "openai-codex", id: "gpt-6-astra" },
     { provider: "github-copilot", id: "gpt-5.6-sol" },
   ];
-  const chosen = chooseFrontierModel(available, ["gpt-6-astra"]);
+  const chosen = chooseModelForTier(available, "frontier", { frontier: ["gpt-6-astra"] });
   assert.equal(chosen.key, "openai-codex/gpt-6-astra");
 });
 
@@ -219,7 +288,10 @@ test("the preference also applies to unqualified patterns from the environment",
     { provider: "openrouter", id: "openai/gpt-5.6-sol" },
     { provider: "openai-codex", id: "gpt-5.6-sol" },
   ];
-  assert.equal(chooseFrontierModel(available, ["gpt-5.6-sol"]).key, "openai-codex/gpt-5.6-sol");
+  assert.equal(
+    chooseModelForTier(available, "frontier", { frontier: ["gpt-5.6-sol"] }).key,
+    "openai-codex/gpt-5.6-sol",
+  );
 });
 
 test("a pinned provider is not overridden, and a missing one falls through", () => {
@@ -228,7 +300,7 @@ test("a pinned provider is not overridden, and a missing one falls through", () 
     { provider: "openai-codex", id: "grok-4.6" },
   ];
   // Pinned to Codex: Copilot's astra does not qualify, so the next pattern wins.
-  const pinned = chooseFrontierModel(available);
+  const pinned = chooseModelForTier(available, "frontier");
   assert.equal(pinned.key, "openai-codex/grok-4.6");
   assert.equal(pinned.pattern, "grok-4.6");
 });
@@ -240,30 +312,60 @@ test("a GPT pattern never resolves to another provider's copy of the model", () 
   ];
   // Codex has it nowhere in this catalogue, so the pattern is skipped rather
   // than billed to a reseller.
-  assert.equal(chooseFrontierModel(available, ["gpt-6-astra"]), null);
+  assert.equal(chooseModelForTier(available, "frontier", { frontier: ["gpt-6-astra"] }), null);
   // An explicit provider is a deliberate instruction and is honoured.
   assert.equal(
-    chooseFrontierModel(available, ["github-copilot/gpt-6-astra"]).key,
+    chooseModelForTier(available, "frontier", { frontier: ["github-copilot/gpt-6-astra"] }).key,
     "github-copilot/gpt-6-astra",
   );
 });
 
 test("non-GPT patterns are never restricted to a preferred provider", () => {
   const available = [{ provider: "github-copilot", id: "grok-4.6" }];
-  assert.equal(chooseFrontierModel(available, ["grok-4.6"]).key, "github-copilot/grok-4.6");
+  assert.equal(
+    chooseModelForTier(available, "frontier", { frontier: ["grok-4.6"] }).key,
+    "github-copilot/grok-4.6",
+  );
 });
 
-test("chooseFrontierModel reads the {model} wrapper scopedModels uses", () => {
-  const chosen = chooseFrontierModel([
-    { model: { provider: "github-copilot", id: "grok-4.6" }, thinkingLevel: "high" },
-  ]);
+test("chooseModelForTier reads the {model} wrapper scopedModels uses", () => {
+  const chosen = chooseModelForTier(
+    [{ model: { provider: "github-copilot", id: "grok-4.6" }, thinkingLevel: "high" }],
+    "frontier",
+  );
   assert.equal(chosen.key, "github-copilot/grok-4.6");
   assert.equal(modelKey({ model: { provider: "a", id: "b" } }), "a/b");
   assert.equal(modelKey(null), null);
 });
 
 test("no available frontier model is a null, not a guess", () => {
-  assert.equal(chooseFrontierModel([{ provider: "x", id: "small" }]), null);
-  assert.equal(chooseFrontierModel([]), null);
-  assert.equal(chooseFrontierModel(undefined), null);
+  assert.equal(chooseModelForTier([{ provider: "x", id: "small" }], "frontier"), null);
+  assert.equal(chooseModelForTier([], "frontier"), null);
+  assert.equal(chooseModelForTier(undefined, "frontier"), null);
+  // A tier with no list is a null too, rather than a throw.
+  assert.equal(chooseModelForTier([{ provider: "x", id: "small" }], "economy"), null);
+});
+
+// ---------------------------------------------------------------------------
+// Thinking levels for the (model, thinking) pair
+
+test("THINKING_LEVELS is Pi's seven-level set, weakest first, with no ultra", () => {
+  assert.deepEqual(THINKING_LEVELS, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.equal(thinkingRank("off"), 0);
+  assert.equal(thinkingRank("medium"), 3);
+  assert.equal(thinkingRank("xhigh"), 5);
+  assert.equal(thinkingRank("max"), 6);
+  assert.equal(thinkingRank("ultra"), -1);
+  assert.equal(thinkingRank(undefined), -1);
+});
+
+test("thinkingForTier returns curated defaults and null for an unknown tier", () => {
+  assert.deepEqual(DEFAULT_TIER_THINKING, { mid: "xhigh", frontier: "medium" });
+  assert.equal(thinkingForTier("mid"), "xhigh");
+  assert.equal(thinkingForTier("frontier"), "medium");
+  assert.equal(thinkingForTier("mid"), DEFAULT_TIER_THINKING.mid);
+  assert.equal(thinkingForTier("frontier"), DEFAULT_TIER_THINKING.frontier);
+  assert.equal(thinkingForTier("economy"), null);
+  assert.equal(thinkingForTier(null), null);
+  assert.equal(thinkingForTier("mid", { mid: "high", frontier: "low" }), "high");
 });

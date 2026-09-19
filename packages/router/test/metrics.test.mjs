@@ -270,16 +270,19 @@ test("ratingBuckets pairs each rating band with what actually followed", () => {
       { customType: "router-decision", at: 1000, data: { outcome: "held", difficulty: 1.2 } },
       { customType: "router-decision", at: 2000, data: { outcome: "held", difficulty: 0.6 } },
       { customType: "router-decision", at: 3000, data: { outcome: "escalated", difficulty: 2.2 } },
+      { customType: "router-decision", at: 4000, data: { outcome: "escalated", difficulty: 2.6 } },
     ],
     modelChanges: [{ at: 1100, provider: "openai-codex", model: "gpt-6-astra" }],
   });
   const buckets = ratingBuckets([session], { patterns: PATTERNS });
   const low = buckets.find((bucket) => bucket.label === "0–0.9");
   const mid = buckets.find((bucket) => bucket.label === "1.0–1.4");
-  const high = buckets.find((bucket) => bucket.label === "2.0+");
+  const high = buckets.find((bucket) => bucket.label === "2.0–2.4");
+  const top = buckets.find((bucket) => bucket.label === "2.5+");
   assert.equal(low.held, 1);
   assert.equal(mid.missed, 1, "held at 1.2 and then escalated by hand");
   assert.equal(high.escalated, 1);
+  assert.equal(top.escalated, 1, "a 2.6 rating lands in the 2.5+ band");
 });
 
 test("percentile tolerates an empty set", () => {

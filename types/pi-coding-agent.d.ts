@@ -151,6 +151,10 @@ declare module "@earendil-works/pi-coding-agent" {
     setActiveTools(tools: string[]): void;
     /** Switch the session model; false means no authentication for it. */
     setModel(model: unknown): Promise<boolean> | boolean;
+    /** Switch the session thinking level; clamped to the current model. */
+    setThinkingLevel(level: string): void;
+    /** Current effective thinking level. */
+    getThinkingLevel(): string;
     /** Persist extension data. Custom entries do NOT enter LLM context. */
     appendEntry(customType: string, data?: unknown): void;
     getFlag(name: string): unknown;

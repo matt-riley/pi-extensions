@@ -13,12 +13,9 @@
 //   - Quality is not measured. Cheaper answers are not scored against expensive
 //     ones, so a cost saving is not evidence of a good decision.
 
-/** Does a "provider/model" key match any frontier pattern? */
-export function isFrontierModel(key, patterns) {
-  const value = String(key ?? "").toLowerCase();
-  if (!value) return false;
-  return (patterns ?? []).some((pattern) => value.includes(String(pattern).toLowerCase()));
-}
+import { isFrontierModel } from "./model-battery.mjs";
+
+export { isFrontierModel } from "./model-battery.mjs";
 
 /**
  * Every request in a session, flattened in order.
@@ -99,10 +96,11 @@ export function switchCosts(series, points = switchPoints(series)) {
  */
 export function frontierEpisodes(session, { patterns, minRequests = 1 } = {}) {
   const series = requestSeries(session);
-  const baseline = median(
+  const baseline = percentile(
     series
       .filter((request) => !isFrontierModel(request.model, patterns))
       .map((request) => request.cost),
+    0.5,
   );
 
   const episodes = [];
@@ -161,13 +159,6 @@ export function frontierEpisodes(session, { patterns, minRequests = 1 } = {}) {
       // non-frontier rate. Quality is not compared.
       extraCost: baseline === null ? null : episode.cost - baseline * episode.requests,
     }));
-}
-
-function median(values) {
-  const clean = values.filter((value) => Number.isFinite(value));
-  if (!clean.length) return null;
-  const sorted = [...clean].sort((a, b) => a - b);
-  return sorted[Math.floor((sorted.length - 1) / 2)];
 }
 
 export function percentile(values, p) {
@@ -265,7 +256,8 @@ export function ratingBuckets(sessions, { patterns, window = 3 } = {}) {
     { label: "0–0.9", test: (r) => r < 1 },
     { label: "1.0–1.4", test: (r) => r >= 1 && r < 1.5 },
     { label: "1.5–1.9", test: (r) => r >= 1.5 && r < 2 },
-    { label: "2.0+", test: (r) => r >= 2 },
+    { label: "2.0–2.4", test: (r) => r >= 2 && r < 2.5 },
+    { label: "2.5+", test: (r) => r >= 2.5 },
   ].map((bucket) => ({
     ...bucket,
     decisions: 0,

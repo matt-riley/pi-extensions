@@ -15,11 +15,23 @@
 // Both the report script and the extension build their state here, so what was
 // measured is exactly what runs.
 
+import { messageText } from "../../shared/message-text.mjs";
+
 /** How many turns of conversation the judgement sees. */
 export const WINDOW = 4;
 
 /** Measured operating point: quality-leaning. Lower finds more, costs more. */
 export const DIFFICULTY_THRESHOLD = 1.5;
+
+/**
+ * Rating at or above which the target tier is frontier rather than mid.
+ *
+ * This is a design choice, not a measured one. The 1.5 line was calibrated for
+ * "escalate at all"; nothing in the corpus separates a turn a mid model would
+ * satisfy from one that needs the frontier, so 2.5 — the point where the scale's
+ * top band dominates — is a dial until the reports say otherwise.
+ */
+export const FRONTIER_THRESHOLD = 2.5;
 
 /**
  * Models that count as frontier, best first, matched as substrings of
@@ -37,6 +49,65 @@ export const DEFAULT_FRONTIER_PATTERNS = [
   "qwen3.8-max",
   "kimi-k3",
 ];
+
+/**
+ * The curated mid tier, best first.
+ *
+ * One verified entry, not a benchmark result: luna is the model Matt picked by
+ * hand when deepseek stalled. It sits between "stay where you are" and the
+ * frontier list above.
+ */
+export const DEFAULT_MID_PATTERNS = ["openai-codex/gpt-5.6-luna"];
+
+/** Tier name → preference order. The lists are the policy; the router reads them. */
+export const DEFAULT_TIERS = {
+  frontier: DEFAULT_FRONTIER_PATTERNS,
+  mid: DEFAULT_MID_PATTERNS,
+};
+
+/**
+ * Pi thinking levels, weakest first. There is no "ultra".
+ *
+ * The same seven-level set packages/subagents/discover.mjs accepts. Rank is
+ * position in this list; unknown values are not a level.
+ */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * Default thinking for a routed (model, thinking) pair.
+ *
+ * Curated, not measured: Luna at xhigh is the workhorse, and a frontier model
+ * is not paired with high-effort thinking by default.
+ */
+export const DEFAULT_TIER_THINKING = { mid: "xhigh", frontier: "medium" };
+
+/** Index in THINKING_LEVELS, or -1 when the value is not a Pi thinking level. */
+export function thinkingRank(level) {
+  return THINKING_LEVELS.indexOf(level);
+}
+
+/** Thinking the router wants for `tier`, or null when the tier has no default. */
+export function thinkingForTier(tier, map = DEFAULT_TIER_THINKING) {
+  return map?.[tier] ?? null;
+}
+
+/** Does a "provider/model" key match any of the patterns? */
+export function isFrontierModel(key, patterns) {
+  const value = String(key ?? "").toLowerCase();
+  if (!value) return false;
+  return (patterns ?? []).some((pattern) => value.includes(String(pattern).toLowerCase()));
+}
+
+/**
+ * Which tier a "provider/model" key belongs to, or null when it matches none.
+ *
+ * Frontier is checked before mid, so a key matching both is frontier.
+ */
+export function tierOf(key, tiers = DEFAULT_TIERS) {
+  if (isFrontierModel(key, tiers?.frontier)) return "frontier";
+  if (isFrontierModel(key, tiers?.mid)) return "mid";
+  return null;
+}
 
 /**
  * Providers to prefer when several candidates match the same pattern.
@@ -94,22 +165,32 @@ export function buildQuestions() {
  * on a shape change is worse than one that reads less.
  */
 export function turnsFromBranch(branch, limit = WINDOW) {
+  const entries = Array.isArray(branch) ? branch : [];
   const turns = [];
+  let start = 0;
+  const requested = Number(limit);
+  if (Number.isFinite(requested) && requested > 0) {
+    const keep = Math.trunc(requested);
+    let remaining = keep;
+    for (let i = entries.length - 1; i >= 0 && remaining > 0; i--) {
+      const message = entries[i]?.message ?? entries[i];
+      if (message?.role === "user" && messageText(message.content).trim()) {
+        remaining--;
+        if (remaining <= 0) {
+          start = i;
+          break;
+        }
+      }
+    }
+  }
+
   let current = null;
-  for (const entry of Array.isArray(branch) ? branch : []) {
+  for (const entry of entries.slice(start)) {
     const message = entry?.message ?? entry;
     if (!message?.role) continue;
 
     if (message.role === "user") {
-      const text =
-        typeof message.content === "string"
-          ? message.content
-          : Array.isArray(message.content)
-            ? message.content
-                .filter((block) => block?.type === "text" && typeof block.text === "string")
-                .map((block) => block.text)
-                .join(" ")
-            : "";
+      const text = messageText(message.content);
       current = { prompt: text.trim(), lastResponse: "", toolCalls: [], contextTokens: 0 };
       if (current.prompt) turns.push(current);
       else current = null;
@@ -118,15 +199,7 @@ export function turnsFromBranch(branch, limit = WINDOW) {
     if (!current) continue;
 
     if (message.role === "assistant") {
-      const text =
-        typeof message.content === "string"
-          ? message.content
-          : Array.isArray(message.content)
-            ? message.content
-                .filter((block) => block?.type === "text" && typeof block.text === "string")
-                .map((block) => block.text)
-                .join(" ")
-            : "";
+      const text = messageText(message.content);
       if (text.trim()) current.lastResponse = text.trim();
       // What the last request actually read, so the router can tell whether a
       // switch would fit the target model's window.
@@ -206,21 +279,44 @@ export function routeFromDifficulty(answers, thresholds = {}) {
   const threshold = Number.isFinite(thresholds.threshold)
     ? thresholds.threshold
     : DIFFICULTY_THRESHOLD;
+  const frontierThreshold = Number.isFinite(thresholds.frontierThreshold)
+    ? thresholds.frontierThreshold
+    : FRONTIER_THRESHOLD;
+  // Keep the two dials ordered: a frontier line below the escalate line would
+  // swallow the mid band. The lower dial starts escalation, the higher is the
+  // frontier line.
+  const frontierLine = Math.max(threshold, frontierThreshold);
+  const midLine = Math.min(threshold, frontierThreshold);
   const difficulty = usableScore(answers?.difficulty);
   if (difficulty === null) {
-    return { escalate: null, difficulty: null, reason: "no usable difficulty rating" };
+    return {
+      escalate: null,
+      tier: null,
+      difficulty: null,
+      reason: "no usable difficulty rating",
+    };
   }
-  if (difficulty >= threshold) {
+  if (difficulty >= frontierLine) {
     return {
       escalate: true,
+      tier: "frontier",
       difficulty,
-      reason: `difficulty ${difficulty.toFixed(2)} >= ${threshold}`,
+      reason: `difficulty ${difficulty.toFixed(2)} >= ${frontierLine} frontier`,
+    };
+  }
+  if (difficulty >= midLine) {
+    return {
+      escalate: true,
+      tier: "mid",
+      difficulty,
+      reason: `difficulty ${difficulty.toFixed(2)} >= ${midLine} mid`,
     };
   }
   return {
     escalate: false,
+    tier: null,
     difficulty,
-    reason: `difficulty ${difficulty.toFixed(2)} < ${threshold}`,
+    reason: `difficulty ${difficulty.toFixed(2)} < ${midLine}`,
   };
 }
 
@@ -245,7 +341,7 @@ function isGptKey(key) {
 }
 
 /**
- * Pick the best frontier model available, respecting the session's own model
+ * Pick the best model available for `tier`, respecting the session's own model
  * scoping: if the user used `--models`, routing must not reach outside it.
  *
  * GPT patterns are restricted to preferred providers even when the pattern does
@@ -254,14 +350,18 @@ function isGptKey(key) {
  * provider is taken literally, and non-GPT patterns are never restricted.
  *
  * @param candidates [{model}|model strings] from ctx.scopedModels or getAvailable()
- * @param patterns   preference order, matched as substrings of "provider/id"
+ * @param tier       "frontier" or "mid"
+ * @param tiers      tier name → preference order, matched as substrings of "provider/id"
  * @param providers  providers a GPT pattern is allowed to resolve to
  */
-export function chooseFrontierModel(
+export function chooseModelForTier(
   candidates,
-  patterns = DEFAULT_FRONTIER_PATTERNS,
+  tier,
+  tiers = DEFAULT_TIERS,
   providers = DEFAULT_PROVIDER_PREFERENCE,
 ) {
+  const patterns = tiers?.[tier];
+  if (!Array.isArray(patterns) || !patterns.length) return null;
   const keys = [];
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const model = candidate?.model ?? candidate;
@@ -269,8 +369,7 @@ export function chooseFrontierModel(
     if (key) keys.push({ key, model });
   }
   for (const pattern of patterns) {
-    const needle = String(pattern).toLowerCase();
-    const matches = keys.filter((entry) => entry.key.toLowerCase().includes(needle));
+    const matches = keys.filter((entry) => isFrontierModel(entry.key, [pattern]));
     if (!matches.length) continue;
 
     const restrict = !namesProvider(pattern) && matches.every((entry) => isGptKey(entry.key));
@@ -284,7 +383,7 @@ export function chooseFrontierModel(
     const best = [...eligible].sort(
       (a, b) => providerRank(a.key, providers) - providerRank(b.key, providers),
     )[0];
-    return { model: best.model, key: best.key, pattern };
+    return { model: best.model, key: best.key, pattern, tier };
   }
   return null;
 }

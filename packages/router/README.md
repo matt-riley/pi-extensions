@@ -1,7 +1,8 @@
 # pi-router — pick the model the task deserves
 
-Asks TypeSafe how hard the current task is, escalates to a frontier model when
-the rating clears a threshold, and steps back down when a new task arrives.
+Asks TypeSafe how hard the current task is, escalates to the mid or frontier
+tier when the rating clears a threshold, and steps back down when a new task
+arrives.
 
 ## Why it looks like this
 
@@ -29,6 +30,12 @@ different prototypes, nothing like the original site, go and impress me."* at
 catches **12 of 12** at 65% precision, for roughly ten times the cost in wrong
 escalations.
 
+That 1.5 line was measured for "escalate at all", not for the size of the step.
+The split between the mid tier and the frontier tier at 2.5 is a curated design
+choice that has not been calibrated, and the mid list is a single verified entry
+(`openai-codex/gpt-5.6-luna` — the model picked by hand when deepseek stalled),
+not a benchmark result. Treat both as dials.
+
 An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
 the `needs_frontier` question, which the router does not use — the audit that
 caught it is summarised at the bottom of this file.
@@ -38,11 +45,23 @@ caught it is summarised at the bottom of this file.
 - **Judges at task boundaries** and when the previous turn ended in two or more
   failures (the stuck case), capped at 3 judgements per task. Continuations
   hold the decision already made.
-- **Escalates only.** Nothing here ever downgrades a task in flight, because the
-  rules that tried were wrong exactly where it mattered most.
+- **Escalates in tiers.** At `difficulty >= 1.5` it moves to the mid tier, and
+  at `>= 2.5` to the frontier tier. It only moves up: a model already at or
+  above the target tier holds, so nothing here ever downgrades a task in flight,
+  because the rules that tried were wrong exactly where it mattered most.
+- **Routes the (model, thinking) pair.** Luna at `xhigh` is the workhorse;
+  frontier thinking defaults to `medium` so Astra is not paired with high-effort.
+  A model switch always sets that tier's thinking, even when it is lower — do
+  not carry Luna-max onto Astra. If the model stays put, thinking only rises,
+  and only when the current model is already in the decision tier (already on
+  Luna at medium, rating 1.8 → stay on Luna, set `xhigh`). A manual thinking
+  change is not fought. Pi's levels are `off`, `minimal`, `low`, `medium`,
+  `high`, `xhigh`, `max` — there is no `ultra`. These thinking defaults are
+  curated, not measured.
 - **Steps down only from a model it chose.** If you picked the model yourself,
   the router will not touch it — it forgets its own escalation the moment the
-  session model stops matching what it set.
+  session model stops matching what it set. When it does step down, it restores
+  the user's thinking level too, if it owns that as well.
 - **Respects your model scoping.** With `--models` / `enabledModels` in play,
   routing stays inside that list rather than reaching for the whole catalogue.
 - **A missing judgement changes nothing.** Timeout, no key, unusable answer —
@@ -59,8 +78,12 @@ caught it is summarised at the bottom of this file.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PI_ROUTER` | unset (on) | `off` / `0` / `false` disables it for the process |
-| `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which to escalate |
-| `PI_ROUTER_FRONTIER` | `openai-codex/gpt-6-astra,openai-codex/gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | preference order, substring-matched against `provider/model` |
+| `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which the router leaves the current model (to mid or frontier) |
+| `PI_ROUTER_FRONTIER_THRESHOLD` | `2.5` | rating at or above which the target is the frontier tier rather than mid (the two thresholds are ordered, so the lower starts mid and the higher starts frontier) |
+| `PI_ROUTER_MID` | `openai-codex/gpt-5.6-luna` | mid-tier preference order, substring-matched against `provider/model` |
+| `PI_ROUTER_FRONTIER` | `openai-codex/gpt-6-astra,openai-codex/gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | frontier-tier preference order, substring-matched against `provider/model` |
+| `PI_ROUTER_MID_THINKING` | `xhigh` | thinking level set when the router targets the mid tier. Unknown/blank values fall back to `xhigh`. Pi has no `ultra`. |
+| `PI_ROUTER_FRONTIER_THINKING` | `medium` | thinking level set when the router targets the frontier tier. Unknown/blank values fall back to `medium`, so Astra is not paired with high-effort by default. |
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
 | `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
 
@@ -90,6 +113,12 @@ Committed evidence at the time of writing: `difficulty >= 1.5` → 77% precision
 48% recall, $23 of wrong escalations against $34 of frontier spend left on
 cheaper models. Lower the threshold, find more, pay more.
 
+That evidence covers only the line at which the router leaves the current model.
+It says nothing about where mid ends and frontier begins: the 2.5 split and the
+mid list are curated design choices, not measurements, and the mid tier is one
+verified entry rather than a benchmark result. The thinking defaults (mid
+`xhigh`, frontier `medium`) are the same kind of dial — curated, not measured.
+
 ## What leaves your machine
 
 Routing is a data-flow decision as much as a model one, so it is worth being
@@ -112,6 +141,11 @@ second except `/route off`, or not escalating.
   the expensive one that worked, and that cost is unmeasured in either direction.
 
 ## Limits worth knowing
+
+- **The tier split is not calibrated.** Only the 1.5 line was measured, and it
+  was measured for escalating at all. The 2.5 mid/frontier boundary is a design
+  choice and the mid list is a single verified entry, so treat the tier boundary
+  as unvalidated until the reports accumulate decisions.
 
 - **Measured precision is inflated, not a floor.** The judged sample was
   enriched (all 50 frontier turns, 40 of the 761 others) where the live base

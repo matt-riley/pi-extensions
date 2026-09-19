@@ -28,12 +28,19 @@ import { gateTurn } from "./lib.mjs";
 import {
   buildDifficultyState,
   buildQuestions,
-  chooseFrontierModel,
+  chooseModelForTier,
   DEFAULT_FRONTIER_PATTERNS,
+  DEFAULT_MID_PATTERNS,
+  DEFAULT_TIER_THINKING,
   DIFFICULTY_THRESHOLD,
+  FRONTIER_THRESHOLD,
   latestContextTokens,
   modelKey,
   routeFromDifficulty,
+  THINKING_LEVELS,
+  thinkingForTier,
+  thinkingRank,
+  tierOf,
   turnsFromBranch,
   WINDOW,
 } from "./model-battery.mjs";
@@ -50,6 +57,8 @@ const FAILURE_COOLDOWN_TURNS = 3;
 const CONTEXT_GROWTH_MARGIN = 1.05;
 /** Output and reasoning tokens to keep free in the target window. */
 const OUTPUT_RESERVE = 16000;
+/** Tier order: a target escalates only when it outranks the model in use. */
+const TIER_RANK: Record<string, number> = { mid: 1, frontier: 2 };
 
 function envFlag(env = process.env) {
   const value = String(env?.PI_ROUTER ?? "")
@@ -63,13 +72,20 @@ function envNumber(name, fallback, env = process.env) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function envPatterns(env = process.env) {
-  const raw = String(env?.PI_ROUTER_FRONTIER ?? "").trim();
-  if (!raw) return DEFAULT_FRONTIER_PATTERNS;
+function envPatterns(name, fallback, env = process.env) {
+  const raw = String(env?.[name] ?? "").trim();
+  if (!raw) return fallback;
   return raw
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function parseThinking(raw, fallback, levels = THINKING_LEVELS) {
+  const value = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return levels.includes(value) ? value : fallback;
 }
 
 export default function piRouterExtension(
@@ -92,17 +108,33 @@ export default function piRouterExtension(
   const state = {
     enabled: envFlag(),
     threshold: envNumber("PI_ROUTER_THRESHOLD", DIFFICULTY_THRESHOLD),
+    frontierThreshold: envNumber("PI_ROUTER_FRONTIER_THRESHOLD", FRONTIER_THRESHOLD),
     timeoutMs: envNumber("PI_ROUTER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS),
-    patterns: envPatterns(),
+    tiers: {
+      frontier: envPatterns("PI_ROUTER_FRONTIER", DEFAULT_FRONTIER_PATTERNS),
+      mid: envPatterns("PI_ROUTER_MID", DEFAULT_MID_PATTERNS),
+    },
+    thinking: {
+      mid: parseThinking(process.env.PI_ROUTER_MID_THINKING, DEFAULT_TIER_THINKING.mid),
+      frontier: parseThinking(
+        process.env.PI_ROUTER_FRONTIER_THINKING,
+        DEFAULT_TIER_THINKING.frontier,
+      ),
+    },
     userModel: null as unknown, // the model the user was on before the router touched anything
+    userThinking: null as string | null,
     routerChosenKey: null as string | null,
-    judgementsThisTask: 0,
+    /** True after the router successfully set thinking; cleared on a manual change. */
+    ownsThinking: false,
+    /** True after thinking_level_select that was not the router's own write. */
+    userChoseThinking: false,
     attemptsThisTask: 0,
     /** Turns to wait after a failed judgement before trying again. */
     failureCooldown: 0,
     /** True while the router itself is calling setModel. */
     settingModel: false,
-    lastPrompt: null,
+    /** True while the router itself is calling setThinkingLevel. */
+    settingThinking: false,
     taskIndex: 0,
     counters: {
       turns: 0,
@@ -110,10 +142,9 @@ export default function piRouterExtension(
       escalated: 0,
       held: 0,
       steppedDown: 0,
-      unavailable: 0,
       tooBig: 0,
     },
-    last: null as null | { difficulty: number; escalate: boolean; reason: string },
+    last: null as null | { difficulty: number; reason: string },
   };
 
   const notify = (ctx: ExtensionContext, text: string, level = "info") => {
@@ -149,6 +180,33 @@ export default function piRouterExtension(
     }
   };
 
+  const readThinking = (ctx: ExtensionContext) =>
+    ctx?.thinkingLevel ?? pi.getThinkingLevel?.() ?? state.userThinking;
+
+  // Thinking is never worth failing a turn over: same swallow as notify/setStatus.
+  const writeThinking = (level: string) => {
+    if (typeof pi.setThinkingLevel !== "function") return false;
+    state.settingThinking = true;
+    try {
+      pi.setThinkingLevel(level);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      state.settingThinking = false;
+    }
+  };
+
+  /** Set thinking and take ownership. `from` is the level before this write. */
+  const takeThinking = (level: string | null, from: string | null) => {
+    if (!level) return {};
+    if (!state.ownsThinking) state.userThinking = from ?? state.userThinking;
+    if (!writeThinking(level)) return {};
+    state.ownsThinking = true;
+    state.userChoseThinking = false;
+    return { thinking: level, fromThinking: from ?? null, toThinking: level };
+  };
+
   /** Models the router may choose from: the session's own scope wins. */
   async function candidates(ctx: ExtensionContext) {
     const scoped = ctx?.scopedModels;
@@ -174,20 +232,25 @@ export default function piRouterExtension(
     }
   });
 
-  function isFrontier(model: unknown) {
-    const key = modelKey(model)?.toLowerCase();
-    if (!key) return false;
-    return state.patterns.some((pattern) => key.includes(String(pattern).toLowerCase()));
-  }
+  // Mirror of model ownership: a thinking level the user picked by hand is
+  // theirs. setModel can clamp thinking, so ignore the event while we are the
+  // ones switching the model too.
+  pi.on("thinking_level_select", (event, ctx) => {
+    if (state.settingThinking || state.settingModel) return;
+    state.ownsThinking = false;
+    state.userChoseThinking = true;
+    state.userThinking = event?.level ?? readThinking(ctx) ?? state.userThinking;
+  });
 
   pi.on("session_start", (_event, ctx) => {
     state.userModel = ctx?.model ?? null;
+    state.userThinking = readThinking(ctx) ?? null;
     state.routerChosenKey = null;
-    state.judgementsThisTask = 0;
+    state.ownsThinking = false;
+    state.userChoseThinking = false;
     state.attemptsThisTask = 0;
     state.failureCooldown = 0;
     state.taskIndex = 0;
-    state.lastPrompt = null;
     setStatus(ctx, state.enabled ? "router: armed" : "router: off");
   });
 
@@ -227,7 +290,6 @@ export default function piRouterExtension(
     // model that happened to be active became permanent.
     if (boundary.route) {
       state.taskIndex++;
-      state.judgementsThisTask = 0;
       state.attemptsThisTask = 0;
     }
     const taskIndexAtStart = state.taskIndex;
@@ -258,7 +320,10 @@ export default function piRouterExtension(
         questions: buildQuestions(),
         signal: AbortSignal.timeout(state.timeoutMs),
       });
-      decision = routeFromDifficulty(result?.answers, { threshold: state.threshold });
+      decision = routeFromDifficulty(result?.answers, {
+        threshold: state.threshold,
+        frontierThreshold: state.frontierThreshold,
+      });
     } catch (error) {
       // A judgement that fails keeps the model that was working.
       state.failureCooldown = FAILURE_COOLDOWN_TURNS;
@@ -268,12 +333,12 @@ export default function piRouterExtension(
         boundary: boundary.route,
         contextTokens,
         from: currentKey,
+        tier: null,
         outcome: "judge-failed",
         error: error instanceof Error ? error.message : String(error),
       });
       state.last = {
         difficulty: 0,
-        escalate: false,
         reason: `judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
       };
       return undefined;
@@ -285,7 +350,6 @@ export default function piRouterExtension(
     if (!state.enabled || state.taskIndex !== taskIndexAtStart) return undefined;
     if (modelKey(ctx?.model ?? null) !== currentKey) return undefined;
 
-    state.judgementsThisTask++;
     state.counters.judged++;
     // The shared fields every decision record carries, so the report can join a
     // rating to what happened next within the same turn.
@@ -293,6 +357,7 @@ export default function piRouterExtension(
       at: Date.now(),
       latencyMs: Date.now() - startedAt,
       difficulty: decision.difficulty,
+      tier: decision.tier,
       threshold: state.threshold,
       boundary: boundary.route,
       contextTokens,
@@ -300,7 +365,6 @@ export default function piRouterExtension(
     };
     state.last = {
       difficulty: decision.difficulty ?? 0,
-      escalate: decision.escalate === true,
       reason: decision.reason,
     };
     setStatus(
@@ -314,39 +378,53 @@ export default function piRouterExtension(
       return undefined;
     }
 
-    if (decision.escalate && !isFrontier(ctx?.model)) {
+    // Escalate only when the target tier outranks the model in use. A session
+    // already on the target — or better — holds; an unknown or economy model
+    // ranks 0 and moves to whatever the rating asks for. Nothing here ever
+    // downgrades a task in flight.
+    const currentTier = tierOf(modelKey(ctx?.model ?? null), state.tiers);
+    const currentRank = TIER_RANK[currentTier ?? ""] ?? 0;
+    const targetRank = TIER_RANK[decision.tier ?? ""] ?? 0;
+    // Read before any setModel: a model switch can clamp thinking, and the
+    // user baseline is whatever was in effect before we touched the pair.
+    const thinkingBefore = readThinking(ctx) ?? null;
+    let thinkingFields: Record<string, unknown> = {};
+    if (decision.escalate && targetRank > currentRank) {
       // Filter before choosing: the best-ranked model is useless if the session
       // would not fit inside it, and a later candidate may. The reservation is
       // generous on purpose — the next request is bigger than the last one, and
       // the response has to fit too.
-      const usedWithHeadroom =
-        latestContextTokens(history) * CONTEXT_GROWTH_MARGIN + OUTPUT_RESERVE;
+      const usedWithHeadroom = contextTokens * CONTEXT_GROWTH_MARGIN + OUTPUT_RESERVE;
       const offers = await candidates(ctx);
       const fitting = offers.filter((entry: unknown) => {
-        const window = Number((entry as { contextWindow?: number })?.contextWindow);
+        // ctx.scopedModels hands out { model, thinkingLevel? } wrappers, so the
+        // window lives on the unwrapped model. Reading entry.contextWindow here
+        // saw undefined, treated every scoped model as unbounded, and let an
+        // oversized session escalate into a window it could not hold.
+        const value = (entry as { model?: unknown })?.model ?? entry;
+        const window = Number((value as { contextWindow?: number })?.contextWindow);
         if (!Number.isFinite(window) || window <= 0) return true; // unknown, not empty
         return usedWithHeadroom <= window;
       });
-      const pick = chooseFrontierModel(fitting, state.patterns);
+      const pick = chooseModelForTier(fitting, decision.tier, state.tiers);
       if (!pick) {
         if (offers.length > fitting.length) {
           state.counters.tooBig++;
-          const used = latestContextTokens(history);
-          setStatus(ctx, `router: ${Math.round(used / 1000)}k, no frontier fits`);
+          const used = contextTokens;
+          setStatus(ctx, `router: ${Math.round(used / 1000)}k, no ${decision.tier} fits`);
           notify(
             ctx,
-            `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(used / 1000)}k tokens and no available frontier model fits it`,
+            `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(used / 1000)}k tokens and no available ${decision.tier} model fits it`,
             "warning",
           );
         } else {
-          state.counters.unavailable++;
           notify(
             ctx,
-            `Router: this task rates ${decision.difficulty.toFixed(2)} but no frontier model is available`,
+            `Router: this task rates ${decision.difficulty.toFixed(2)} but no ${decision.tier} model is available`,
             "warning",
           );
         }
-        record({ ...decided, outcome: "no-frontier-model" });
+        record({ ...decided, outcome: `no-${decision.tier}-model` });
         return undefined;
       }
       if (modelKey(pick.model) === currentKey) return undefined;
@@ -374,7 +452,11 @@ export default function piRouterExtension(
       }
       state.routerChosenKey = pick.key;
       state.counters.escalated++;
-      record({ ...decided, outcome: "escalated", to: pick.key });
+      // Model first, then thinking: setModel can clamp the level. A switch
+      // always sets the target tier's thinking, even when that is lower — do
+      // not carry Luna-max onto Astra.
+      thinkingFields = takeThinking(thinkingForTier(decision.tier, state.thinking), thinkingBefore);
+      record({ ...decided, outcome: "escalated", to: pick.key, ...thinkingFields });
       setStatus(ctx, `router: ${pick.key.split("/").pop()} @ ${decision.difficulty.toFixed(1)}`);
       notify(
         ctx,
@@ -382,6 +464,21 @@ export default function piRouterExtension(
         "info",
       );
       return undefined;
+    }
+
+    // Same model, same tier: only raise thinking, never lower in flight, and
+    // never crank thinking on a higher-tier model for a mid-rated task. A
+    // manual thinking_level_select is not fought.
+    if (
+      decision.escalate &&
+      decision.tier &&
+      currentTier === decision.tier &&
+      !state.userChoseThinking
+    ) {
+      const wanted = thinkingForTier(decision.tier, state.thinking);
+      if (wanted && thinkingRank(wanted) > thinkingRank(thinkingBefore)) {
+        thinkingFields = takeThinking(wanted, thinkingBefore);
+      }
     }
 
     // Back down at a task boundary, and only from a model the router chose.
@@ -394,7 +491,23 @@ export default function piRouterExtension(
         if (ok !== false) {
           state.routerChosenKey = null;
           state.counters.steppedDown++;
-          record({ ...decided, outcome: "stepped-down", to: modelKey(state.userModel) });
+          if (state.ownsThinking && state.userThinking) {
+            const restored = state.userThinking;
+            if (writeThinking(restored)) {
+              thinkingFields = {
+                thinking: restored,
+                fromThinking: thinkingBefore,
+                toThinking: restored,
+              };
+            }
+            state.ownsThinking = false;
+          }
+          record({
+            ...decided,
+            outcome: "stepped-down",
+            to: modelKey(state.userModel),
+            ...thinkingFields,
+          });
           setStatus(ctx, `router: back to ${modelKey(state.userModel)?.split("/").pop()}`);
           notify(
             ctx,
@@ -404,7 +517,7 @@ export default function piRouterExtension(
         }
       }
     }
-    record({ ...decided, outcome: "held" });
+    record({ ...decided, outcome: "held", ...thinkingFields });
     return undefined;
   });
 
@@ -433,7 +546,7 @@ export default function piRouterExtension(
       notify(
         ctx,
         [
-          `Router ${state.enabled ? "on" : "OFF"} · threshold ${state.threshold} · ${state.patterns[0]} first · sharing ${shareWindow ? "prompt + recent turns" : "prompt only"}`,
+          `Router ${state.enabled ? "on" : "OFF"} · threshold ${state.threshold}/${state.frontierThreshold} · mid@${state.thinking.mid} frontier@${state.thinking.frontier} · ${state.tiers.frontier[0]} first · sharing ${shareWindow ? "prompt + recent turns" : "prompt only"}`,
           `${c.turns} turns · ${c.judged} judged · ${c.escalated} escalated · ${c.steppedDown} stepped down · ${c.held} held · ${c.tooBig} too big to switch`,
           state.routerChosenKey
             ? `chosen by router: ${state.routerChosenKey}`

@@ -14,16 +14,24 @@ import { readFileSync } from "node:fs";
 import { DIFFICULTY_THRESHOLD } from "../model-battery.mjs";
 
 const LUNA = { provider: "openai-codex", id: "gpt-5.6-luna" };
+const DEEPSEEK = { provider: "deepseek", id: "deepseek-flash" };
 // The Codex frontier models hold 272K while the deepseek base holds 1M, which is
 // the collision the context guard exists for.
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra", contextWindow: 272000 };
 const SOL = { provider: "openai-codex", id: "gpt-5.6-sol", contextWindow: 272000 };
 
-const ENV = { PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, PI_ROUTER: process.env.PI_ROUTER };
+const ENV = {
+  PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD,
+  PI_ROUTER: process.env.PI_ROUTER,
+  PI_ROUTER_MID_THINKING: process.env.PI_ROUTER_MID_THINKING,
+  PI_ROUTER_FRONTIER_THINKING: process.env.PI_ROUTER_FRONTIER_THINKING,
+};
 
 beforeEach(() => {
   delete process.env.PI_SUBAGENT_CHILD;
   delete process.env.PI_ROUTER;
+  delete process.env.PI_ROUTER_MID_THINKING;
+  delete process.env.PI_ROUTER_FRONTIER_THINKING;
 });
 
 function harness({
@@ -31,6 +39,7 @@ function harness({
   available = [LUNA, ASTRA, SOL],
   scopedModels,
   model = LUNA,
+  thinkingLevel = "medium",
   setModelOk = true,
   askImpl,
 } = {}) {
@@ -40,10 +49,13 @@ function harness({
   const statuses = [];
   const entries = [];
   const setModelCalls = [];
+  const setThinkingCalls = [];
+  const apiCalls = [];
   const branch = [];
   let askCalls = 0;
   // pi.setModel changes the session model, so the fake session follows it.
   let currentModel = model;
+  let currentThinking = thinkingLevel;
 
   const pi = {
     on: (name, handler) => {
@@ -54,10 +66,17 @@ function harness({
     },
     appendEntry: (customType, data) => entries.push({ customType, data }),
     setModel: async (value) => {
+      apiCalls.push("setModel");
       setModelCalls.push(value);
       if (setModelOk) currentModel = value;
       return setModelOk;
     },
+    setThinkingLevel: (level) => {
+      apiCalls.push("setThinkingLevel");
+      setThinkingCalls.push(level);
+      currentThinking = level;
+    },
+    getThinkingLevel: () => currentThinking,
   };
 
   const ctx = {
@@ -65,6 +84,9 @@ function harness({
     hasUI: true,
     get model() {
       return currentModel;
+    },
+    get thinkingLevel() {
+      return currentThinking;
     },
     scopedModels,
     modelRegistry: { getAvailable: () => available },
@@ -92,6 +114,8 @@ function harness({
     statuses,
     entries,
     setModelCalls,
+    setThinkingCalls,
+    apiCalls,
     askCount: () => askCalls,
     run: (prompt, overrides = {}) =>
       handlers.before_agent_start[0]({ prompt }, { ...ctx, ...overrides }),
@@ -115,23 +139,106 @@ function harness({
     command: (args) => commands.route.handler(args, ctx),
     selectModel: (next, source = "set") =>
       handlers.model_select?.[0]?.({ model: next, previousModel: null, source }, ctx),
+    selectThinking: (level) => {
+      const previousLevel = currentThinking;
+      currentThinking = level;
+      return handlers.thinking_level_select?.[0]?.({ level, previousLevel }, ctx);
+    },
   };
 }
 
 // ---------------------------------------------------------------------------
 
 test("escalates to the frontier model when the task rates hard", async () => {
-  const h = harness({ difficulty: 2.2 });
+  const h = harness({ difficulty: 2.6 });
   await h.run("audit the routing design and tell me what is wrong with it");
   assert.equal(h.setModelCalls.length, 1);
   assert.equal(h.setModelCalls[0], ASTRA, "first pattern wins");
-  assert.match(h.notifications.at(-1).title, /difficulty 2\.20/);
+  assert.match(h.notifications.at(-1).title, /difficulty 2\.60/);
 });
 
 test("holds the current model when the task rates easy", async () => {
   const h = harness({ difficulty: 0.6 });
   await h.run("what does this function do");
   assert.equal(h.setModelCalls.length, 0);
+});
+
+test("an economy base escalates to the mid tier before the frontier", async () => {
+  const h = harness({ difficulty: 1.8, model: DEEPSEEK });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 1);
+  assert.equal(h.setModelCalls[0], LUNA, "the mid pattern, not the frontier");
+});
+
+test("a mid base holds a mid-rated task instead of re-selecting itself", async () => {
+  const h = harness({ difficulty: 1.8, model: LUNA });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0, "mid does not escalate to mid");
+});
+
+test("already on Luna at medium, a mid-rated task only raises thinking", async () => {
+  const h = harness({ difficulty: 1.8, model: LUNA, thinkingLevel: "medium" });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.deepEqual(h.setThinkingCalls, ["xhigh"]);
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.equal(entry.data.thinking, "xhigh");
+});
+
+test("economy Deepseek at medium, difficulty 1.8 sets Luna then xhigh", async () => {
+  const h = harness({ difficulty: 1.8, model: DEEPSEEK, thinkingLevel: "medium" });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.deepEqual(h.setModelCalls, [LUNA]);
+  assert.deepEqual(h.setThinkingCalls, ["xhigh"]);
+  assert.deepEqual(h.apiCalls, ["setModel", "setThinkingLevel"]);
+});
+
+test("a frontier switch sets medium thinking and does not carry xhigh onto Astra", async () => {
+  const h = harness({ difficulty: 2.6, model: DEEPSEEK, thinkingLevel: "xhigh" });
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.deepEqual(h.setModelCalls, [ASTRA]);
+  assert.deepEqual(h.setThinkingCalls, ["medium"]);
+  assert.deepEqual(h.apiCalls, ["setModel", "setThinkingLevel"]);
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.equal(entry.data.thinking, "medium");
+  assert.equal(entry.data.fromThinking, "xhigh");
+  assert.equal(entry.data.toThinking, "medium");
+});
+
+test("already on Astra at max, a mid-rated task changes neither model nor thinking", async () => {
+  const h = harness({ difficulty: 1.8, model: ASTRA, thinkingLevel: "max" });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.equal(h.setThinkingCalls.length, 0);
+});
+
+test("step-down restores the user's model and thinking", async () => {
+  const mutable = { difficulty: 2.6 };
+  const h = harness({
+    thinkingLevel: "medium",
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(h.setModelCalls[0], ASTRA);
+  h.say("audit the routing design and tell me what is wrong with it");
+
+  mutable.difficulty = 0.4;
+  await h.run("now explain how the deploy pipeline works end to end for a new reader");
+  assert.equal(h.setModelCalls.at(-1), LUNA);
+  assert.equal(h.setThinkingCalls.at(-1), "medium");
+  assert.equal(h.apiCalls.at(-2), "setModel");
+  assert.equal(h.apiCalls.at(-1), "setThinkingLevel");
+});
+
+test("a manual thinking change is not overwritten on a mid-rated Luna task", async () => {
+  const h = harness({ difficulty: 1.8, model: LUNA, thinkingLevel: "medium" });
+  h.selectThinking("max");
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.equal(h.setThinkingCalls.length, 0);
 });
 
 test("a continuation is not re-judged: the decision is held for the task", async () => {
@@ -143,7 +250,7 @@ test("a continuation is not re-judged: the decision is held for the task", async
 });
 
 test("a task that is failing gets re-judged", async () => {
-  const h = harness({ difficulty: 2.4 });
+  const h = harness({ difficulty: 2.6 });
   await h.run("fix the failing parser tests in the guardrail package");
   h.say("fix the failing parser tests in the guardrail package", { failures: 2 });
   await h.run("keep going");
@@ -152,7 +259,7 @@ test("a task that is failing gets re-judged", async () => {
 });
 
 test("steps back down at a new task, but only from a model it chose", async () => {
-  const mutable = { difficulty: 2.2 };
+  const mutable = { difficulty: 2.6 };
   const h = harness({
     askImpl: async () => ({
       answers: { difficulty: { type: "score", score: mutable.difficulty } },
@@ -203,6 +310,47 @@ test("no available frontier model says so instead of guessing", async () => {
   assert.match(h.notifications.at(-1).title, /no frontier model is available/);
 });
 
+test("a missing mid model says so, not 'frontier'", async () => {
+  const h = harness({ difficulty: 1.8, model: DEEPSEEK, available: [ASTRA, SOL] });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.match(h.notifications.at(-1).title, /no mid model is available/);
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.equal(entry.data.outcome, "no-mid-model");
+});
+
+test("a frontier model is never pulled down to a mid target", async () => {
+  const h = harness({ difficulty: 1.8, model: ASTRA });
+  await h.run("fix the failing parser tests in the guardrail package");
+  assert.equal(h.setModelCalls.length, 0, "frontier outranks mid, so it holds");
+});
+
+test("a model already at the target tier is not re-picked", async () => {
+  // SOL is frontier already; ASTRA ranks first in the frontier list, but the
+  // target tier does not outrank the current one, so nothing switches.
+  const h = harness({ difficulty: 2.6, model: SOL });
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(h.setModelCalls.length, 0, "a rank-equal target must not switch");
+});
+
+test("a router-chosen frontier model holds through a mid-rated new task", async () => {
+  const mutable = { difficulty: 2.6 };
+  const h = harness({
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(h.setModelCalls.length, 1);
+  assert.equal(h.setModelCalls[0], ASTRA);
+  h.say("audit the routing design and tell me what is wrong with it");
+
+  mutable.difficulty = 1.8;
+  await h.run("now rewrite the deploy pipeline notes for a brand new reader");
+  assert.equal(h.setModelCalls.length, 1, "holds frontier rather than stepping down to mid");
+});
+
 test("missing authentication is reported, not retried", async () => {
   const h = harness({ difficulty: 2.6, setModelOk: false });
   await h.run("audit the routing design");
@@ -241,6 +389,31 @@ test("refuses to escalate into a window the session would not fit", async () => 
   );
 });
 
+test("the capacity filter reads the window inside a scoped {model} wrapper", async () => {
+  // ctx.scopedModels hands out wrappers; reading the window off the wrapper saw
+  // undefined, treated the scoped model as unbounded, and let this escalate
+  // into a 272k window at 452k of context.
+  const h = harness({
+    difficulty: 2.6,
+    model: DEEPSEEK,
+    scopedModels: [{ model: ASTRA, thinkingLevel: "high" }],
+  });
+  h.say("start on the big refactor task in this repository please", {
+    assistant: "Working through it.",
+  });
+  h.branch.push({
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "still going" }],
+      usage: { input: 2000, cacheRead: 450000 },
+    },
+  });
+  await h.run("and now finish the analysis of the whole thing for me");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.match(h.notifications.at(-1).title, /no available frontier model fits it/);
+});
+
 test("escalates when the session still fits the frontier window", async () => {
   const h = harness({ difficulty: 2.6 });
   h.say("start on the big refactor task in this repository please", {
@@ -261,11 +434,12 @@ test("escalates when the session still fits the frontier window", async () => {
 test("every judgement is recorded as a non-context entry", async () => {
   // The report joins these to what happened later: a held decision followed by
   // a manual escalation is a miss, an escalation followed by a retreat is not.
-  const h = harness({ difficulty: 2.2 });
+  const h = harness({ difficulty: 2.6 });
   await h.run("audit the routing design and tell me what is wrong with it");
   const entry = h.entries.find((e) => e.customType === "router-decision");
   assert.ok(entry, JSON.stringify(h.entries));
   assert.equal(entry.data.outcome, "escalated");
+  assert.equal(entry.data.tier, "frontier");
   assert.equal(entry.data.to, "openai-codex/gpt-6-astra");
   assert.equal(entry.data.from, "openai-codex/gpt-5.6-luna");
   assert.ok(entry.data.difficulty >= 2);
@@ -278,6 +452,7 @@ test("a held judgement records its rating and threshold", async () => {
   const entry = h.entries.find((e) => e.customType === "router-decision");
   assert.equal(entry.data.outcome, "held");
   assert.equal(entry.data.difficulty, 0.8);
+  assert.equal(entry.data.tier, null);
   assert.equal(entry.data.threshold, 1.5);
 });
 
@@ -295,14 +470,14 @@ test("a failed judgement is recorded too", async () => {
 });
 
 test("the footer status says what the router is doing", async () => {
-  const h = harness({ difficulty: 2.2 });
+  const h = harness({ difficulty: 2.6 });
   // The status line is how a loaded-but-holding router is told apart from one
   // that was never loaded, which is exactly what a stale session looked like.
   const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
   assert.match(source, /setStatus\(ctx, state\.enabled \? "router: armed" : "router: off"\)/);
   await h.run("audit the routing design and tell me what is wrong with it");
   assert.ok(
-    h.statuses.some((entry) => /^router: gpt-6-astra @ 2\.2$/.test(entry.text)),
+    h.statuses.some((entry) => /^router: gpt-6-astra @ 2\.6$/.test(entry.text)),
     JSON.stringify(h.statuses),
   );
 });
@@ -318,7 +493,7 @@ test("/route off disarms it, /route on re-arms it", async () => {
 });
 
 test("/route status reports what it has been doing", async () => {
-  const h = harness({ difficulty: 2.2 });
+  const h = harness({ difficulty: 2.6 });
   await h.run("audit the routing design");
   await h.command("status");
   const status = h.notifications.at(-1).title;
@@ -326,6 +501,7 @@ test("/route status reports what it has been doing", async () => {
   assert.match(status, /1 judged/);
   assert.match(status, /1 escalated/);
   assert.match(status, new RegExp(`threshold ${DIFFICULTY_THRESHOLD}`));
+  assert.match(status, /mid@xhigh frontier@medium/);
 });
 
 test("a subagent child is left alone", async () => {
@@ -395,7 +571,7 @@ test("a failed judgement is counted, cooldown-limited, and never permanent", asy
 });
 
 test("a stuck turn cannot step the model down mid-task", async () => {
-  const mutable = { difficulty: 2.2 };
+  const mutable = { difficulty: 2.6 };
   const h = harness({
     askImpl: async () => ({
       answers: { difficulty: { type: "score", score: mutable.difficulty } },
@@ -416,7 +592,7 @@ test("a stuck turn cannot step the model down mid-task", async () => {
 
 test("a model the user picks by hand ends the router's ownership", async () => {
   const other = { provider: "openrouter", id: "x-ai/other" };
-  const mutable = { difficulty: 2.2 };
+  const mutable = { difficulty: 2.6 };
   const h = harness({
     askImpl: async () => ({
       answers: { difficulty: { type: "score", score: mutable.difficulty } },
