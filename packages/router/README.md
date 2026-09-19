@@ -41,6 +41,12 @@ me."* at 2.18/3, and *"Stick to the task yo"* at 1.02/3).
   routing stays inside that list rather than reaching for the whole catalogue.
 - **A missing judgement changes nothing.** Timeout, no key, unusable answer —
   the current model keeps working. Never spend less by accident.
+- **Refuses a switch the target cannot hold.** The base model here reads 1M
+  tokens while the Codex frontier models hold 272K, and this machine's p90
+  request context is 452K. Escalating anyway would compact the session — losing
+  the context the escalation was meant to reason over — so the router stays put
+  and says why. In practice this makes escalation an early-task move, which is
+  where the task-boundary design wanted it anyway.
 
 ## Configuration
 

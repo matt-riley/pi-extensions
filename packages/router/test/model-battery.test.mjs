@@ -6,6 +6,7 @@ import {
   buildQuestions,
   chooseFrontierModel,
   DIFFICULTY_THRESHOLD,
+  latestContextTokens,
   modelKey,
   routeFromDifficulty,
   turnsFromBranch,
@@ -69,6 +70,20 @@ test("turnsFromBranch ignores user records with no text", () => {
   ]);
   assert.equal(turns.length, 1);
   assert.equal(turns[0].prompt, "real prompt");
+});
+
+test("turnsFromBranch records the context the session last read", () => {
+  const turns = turnsFromBranch([
+    { role: "user", content: "first" },
+    { role: "assistant", content: "ok", usage: { input: 1000, cacheRead: 180000 } },
+    { role: "user", content: "second" },
+    { role: "assistant", content: "ok", usage: { input: 5, cacheRead: 0 } },
+  ]);
+  assert.equal(turns[0].contextTokens, 181000);
+  assert.equal(turns[1].contextTokens, 5);
+  assert.equal(latestContextTokens(turns), 5);
+  assert.equal(latestContextTokens([]), 0);
+  assert.equal(latestContextTokens(undefined), 0);
 });
 
 // ---------------------------------------------------------------------------

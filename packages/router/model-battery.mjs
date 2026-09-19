@@ -110,7 +110,7 @@ export function turnsFromBranch(branch, limit = WINDOW) {
                 .map((block) => block.text)
                 .join(" ")
             : "";
-      current = { prompt: text.trim(), lastResponse: "", toolCalls: [] };
+      current = { prompt: text.trim(), lastResponse: "", toolCalls: [], contextTokens: 0 };
       if (current.prompt) turns.push(current);
       else current = null;
       continue;
@@ -128,6 +128,13 @@ export function turnsFromBranch(branch, limit = WINDOW) {
                 .join(" ")
             : "";
       if (text.trim()) current.lastResponse = text.trim();
+      // What the last request actually read, so the router can tell whether a
+      // switch would fit the target model's window.
+      const usage = message.usage;
+      if (usage) {
+        const read = (Number(usage.input) || 0) + (Number(usage.cacheRead) || 0);
+        if (read > 0) current.contextTokens = read;
+      }
       for (const block of Array.isArray(message.content) ? message.content : []) {
         if (block?.type === "toolCall" && block.name)
           current.toolCalls.push({ name: block.name, isError: false });
@@ -139,6 +146,22 @@ export function turnsFromBranch(branch, limit = WINDOW) {
     }
   }
   return turns.slice(-limit);
+}
+
+/**
+ * Context the session last actually read, or 0 when nothing has run yet.
+ *
+ * Used to refuse an escalation the target model could not hold: the base model
+ * here has a 1M window while the Codex frontier models hold 272K, and this
+ * machine's p90 request context is 452K. Switching anyway would compact the
+ * session — losing the context the escalation was meant to reason over.
+ */
+export function latestContextTokens(turns) {
+  for (let i = (turns?.length ?? 0) - 1; i >= 0; i--) {
+    const value = Number(turns[i]?.contextTokens);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
 }
 
 /** The measured state: the prompt, the recent conversation, the directory. */

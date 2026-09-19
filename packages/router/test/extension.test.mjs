@@ -13,8 +13,10 @@ import piRouterExtension from "../index.ts";
 import { DIFFICULTY_THRESHOLD } from "../model-battery.mjs";
 
 const LUNA = { provider: "openai-codex", id: "gpt-5.6-luna" };
-const ASTRA = { provider: "openai-codex", id: "gpt-6-astra" };
-const SOL = { provider: "openai-codex", id: "gpt-5.6-sol" };
+// The Codex frontier models hold 272K while the deepseek base holds 1M, which is
+// the collision the context guard exists for.
+const ASTRA = { provider: "openai-codex", id: "gpt-6-astra", contextWindow: 272000 };
+const SOL = { provider: "openai-codex", id: "gpt-5.6-sol", contextWindow: 272000 };
 
 const ENV = { PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, PI_ROUTER: process.env.PI_ROUTER };
 
@@ -201,6 +203,43 @@ test("a scoped session is never escaped", async () => {
   const h = harness({ difficulty: 2.6, scopedModels: [{ model: LUNA }], available: [LUNA, ASTRA] });
   await h.run("audit the routing design");
   assert.equal(h.setModelCalls.length, 0, "astra is available but not scoped into this session");
+});
+
+test("refuses to escalate into a window the session would not fit", async () => {
+  // Context read 452k on the p90 turn here; gpt-6-astra holds 272k. Switching
+  // would compact the session, which is the opposite of what escalation is for.
+  const h = harness({ difficulty: 2.6 });
+  h.say("start on the big refactor task in this repository please", {
+    assistant: "Working through it.",
+  });
+  h.branch.push({
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "still going" }],
+      usage: { input: 2000, cacheRead: 450000 },
+    },
+  });
+  await h.run("and now finish the analysis of the whole thing for me");
+  assert.equal(h.setModelCalls.length, 0);
+  assert.match(h.notifications.at(-1).title, /staying on .* reads 452k tokens and .* holds 272k/);
+});
+
+test("escalates when the session still fits the frontier window", async () => {
+  const h = harness({ difficulty: 2.6 });
+  h.say("start on the big refactor task in this repository please", {
+    assistant: "Working through it.",
+  });
+  h.branch.push({
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "still going" }],
+      usage: { input: 2000, cacheRead: 100000 },
+    },
+  });
+  await h.run("and now finish the analysis of the whole thing for me");
+  assert.equal(h.setModelCalls.length, 1);
 });
 
 test("/route off disarms it, /route on re-arms it", async () => {

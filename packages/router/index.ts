@@ -31,6 +31,7 @@ import {
   chooseFrontierModel,
   DEFAULT_FRONTIER_PATTERNS,
   DIFFICULTY_THRESHOLD,
+  latestContextTokens,
   modelKey,
   routeFromDifficulty,
   turnsFromBranch,
@@ -80,7 +81,15 @@ export default function piRouterExtension(
     judgementsThisTask: 0,
     lastPrompt: null,
     taskIndex: 0,
-    counters: { turns: 0, judged: 0, escalated: 0, held: 0, steppedDown: 0, unavailable: 0 },
+    counters: {
+      turns: 0,
+      judged: 0,
+      escalated: 0,
+      held: 0,
+      steppedDown: 0,
+      unavailable: 0,
+      tooBig: 0,
+    },
     last: null as null | { difficulty: number; escalate: boolean; reason: string },
   };
 
@@ -192,6 +201,21 @@ export default function piRouterExtension(
         return undefined;
       }
       if (modelKey(pick.model) === currentKey) return undefined;
+
+      // Refuse a switch the target cannot hold. A smaller window would compact
+      // the session, which defeats the point of escalating into it.
+      const targetWindow = Number(pick.model?.contextWindow);
+      const used = latestContextTokens(history);
+      if (Number.isFinite(targetWindow) && targetWindow > 0 && used > targetWindow) {
+        state.counters.tooBig++;
+        notify(
+          ctx,
+          `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(used / 1000)}k tokens and ${pick.key} holds ${Math.round(targetWindow / 1000)}k`,
+          "warning",
+        );
+        return undefined;
+      }
+
       state.userModel ??= ctx?.model ?? null;
       const ok = await Promise.resolve(pi.setModel?.(pick.model));
       if (ok === false) {
@@ -255,7 +279,7 @@ export default function piRouterExtension(
         ctx,
         [
           `Router ${state.enabled ? "on" : "OFF"} · threshold ${state.threshold} · ${state.patterns[0]} first`,
-          `${c.turns} turns · ${c.judged} judged · ${c.escalated} escalated · ${c.steppedDown} stepped down · ${c.held} held`,
+          `${c.turns} turns · ${c.judged} judged · ${c.escalated} escalated · ${c.steppedDown} stepped down · ${c.held} held · ${c.tooBig} too big to switch`,
           state.routerChosenKey
             ? `chosen by router: ${state.routerChosenKey}`
             : "no router-chosen model active",
