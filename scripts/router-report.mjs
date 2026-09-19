@@ -24,6 +24,7 @@ import {
   MIN_BAND_SAMPLE,
   percentile,
   ratingBuckets,
+  requestSeries,
   switchCosts,
   thresholdPosition,
 } from "../packages/router/metrics.mjs";
@@ -49,23 +50,7 @@ function main() {
   const latencies = [];
 
   for (const session of sessions) {
-    switches.push(
-      ...switchCosts(
-        session.turns
-          .flatMap((turn) => turn.requests ?? [])
-          .map((request) => ({
-            model: request.model,
-            context: request.context,
-            freshInput: request.input,
-            cacheRead: request.cacheRead,
-            cacheWrite: request.cacheWrite,
-            output: request.output,
-            cost: request.cost?.total ?? 0,
-            prompt: null,
-            failures: 0,
-          })),
-      ),
-    );
+    switches.push(...switchCosts(requestSeries(session)));
 
     episodes.push(...frontierEpisodes(session, { patterns: PATTERNS }));
 

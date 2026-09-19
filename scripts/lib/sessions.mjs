@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { messageText } from "../../shared/message-text.mjs";
 
 /** Every `.jsonl` transcript under `dir`, recursively. */
 export function findSessionFiles(dir) {
@@ -22,15 +23,6 @@ export function findSessionFiles(dir) {
   };
   walk(dir);
   return out;
-}
-
-function messageText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join(" ");
 }
 
 function usageOf(usage) {
