@@ -21,11 +21,17 @@ And the two instruments TypeSafe could give:
 | `difficulty` (score 0–3) | **0.70** | what the router uses |
 | `needs_frontier` (noul) | 0.55 | barely better than chance — rejected |
 
-At `difficulty >= 1.5` the rating is 77% precise at 48% recall on labelled
-turns, and catches 11 of the 12 most expensive turns in the corpus — including
-both that a rules-based chooser confidently downgraded (*"Right, one last
-chance. 4 different prototypes, nothing like the original site, go and impress
-me."* at 2.18/3, and *"Stick to the task yo"* at 1.02/3).
+At `difficulty >= 1.5` the rating is 77% precise at 48% recall on the judged
+sample and catches **7 of the 12** most expensive turns in it, including both
+that a rules-based chooser confidently downgraded (*"Right, one last chance. 4
+different prototypes, nothing like the original site, go and impress me."* at
+2.18/3, and *"Stick to the task yo"* at 1.02/3). Dropping the threshold to 1.0
+catches **12 of 12** at 65% precision, for roughly ten times the cost in wrong
+escalations.
+
+An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
+the `needs_frontier` question, which the router does not use — the audit that
+caught it is summarised at the bottom of this file.
 
 ## Behaviour
 
@@ -56,6 +62,7 @@ me."* at 2.18/3, and *"Stick to the task yo"* at 1.02/3).
 | `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which to escalate |
 | `PI_ROUTER_FRONTIER` | `openai-codex/gpt-6-astra,openai-codex/gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | preference order, substring-matched against `provider/model` |
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
+| `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
 
 In-session: `/route` for status and counters, `/route off` and `/route on`.
 
@@ -83,6 +90,15 @@ Committed evidence at the time of writing: `difficulty >= 1.5` → 77% precision
 48% recall, $23 of wrong escalations against $34 of frontier spend left on
 cheaper models. Lower the threshold, find more, pay more.
 
+## What leaves your machine
+
+Routing is a data-flow decision as much as a model one, so it is worth being
+explicit: the judgement sends the prompt, the working directory, and (by default)
+the last four turns — including assistant replies — to TypeSafe. An escalation
+then serves that conversation from a different provider than the one you were
+using. `PI_ROUTER_SHARE=prompt` narrows the first of those; nothing narrows the
+second except `/route off`, or not escalating.
+
 ## What it deliberately does not do
 
 - **No tool or skill scoping.** Measured and rejected: 810 turns show shell in
@@ -97,10 +113,16 @@ cheaper models. Lower the threshold, find more, pay more.
 
 ## Limits worth knowing
 
-- The label behind every number here is *which model a turn actually ran on*,
-  and model choice in the corpus was mostly per session. A turn rated hard
-  inside an economy session counts against precision even if it would have
-  benefited, so measured precision is a floor.
+- **Measured precision is inflated, not a floor.** The judged sample was
+  enriched (all 50 frontier turns, 40 of the 761 others) where the live base
+  rate is closer to 6%, so live precision will be lower than 77% unless the
+  threshold is raised. Two biases pull in opposite directions and neither is
+  quantified: enrichment raises precision, while labelling turns by *the model
+  they happened to run on* means a hard turn judged inside an economy session
+  counts as a false positive.
+- The label is spend, not need. Historical frontier use does not prove a cheaper
+  model would have failed, and historical economy use does not prove it
+  succeeded. Nothing here measures answer quality in either direction.
 - Quality is unmeasured. The scripts price tokens, not wrong answers.
 - The rating is Jev's judgement, so it inherits that model's calibration; the
   `legend` in the answer shows where the probability mass sat.
@@ -113,3 +135,28 @@ cheaper models. Lower the threshold, find more, pay more.
 matching what was measured, threshold routing, model resolution and scoping, and
 a fake-pi end-to-end pass over escalation, holding, stepping down, auth failure,
 subagent children and the kill switch.
+
+## What an audit of this extension found
+
+The router once audited itself on a frontier model, and it was worth the $4: it
+found real defects. Fixed, each with a test:
+
+| Finding | Was | Now |
+| --- | --- | --- |
+| The judgement budget never reset | Three judgements early in a session made every later task unroutable | A task boundary resets it |
+| Step-down ignored the task boundary | A stuck, failing task could be downgraded mid-failure | Stepping down requires a new task |
+| The router assumed ownership of any model | Start A → user picks B → router escalates → easy task restored **A** | `model_select` ends ownership; the baseline is captured immediately before switching |
+| `PI_SUBAGENT_CHILD` was read per prompt | pi-subagents clears it before the child's first prompt, so children *were* routed | Captured at factory time |
+| A decision could land after `/route off` | A stale judgement still switched models | Re-checked after the await |
+| Failed judgements were free and unlimited | A dead judge was retried every turn | Counted as attempts, with a cooldown |
+| The score was coerced, not validated | `true` → 1, `[2]` → 2, `5` → 5 | A finite number inside the scale, or no decision |
+| Capacity was checked after selection | The best model was picked, then refused, while a fitting one existed | Candidates are filtered by capacity first, with headroom and output reserve |
+| `difficulty-report.mjs` judged empty state | An extraction refactor left a positional call where an object was expected | Object call, and the builder now throws on the wrong shape |
+
+Still open, and written down rather than fixed: `difficulty` is a
+probability-weighted mean, so two very different distributions can share a 1.5;
+uncertainty and confidence are discarded; the difficulty scale mixes reasoning
+complexity with the cost of being wrong; a 2,000-character prompt truncation can
+hide the real requirement; a rating is not a prompt-injection boundary; and a
+queued or steered prompt can bypass `before_agent_start` entirely, so a long
+autonomous loop cannot be rescued from here.

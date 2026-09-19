@@ -73,13 +73,15 @@ function harness({
     },
   };
 
+  const judge =
+    askImpl ?? (async () => ({ answers: { difficulty: { type: "score", score: difficulty } } }));
   piRouterExtension(pi, {
-    ask:
-      askImpl ??
-      (async () => {
-        askCalls++;
-        return { answers: { difficulty: { type: "score", score: difficulty } } };
-      }),
+    // Count every judgement, injected or not: several tests assert on the call
+    // count and would otherwise always see zero.
+    ask: async (...args) => {
+      askCalls++;
+      return judge(...args);
+    },
   });
 
   return {
@@ -108,6 +110,8 @@ function harness({
       }
     },
     command: (args) => commands.route.handler(args, ctx),
+    selectModel: (next, source = "set") =>
+      handlers.model_select?.[0]?.({ model: next, previousModel: null, source }, ctx),
   };
 }
 
@@ -228,7 +232,10 @@ test("refuses to escalate into a window the session would not fit", async () => 
   });
   await h.run("and now finish the analysis of the whole thing for me");
   assert.equal(h.setModelCalls.length, 0);
-  assert.match(h.notifications.at(-1).title, /staying on .* reads 452k tokens and .* holds 272k/);
+  assert.match(
+    h.notifications.at(-1).title,
+    /staying on .* reads 452k tokens and no available frontier model fits it/,
+  );
 });
 
 test("escalates when the session still fits the frontier window", async () => {
@@ -302,4 +309,118 @@ test.after?.(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
+});
+
+// ---------------------------------------------------------------------------
+// The audit's findings, pinned
+
+test("the judgement budget resets at a task boundary", async () => {
+  // Resetting only on session_start made three early judgements permanent: a
+  // later task could not be routed at all.
+  const mutable = { difficulty: 2.2 };
+  const h = harness({
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+  const calls = () => h.askCount();
+
+  await h.run("start the first task on the parser rewrite in this repository");
+  mutable.difficulty = 0.5;
+  h.say("start the first task on the parser rewrite in this repository", { failures: 3 });
+  await h.run("keep going");
+  h.say("keep going", { failures: 3 });
+  await h.run("keep going");
+  assert.equal(calls(), 3, "three attempts spent inside one task");
+
+  // A new task must judge again rather than inherit the exhausted budget.
+  mutable.difficulty = 2.4;
+  await h.run("now audit the deployment scripts for security problems end to end");
+  assert.equal(calls(), 4, "new task gets a fresh budget");
+});
+
+test("a failed judgement is counted, cooldown-limited, and never permanent", async () => {
+  let attempts = 0;
+  const h = harness({
+    askImpl: async () => {
+      attempts++;
+      throw new Error("judge down");
+    },
+  });
+  await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(attempts, 1);
+  h.say("audit the routing design and tell me what is wrong with it");
+  await h.run("keep going");
+  await h.run("keep going");
+  assert.equal(attempts, 1, "a dead judge is not retried every turn");
+});
+
+test("a stuck turn cannot step the model down mid-task", async () => {
+  const mutable = { difficulty: 2.2 };
+  const h = harness({
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+  await h.run("start the refactor of the routing extension in this repository");
+  assert.equal(h.setModelCalls.length, 1, "escalated");
+  h.say("start the refactor of the routing extension in this repository", { failures: 2 });
+
+  mutable.difficulty = 0.2;
+  await h.run("keep going");
+  assert.equal(h.setModelCalls.length, 1, "still escalated: this is the same failing task");
+
+  await h.run("now explain the deploy pipeline end to end for a new reader");
+  assert.equal(h.setModelCalls.length, 2, "a real new task steps back down");
+  assert.equal(h.setModelCalls[1], LUNA);
+});
+
+test("a model the user picks by hand ends the router's ownership", async () => {
+  const other = { provider: "openrouter", id: "x-ai/other" };
+  const mutable = { difficulty: 2.2 };
+  const h = harness({
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+  await h.run("start the refactor of the routing extension in this repository");
+  assert.equal(h.setModelCalls.length, 1);
+
+  h.selectModel(other);
+  mutable.difficulty = 0.2;
+  h.say("start the refactor of the routing extension in this repository");
+  await h.run("now explain the deploy pipeline end to end for a new reader");
+  assert.equal(
+    h.setModelCalls.length,
+    1,
+    "the router does not override or restore over a manual choice",
+  );
+});
+
+test("a decision that arrives after /route off switches nothing", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const h = harness({
+    askImpl: async () => {
+      await gate;
+      return { answers: { difficulty: { type: "score", score: 2.6 } } };
+    },
+  });
+  const pending = h.run("audit the routing design and tell me what is wrong with it");
+  await h.command("off");
+  release();
+  await pending;
+  assert.equal(h.setModelCalls.length, 0, "a stale judgement must not switch models");
+});
+
+test("a subagent child is identified at load time, not per prompt", async () => {
+  // pi-subagents clears the flag before the child first prompts, so a runtime
+  // check never sees it and children get routed.
+  process.env.PI_SUBAGENT_CHILD = "1";
+  const h = harness({ difficulty: 2.6 });
+  delete process.env.PI_SUBAGENT_CHILD;
+  await h.run("audit the routing design");
+  assert.equal(h.askCount(), 0);
 });

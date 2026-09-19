@@ -165,7 +165,13 @@ export function latestContextTokens(turns) {
 }
 
 /** The measured state: the prompt, the recent conversation, the directory. */
-export function buildDifficultyState({ prompt, window, cwd } = {}) {
+export function buildDifficultyState(input = {}) {
+  // Called positionally once (buildDifficultyState(prompt, window, cwd)) and it
+  // silently built empty state, judging nothing. Fail loudly instead.
+  if (typeof input !== "object" || input === null) {
+    throw new TypeError("buildDifficultyState expects { prompt, window, cwd }");
+  }
+  const { prompt, window, cwd } = input;
   return {
     prompt: String(prompt ?? "").slice(0, 2000),
     working_directory: cwd ?? null,
@@ -183,8 +189,11 @@ function usableScore(answer) {
   const raw = answer.score;
   if (raw === null || raw === undefined) return null;
   if (typeof raw === "string" && !raw.trim()) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
+  // A rating, not a coercion: Number(true) is 1 and Number([2]) is 2, and a
+  // score outside the scale is not a decision about which model to use.
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  if (raw < 0 || raw > DIFFICULTY_LEVELS.length - 1) return null;
+  return raw;
 }
 
 /**

@@ -164,7 +164,7 @@ async function main() {
       process.stderr.write(`\r  judging ${index}/${sample.length}`);
       try {
         const result = await askSystemOne({
-          state: buildState(row.prompt, row.window, row.cwd),
+          state: buildState({ prompt: row.prompt, window: row.window, cwd: row.cwd }),
           questions: modelQuestions(),
         });
         const difficulty = Number(result?.answers?.difficulty?.score);

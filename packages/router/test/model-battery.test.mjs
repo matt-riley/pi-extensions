@@ -141,6 +141,29 @@ test("routeFromDifficulty escalates at the measured threshold", () => {
   assert.match(routeFromDifficulty({ difficulty: score(2.18) }).reason, /2\.18/);
 });
 
+test("a rating outside the scale, or of the wrong type, is no decision", () => {
+  // Number(true) is 1 and Number([2]) is 2; neither may authorise a switch.
+  for (const raw of [true, false, [2], { value: 2 }, 5, -1, NaN, Infinity, null, "2"]) {
+    assert.equal(
+      routeFromDifficulty({ difficulty: { type: "score", score: raw } }).escalate,
+      null,
+      String(raw),
+    );
+  }
+  assert.equal(
+    routeFromDifficulty({ difficulty: score(3) }).escalate,
+    true,
+    "the top of the scale is usable",
+  );
+  assert.equal(routeFromDifficulty({ difficulty: score(0) }).escalate, false);
+});
+
+test("buildDifficultyState refuses a caller that passes the wrong shape", () => {
+  // It was called positionally once and silently judged an empty prompt.
+  assert.throws(() => buildDifficultyState("a prompt"), /expects \{ prompt, window, cwd \}/);
+  assert.deepEqual(buildDifficultyState().conversation, []);
+});
+
 test("an absent rating is not a decision to downgrade", () => {
   // null means "keep what you have" — never "use the cheap model".
   for (const answers of [
