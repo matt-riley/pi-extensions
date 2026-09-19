@@ -21,14 +21,38 @@ export const WINDOW = 4;
 /** Measured operating point: quality-leaning. Lower finds more, costs more. */
 export const DIFFICULTY_THRESHOLD = 1.5;
 
-/** Models that count as frontier, best first, matched as substrings. */
+/**
+ * Models that count as frontier, best first, matched as substrings of
+ * "provider/model".
+ *
+ * GPT entries are provider-qualified on purpose: the same model is offered by
+ * several subscriptions, and OpenAI's own should pay for it. An unqualified
+ * pattern would let whichever provider the catalogue happens to list first win
+ * — a live run picked github-copilot/gpt-6-astra before this was pinned.
+ */
 export const DEFAULT_FRONTIER_PATTERNS = [
-  "gpt-6-astra",
-  "gpt-5.6-sol",
+  "openai-codex/gpt-6-astra",
+  "openai-codex/gpt-5.6-sol",
   "grok-4.6",
   "qwen3.8-max",
   "kimi-k3",
 ];
+
+/**
+ * Providers to prefer when several candidates match the same pattern.
+ *
+ * Patterns are only half the rule: a GPT pattern can still match a reseller,
+ * so this decides between matches. Custom patterns passed via
+ * `PI_ROUTER_FRONTIER` get the same treatment.
+ */
+const DEFAULT_PROVIDER_PREFERENCE = ["openai-codex"];
+
+/** Lower rank wins; unlisted providers tie and keep catalogue order. */
+function providerRank(key, providers) {
+  const provider = String(key).split("/")[0]?.toLowerCase() ?? "";
+  const index = providers.findIndex((entry) => String(entry).toLowerCase() === provider);
+  return index === -1 ? providers.length : index;
+}
 
 const DIFFICULTY_LEVELS = [
   "Any capable small model would satisfy this in one attempt.",
@@ -178,14 +202,34 @@ export function modelKey(model) {
   return provider ? `${provider}/${id}` : String(id);
 }
 
+/** Whether a key or pattern names its provider explicitly, as "provider/model". */
+function namesProvider(value) {
+  return String(value).includes("/");
+}
+
+/** A GPT model, however the provider spells it ("gpt-6-astra", "openai/gpt-5.6-sol"). */
+function isGptKey(key) {
+  return /(^|[/-])gpt[-.]/i.test(String(key));
+}
+
 /**
  * Pick the best frontier model available, respecting the session's own model
  * scoping: if the user used `--models`, routing must not reach outside it.
  *
+ * GPT patterns are restricted to preferred providers even when the pattern does
+ * not name one: a GPT model should be served by the subscription that owns it,
+ * not by whichever reseller happens to list it first. A pattern that names its
+ * provider is taken literally, and non-GPT patterns are never restricted.
+ *
  * @param candidates [{model}|model strings] from ctx.scopedModels or getAvailable()
  * @param patterns   preference order, matched as substrings of "provider/id"
+ * @param providers  providers a GPT pattern is allowed to resolve to
  */
-export function chooseFrontierModel(candidates, patterns = DEFAULT_FRONTIER_PATTERNS) {
+export function chooseFrontierModel(
+  candidates,
+  patterns = DEFAULT_FRONTIER_PATTERNS,
+  providers = DEFAULT_PROVIDER_PREFERENCE,
+) {
   const keys = [];
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const model = candidate?.model ?? candidate;
@@ -194,8 +238,21 @@ export function chooseFrontierModel(candidates, patterns = DEFAULT_FRONTIER_PATT
   }
   for (const pattern of patterns) {
     const needle = String(pattern).toLowerCase();
-    const match = keys.find((entry) => entry.key.toLowerCase().includes(needle));
-    if (match) return { model: match.model, key: match.key, pattern };
+    const matches = keys.filter((entry) => entry.key.toLowerCase().includes(needle));
+    if (!matches.length) continue;
+
+    const restrict = !namesProvider(pattern) && matches.every((entry) => isGptKey(entry.key));
+    const eligible = restrict
+      ? matches.filter((entry) => providerRank(entry.key, providers) < providers.length)
+      : matches;
+    if (!eligible.length) continue;
+
+    // Stable sort: equal-ranked providers keep catalogue order, so the choice
+    // is deterministic rather than dependent on how the list arrived.
+    const best = [...eligible].sort(
+      (a, b) => providerRank(a.key, providers) - providerRank(b.key, providers),
+    )[0];
+    return { model: best.model, key: best.key, pattern };
   }
   return null;
 }

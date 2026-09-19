@@ -163,6 +163,58 @@ test("chooseFrontierModel follows the preference order and reports what matched"
   assert.equal(narrowed.key, "openai-codex/gpt-5.6-sol");
 });
 
+test("a GPT model comes from openai-codex even when another provider lists it first", () => {
+  // The live failure this rule exists for: the catalogue offered Copilot's
+  // astra before Codex's and the router took the first match.
+  const available = [
+    { provider: "github-copilot", id: "gpt-6-astra" },
+    { provider: "openai-codex", id: "gpt-6-astra" },
+    { provider: "github-copilot", id: "gpt-5.6-sol" },
+  ];
+  const chosen = chooseFrontierModel(available, ["gpt-6-astra"]);
+  assert.equal(chosen.key, "openai-codex/gpt-6-astra");
+});
+
+test("the preference also applies to unqualified patterns from the environment", () => {
+  const available = [
+    { provider: "github-copilot", id: "gpt-5.6-sol" },
+    { provider: "openrouter", id: "openai/gpt-5.6-sol" },
+    { provider: "openai-codex", id: "gpt-5.6-sol" },
+  ];
+  assert.equal(chooseFrontierModel(available, ["gpt-5.6-sol"]).key, "openai-codex/gpt-5.6-sol");
+});
+
+test("a pinned provider is not overridden, and a missing one falls through", () => {
+  const available = [
+    { provider: "github-copilot", id: "gpt-6-astra" },
+    { provider: "openai-codex", id: "grok-4.6" },
+  ];
+  // Pinned to Codex: Copilot's astra does not qualify, so the next pattern wins.
+  const pinned = chooseFrontierModel(available);
+  assert.equal(pinned.key, "openai-codex/grok-4.6");
+  assert.equal(pinned.pattern, "grok-4.6");
+});
+
+test("a GPT pattern never resolves to another provider's copy of the model", () => {
+  const available = [
+    { provider: "github-copilot", id: "gpt-6-astra" },
+    { provider: "openrouter", id: "openai/gpt-6-astra" },
+  ];
+  // Codex has it nowhere in this catalogue, so the pattern is skipped rather
+  // than billed to a reseller.
+  assert.equal(chooseFrontierModel(available, ["gpt-6-astra"]), null);
+  // An explicit provider is a deliberate instruction and is honoured.
+  assert.equal(
+    chooseFrontierModel(available, ["github-copilot/gpt-6-astra"]).key,
+    "github-copilot/gpt-6-astra",
+  );
+});
+
+test("non-GPT patterns are never restricted to a preferred provider", () => {
+  const available = [{ provider: "github-copilot", id: "grok-4.6" }];
+  assert.equal(chooseFrontierModel(available, ["grok-4.6"]).key, "github-copilot/grok-4.6");
+});
+
 test("chooseFrontierModel reads the {model} wrapper scopedModels uses", () => {
   const chosen = chooseFrontierModel([
     { model: { provider: "github-copilot", id: "grok-4.6" }, thinkingLevel: "high" },

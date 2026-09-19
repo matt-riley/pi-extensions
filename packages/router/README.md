@@ -48,14 +48,19 @@ me."* at 2.18/3, and *"Stick to the task yo"* at 1.02/3).
 | --- | --- | --- |
 | `PI_ROUTER` | unset (on) | `off` / `0` / `false` disables it for the process |
 | `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which to escalate |
-| `PI_ROUTER_FRONTIER` | `gpt-6-astra,gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | preference order, substring-matched against `provider/model` |
+| `PI_ROUTER_FRONTIER` | `openai-codex/gpt-6-astra,openai-codex/gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | preference order, substring-matched against `provider/model` |
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
 
 In-session: `/route` for status and counters, `/route off` and `/route on`.
 
 Qualify a pattern with its provider (`openai-codex/gpt-6-astra`) to pin which
-subscription pays for it; leave it bare and the first available match wins, which
-may be a different provider offering the same model.
+subscription pays for it. **GPT models are restricted to `openai-codex` even
+when the pattern is unqualified** — the same model is sold by several
+subscriptions, and the catalogue order decided it once: a live run escalated to
+`github-copilot/gpt-6-astra`. If no Codex GPT is available, GPT patterns are
+skipped rather than billed to a reseller, and the next pattern is tried. A
+pattern that names its provider is taken literally, and non-GPT patterns
+(`grok-4.6`, `qwen3.8-max`) are never restricted this way.
 
 ## Knowing the threshold is set right
 
