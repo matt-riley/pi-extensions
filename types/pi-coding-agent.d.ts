@@ -87,6 +87,7 @@ declare module "@earendil-works/pi-coding-agent" {
     signal?: AbortSignal;
     thinkingLevel?: string;
     shutdown(): void;
+    isIdle?(): boolean;
     ui?: ExtensionUIContext;
     [key: string]: unknown;
   }
