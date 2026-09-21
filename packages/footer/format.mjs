@@ -10,6 +10,18 @@ export function visibleWidth(str) {
   return str.replace(ANSI_RE, "").length;
 }
 
+/** Truncate plain segment text without allowing a rendered line to overflow. */
+export function truncateToWidth(str, width) {
+  const limit = Math.max(0, Math.floor(width));
+  const text = String(str ?? "").replace(ANSI_RE, "");
+  if (limit === 0) return "";
+  if (text.length <= limit) return text;
+  if (limit === 1) return "…";
+  return `${Array.from(text)
+    .slice(0, limit - 1)
+    .join("")}…`;
+}
+
 /** 1234 -> "1.2k", 2500000 -> "2.5M", 42 -> "42". */
 export function fmtTokens(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -107,7 +119,28 @@ export function composeLine(left, right, width, apply) {
   }
 
   while (l.length > 1 && overflow()) l.pop();
-  while (l.length && overflow()) l.pop();
+  // Preserve a lone left segment when there is no right block; the final
+  // clamp below can truncate it. When a right block exists, keep the existing
+  // priority of preserving the right side.
+  while (l.length && r.length && overflow()) l.pop();
+
+  // A right block is normally several segments, so the loop above drops
+  // trailing details until it fits. Extension statuses are one joined segment,
+  // though; if that single segment is longer than the terminal there is nothing
+  // left to drop. Clamp the surviving edge segment as a final hard guarantee.
+  if (l.length && r.length && overflow()) {
+    const room = width - vis(r) - 1;
+    if (room <= 0) l = [];
+    else l = [{ ...l[0], text: truncateToWidth(l[0].text, room) }, ...l.slice(1)];
+  }
+  if (r.length && overflow()) {
+    const room = width - vis(l) - (l.length ? 1 : 0);
+    if (room <= 0) r = [];
+    else r = [{ ...r[0], text: truncateToWidth(r[0].text, room) }, ...r.slice(1)];
+  }
+  if (l.length && overflow()) {
+    l = [{ ...l[0], text: truncateToWidth(l[0].text, width) }, ...l.slice(1)];
+  }
 
   const leftStr = fmt(l);
   const rightStr = fmt(r);

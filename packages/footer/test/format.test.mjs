@@ -7,6 +7,7 @@ import {
   fmtTokens,
   ICONS,
   thinkColor,
+  truncateToWidth,
   visibleWidth,
 } from "../format.mjs";
 
@@ -131,4 +132,23 @@ test("composeLine leaves right side when the model must go", () => {
   assert.equal(visibleWidth(line), 2);
   assert.ok(line.includes("rr"));
   assert.ok(!line.includes("m"));
+});
+
+test("composeLine truncates an oversized single right segment", () => {
+  const line = composeLine([], [{ text: "a very long extension status" }], 10, apply);
+  assert.equal(visibleWidth(line), 10);
+  assert.ok(line.endsWith("…"));
+});
+
+test("composeLine truncates an oversized single left segment", () => {
+  const line = composeLine([{ text: "a very long model label" }], [], 10, apply);
+  assert.equal(visibleWidth(line), 10);
+  assert.ok(line.endsWith("…"));
+});
+
+test("truncateToWidth handles zero, one, and ANSI-wrapped text", () => {
+  assert.equal(truncateToWidth("abcdef", 0), "");
+  assert.equal(truncateToWidth("abcdef", 1), "…");
+  assert.equal(truncateToWidth("abcdef", 4), "abc…");
+  assert.equal(truncateToWidth("\u001b[31mabcdef\u001b[0m", 4), "abc…");
 });
