@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -10,7 +11,7 @@ import {
   worst,
 } from "../policy.mjs";
 
-const CWD = "/Users/mattriley/Documents/projects/personal/workv3";
+const CWD = `${homedir()}/Documents/projects/personal/workv3`;
 
 function verdict(command, options = {}) {
   return evaluateBashCommand(command, { cwd: CWD, scriptTexts: {}, ...options }).verdict;
