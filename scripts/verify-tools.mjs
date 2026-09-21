@@ -21,6 +21,7 @@ import { discoverSkills, rankSkills, resolveRoots } from "../packages/skill-sele
 import { SKILL_SELECT_TOOLS } from "../packages/skill-select/tools.mjs";
 import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
 import { TYPESAFE_TOOLS } from "../packages/typesafe/tools.mjs";
+import { INFLUENCER_TOOLS } from "../packages/influencer/tools.mjs";
 
 const SAMPLE_QUERIES = ["typescript any eliminator", "acquire codebase knowledge"];
 
@@ -43,9 +44,11 @@ const stubPi = {
 try {
   const { default: typesafe } = await import("../packages/typesafe/index.ts");
   const { default: skillSelect } = await import("../packages/skill-select/index.ts");
+  const { default: influencer } = await import("../packages/influencer/index.ts");
   typesafe(stubPi);
   skillSelect(stubPi);
-  for (const tool of [...TYPESAFE_TOOLS, ...SKILL_SELECT_TOOLS]) {
+  influencer(stubPi);
+  for (const tool of [...TYPESAFE_TOOLS, ...SKILL_SELECT_TOOLS, ...INFLUENCER_TOOLS]) {
     check(`${tool} registers with pi`, registered.includes(tool));
   }
 } catch (error) {

@@ -1,0 +1,7 @@
+{
+  "name": "pi-influencer",
+  "version": "0.1.0",
+  "description": "Recipe-driven AI influencer character storage and image-prompt briefs for pi.",
+  "license": "MIT",
+  "type": "module"
+}
