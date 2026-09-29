@@ -1,6 +1,6 @@
 # pi-typesafe — TypeSafe System One judgments for pi
 
-One tool that turns `state` plus typed questions into calibrated judgments:
+Two tools. `typesafe_ask` turns `state` plus typed questions into calibrated judgments:
 probabilities and confidence instead of prose. Backed by
 [TypeSafe](https://docs.typesafe.ai)'s System One model, Jev.
 
@@ -18,6 +18,32 @@ typesafe_ask(state, questions, model?)
 
 All questions are answered in **one request** and run in parallel, so batch
 independent questions rather than calling repeatedly.
+
+## Judging files and commands without loading them
+
+Give `typesafe_ask` `paths` and/or `command` and the content is read locally and
+sent to Jev; the agent only gets typed answers back, so nothing enters its
+context. Questions reference `file.content`, `file.path` and
+`command_output.output`.
+
+- `paths` — files, directories or globs (`src/**/*.ts`), at most 255 files. One
+  request per file, in parallel. A directory means its direct children unless
+  `recursive`. Repo files only.
+- `rank_by` — id of a `noul` or `score` question; files come back highest first.
+- `command` — a read-only shell command; its output becomes state. Must pass
+  both the read-only bash policy and the guardrail.
+
+Because this sends content to a third-party API, paths must resolve inside the
+repo (symlinks included), secrets and `.env` files are refused, binaries and
+files over 1MB are skipped, and each file is cut at 60k characters (flagged
+`file.truncated`).
+
+## read_relevant
+
+`read_relevant(path, goal, max_ranges?)` returns only the line-numbered ranges of
+a large file that matter to a goal (exact file text, never generated). Windows
+are rated one request each, and large winners are split and rated again for a
+tight range. Files under 120 lines come back in full. Use plain `read` to edit.
 
 ## Configuration
 
@@ -61,6 +87,8 @@ Answers come back with the same ids: `breaking: noul 0.88`,
 
 ## Tests
 
-`node --test packages/typesafe/test/systemone.test.mjs` — request shape,
-validation, transport, timeout/abort, error surfaces, and formatting, with the
-network stubbed out.
+`npm test` — `systemone.test.mjs` covers request shape, validation, transport,
+timeout/abort and formatting; `files.test.mjs`, `relevant.test.mjs` and
+`spans.test.mjs` cover path resolution, the secret and symlink guards, the
+command gate, fan-out, ranking and range selection; `extension.test.mjs` covers
+the tool wiring. All with the network stubbed out.
