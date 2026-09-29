@@ -67,27 +67,24 @@ instruction — *skill library at `~/.pi/agent/skill-library`; search it before
 improvising a specialist workflow* — and read the returned `SKILL.md`. The file
 format is already the Agent Skills standard, so nothing else is needed.
 
-## TypeSafe tiebreaker
+## TypeSafe selection
 
-Lexical ranking is deterministic and offline. When it is genuinely torn — the
-top two scores within 1.5 points — one choice question over the top eight
-candidates promotes the better fit. This is **on by default whenever a TypeSafe
-key is reachable**: `TYPESAFE_API_KEY`, `LORE_TYPESAFE_API_KEY`, or
-`typesafe.apiKey` in the lore config. Set `PI_SKILL_SELECT_TIEBREAK=0` to keep
-selection entirely local.
+Lexical ranking is deterministic and offline, but it only sees words. When a TypeSafe
+key is reachable (`TYPESAFE_API_KEY`, `LORE_TYPESAFE_API_KEY`, or `typesafe.apiKey` in the
+lore config) one Choice question re-ranks the result **by intent**:
 
-```sh
-PI_SKILL_SELECT_TIEBREAK=0 node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "review my code"
-```
+- **Wide pool.** Libraries of up to 150 skills are shown to the model whole (lexical only
+  supplies the order), so a paraphrase with no word overlap can still win and a confidently
+  wrong lexical winner gets challenged. Larger libraries send the lexical top 30.
+- **Ordered by probability.** Results are sorted by the model's distribution and shown as
+  `(p 0.83)` instead of a lexical score.
+- **"None fit" is explicit.** When `none_of_these` has p ≥ 0.6 the result carries a note to
+  proceed without a skill unless one obviously applies. Candidates stay visible.
 
-Only the task text and the candidate names/descriptions are sent — never the
-library. It fails open: no key, separated scores, a provider error, or the model
-answering `none_of_these` all leave the lexical order untouched.
-
-Tiebreaks get a **3-second budget** (override with `TYPESAFE_TIMEOUT_MS`) and
-honour the tool's cancellation signal, so a slow provider cannot stall a search.
-Only candidates the model was shown can be promoted, and the result explains the
-inversion — a lower lexical score appearing first is deliberate, not a bug.
+Set `PI_SKILL_SELECT_TIEBREAK=0` to keep selection entirely local. Only the task text and
+candidate names/descriptions are sent — never the library files. It fails open: no key, a
+provider error (3-second budget, `TYPESAFE_TIMEOUT_MS` to override) or an unusable answer all
+leave the lexical order untouched, and the call honours the tool's cancellation signal.
 
 ## Ranking
 

@@ -19,9 +19,9 @@
  *                  .agents/skills.
  *   -h, --help     Show this help.
  *
- * Close calls are broken by TypeSafe when a key is reachable (set
- * PI_SKILL_SELECT_TIEBREAK=0 to keep selection entirely local); the lexical
- * order is kept whenever that decision fails or is declined.
+ * When a TypeSafe key is reachable it re-ranks a wider pool by intent and says
+ * so when no skill fits (set PI_SKILL_SELECT_TIEBREAK=0 to keep selection
+ * entirely local); the lexical order is kept whenever that call fails.
  *
  * Exit codes: 0 when matches were found, 1 when none, 2 on bad usage.
  */
@@ -32,10 +32,9 @@ import {
   DEFAULT_LIMIT,
   discoverSkills,
   formatMatches,
-  rankSkills,
   resolveRoots,
 } from "../packages/skill-select/library.mjs";
-import { tiebreakMatches } from "../packages/skill-select/tiebreak.mjs";
+import { selectSkills } from "../packages/skill-select/select.mjs";
 
 function parseArgs(argv) {
   const args = {
@@ -110,8 +109,8 @@ const roots =
     ? args.roots
     : resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env });
 const skills = await discoverSkills({ roots });
-const matches = rankSkills(skills, args.query, { limit: args.limit });
-const adjusted = await tiebreakMatches({ query: args.query, matches, env: process.env });
+const selected = await selectSkills({ skills, query: args.query, limit: args.limit });
+const { matches } = selected;
 
 if (args.json) {
   console.log(
@@ -119,32 +118,26 @@ if (args.json) {
       {
         query: args.query,
         total: skills.length,
-        matches: adjusted.matches.map(({ name, description, path, score, root }) => ({
+        matches: matches.map(({ name, description, path, score, p, root }) => ({
           name,
           description,
           path,
           score,
+          p: p ?? null,
           root,
         })),
-        tiebreak: {
-          applied: adjusted.applied,
-          reason: adjusted.reason,
-          chosen: adjusted.chosen ?? null,
-          over: adjusted.over ?? null,
-          chosenScore: adjusted.chosenScore ?? null,
-          overScore: adjusted.overScore ?? null,
-          error: adjusted.error ?? null,
-        },
+        reason: selected.reason,
+        note: selected.note,
+        error: selected.error ?? null,
       },
       null,
       2,
     ),
   );
 } else {
-  const note = adjusted.applied
-    ? `TypeSafe chose "${adjusted.chosen}" over "${adjusted.over}" (lexical scores ${adjusted.chosenScore} vs ${adjusted.overScore} were too close to call).`
-    : null;
-  console.log(formatMatches(adjusted.matches, { query: args.query, total: skills.length, note }));
+  console.log(
+    formatMatches(matches, { query: args.query, total: skills.length, note: selected.note }),
+  );
 }
 
 process.exitCode = matches.length > 0 ? 0 : 1;

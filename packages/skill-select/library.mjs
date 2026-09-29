@@ -268,7 +268,7 @@ export async function discoverSkills({ roots = [], limit = MAX_SKILLS } = {}) {
  * match outranks individual tokens. An empty query browses the catalog.
  */
 export function rankSkills(skills, query, { limit = DEFAULT_LIMIT } = {}) {
-  const boundedLimit = Math.max(1, Math.min(Number(limit) || DEFAULT_LIMIT, MAX_LIMIT));
+  const boundedLimit = Math.max(1, Number(limit) || DEFAULT_LIMIT);
   const queryText = String(query ?? "").trim();
   if (!queryText) {
     return [...skills]
@@ -339,7 +339,8 @@ export function formatMatches(matches, { query = "", total = 0, note = null } = 
   const lines = [header];
   matches.forEach((match, index) => {
     const score = match.score > 0 ? ` (score ${match.score})` : "";
-    lines.push(`${index + 1}. ${match.name}${score} — ${truncate(match.description)}`);
+    const p = typeof match.p === "number" ? ` (p ${match.p.toFixed(2)})` : score;
+    lines.push(`${index + 1}. ${match.name}${p} — ${truncate(match.description)}`);
     lines.push(`   ${match.path}`);
   });
   if (note) {
