@@ -133,6 +133,61 @@ test("judgeMoment: mid-flight or debugging is not clean, unknown is not clean", 
   assert.equal((await run({ mid_flight: null, completed: 0.9, debugging: 0.1 })).clean, false);
 });
 
+test("judgeMoment: a task switch that needs little history is clean even while unfinished", async () => {
+  const answer = (v) => ({
+    mid_flight: noul(0.1),
+    completed: noul(0.1),
+    debugging: noul(0.1),
+    ...v,
+  });
+  const run = (values, extra = { currentRequest: "new", previousWork: "old" }) =>
+    judgeMoment({ recentText: "x", ...extra, ask: async () => ({ answers: values }) });
+  const switched = { switched_gears: noul(0.9), needs_history: { type: "score", score: 0.2 } };
+  // Not finished (completed low) but mid_flight above the plain-clean bar of 0.4.
+  const unsettled = answer({ mid_flight: noul(0.5), ...switched });
+  assert.equal((await run(unsettled)).clean, true);
+  assert.equal(
+    (
+      await run(
+        answer({
+          mid_flight: noul(0.5),
+          ...switched,
+          needs_history: { type: "score", score: 1.6 },
+        }),
+      )
+    ).clean,
+    false,
+  );
+  assert.equal((await run(answer({ mid_flight: noul(0.8), ...switched }))).clean, false);
+  assert.equal(
+    (await run(answer({ mid_flight: noul(0.5), ...switched, switched_gears: noul(0.3) }))).clean,
+    false,
+  );
+  assert.equal(
+    (
+      await run(
+        answer({
+          mid_flight: noul(0.5),
+          ...switched,
+          needs_history: { type: "score", score: null },
+        }),
+      )
+    ).clean,
+    false,
+  );
+  // Without both sides to compare, the switch route is unavailable.
+  assert.equal((await run(unsettled, {})).clean, false);
+});
+
+test("judgeMoment only sends the switch questions when there is something to compare", async () => {
+  let sent;
+  const ask = async ({ questions }) => ((sent = Object.keys(questions)), { answers: {} });
+  await judgeMoment({ recentText: "x", ask });
+  assert.deepEqual(sent, ["mid_flight", "completed", "debugging"]);
+  await judgeMoment({ recentText: "x", currentRequest: "a", previousWork: "b", ask });
+  assert.ok(sent.includes("switched_gears") && sent.includes("needs_history"));
+});
+
 test("composeHandoff keeps the constraint verbatim, drops noise, carries the note", async () => {
   const result = await composeHandoff({
     messages: transcript(),

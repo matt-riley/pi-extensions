@@ -114,15 +114,24 @@ export default function safeCompact(pi: ExtensionAPI) {
 
     let moment;
     if (percent < hard) {
-      const recentText = branchMessages(ctx)
-        .slice(-RECENT_ENTRIES)
-        .map((message) => messageText(message))
-        .join("\n\n");
+      const messages = branchMessages(ctx);
+      const lastUser = messages.findLastIndex((m: any) => m?.role === "user");
+      const asText = (list: unknown[]) => list.map((m) => messageText(m)).join("\n\n");
+      const recentText = asText(messages.slice(-RECENT_ENTRIES));
+      const currentRequest = lastUser >= 0 ? messageText(messages[lastUser]) : "";
+      const previousWork = asText(
+        messages.slice(Math.max(0, lastUser - RECENT_ENTRIES), Math.max(0, lastUser)),
+      );
       const signals = [AbortSignal.timeout(MOMENT_TIMEOUT_MS), ctx.signal].filter(
         (s): s is AbortSignal => Boolean(s),
       );
       try {
-        moment = await judgeMoment({ recentText, signal: AbortSignal.any(signals) });
+        moment = await judgeMoment({
+          recentText,
+          currentRequest,
+          previousWork,
+          signal: AbortSignal.any(signals),
+        });
       } catch {
         return; // Jev unavailable: wait for the hard threshold
       }

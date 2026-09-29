@@ -164,10 +164,27 @@ export async function pickGoal({ userSegments, ask = askSystemOne, signal }) {
   return excerpt(recent[best ?? recent.length - 1].text, 600);
 }
 
-/** The moment check: is now a clean place to compact? */
-export async function judgeMoment({ recentText, ask = askSystemOne, signal }) {
+/**
+ * The moment check: is now a clean place to compact? Two routes to "yes": a unit
+ * of work just finished, or the task switched and the next step needs little of
+ * the earlier work (the best time to compact, since old history matters least).
+ */
+export async function judgeMoment({
+  recentText,
+  currentRequest = "",
+  previousWork = "",
+  ask = askSystemOne,
+  signal,
+}) {
+  const compare = Boolean(currentRequest.trim() && previousWork.trim());
   const { answers } = await ask({
-    state: { recent_activity: excerpt(recentText, 3000) },
+    state: {
+      recent_activity: excerpt(recentText, 3000),
+      ...(compare && {
+        current_request: excerpt(currentRequest, 600),
+        previous_work: excerpt(previousWork, 1500),
+      }),
+    },
     questions: {
       mid_flight: noul(
         "In `recent_activity`, is the agent partway through a multi-step change where the next step depends " +
@@ -185,18 +202,44 @@ export async function judgeMoment({ recentText, ask = askSystemOne, signal }) {
         "An unresolved failure is being investigated.",
         "No active debugging.",
       ),
+      ...(compare && {
+        switched_gears: noul(
+          "Is `current_request` a different task from `previous_work`?",
+          "A new feature, a different file area, a different goal, or an unrelated question.",
+          "The same task continuing, a follow-up, or a fix to what was just done.",
+        ),
+        needs_history: {
+          type: "score",
+          instructions: "How much of `previous_work` does the next step of `current_request` need?",
+          criteria: [
+            "None: the new work stands alone.",
+            "Some: a file name, a decision, or a reference.",
+            "Most of it: the work continues directly from it.",
+          ],
+        },
+      }),
     },
     signal,
   });
   const midFlight = yes(answers?.mid_flight);
   const completed = yes(answers?.completed);
   const debugging = yes(answers?.debugging);
+  const switched = yes(answers?.switched_gears);
+  const needsHistory =
+    answers?.needs_history?.type === "score" ? usable(answers.needs_history.score) : null;
   // Unknown counts against compacting: waiting one more turn is cheap.
-  const clean =
-    midFlight !== null &&
-    debugging !== null &&
-    ((completed ?? 0) >= 0.5 || (midFlight < 0.4 && debugging < 0.4));
-  return { clean, midFlight, completed, debugging };
+  const settled = midFlight !== null && debugging !== null;
+  const finished = (completed ?? 0) >= 0.5 || (settled && midFlight < 0.4 && debugging < 0.4);
+  const switchedAway =
+    compare &&
+    (switched ?? 0) >= 0.7 &&
+    needsHistory !== null &&
+    needsHistory < 1 &&
+    settled &&
+    midFlight < 0.6 &&
+    debugging < 0.4;
+  const clean = settled && (finished || switchedAway);
+  return { clean, midFlight, completed, debugging, switched, needsHistory };
 }
 
 /** Does each handoff entry faithfully reflect its source? Returns pass flags (null = unusable). */
