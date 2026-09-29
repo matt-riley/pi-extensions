@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import safeCompact from "../index.ts";
-import { judgeMoment } from "../judge.mjs";
+import { judgeMoment, relevantLines } from "../judge.mjs";
 import { classify, composeHandoff, decideTrigger } from "../plan.mjs";
 import { segmentMessages } from "../segment.mjs";
 
@@ -284,4 +284,14 @@ test("the extension registers its tools, commands and flags", () => {
   assert.deepEqual(seen.commands, ["safe-compact", "safe-compact-plan", "safe-compact-info"]);
   assert.deepEqual(seen.flags, ["compact-soft-at", "compact-at"]);
   assert.deepEqual(seen.events.sort(), ["session_before_compact", "session_compact", "turn_end"]);
+});
+
+test("relevantLines keeps the lines a segment matches, even from the middle of a huge handoff", () => {
+  const filler = (n) => Array.from({ length: n }, (_, i) => `- unrelated filler line number ${i}`);
+  const handoff = [...filler(400), "- retry backoff lives in client.ts", ...filler(400)].join("\n");
+  assert.ok(handoff.length > 12000);
+  const shown = relevantLines(handoff, "retry backoff in client.ts");
+  assert.ok(shown.includes("retry backoff lives in client.ts"));
+  assert.ok(shown.length <= 12000);
+  assert.equal(relevantLines("short", "anything"), "short");
 });

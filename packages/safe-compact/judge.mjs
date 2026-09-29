@@ -9,6 +9,7 @@ import { askSystemOne } from "../../shared/systemone.mjs";
 import { excerpt, mapPool, rateCandidates, topIndices, usable, yes } from "../../shared/spans.mjs";
 
 const MAX_TEXT_CHARS = 1500;
+const MAX_HANDOFF_CHARS = 12000;
 
 export const DISPOSITIONS = {
   keep_verbatim:
@@ -210,12 +211,47 @@ export function verifyEntries({ entries, ask = askSystemOne, signal }) {
   });
 }
 
+const words = (text) => new Set(text.toLowerCase().match(/[a-z0-9_]{3,}/g));
+
+/**
+ * The handoff, or when it exceeds `max`, its lines that share the most words
+ * with `text`, in original order. Head-and-tail truncation would hide the
+ * middle sections, which is where the content being checked usually sits.
+ */
+export function relevantLines(handoff, text, max = MAX_HANDOFF_CHARS) {
+  if (handoff.length <= max) return handoff;
+  const wanted = words(text);
+  const ranked = handoff
+    .split("\n")
+    .map((line, index) => ({
+      line,
+      index,
+      hits: [...words(line)].filter((w) => wanted.has(w)).length,
+    }))
+    .filter((entry) => entry.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+  const kept = [];
+  let size = 0;
+  for (const entry of ranked) {
+    if (size + entry.line.length + 1 > max) continue;
+    kept.push(entry);
+    size += entry.line.length + 1;
+  }
+  if (kept.length === 0) return excerpt(handoff, max);
+  return kept
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => entry.line)
+    .join("\n");
+}
+
 /** Is the key content of each important segment represented in the handoff? One request per segment. */
 export function verifyCoverage({ handoff, segments, ask = askSystemOne, signal }) {
-  const shared = excerpt(handoff, 12000);
   return mapPool(segments, async (segment) => {
     const { answers } = await ask({
-      state: { handoff: shared, segment: excerpt(segment.text, MAX_TEXT_CHARS) },
+      state: {
+        handoff: relevantLines(handoff, segment.text),
+        segment: excerpt(segment.text, MAX_TEXT_CHARS),
+      },
       questions: {
         covered: noul(
           "Is the key information in `segment` represented in `handoff`, either stated or as a pointer that " +
