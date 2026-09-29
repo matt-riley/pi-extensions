@@ -45,3 +45,13 @@ test("write-capable path does not apply the bash allowlist", () => {
     undefined,
   );
 });
+
+test("keepChildExtension drops persona/routing extensions and keeps tools", async () => {
+  const { keepChildExtension } = await import("../child-policy.mjs");
+  const at = (resolvedPath) => ({ resolvedPath });
+  assert.equal(keepChildExtension(at("/h/.pi/agent/extensions/lore/lore-pi.ts")), false);
+  assert.equal(keepChildExtension(at("/x/pi-extensions/packages/router/index.ts")), false);
+  assert.equal(keepChildExtension(at("/x/pi-extensions/packages/code-search/index.ts")), true);
+  assert.equal(keepChildExtension(at("/x/pi-extensions/packages/guardrail/index.ts")), true);
+  assert.equal(keepChildExtension(at("<inline:0>")), true);
+});

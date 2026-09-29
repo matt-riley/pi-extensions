@@ -9,7 +9,7 @@ import {
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acquireChildEnv, releaseChildEnv } from "./child-env.mjs";
-import { createChildPolicyExtension } from "./child-policy.mjs";
+import { createChildPolicyExtension, keepChildExtension } from "./child-policy.mjs";
 import { resolveChildTools, usesAllowlistedBash } from "./discover.mjs";
 import {
   accumulateUsage,
@@ -123,6 +123,10 @@ export async function runChild({
       const loader = new DefaultResourceLoader({
         cwd,
         agentDir: getAgentDir(),
+        extensionsOverride: (base) => ({
+          ...base,
+          extensions: base.extensions.filter(keepChildExtension),
+        }),
         systemPromptOverride: () => buildSystemPrompt(agent),
         appendSystemPromptOverride: () => [],
         extensionFactories: [createChildPolicyExtension({ allowlistBash, blockWriters })],

@@ -30,3 +30,15 @@ export function createChildPolicyExtension({ allowlistBash = false, blockWriters
     },
   };
 }
+
+// Extensions a child should not load: they inject persona, memory, routing or
+// prompt-rewriting meant for the interactive session, which costs tokens and
+// distracts a focused worker. Tool extensions (code-search, web-fetch, typesafe,
+// guardrail) stay.
+const CHILD_EXCLUDED =
+  /[\\/](?:extensions[\\/]lore|packages[\\/](?:router|prompt-coach|influencer|skill-select))[\\/]/;
+
+export function keepChildExtension(extension) {
+  const where = `${extension?.resolvedPath ?? extension?.path ?? ""}`;
+  return !CHILD_EXCLUDED.test(where);
+}
