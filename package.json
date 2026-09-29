@@ -40,7 +40,8 @@
       "./packages/influencer/index.ts",
       "./packages/diagnosis-nudge/index.ts",
       "./packages/subagents/index.ts",
-      "./packages/footer/index.ts"
+      "./packages/footer/index.ts",
+      "./packages/safe-compact/index.ts"
     ],
     "prompts": [
       "./prompts"

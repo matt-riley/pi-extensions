@@ -88,6 +88,14 @@ declare module "@earendil-works/pi-coding-agent" {
     thinkingLevel?: string;
     shutdown(): void;
     isIdle?(): boolean;
+    getContextUsage?():
+      | { tokens: number | null; contextWindow: number; percent: number | null }
+      | undefined;
+    compact?(options?: {
+      customInstructions?: string;
+      onComplete?: (result: unknown) => void;
+      onError?: (error: Error) => void;
+    }): void;
     ui?: ExtensionUIContext;
     [key: string]: unknown;
   }
@@ -160,6 +168,10 @@ declare module "@earendil-works/pi-coding-agent" {
     appendEntry(customType: string, data?: unknown): void;
     getFlag(name: string): unknown;
     sendUserMessage(text: string, opts?: { deliverAs?: string }): Promise<void>;
+    sendMessage(
+      message: { customType: string; content: string; display?: boolean; details?: unknown },
+      opts?: { triggerTurn?: boolean; deliverAs?: string },
+    ): void;
     events: EventBus;
   }
 

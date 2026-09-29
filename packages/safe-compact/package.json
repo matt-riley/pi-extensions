@@ -1,0 +1,7 @@
+{
+  "name": "pi-safe-compact",
+  "version": "0.1.0",
+  "description": "Safe self-compaction for pi: Jev scores, selects and verifies what survives, with native compaction as the fallback. Zero runtime dependencies.",
+  "license": "MIT",
+  "type": "module"
+}
