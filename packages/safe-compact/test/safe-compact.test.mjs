@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import safeCompact from "../index.ts";
 import { judgeMoment } from "../judge.mjs";
 import { classify, composeHandoff, decideTrigger } from "../plan.mjs";
-import { excerpt, segmentMessages, splitWindows } from "../segment.mjs";
+import { segmentMessages } from "../segment.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
 
@@ -37,15 +37,12 @@ function fakeAsk({ coverage = () => 0.9, faithful = () => 0.9 } = {}) {
       });
       return { answers };
     }
-    for (const id of Object.keys(questions)) {
-      if (id.startsWith("c")) {
-        const c = state.candidates[Number(id.slice(1))];
-        answers[id] = noul(/GOALMARK|retry/.test(c) ? 0.9 : 0.1);
-      } else if (id.startsWith("e")) {
-        answers[id] = noul(faithful(state.entries[Number(id.slice(1))]));
-      } else if (id.startsWith("g")) {
-        answers[id] = noul(coverage(state.segments[Number(id.slice(1))], state.handoff));
-      }
+    if ("rating" in questions) {
+      answers.rating = noul(/GOALMARK|retry/.test(state.candidate) ? 0.9 : 0.1);
+    } else if ("faithful" in questions) {
+      answers.faithful = noul(faithful(state));
+    } else if ("covered" in questions) {
+      answers.covered = noul(coverage(state.segment, state.handoff));
     }
     return { answers };
   };
@@ -79,13 +76,6 @@ test("segmentMessages pairs tool results with their call's path and offset", () 
   assert.equal(segments[1].path, "src/a.ts");
   assert.equal(segments[1].offset, 101);
   assert.equal(segments[1].tool, "read");
-});
-
-test("splitWindows uses 1-based inclusive bounds and coarsens past the cap", () => {
-  const text = Array.from({ length: 60 }, (_, i) => `l${i}`).join("\n");
-  const windows = splitWindows(text);
-  assert.deepEqual([windows[0].start, windows[0].end, windows[2].end], [1, 25, 60]);
-  assert.ok(splitWindows(text, { size: 1, maxWindows: 5 }).length <= 5);
 });
 
 test("classify: hard rules beat the model, uncertainty keeps", () => {
@@ -280,11 +270,6 @@ test("file pointers name real line ranges from the read offset", async () => {
     ask: fakeAsk(),
   });
   assert.match(result.summary, /src\/a\.ts:126-150 \(starts: "line 25"\)/);
-});
-
-test("excerpt keeps head and tail", () => {
-  const out = excerpt(`${"h".repeat(100)}${"t".repeat(100)}`, 40);
-  assert.ok(out.startsWith("hhhh") && out.endsWith("tttt") && out.length <= 44);
 });
 
 test("the extension registers its tools, commands and flags", () => {

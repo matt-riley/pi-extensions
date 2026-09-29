@@ -6,11 +6,9 @@
 // tests without a network.
 
 import { askSystemOne } from "../../shared/systemone.mjs";
-import { excerpt } from "./segment.mjs";
+import { excerpt, mapPool, rateCandidates, topIndices, usable, yes } from "../../shared/spans.mjs";
 
 const MAX_TEXT_CHARS = 1500;
-const MAX_CANDIDATES = 40;
-const MAX_CANDIDATE_CHARS = 400;
 
 export const DISPOSITIONS = {
   keep_verbatim:
@@ -19,15 +17,6 @@ export const DISPOSITIONS = {
   excerpt: "Only the gist matters: what was done or found, not the detail.",
   drop: "Nothing here is needed to continue: a dead end, chatter, an acknowledgement, a redundant result.",
 };
-
-// Number(null) is 0, which would read as a confident "no". Absent stays absent.
-function usable(raw) {
-  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
-
-const yes = (answer) => (answer?.type === "noul" ? usable(answer.noul) : null);
 
 const noul = (instructions, whenTrue, whenFalse) => ({
   type: "noul",
@@ -111,40 +100,6 @@ export async function judgeSegment({ goal, segment, next, ask = askSystemOne, si
       choice?.type === "choice" && typeof choice.choice === "string" ? choice.choice : null,
     confidence: usable(choice?.confidence),
   };
-}
-
-/**
- * Probability that each candidate span satisfies `instruction`. One request:
- * the questions are independent over the same state, so they run in parallel.
- */
-export async function rateCandidates({
-  context,
-  candidates,
-  instruction,
-  ask = askSystemOne,
-  signal,
-}) {
-  const list = candidates.slice(0, MAX_CANDIDATES).map((c) => excerpt(c, MAX_CANDIDATE_CHARS));
-  if (list.length === 0) return [];
-  const questions = {};
-  list.forEach((_, index) => {
-    questions[`c${index}`] = {
-      type: "noul",
-      instructions: `${instruction} The candidate is \`candidates[${index}]\`.`,
-    };
-  });
-  const { answers } = await ask({ state: { context, candidates: list }, questions, signal });
-  return list.map((_, index) => yes(answers?.[`c${index}`]));
-}
-
-/** Indices of the best candidates at or above `threshold`, best first, at most `max`. */
-export function topIndices(ratings, { threshold = 0.5, max = 3 } = {}) {
-  return ratings
-    .map((probability, index) => ({ probability, index }))
-    .filter((entry) => entry.probability !== null && entry.probability >= threshold)
-    .sort((a, b) => b.probability - a.probability || b.index - a.index)
-    .slice(0, max)
-    .map((entry) => entry.index);
 }
 
 /** The user message that best states the overall task; later wins a tie. */
@@ -242,53 +197,41 @@ export async function judgeMoment({
   return { clean, midFlight, completed, debugging, switched, needsHistory };
 }
 
-/** Does each handoff entry faithfully reflect its source? Returns pass flags (null = unusable). */
-export async function verifyEntries({ entries, ask = askSystemOne, signal }) {
-  if (entries.length === 0) return [];
-  const questions = {};
-  entries.forEach((_, index) => {
-    questions[`e${index}`] = {
-      type: "noul",
-      instructions:
-        `Compare \`entries[${index}].entry\` with \`entries[${index}].source\`. Does the entry accurately ` +
-        "reflect the source without contradicting it, overstating it, or dropping a qualifier that changes " +
-        "its meaning?",
-      criteria: {
-        true: "Faithful: it says what the source says.",
-        false: "Distorted, contradicted, or missing a qualifier that changes the meaning.",
+/** Does each handoff entry faithfully reflect its source? One request per entry; null = unusable. */
+export function verifyEntries({ entries, ask = askSystemOne, signal }) {
+  return mapPool(entries, async ({ entry, source }) => {
+    const { answers } = await ask({
+      state: { entry: excerpt(entry, MAX_TEXT_CHARS), source: excerpt(source, MAX_TEXT_CHARS) },
+      questions: {
+        faithful: noul(
+          "Compare `entry` with `source`. Does the entry accurately reflect the source without contradicting " +
+            "it, overstating it, or dropping a qualifier that changes its meaning?",
+          "Faithful: it says what the source says.",
+          "Distorted, contradicted, or missing a qualifier that changes the meaning.",
+        ),
       },
-    };
+      signal,
+    });
+    return yes(answers?.faithful);
   });
-  const state = {
-    entries: entries.map((e) => ({
-      entry: excerpt(e.entry, MAX_TEXT_CHARS),
-      source: excerpt(e.source, MAX_TEXT_CHARS),
-    })),
-  };
-  const { answers } = await ask({ state, questions, signal });
-  return entries.map((_, index) => yes(answers?.[`e${index}`]));
 }
 
-/** Is the key content of each important segment represented in the handoff? */
-export async function verifyCoverage({ handoff, segments, ask = askSystemOne, signal }) {
-  if (segments.length === 0) return [];
-  const questions = {};
-  segments.forEach((_, index) => {
-    questions[`g${index}`] = {
-      type: "noul",
-      instructions:
-        `Is the key information in \`segments[${index}]\` represented in \`handoff\`, either stated ` +
-        "or as a pointer that would let the reader recover it?",
-      criteria: {
-        true: "The essential content is present or recoverable from the handoff.",
-        false: "The handoff would leave the reader without something this segment established.",
+/** Is the key content of each important segment represented in the handoff? One request per segment. */
+export function verifyCoverage({ handoff, segments, ask = askSystemOne, signal }) {
+  const shared = excerpt(handoff, 12000);
+  return mapPool(segments, async (segment) => {
+    const { answers } = await ask({
+      state: { handoff: shared, segment: excerpt(segment.text, MAX_TEXT_CHARS) },
+      questions: {
+        covered: noul(
+          "Is the key information in `segment` represented in `handoff`, either stated or as a pointer that " +
+            "would let the reader recover it?",
+          "The essential content is present or recoverable from the handoff.",
+          "The handoff would leave the reader without something this segment established.",
+        ),
       },
-    };
+      signal,
+    });
+    return yes(answers?.covered);
   });
-  const state = {
-    handoff: excerpt(handoff, 12000),
-    segments: segments.map((s) => excerpt(s.text, MAX_TEXT_CHARS)),
-  };
-  const { answers } = await ask({ state, questions, signal });
-  return segments.map((_, index) => yes(answers?.[`g${index}`]));
 }

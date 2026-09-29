@@ -57,14 +57,6 @@ export function segmentMessages(messages) {
   return segments;
 }
 
-/** Head-and-tail excerpt: the start says what it is, the end says how it ended. */
-export function excerpt(text, max) {
-  if (text.length <= max) return text;
-  const head = Math.ceil(max * 0.65);
-  const tail = max - head;
-  return `${text.slice(0, head).trimEnd()} … ${text.slice(text.length - tail).trimStart()}`;
-}
-
 /** Sentence and line candidates for span selection. */
 export function splitSpans(text, { min = 20, max = 40 } = {}) {
   return text
@@ -72,16 +64,4 @@ export function splitSpans(text, { min = 20, max = 40 } = {}) {
     .map((span) => span.trim())
     .filter((span) => span.length >= min)
     .slice(0, max);
-}
-
-/** Fixed-size line windows with 1-based inclusive bounds; coarsened to fit `maxWindows`. */
-export function splitWindows(text, { size = 25, maxWindows = 40 } = {}) {
-  const lines = text.split("\n");
-  const step = Math.max(size, Math.ceil(lines.length / maxWindows));
-  const windows = [];
-  for (let start = 0; start < lines.length; start += step) {
-    const slice = lines.slice(start, start + step);
-    windows.push({ start: start + 1, end: start + slice.length, text: slice.join("\n") });
-  }
-  return windows;
 }

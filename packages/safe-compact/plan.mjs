@@ -6,17 +6,16 @@
 
 import { askSystemOne } from "../../shared/systemone.mjs";
 import {
-  DISPOSITIONS,
-  judgeSegment,
-  pickGoal,
+  excerpt,
+  mapPool,
   rateCandidates,
+  splitWindows,
   topIndices,
-  verifyCoverage,
-  verifyEntries,
-} from "./judge.mjs";
-import { estimateTokens, excerpt, segmentMessages, splitSpans, splitWindows } from "./segment.mjs";
+  WINDOW_RELEVANCE,
+} from "../../shared/spans.mjs";
+import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
+import { estimateTokens, segmentMessages, splitSpans } from "./segment.mjs";
 
-const CONCURRENCY = 8;
 const MAX_ROUNDS = 3;
 const MAX_SEGMENTS = 400;
 const VERBATIM_MAX = 4000;
@@ -61,19 +60,6 @@ export function classify(scores, segment) {
   }
   if (disposition === "point" && !segment.path) disposition = "excerpt";
   return disposition;
-}
-
-async function mapPool(items, worker) {
-  const results = Array.from({ length: items.length });
-  let cursor = 0;
-  const lanes = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await worker(items[index], index);
-    }
-  });
-  await Promise.all(lanes);
-  return results;
 }
 
 const label = (segment) => (segment.tool ? `${segment.role}:${segment.tool}` : segment.role);
@@ -126,9 +112,7 @@ function selector({ goal, ask, signal }) {
         const ratings = await rateCandidates({
           context: { goal, file: segment.path },
           candidates: windows.map((w) => w.text),
-          instruction:
-            "Is the candidate file content directly relevant to the goal, something the work is reading, " +
-            "changing, or depending on?",
+          ...WINDOW_RELEVANCE,
           ask,
           signal,
         });
