@@ -86,6 +86,25 @@ candidate names/descriptions are sent — never the library files. It fails open
 provider error (3-second budget, `TYPESAFE_TIMEOUT_MS` to override) or an unusable answer all
 leave the lexical order untouched, and the call honours the tool's cancellation signal.
 
+### Measuring it
+
+`node scripts/skill-select-eval.mjs` runs `eval/cases.json` (54 cases) through lexical-only
+and TypeSafe selection: 19 `history` cases (the `SKILL.md` an agent actually read after a real
+`skill_select` call — a weak label), 25 hand-written `paraphrase` cases with little word
+overlap, and 10 `none` cases where no skill should apply. Labels are not independent ground
+truth; read the numbers as directional. Result on 2026-09-29 (115 skills, live Jev):
+
+| | lexical | TypeSafe |
+| --- | --- | --- |
+| top-1 (44 labelled) | 26 | 39 |
+| paraphrase top-1 (25) | 15 | 25 |
+| wrong route (44) | 18 | 5 |
+| correct "none fit" (10) | 1 | 6 |
+| mean latency | 4 ms | ~480 ms |
+
+The earlier tie-only design (reorder only when the top two scores were within 1.5) scored 29
+top-1 and was removed. Re-run the eval after changing the questions, pool size or thresholds.
+
 ## Ranking
 
 Deterministic, no model, no network:

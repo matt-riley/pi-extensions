@@ -1,0 +1,272 @@
+[
+  {
+    "source": "history",
+    "query": "rewrite a rough prompt for pi, resolve referents",
+    "accept": ["reverse-prompt"]
+  },
+  {
+    "source": "history",
+    "query": "reverse-prompt a rough request into a repository-grounded execution brief for adding GitHub Actions workflows",
+    "accept": ["reverse-prompt"]
+  },
+  {
+    "source": "history",
+    "query": "diagnose and minimally fix the failing GitHub Actions workflow in this repository",
+    "accept": ["github-actions-failure-triage"]
+  },
+  {
+    "source": "history",
+    "query": "build a Pi extension with bundled prompt resources and reusable prompt recipes for image generation",
+    "accept": ["prompt-crafting"]
+  },
+  {
+    "source": "history",
+    "query": "Create a reusable skill from a video-generation prompting guide, adapting source material into actionable skill instructions and integrating it into an existing extension as bundled on-demand guidance, not global install",
+    "accept": ["skill-creator"]
+  },
+  {
+    "source": "history",
+    "query": "Read-only code simplification audit of a pi extension for code reuse quality efficiency and unnecessary complexity without editing files",
+    "accept": ["code-intelligence"]
+  },
+  {
+    "source": "history",
+    "query": "Implement a small multi-file TypeScript and JavaScript refactor with tests, then verify and review the diff",
+    "accept": ["implementation-review"]
+  },
+  {
+    "source": "history",
+    "query": "typesafe guardrails classification safety judgment",
+    "accept": ["typesafe-ai"]
+  },
+  {
+    "source": "history",
+    "query": "build a Chrome Manifest V3 browser extension with content scripts, service worker, popup, options, declarative network request rules, and tests",
+    "accept": ["context-map"]
+  },
+  {
+    "source": "history",
+    "query": "write a complete implementation plan with dependencies, verification, affected flows, risks, and rollout before coding",
+    "accept": ["plan-review"]
+  },
+  {
+    "source": "history",
+    "query": "Design adversarial AI code review agent that reviews GitHub pull requests and produces precise actionable inline findings with few false positives",
+    "accept": ["prompt-crafting"]
+  },
+  {
+    "source": "history",
+    "query": "Diagnose and minimally fix failing GitHub Actions workflow run in repository; inspect failed job logs and validate changes",
+    "accept": ["github-actions-failure-triage"]
+  },
+  {
+    "source": "history",
+    "query": "Create two focused GitHub pull requests from separate branches using gh CLI, push branches, watch checks and handoff PR links",
+    "accept": ["github-cli-pr-workflow"]
+  },
+  {
+    "source": "history",
+    "query": "Author a GitHub Actions scheduled reconciliation workflow that checks latest successful main CI in another repository, deploys a Docker image on private host only when the checked SHA differs, and preserves scoped secrets",
+    "accept": ["ci-images"]
+  },
+  {
+    "source": "history",
+    "query": "craft and refine prompts for an LLM agent that reviews chunked code diffs, must report actionable findings and avoid declaring unreviewed changes clean",
+    "accept": ["prompt-crafting"]
+  },
+  {
+    "source": "history",
+    "query": "read-only implementation review of uncommitted Go code change for large PR chunking, git clone fallback, Docker hardening and missing edge cases",
+    "accept": ["go-docker-builds"]
+  },
+  {
+    "source": "history",
+    "query": "full read-only code review of the repository, defect-first, report actionable findings without editing files",
+    "accept": ["review-agent"]
+  },
+  {
+    "source": "history",
+    "query": "sort and triage an email inbox using Jev / Typesafe judgments, IMAP client tooling",
+    "accept": ["typesafe-ai"]
+  },
+  {
+    "source": "history",
+    "query": "read-only architecture and code audit of a pi model routing extension escalation difficulty judgment prompt injection prompt caching context windows",
+    "accept": ["prompt-crafting"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "my commits keep getting rejected because the signing agent isn't reachable",
+    "accept": ["git-signing-troubleshoot"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "make the slow page load faster and check LCP",
+    "accept": ["web-perf"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "the build shows a red X in CI on my branch, work out why",
+    "accept": ["github-actions-failure-triage"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "work through the feedback reviewers left on my pull request",
+    "accept": ["review-comment-resolution"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "why does the compiler complain about my types",
+    "accept": ["tsc-error-triage"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "edit the powerpoint for tomorrow's meeting",
+    "accept": ["pptx"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "merge these two PDFs into one file",
+    "accept": ["pdf"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "I want a spreadsheet of monthly costs with formulas",
+    "accept": ["xlsx"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "stop stray any types leaking through my helper functions",
+    "accept": ["typescript-any-eliminator"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "find unused exports and dead dependencies in this project",
+    "accept": ["knip", "fallow"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "run two agents in parallel without them stepping on each other's files",
+    "accept": ["git-worktrees"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "poke holes in my migration plan before I commit to it",
+    "accept": ["grill-me", "plan-review"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "bulk rename a function signature across the whole repo safely",
+    "accept": ["ast-grep", "code-intelligence"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "my D1 query takes ages to return",
+    "accept": ["cloudflare-d1-query-tuning"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "put bot protection on my signup form",
+    "accept": ["turnstile-spin"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "ship a new release of my Go command-line tool with binaries",
+    "accept": ["goreleaser-release-pipeline", "go-cli-development"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "what did I work on last week",
+    "accept": ["session-store-history"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "before I say I'm done, make sure everything actually works",
+    "accept": ["verification-before-completion"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "add structured data so search engines show rich results for my Astro site",
+    "accept": ["astro-seo"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "generate a picture of a cat astronaut",
+    "accept": ["imagegen"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "turn my sloppy one-line request into a proper brief",
+    "accept": ["reverse-prompt", "prompt-crafting"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "gitleaks flagged a key in my repo, what now",
+    "accept": ["secret-scan-triage"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "keep the API spec in step with what the endpoints really do",
+    "accept": ["http-api-openapi"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "build a stateful websocket chat room on Cloudflare",
+    "accept": ["durable-objects"]
+  },
+  {
+    "source": "paraphrase",
+    "query": "the UI feels flat and clunky, polish shadows and animations",
+    "accept": ["make-interfaces-feel-better"]
+  },
+  {
+    "source": "none",
+    "query": "what's the difference between let and const in JavaScript",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "rename the variable foo to count in this file",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "explain what this regex does: ^\\d{3}-\\d{4}$",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "thanks, that looks good",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "write a haiku about autumn",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "run npm test and show me the failures",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "translate this sentence into French",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "add a console.log on line 40",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "what time zone is Tokyo in",
+    "accept": []
+  },
+  {
+    "source": "none",
+    "query": "commit these changes",
+    "accept": []
+  }
+]
