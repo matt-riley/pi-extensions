@@ -7,7 +7,8 @@ import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
-import { discoverAgents, findAgent } from "./discover.mjs";
+import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
+import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { withOrchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
@@ -210,6 +211,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         };
       }
 
+      const cwd = ctx?.cwd || process.cwd();
+      const writeCapable = !usesAllowlistedBash(agent);
+
       const description =
         typeof params?.description === "string" && params.description.trim()
           ? params.description.trim()
@@ -240,17 +244,22 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       }
 
       pi.events.emit("subagents:started", { id: entry.id, type: agent.name, description });
-      const { model, note } = resolveChildModel(ctx?.modelRegistry, ctx?.model, agent.model);
+      const { model, note: modelNote } = resolveChildModel(
+        ctx?.modelRegistry,
+        ctx?.model,
+        agent.model,
+      );
       const runsDir = path.join(getAgentDir(), "subagent-runs");
       if (!runsPruned) {
         runsPruned = true;
         pruneRuns(runsDir);
       }
       const runFile = path.join(runsDir, `${Date.now()}-${entry.id}.jsonl`);
+      const before = writeCapable ? await snapshotChanges(cwd) : undefined;
 
       try {
         const result = await runChild({
-          cwd: ctx?.cwd || process.cwd(),
+          cwd,
           agent,
           task,
           model,
@@ -301,6 +310,14 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             toolUses: result.toolUses,
           });
         }
+
+        const changed = before ? changedFiles(before, await snapshotChanges(cwd)) : [];
+        const changes = await describeChanges(cwd, changed);
+        const shared =
+          pool.runningCount() > 1 ? " (shared worktree: may include parallel children)" : "";
+        const note = [modelNote, changes.stat ? `changes${shared}:\n${changes.stat}` : ""]
+          .filter(Boolean)
+          .join("\n");
 
         const text = formatResult({
           agent: agent.name,
