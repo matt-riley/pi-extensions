@@ -96,12 +96,17 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`),
 - 30 turns, wrap-up steer, then 2 grace turns, then abort; plus a 30-minute
   wall-clock timeout (frontmatter/`timeout_ms` can adjust) so a hung tool call
   cannot block the parent forever.
-- Last assistant text, capped at 50 KB, plus usage stats. Child token usage is
+- Last assistant text, capped at 12 KB (head + tail kept), plus usage stats. Every run's
+  full transcript is written to `~/.pi/agent/subagent-runs/*.jsonl` (newest 200 kept) and
+  its path is on the result. A child that is stopped, times out or aborts returns its
+  recent assistant text and tool trace instead of an empty message.
+- A "start converging" steer at ~70% of the turn cap (caps of 5+), before the wrap-up steer. Child token usage is
   attributed to the session (`usage` on the tool result).
 - Child runtime failures (error / timed out / aborted) return as normal content
   — never `isError`, so pi does not blindly auto-retry the same failing spawn.
 - Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
-- Children load host extensions except this package, and never get `subagent`.
+- Children load host extensions except this package and the interactive-only ones
+  (`lore`, `router`, `prompt-coach`, `influencer`, `skill-select`), and never get `subagent`.
 - The orchestrator brief (roster + spawn rules) is appended to the system
   prompt only while subagents are on — never otherwise.
 
@@ -114,3 +119,16 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`),
   new npm dependency.
 - Recursion guard: `PI_SUBAGENT_CHILD=1` during child bind, plus
   `excludeTools: ["subagent"]`.
+
+## TypeSafe judgments (optional)
+
+With a TypeSafe key (see `pi-typesafe`) three batched Jev judgments run; without one they
+are skipped silently — every path fails open.
+
+- **Preflight** (before spawn): rejects a task once when it leans on context the child
+  cannot see, or (write-capable agents) leaves a design decision open. Resubmitting the
+  identical task runs it. A missing deliverable or scope is added to the child's task as a
+  hint instead. Thresholds: `THRESHOLDS` in `judge.mjs`.
+- **Triage** (after a clean run): `triage: answered | partial | blocked | off_task (p)`.
+- **Scope check** (write-capable agents): the real `git diff` since the spawn is appended as
+  `changes:`, and a warning is added when the diff likely goes beyond the task.
