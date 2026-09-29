@@ -43,7 +43,7 @@ function pruneRuns(dir: string) {
 }
 
 const TOOL_DESCRIPTION = [
-  "Spawn a specialist child with a complete, self-contained task.",
+  "Spawn a specialist child with a complete, self-contained task: goal, concrete paths/symbols, constraints, the deliverable format, and a done-condition.",
   "Fire multiple subagent calls in one turn to run them in parallel, then synthesize.",
   "Built-in types: scout (recon), reviewer (code review), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
   "Custom types live in .pi/agents/*.md or ~/.pi/agent/agents/*.md. Children cannot spawn children.",
@@ -166,7 +166,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         description: "Agent type (scout, reviewer, oracle, worker, researcher, or a custom name)",
       }),
       task: Type.String({
-        description: "The full task for the child. It cannot see this conversation.",
+        description:
+          "The full task for the child. It cannot see this conversation: give the goal, concrete paths/symbols, constraints, the output you want back, and when it is done.",
       }),
       description: Type.Optional(
         Type.String({ description: "Short 3-5 word summary shown in the widget" }),
