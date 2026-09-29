@@ -48,11 +48,6 @@ function buildSegmentQuestions() {
       "A problem is reported and nothing in `next` resolves it.",
       "There is no problem, or `next` shows it handled.",
     ),
-    dead_end: noul(
-      "Was the approach in `segment` abandoned, superseded, or shown to be wrong by `next`?",
-      "It was abandoned or contradicted.",
-      "It still stands or `next` is unrelated.",
-    ),
     recoverable: noul(
       "Could the content of `segment` be recovered by re-reading a file or re-running a command instead of " +
         "having to be remembered?",
@@ -81,7 +76,7 @@ function segmentState({ goal, segment, next }) {
   };
 }
 
-/** Score one segment: seven typed answers, nulls where the model gave nothing usable. */
+/** Score one segment: six typed answers, nulls where the model gave nothing usable. */
 export async function judgeSegment({ goal, segment, next, ask = askSystemOne, signal }) {
   const { answers } = await ask({
     state: segmentState({ goal, segment, next }),
@@ -94,7 +89,6 @@ export async function judgeSegment({ goal, segment, next, ask = askSystemOne, si
     user_constraint: yes(answers?.user_constraint),
     decision: yes(answers?.decision),
     unresolved: yes(answers?.unresolved),
-    dead_end: yes(answers?.dead_end),
     recoverable: yes(answers?.recoverable),
     disposition:
       choice?.type === "choice" && typeof choice.choice === "string" ? choice.choice : null,

@@ -27,7 +27,6 @@ function fakeAsk({ coverage = () => 0.9, faithful = () => 0.9 } = {}) {
         user_constraint: noul(constraint ? 0.95 : 0.02),
         decision: noul(0.05),
         unresolved: noul(0.02),
-        dead_end: noul(noise ? 0.9 : 0.05),
         recoverable: noul(file ? 0.9 : 0.1),
         disposition: {
           type: "choice",

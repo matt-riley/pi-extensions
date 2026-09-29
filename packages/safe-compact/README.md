@@ -11,7 +11,7 @@ handoff is assembled and verified rather than trusted to one note.
    just finished?) and compaction runs at the first clean one. At the hard threshold, or when the
    agent calls `self_compact`, it runs regardless.
 2. **Score.** Each older message is scored by Jev: load-bearing, user constraint, decision,
-   unresolved problem, dead end, recoverable, plus a keep/point/excerpt/drop choice.
+   unresolved problem, recoverable, plus a keep/point/excerpt/drop choice.
 3. **Route.** Code applies hard rules (user constraints and unresolved errors are always verbatim;
    uncertain or load-bearing content is never dropped).
 4. **Select.** Jev picks decision sentences and the relevant line windows of large file reads.
