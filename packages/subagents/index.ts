@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
 import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
+import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { withOrchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
@@ -212,7 +213,25 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       }
 
       const cwd = ctx?.cwd || process.cwd();
+      // Both the session-level abort (ctx.signal) and the per-tool-call abort
+      // (signal) must be able to cancel the child — a plain `??` only wires up
+      // one and silently drops the other's cancellation.
+      const abortSignal = combineSignals([ctx?.signal, signal]);
       const writeCapable = !usesAllowlistedBash(agent);
+
+      const preflight = await preflightTask({
+        agent: agent.name,
+        task,
+        writeCapable,
+        signal: abortSignal,
+      });
+      if (preflight.reject) {
+        // Not isError: pi would blindly auto-retry the same call.
+        return { content: [{ type: "text", text: preflight.reject }] };
+      }
+      const childTask = preflight.hints.length
+        ? `${task}\n\nHarness notes:\n${preflight.hints.map((hint) => `- ${hint}`).join("\n")}`
+        : task;
 
       const description =
         typeof params?.description === "string" && params.description.trim()
@@ -261,15 +280,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         const result = await runChild({
           cwd,
           agent,
-          task,
+          task: childTask,
           model,
           thinkingLevel: agent.thinking ?? ctx?.thinkingLevel,
           maxTurns,
           timeoutMs,
-          // Both the session-level abort (ctx.signal) and the per-tool-call abort
-          // (signal) must be able to cancel the child — a plain `??` only wires up
-          // one and silently drops the other's cancellation.
-          signal: combineSignals([ctx?.signal, signal]),
+          signal: abortSignal,
           runFile,
           onEvent: (patch) => {
             pool.update(entry.id, patch);
@@ -311,11 +327,25 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           });
         }
 
+        const clean = result.status === "completed" || result.status === "wrapped up";
         const changed = before ? changedFiles(before, await snapshotChanges(cwd)) : [];
         const changes = await describeChanges(cwd, changed);
+        const [triage, scopeWarning] = await Promise.all([
+          clean
+            ? triageResult({ agent: agent.name, task, text: result.text, signal: abortSignal })
+            : undefined,
+          writeCapable
+            ? checkDiffScope({ task, diff: changes.diff, signal: abortSignal })
+            : undefined,
+        ]);
         const shared =
           pool.runningCount() > 1 ? " (shared worktree: may include parallel children)" : "";
-        const note = [modelNote, changes.stat ? `changes${shared}:\n${changes.stat}` : ""]
+        const note = [
+          modelNote,
+          triage ? `triage: ${triage}` : "",
+          changes.stat ? `changes${shared}:\n${changes.stat}` : "",
+          scopeWarning,
+        ]
           .filter(Boolean)
           .join("\n");
 
