@@ -6,11 +6,14 @@ import {
   SessionManager,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { acquireChildEnv, releaseChildEnv } from "./child-env.mjs";
 import { createChildPolicyExtension } from "./child-policy.mjs";
 import { resolveChildTools, usesAllowlistedBash } from "./discover.mjs";
 import {
   accumulateUsage,
+  buildPartialReport,
   emptyUsage,
   extractLastAssistantText,
   resolveFinalStatus,
@@ -20,6 +23,21 @@ import {
 import { formatLastTool } from "./widget.mjs";
 
 const WRAP_MESSAGE = "Wrap up immediately — provide your final answer now.";
+const TRACE_LIMIT = 15;
+
+const warnMessage = (left) =>
+  `${left} turn${left === 1 ? "" : "s"} left. Stop exploring, start converging, and write your final report.`;
+
+// One JSON message per line. Best-effort: a failed write never fails the child.
+function writeTranscript(runFile, messages) {
+  if (!runFile || !Array.isArray(messages)) return;
+  try {
+    mkdirSync(path.dirname(runFile), { recursive: true });
+    writeFileSync(runFile, `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`);
+  } catch {
+    // ignore
+  }
+}
 
 function buildSystemPrompt(agent) {
   const readonly = usesAllowlistedBash(agent);
@@ -58,6 +76,7 @@ export async function runChild({
   signal,
   onEvent,
   bind,
+  runFile,
 } = {}) {
   const startedAt = Date.now();
   const allowlistBash = usesAllowlistedBash(agent);
@@ -67,6 +86,8 @@ export async function runChild({
   let timer;
   let status = "completed";
   let wrapSent = false;
+  let warnSent = false;
+  const toolTrace = [];
   let turns = 0;
   let toolUses = 0;
   let tokens = 0;
@@ -142,7 +163,10 @@ export async function runChild({
         turns += 1;
         emit({ turns });
         const action = turnAction(turns, maxTurns);
-        if (action === "wrap" && !wrapSent) {
+        if (action === "warn" && !warnSent) {
+          warnSent = true;
+          session.steer(warnMessage(maxTurns - turns)).catch(() => {});
+        } else if (action === "wrap" && !wrapSent) {
           wrapSent = true;
           session.steer(WRAP_MESSAGE).catch(() => {});
         } else if (action === "abort" && status === "completed") {
@@ -151,6 +175,8 @@ export async function runChild({
       } else if (event?.type === "tool_execution_start") {
         toolUses += 1;
         lastTool = formatLastTool(event);
+        toolTrace.push(lastTool);
+        if (toolTrace.length > TRACE_LIMIT) toolTrace.shift();
         emit({ toolUses, lastTool });
       } else if (event?.type === "message_end" && event.message?.role === "assistant") {
         accumulateUsage(usage, event.message.usage);
@@ -189,9 +215,14 @@ export async function runChild({
 
   function finish(error) {
     const messages = session?.messages ?? session?.agent?.state?.messages;
+    const finalStatus = resolveFinalStatus({ status, wrapSent, turns, maxTurns });
+    const lastText = extractLastAssistantText(messages);
+    const clean = finalStatus === "completed" || finalStatus === "wrapped up";
+    writeTranscript(runFile, messages);
     return {
-      status: resolveFinalStatus({ status, wrapSent, turns, maxTurns }),
-      text: extractLastAssistantText(messages),
+      status: finalStatus,
+      text:
+        clean && lastText.trim() ? lastText : buildPartialReport(messages, toolTrace) || lastText,
       turns,
       tokens,
       toolUses,

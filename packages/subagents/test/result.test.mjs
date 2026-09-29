@@ -4,6 +4,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   RESULT_CAP,
   accumulateUsage,
+  buildPartialReport,
   emptyUsage,
   extractLastAssistantText,
   formatResult,
@@ -16,14 +17,41 @@ import {
   turnAction,
 } from "../result.mjs";
 
-test("truncateText caps at 50 KB and appends an ellipsis", () => {
+test("truncateText keeps the head and the tail", () => {
   assert.equal(truncateText(""), "");
   assert.equal(truncateText(null), "");
   assert.equal(truncateText("short"), "short");
-  const big = "x".repeat(RESULT_CAP + 10);
+  const big = `HEAD${"x".repeat(RESULT_CAP * 2)}VERDICT`;
   const out = truncateText(big);
-  assert.equal(out.length, RESULT_CAP + 2);
-  assert.ok(out.endsWith("\n…"));
+  assert.ok(out.startsWith("HEAD"));
+  assert.ok(out.endsWith("VERDICT"));
+  assert.match(out, /chars omitted/);
+  assert.ok(out.length < RESULT_CAP + 60);
+});
+
+test("buildPartialReport salvages recent text and the tool trace", () => {
+  assert.equal(buildPartialReport([], []), "");
+  const messages = [1, 2, 3, 4].map((n) => ({
+    role: "assistant",
+    content: [{ type: "text", text: `note ${n}` }],
+  }));
+  messages.push({ role: "assistant", content: [] });
+  const out = buildPartialReport(messages, ["read a.ts", "grep foo"]);
+  assert.match(out, /partial/);
+  assert.match(out, /note 4/);
+  assert.match(out, /note 2/);
+  assert.doesNotMatch(out, /note 1/);
+  assert.match(out, /grep foo/);
+});
+
+test("formatResult appends the transcript path", () => {
+  const text = formatResult({
+    agent: "scout",
+    status: "completed",
+    text: "ok",
+    runFile: "/r/1.jsonl",
+  });
+  assert.ok(text.endsWith("\ntranscript: /r/1.jsonl"));
 });
 
 test("formatUsageLine and formatResult", () => {
@@ -74,8 +102,15 @@ test("resolveMaxTurns only lowers the cap", () => {
   assert.equal(resolveMaxTurns(99, 99), 30);
 });
 
+test("turnAction warns at ~70% for caps of 5 or more", () => {
+  assert.equal(turnAction(6, 10), "continue");
+  assert.equal(turnAction(7, 10), "warn");
+  assert.equal(turnAction(8, 10), "continue");
+  assert.equal(turnAction(2, 4), "continue"); // caps under 5 skip the warning
+});
+
 test("turnAction wraps at the cap and aborts after grace", () => {
-  assert.equal(turnAction(29, 30), "continue");
+  assert.equal(turnAction(28, 30), "continue");
   assert.equal(turnAction(30, 30), "wrap");
   assert.equal(turnAction(31, 30), "continue");
   assert.equal(turnAction(32, 30), "abort");

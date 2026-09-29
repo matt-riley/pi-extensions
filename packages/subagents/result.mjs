@@ -1,16 +1,21 @@
 // result.mjs — truncate, usage line, last-assistant extract, turn-cap policy.
 
-export const RESULT_CAP = 50 * 1024;
+export const RESULT_CAP = 12 * 1024;
 const DEFAULT_MAX_TURNS = 30;
 const GRACE_TURNS = 2;
+const WARN_RATIO = 0.7;
+const WARN_MIN_CAP = 5;
 export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const TIMEOUT_MIN_MS = 1000;
 const TIMEOUT_MAX_MS = 2 * 60 * 60 * 1000;
 
+// Keep head and tail: findings and verdicts usually close the report.
 export function truncateText(text, cap = RESULT_CAP) {
   const s = text == null ? "" : String(text);
   if (s.length <= cap) return s;
-  return `${s.slice(0, cap)}\n…`;
+  const head = Math.floor(cap * 0.4);
+  const tail = cap - head;
+  return `${s.slice(0, head)}\n… [${s.length - cap} chars omitted] …\n${s.slice(-tail)}`;
 }
 
 export function fallbackDescription(task, max = 40) {
@@ -67,13 +72,17 @@ export function formatResult({
   durationMs,
   text,
   note,
+  runFile,
 } = {}) {
   const who = agent || "agent";
   const label = description ? `[${who}] ${description} — ${status}` : `[${who}] — ${status}`;
   const stats = formatUsageLine({ turns, tokens, durationMs });
   const header = stats ? `${label} · ${stats}` : label;
   const body = truncateText(text);
-  const extra = note ? `\n${note}` : "";
+  const extra = [note, runFile ? `transcript: ${runFile}` : ""]
+    .filter(Boolean)
+    .map((line) => `\n${line}`)
+    .join("");
   return body ? `${header}\n\n${body}${extra}` : `${header}${extra}`;
 }
 
@@ -105,6 +114,26 @@ export function extractLastAssistantText(messages) {
       .join("");
   }
   return "";
+}
+
+function assistantTexts(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .filter((message) => message?.role === "assistant")
+    .map((message) => extractLastAssistantText([message]).trim())
+    .filter(Boolean);
+}
+
+// A child that was stopped, timed out or aborted often ends mid-tool-call, so its
+// last message is empty. Salvage the recent assistant text and the tool trace so
+// the recon it already did is not lost.
+export function buildPartialReport(messages, toolTrace = [], recent = 3) {
+  const parts = [];
+  const texts = assistantTexts(messages).slice(-recent);
+  if (texts.length > 0) parts.push(texts.join("\n\n---\n\n"));
+  if (toolTrace.length > 0)
+    parts.push(`Tool trace (last ${toolTrace.length}):\n${toolTrace.join("\n")}`);
+  return parts.length > 0 ? `(partial — child did not finish)\n\n${parts.join("\n\n")}` : "";
 }
 
 export function clampMaxTurns(value) {
@@ -172,12 +201,14 @@ export function resolveFinalStatus({ status, wrapSent, turns, maxTurns }) {
   return status;
 }
 
-// After each turn_end: continue, send the wrap-up steer, or abort.
-// At maxTurns → wrap. Then GRACE_TURNS more turns. Then abort.
+// After each turn_end: continue, warn, send the wrap-up steer, or abort.
+// At ~70% of maxTurns → warn (start converging). At maxTurns → wrap. Then
+// GRACE_TURNS more turns. Then abort.
 export function turnAction(turns, maxTurns, graceTurns = GRACE_TURNS) {
   const cap = clampMaxTurns(maxTurns) ?? DEFAULT_MAX_TURNS;
   const grace =
     Number.isFinite(graceTurns) && graceTurns >= 0 ? Math.trunc(graceTurns) : GRACE_TURNS;
+  if (cap >= WARN_MIN_CAP && turns === Math.floor(cap * WARN_RATIO)) return "warn";
   if (turns < cap) return "continue";
   if (turns === cap) return "wrap";
   if (turns < cap + grace) return "continue";

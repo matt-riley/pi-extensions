@@ -3,6 +3,7 @@
 
 import { type ExtensionAPI, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
@@ -23,6 +24,21 @@ const BUILTIN_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "age
 // Shared across extension instances in this process: survives session switches,
 // resets to off when pi restarts.
 let enabled = false;
+let runsPruned = false;
+
+const KEEP_RUNS = 200;
+
+// Transcripts are the only way to see why a child went wrong; keep the newest.
+function pruneRuns(dir: string) {
+  try {
+    const files = readdirSync(dir).sort();
+    for (const file of files.slice(0, Math.max(0, files.length - KEEP_RUNS))) {
+      unlinkSync(path.join(dir, file));
+    }
+  } catch {
+    // no runs yet
+  }
+}
 
 const TOOL_DESCRIPTION = [
   "Spawn a specialist child with a complete, self-contained task.",
@@ -225,6 +241,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
       pi.events.emit("subagents:started", { id: entry.id, type: agent.name, description });
       const { model, note } = resolveChildModel(ctx?.modelRegistry, ctx?.model, agent.model);
+      const runsDir = path.join(getAgentDir(), "subagent-runs");
+      if (!runsPruned) {
+        runsPruned = true;
+        pruneRuns(runsDir);
+      }
+      const runFile = path.join(runsDir, `${Date.now()}-${entry.id}.jsonl`);
 
       try {
         const result = await runChild({
@@ -239,6 +261,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           // (signal) must be able to cancel the child — a plain `??` only wires up
           // one and silently drops the other's cancellation.
           signal: combineSignals([ctx?.signal, signal]),
+          runFile,
           onEvent: (patch) => {
             pool.update(entry.id, patch);
             const current = pool.get(entry.id);
@@ -288,6 +311,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           durationMs: result.durationMs,
           text: result.error && !result.text ? result.error : result.text,
           note,
+          runFile,
         });
         return {
           content: [{ type: "text", text }],
