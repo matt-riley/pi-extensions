@@ -14,7 +14,7 @@ import {
   WINDOW_RELEVANCE,
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
-import { estimateTokens, segmentMessages, splitSpans } from "./segment.mjs";
+import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
 const MAX_ROUNDS = 3;
 const MAX_SEGMENTS = 400;
@@ -256,4 +256,186 @@ export async function composeHandoff({
     for (const id of fresh) forced.add(id);
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Inline boundary compaction (the `turn_end` path)
+//
+// pi computes the native cut itself and hands it over as `preparation`; for an
+// inline `turn_end` compaction there is no preparation, so this ports pi's
+// projected cut-point rules. Only entries a provider can start from are valid
+// cuts, which is what keeps tool results with the tool call that produced them.
+
+const DEFAULT_KEEP_RECENT = 20000;
+const MIN_SUMMARIZED_RATIO = 0.25;
+const MIN_SUMMARIZED_TOKENS = 2000;
+
+const CUT_ROLES = new Set([
+  "user",
+  "assistant",
+  "bashExecution",
+  "custom",
+  "branchSummary",
+  "compactionSummary",
+]);
+
+const estimateMessageTokens = (message) => estimateTokens(messageText(message));
+
+const entryTokens = (entry) =>
+  (entry?.messages ?? []).reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+
+const isCutEntry = (entry) =>
+  entry?.sourceEntry?.type !== "compaction" &&
+  (entry?.messages ?? []).some((message) => CUT_ROLES.has(message?.role));
+
+/** File lists from either pi's `CompactionDetails` or this extension's details. */
+export function fileListsFromDetails(details) {
+  const strings = (value) =>
+    Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  return { readFiles: strings(details?.readFiles), modifiedFiles: strings(details?.modifiedFiles) };
+}
+
+/** Union file lists, dropping files that were also modified. */
+export function mergeFileLists(...lists) {
+  const read = new Set();
+  const modified = new Set();
+  for (const list of lists) {
+    for (const file of list?.readFiles ?? []) read.add(file);
+    for (const file of list?.modifiedFiles ?? []) modified.add(file);
+  }
+  return {
+    readFiles: [...read].filter((file) => !modified.has(file)).sort(),
+    modifiedFiles: [...modified].sort(),
+  };
+}
+
+const addFileOp = (tool, args, ops) => {
+  const path = typeof args?.path === "string" ? args.path : undefined;
+  if (!path) return;
+  if (tool === "read") ops.read.add(path);
+  else if (tool === "write") ops.written.add(path);
+  else if (tool === "edit") ops.edited.add(path);
+};
+
+/** Mirror pi's file tracking so pointers survive repeated compactions. */
+const fileOpsFromMessages = (messages) => {
+  const ops = { read: new Set(), written: new Set(), edited: new Set() };
+  for (const message of messages ?? []) {
+    if (message?.role === "toolResult") {
+      for (const call of message.nestedCalls?.calls ?? [])
+        addFileOp(call?.name, call?.arguments, ops);
+      continue;
+    }
+    if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (block?.type === "toolCall") addFileOp(block.name, block.arguments, ops);
+    }
+  }
+  const modified = new Set([...ops.edited, ...ops.written]);
+  return {
+    readFiles: [...ops.read].filter((file) => !modified.has(file)).sort(),
+    modifiedFiles: [...modified].sort(),
+  };
+};
+
+/**
+ * Choose the cut for an inline compaction from the live projection: keep the
+ * recent span and summarize everything before it. Returns null when there is
+ * nothing meaningful to compact, so the caller keeps the native fallback.
+ * `entries` are `ProjectedSessionEntry` values from the turn_end boundary, so
+ * their `sourceEntry.id` values are real branch entry ids.
+ */
+export function planBoundary({ entries, keepRecentTokens = DEFAULT_KEEP_RECENT } = {}) {
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  const messageTokens = entries.reduce((sum, entry) => sum + entryTokens(entry), 0);
+  if (messageTokens < MIN_SUMMARIZED_TOKENS) return null;
+  // Always summarize something meaningful, even when the configured recent
+  // span would swallow the whole (small) context.
+  const floor = Math.max(MIN_SUMMARIZED_TOKENS, messageTokens * MIN_SUMMARIZED_RATIO);
+  const budget = Math.max(0, Math.min(keepRecentTokens, messageTokens - floor));
+
+  const previousIndex = entries.findIndex(
+    (entry) => entry?.sourceEntry?.type === "compaction" && (entry?.messages?.length ?? 0) > 0,
+  );
+  const previous = previousIndex >= 0 ? entries[previousIndex].sourceEntry : null;
+  const startIndex = previousIndex + 1;
+
+  const cutPoints = [];
+  for (let i = startIndex; i < entries.length; i++) if (isCutEntry(entries[i])) cutPoints.push(i);
+  if (cutPoints.length === 0) return null;
+
+  let accumulated = 0;
+  let exceeded = false;
+  let cutIndex = cutPoints[0];
+  for (let i = entries.length - 1; i >= startIndex; i--) {
+    const tokens = entryTokens(entries[i]);
+    if (tokens === 0) continue;
+    accumulated += tokens;
+    if (accumulated >= budget) {
+      exceeded = true;
+      cutIndex = cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
+      break;
+    }
+  }
+  if (!exceeded) return null;
+
+  // Context-invisible entries do not move the cut; a previous compaction does.
+  while (cutIndex > startIndex) {
+    const before = entries[cutIndex - 1];
+    if (before?.sourceEntry?.type === "compaction" || (before?.messages?.length ?? 0) > 0) break;
+    cutIndex--;
+  }
+
+  const summarized = entries.slice(startIndex, cutIndex);
+  const summarizedTokens = summarized.reduce((sum, entry) => sum + entryTokens(entry), 0);
+  // A trailing span (often huge tool results) can push the cut late enough
+  // that the summarized range is trivial. Refuse to ship that: it frees
+  // nothing while adding a checkpoint and a summary to the context.
+  if (summarizedTokens < MIN_SUMMARIZED_TOKENS) return null;
+
+  const messages = summarized
+    .filter((entry) => entry?.sourceEntry?.type !== "compaction")
+    .flatMap((entry) => (entry?.messages ?? []).filter((message) => message?.role !== "system"));
+  const firstKeptEntryId = entries[cutIndex]?.sourceEntry?.id;
+  if (messages.length === 0 || typeof firstKeptEntryId !== "string") return null;
+
+  return {
+    firstKeptEntryId,
+    messages,
+    previousSummary: typeof previous?.summary === "string" ? previous.summary : undefined,
+    fileLists: mergeFileLists(
+      fileListsFromDetails(previous?.details),
+      fileOpsFromMessages(messages),
+    ),
+    summarizedTokens,
+  };
+}
+
+/**
+ * Compose the inline handoff for a turn_end boundary. Returns the compaction
+ * draft payload (without `type`) or null when the handoff cannot be verified
+ * or would not be smaller; the caller then falls back to native compaction.
+ */
+export async function buildBoundaryCompaction({ entries, keepRecentTokens, note, ask, signal }) {
+  const plan = planBoundary({ entries, keepRecentTokens });
+  if (!plan) return null;
+  const result = await composeHandoff({
+    messages: plan.messages,
+    previousSummary: plan.previousSummary,
+    fileLists: plan.fileLists,
+    note,
+    tokensBefore: plan.summarizedTokens,
+    ask,
+    signal,
+  });
+  if (!result) return null;
+  return {
+    firstKeptEntryId: plan.firstKeptEntryId,
+    summary: result.summary,
+    details: {
+      ...result.details,
+      readFiles: plan.fileLists.readFiles,
+      modifiedFiles: plan.fileLists.modifiedFiles,
+    },
+  };
 }

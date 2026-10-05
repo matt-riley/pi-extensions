@@ -4,10 +4,19 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import safeCompact from "../index.ts";
 import { judgeMoment, relevantLines } from "../judge.mjs";
-import { classify, composeHandoff, decideTrigger } from "../plan.mjs";
+import {
+  buildBoundaryCompaction,
+  classify,
+  composeHandoff,
+  decideTrigger,
+  planBoundary,
+} from "../plan.mjs";
 import { segmentMessages } from "../segment.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
@@ -295,3 +304,202 @@ test("relevantLines keeps the lines a segment matches, even from the middle of a
   assert.ok(shown.length <= 12000);
   assert.equal(relevantLines("short", "anything"), "short");
 });
+
+// --- Inline boundary compaction -------------------------------------------
+
+const project = (id, messages) => ({ sourceEntry: { id, type: "message" }, messages });
+const projectCompaction = (id, summary, details, messages) => ({
+  sourceEntry: { id, type: "compaction", summary, details },
+  messages,
+});
+const readCall = (id, path) => ({
+  role: "assistant",
+  content: [{ type: "toolCall", id, name: "read", arguments: { path } }],
+});
+const readResult = (callId, text) => ({
+  role: "toolResult",
+  toolCallId: callId,
+  toolName: "read",
+  content: [{ type: "text", text }],
+});
+
+/** `count` entries of roughly 950 estimated tokens each. */
+const largeEntries = (count) =>
+  Array.from({ length: count }, (_, i) =>
+    project(`e${i}`, [user(`work ${i} ${"x".repeat(3800)}`)]),
+  );
+
+test("planBoundary: the kept span never starts at a tool result", () => {
+  const entries = largeEntries(30);
+  // A huge tool result sits just inside the budget boundary: the cut must land
+  // after it, or the kept span begins with a result whose call was summarized.
+  entries[25] = project("t25", [readResult("c25", "y".repeat(80000))]);
+  const plan = planBoundary({ entries, keepRecentTokens: 20000 });
+  assert.ok(plan);
+  assert.equal(plan.firstKeptEntryId, "e26");
+  assert.equal(
+    entries.find((entry) => entry.sourceEntry.id === plan.firstKeptEntryId).messages[0].role,
+    "user",
+  );
+});
+
+test("planBoundary: carries the previous summary and file lists and skips hidden entries", () => {
+  const entries = [
+    projectCompaction(
+      "c1",
+      "OLD SUMMARY",
+      { readFiles: ["src/old.ts"], modifiedFiles: ["src/changed.ts"] },
+      [{ role: "compactionSummary", summary: "OLD SUMMARY" }],
+    ),
+    { sourceEntry: { id: "c0", type: "compaction", summary: "OLDER" }, messages: [] },
+    ...largeEntries(30),
+  ];
+  const plan = planBoundary({ entries, keepRecentTokens: 20000 });
+  assert.ok(plan);
+  assert.equal(plan.previousSummary, "OLD SUMMARY");
+  assert.deepEqual(plan.fileLists.readFiles, ["src/old.ts"]);
+  assert.deepEqual(plan.fileLists.modifiedFiles, ["src/changed.ts"]);
+  assert.ok(plan.firstKeptEntryId.startsWith("e"));
+  assert.ok(!plan.messages.some((message) => message.role === "compactionSummary"));
+});
+
+test("planBoundary: nothing to compact when small or cut-point-free", () => {
+  assert.equal(
+    planBoundary({
+      entries: [project("u1", [user("hi")]), project("a1", [assistant("hello")])],
+      keepRecentTokens: 20000,
+    }),
+    null,
+  );
+  assert.equal(
+    planBoundary({
+      entries: [project("t1", [readResult("c1", "y".repeat(8000))])],
+      keepRecentTokens: 1,
+    }),
+    null,
+  );
+});
+
+test("planBoundary: refuses a compaction that would summarize almost nothing", () => {
+  // The huge tool result sits in the kept tail, so the cut falls back to the
+  // assistant call and the summarized range is only the tiny user prompt.
+  const entries = [
+    project("u1", [user("read the big file")]),
+    project("a1", [readCall("c1", "big.txt")]),
+    project("r1", [readResult("c1", "y".repeat(80000))]),
+  ];
+  assert.equal(planBoundary({ entries, keepRecentTokens: 20000 }), null);
+});
+
+test("buildBoundaryCompaction: verified draft carries the note and file lists", async () => {
+  const entries = largeEntries(30);
+  entries[0] = project("e0", [user(`GOALMARK fix the retry logic ${"x".repeat(3600)}`)]);
+  entries[1] = project("e1", [user(`ALWAYS use tabs ${"x".repeat(3600)}`)]);
+  entries[2] = project("e2", [readCall("c2", "src/client.ts")]);
+  entries[3] = project("e3", [readResult("c2", `retry code ${"x".repeat(3600)}`)]);
+  const result = await buildBoundaryCompaction({
+    entries,
+    keepRecentTokens: 20000,
+    note: "next: run the tests",
+    ask: fakeAsk(),
+  });
+  assert.ok(result);
+  assert.match(result.summary, /GOALMARK fix the retry logic/);
+  assert.match(result.summary, /ALWAYS use tabs/);
+  assert.match(result.summary, /next: run the tests/);
+  assert.deepEqual(result.details.readFiles, ["src/client.ts"]);
+  assert.equal(result.details.safeCompact.segments, 8);
+});
+
+test("turn_end commits a compaction draft instead of aborting through ctx.compact", async () => {
+  const { handlers, tools, ctx, cleanup } = wiring();
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) }, toolResults: [] };
+    const result = await handlers.get("turn_end")(event, ctx);
+
+    assert.equal(ctx.compacted, false);
+    assert.equal(result.continue, undefined);
+    assert.equal(result.entries.length, 1);
+    assert.equal(result.entries[0].type, "compaction");
+    assert.equal(typeof result.entries[0].firstKeptEntryId, "string");
+    assert.ok(result.entries[0].details.safeCompact);
+    assert.ok(readdirSync(join(ctx.cwd, ".pi", "safe-compact")).length > 0);
+
+    // The tool schedules the same boundary compaction even below the soft
+    // threshold, and still never aborts.
+    ctx.getContextUsage = () => ({ tokens: 30000, contextWindow: 40000, percent: 5 });
+    await tools
+      .get("self_compact")
+      .execute("id", { note: "next: ship it" }, undefined, undefined, ctx);
+    const requested = await handlers.get("turn_end")(event, ctx);
+    assert.equal(ctx.compacted, false);
+    assert.match(requested.entries[0].summary, /next: ship it/);
+
+    // Below soft with no request, the handler leaves the turn alone.
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+  } finally {
+    cleanup();
+  }
+});
+
+test("session_before_compact merges previous details into the handoff file lists", async () => {
+  const { handlers, ctx, cleanup } = wiring();
+  try {
+    const result = await handlers.get("session_before_compact")(
+      {
+        preparation: {
+          messagesToSummarize: [user(`GOALMARK fix the retry ${"x".repeat(200)}`)],
+          turnPrefixMessages: [],
+          previousSummary: undefined,
+          tokensBefore: 100000,
+          firstKeptEntryId: "keep-1",
+          fileOps: { read: new Set(["src/new.ts"]), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [
+          {
+            type: "compaction",
+            details: {
+              safeCompact: { segments: 1 },
+              readFiles: ["src/old.ts"],
+              modifiedFiles: ["src/changed.ts"],
+            },
+          },
+        ],
+      },
+      ctx,
+    );
+    assert.deepEqual(result.compaction.details.readFiles, ["src/new.ts", "src/old.ts"]);
+    assert.deepEqual(result.compaction.details.modifiedFiles, ["src/changed.ts"]);
+  } finally {
+    cleanup();
+  }
+});
+
+/** A stub pi whose snapshots land under a temp cwd instead of the repo. */
+function wiring() {
+  const handlers = new Map();
+  const tools = new Map();
+  safeCompact(
+    {
+      registerTool: (definition) => tools.set(definition.name, definition),
+      registerCommand: () => {},
+      registerFlag: () => {},
+      on: (name, handler) => handlers.set(name, handler),
+      getFlag: () => undefined,
+      getSettings: () => ({ compaction: { keepRecentTokens: 20000 } }),
+    },
+    { ask: fakeAsk() },
+  );
+  const cwd = mkdtempSync(join(tmpdir(), "safe-compact-"));
+  const ctx = {
+    cwd,
+    compacted: false,
+    compact() {
+      this.compacted = true;
+    },
+    getContextUsage: () => ({ tokens: 30000, contextWindow: 40000, percent: 80 }),
+    ui: { notify: () => {} },
+    sessionManager: { getBranch: () => [] },
+  };
+  return { handlers, tools, ctx, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
+}

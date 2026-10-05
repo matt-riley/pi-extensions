@@ -167,6 +167,13 @@ declare module "@earendil-works/pi-coding-agent" {
     /** Persist extension data. Custom entries do NOT enter LLM context. */
     appendEntry(customType: string, data?: unknown): void;
     getFlag(name: string): unknown;
+    /** Effective settings (global + project merged); compaction budget lives under `compaction`. */
+    getSettings?(): {
+      compaction?: {
+        keepRecentTokens?: number;
+        modelOverrides?: Record<string, { keepRecentTokens?: number }>;
+      };
+    };
     sendUserMessage(text: string, opts?: { deliverAs?: string }): Promise<void>;
     sendMessage(
       message: { customType: string; content: string; display?: boolean; details?: unknown },
