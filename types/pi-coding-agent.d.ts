@@ -102,6 +102,49 @@ declare module "@earendil-works/pi-coding-agent" {
 
   export type ExtensionCommandContext = ExtensionContext;
 
+  /** The physical model (and level) a router picked, or the one that answered. */
+  export interface ModelRouteTarget {
+    model?: unknown;
+    thinkingLevel?: string;
+    provider?: string;
+    id?: string;
+    [key: string]: unknown;
+  }
+
+  /** What pi hands `route()` before every request made with a virtual model. */
+  export interface ModelRouteRequest<TState = unknown> {
+    model?: unknown;
+    thinkingLevel?: string;
+    reason: "user" | "continuation" | "retry" | "direct";
+    previous?: ModelRouteTarget | null;
+    failed?: (ModelRouteTarget & { message?: unknown }) | null;
+    state?: TState;
+    messages: readonly any[];
+    signal?: AbortSignal;
+  }
+
+  /** What `route()` returns: the physical model and level for this request. */
+  export interface ModelRoute<TState = unknown> {
+    model: unknown;
+    thinkingLevel?: string;
+    state?: TState;
+  }
+
+  /** A selectable model that picks a physical model for each request. */
+  export interface VirtualModelDefinition<TState = unknown> {
+    provider: string;
+    id: string;
+    name?: string;
+    thinkingLevels?: string[];
+    contextWindow?: number;
+    maxTokens?: number;
+    input?: string[];
+    route(
+      request: ModelRouteRequest<TState>,
+      ctx: ExtensionContext,
+    ): ModelRoute<TState> | Promise<ModelRoute<TState>>;
+  }
+
   export interface ToolDefinition<TParams = unknown, TDetails = unknown> {
     name: string;
     label?: string;
@@ -155,6 +198,9 @@ declare module "@earendil-works/pi-coding-agent" {
     registerFlag(name: string, def: FlagDefinition): void;
     registerShortcut(keybinding: string, def: ShortcutDefinition): void;
     on(event: string, handler: (event: any, ctx: ExtensionContext) => any): void;
+    /** Register a virtual model; replaces the same provider/id registration. */
+    registerVirtualModel<TState = unknown>(def: VirtualModelDefinition<TState>): void;
+    unregisterVirtualModel(provider: string, id: string): void;
     exec(cmd: string, args: string[], opts?: { timeout?: number }): Promise<ExecResult>;
     getActiveTools(): string[];
     setActiveTools(tools: string[]): void;

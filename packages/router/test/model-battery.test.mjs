@@ -7,27 +7,27 @@ import {
   chooseModelForTier,
   DEFAULT_MID_PATTERNS,
   DEFAULT_TIERS,
-  DEFAULT_TIER_THINKING,
   DIFFICULTY_THRESHOLD,
   FRONTIER_THRESHOLD,
   latestContextTokens,
   modelKey,
+  pairOrder,
   routeFromDifficulty,
+  routePair,
   THINKING_LEVELS,
-  thinkingForTier,
   thinkingRank,
   tierOf,
   tierRank,
-  turnsFromBranch,
+  turnsFromMessages,
   WINDOW,
 } from "../model-battery.mjs";
 
 const score = (value) => ({ type: "score", score: value });
 
 // ---------------------------------------------------------------------------
-// Reading a session branch
+// Reading the messages of a request
 
-test("turnsFromBranch groups messages into turns with their failures", () => {
+test("turnsFromMessages groups messages into turns with their failures", () => {
   const branch = [
     {
       type: "message",
@@ -50,7 +50,7 @@ test("turnsFromBranch groups messages into turns with their failures", () => {
     { type: "message", message: { role: "toolResult", toolName: "bash", isError: true } },
     { type: "message", message: { role: "user", content: "push" } },
   ];
-  const turns = turnsFromBranch(branch);
+  const turns = turnsFromMessages(branch);
   assert.equal(turns.length, 2);
   assert.equal(turns[0].prompt, "fix the parser");
   assert.equal(turns[0].lastResponse, "Looking at it.");
@@ -62,18 +62,18 @@ test("turnsFromBranch groups messages into turns with their failures", () => {
   assert.equal(turns[1].prompt, "push");
 });
 
-test("turnsFromBranch tolerates bare messages and keeps only the window", () => {
+test("turnsFromMessages tolerates bare messages and keeps only the window", () => {
   const branch = [];
   for (let i = 0; i < 8; i++) branch.push({ role: "user", content: `turn ${i}` });
-  const turns = turnsFromBranch(branch);
+  const turns = turnsFromMessages(branch);
   assert.equal(turns.length, WINDOW);
   assert.equal(turns.at(-1).prompt, "turn 7");
-  assert.deepEqual(turnsFromBranch(undefined), []);
-  assert.deepEqual(turnsFromBranch([{ role: "assistant", content: "no prompt yet" }]), []);
+  assert.deepEqual(turnsFromMessages(undefined), []);
+  assert.deepEqual(turnsFromMessages([{ role: "assistant", content: "no prompt yet" }]), []);
 });
 
-test("turnsFromBranch ignores user records with no text", () => {
-  const turns = turnsFromBranch([
+test("turnsFromMessages ignores user records with no text", () => {
+  const turns = turnsFromMessages([
     { role: "user", content: [{ type: "image" }] },
     { role: "user", content: "real prompt" },
   ]);
@@ -81,8 +81,8 @@ test("turnsFromBranch ignores user records with no text", () => {
   assert.equal(turns[0].prompt, "real prompt");
 });
 
-test("turnsFromBranch records the context the session last read", () => {
-  const turns = turnsFromBranch([
+test("turnsFromMessages records the context the session last read", () => {
+  const turns = turnsFromMessages([
     { role: "user", content: "first" },
     { role: "assistant", content: "ok", usage: { input: 1000, cacheRead: 180000 } },
     { role: "user", content: "second" },
@@ -345,6 +345,33 @@ test("chooseModelForTier reads the {model} wrapper scopedModels uses", () => {
   assert.equal(modelKey(null), null);
 });
 
+test("the thinking cap filters pairs before choosing a model", () => {
+  const available = [
+    { provider: "openai-codex", id: "gpt-5.6-sol" },
+    { provider: "openai-codex", id: "gpt-6-astra" },
+  ];
+  const tiers = {
+    frontier: [
+      { model: "openai-codex/gpt-5.6-sol", thinking: "max" },
+      { model: "openai-codex/gpt-5.6-sol", thinking: "xhigh" },
+      { model: "openai-codex/gpt-6-astra", thinking: "low" },
+    ],
+  };
+  const low = chooseModelForTier(available, "frontier", tiers, undefined, "low");
+  const xhigh = chooseModelForTier(available, "frontier", tiers, undefined, "xhigh");
+  const max = chooseModelForTier(available, "frontier", tiers, undefined, "max");
+  assert.equal(low.key, "openai-codex/gpt-6-astra");
+  assert.equal(low.thinking, "low");
+  assert.equal(xhigh.key, "openai-codex/gpt-5.6-sol");
+  assert.equal(xhigh.thinking, "xhigh");
+  assert.equal(max.thinking, "max");
+  assert.equal(pairOrder(low.key, low.thinking, "frontier", tiers), 2);
+  assert.deepEqual(routePair("openai-codex/gpt-5.6-sol"), {
+    model: "openai-codex/gpt-5.6-sol",
+    thinking: null,
+  });
+});
+
 test("no available frontier model is a null, not a guess", () => {
   assert.equal(chooseModelForTier([{ provider: "x", id: "small" }], "frontier"), null);
   assert.equal(chooseModelForTier([], "frontier"), null);
@@ -364,15 +391,4 @@ test("THINKING_LEVELS is Pi's seven-level set, weakest first, with no ultra", ()
   assert.equal(thinkingRank("max"), 6);
   assert.equal(thinkingRank("ultra"), -1);
   assert.equal(thinkingRank(undefined), -1);
-});
-
-test("thinkingForTier returns curated defaults and null for an unknown tier", () => {
-  assert.deepEqual(DEFAULT_TIER_THINKING, { mid: "xhigh", frontier: "medium" });
-  assert.equal(thinkingForTier("mid"), "xhigh");
-  assert.equal(thinkingForTier("frontier"), "medium");
-  assert.equal(thinkingForTier("mid"), DEFAULT_TIER_THINKING.mid);
-  assert.equal(thinkingForTier("frontier"), DEFAULT_TIER_THINKING.frontier);
-  assert.equal(thinkingForTier("economy"), null);
-  assert.equal(thinkingForTier(null), null);
-  assert.equal(thinkingForTier("mid", { mid: "high", frontier: "low" }), "high");
 });

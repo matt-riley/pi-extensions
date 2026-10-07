@@ -1,8 +1,9 @@
 # pi-router — pick the model the task deserves
 
-Asks TypeSafe how hard the current task is, escalates to the mid or frontier
-tier when the rating clears a threshold, and steps back down when a new task
-arrives.
+A virtual model. Select `router/auto` in `/model`, and pi asks the router for a
+physical model and thinking level before every request. It judges how hard the
+current task is, escalates to the mid or frontier tier when the rating clears a
+threshold, and returns to the base at the next task.
 
 ## Why it looks like this
 
@@ -42,52 +43,96 @@ caught it is summarised at the bottom of this file.
 
 ## Behaviour
 
+Select `router/auto` in `/model` (or `--model router/auto`). Selecting a
+physical model instead deselects the router — ownership is a selection, not a
+state machine. The base is what the router holds at when it is not escalating:
+the first entry in the config's `base` list, defaulting to Luna.
+
 - **Judges at task boundaries** and when the previous turn ended in two or more
-  failures (the stuck case), capped at 3 judgements per task. Continuations
-  hold the decision already made.
-- **Escalates in tiers.** At `difficulty >= 1.5` it moves to the mid tier, and
-  at `>= 2.5` to the frontier tier. It only moves up: a model already at or
-  above the target tier holds, so nothing here ever downgrades a task in flight,
-  because the rules that tried were wrong exactly where it mattered most.
-- **Routes the (model, thinking) pair.** Luna at `xhigh` is the workhorse;
-  frontier thinking defaults to `medium` so Astra is not paired with high-effort.
-  A model switch always sets that tier's thinking, even when it is lower — do
-  not carry Luna-max onto Astra. If the model stays put, thinking only rises,
-  and only when the current model is already in the decision tier (already on
-  Luna at medium, rating 1.8 → stay on Luna, set `xhigh`). A manual thinking
-  change is not fought. Pi's levels are `off`, `minimal`, `low`, `medium`,
-  `high`, `xhigh`, `max` — there is no `ultra`. These thinking defaults are
-  curated, not measured.
-- **Steps down only from a model it chose.** If you picked the model yourself,
-  the router will not touch it — it forgets its own escalation the moment the
-  session model stops matching what it set. When it does step down, it restores
-  the user's thinking level too, if it owns that as well.
+  failures (the stuck case), capped at 3 judgements per task. The gate is the
+  same prompt-shape heuristic the measurements used, but `reason` now tells the
+  router a user turn from a continuation, so it no longer has to infer that part.
+- **Continuations and retries are held, not judged.** A request after tool
+  results returns the model that handled the turn, so prompt caches and thinking
+  signatures stay valid. Retries are visible for the first time, and a retry
+  stays on the model that failed rather than re-rolling the decision.
+- **Escalates in tiers, per task.** At `difficulty >= 1.5` the task routes to
+  the mid tier, and at `>= 2.5` to the frontier tier. Within a task the router
+  only moves up: a model already at or above the target tier holds, so nothing
+  downgrades a task in flight — the rules that tried were wrong exactly where it
+  mattered most.
+- **Routes the (model, thinking) pair.** The config is an ordered list of
+  explicit pairs, not a model list with reasoning bolted on afterward. A cap of
+  `low` filters out `Sol@xhigh` and `Sol@max`, leaving `Astra@low`; `xhigh`
+  selects `Sol@xhigh`; `max` selects `Sol@max`. The router therefore never picks
+  Astra first and silently clamps it.
+  The selected cap is never exceeded. Continuations hold the exact pair, and a
+  task boundary may choose a stronger pair when the cap allows it. Pi's levels
+  are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — there is no
+  `ultra`. The pair order is policy, not a benchmark claim baked into code, so
+  it can be tuned in the file.
+- **Comes back down only at a new task.** An easy rating at a task boundary
+  returns to the base, releasing a frontier model or a raised thinking level. A
+  stuck turn rated easy is still a stuck turn, so a failing continuation is
+  never downgraded.
+- **Requests outside the agent loop go to the base.** Compaction summaries and
+  extension calls (`reason: "direct"`) carry no routing state and are not judged.
 - **Respects your model scoping.** With `--models` / `enabledModels` in play,
   routing stays inside that list rather than reaching for the whole catalogue.
 - **A missing judgement changes nothing.** Timeout, no key, unusable answer —
-  the current model keeps working. Never spend less by accident.
+  the current model keeps working, and a failed judgement is counted and
+  cooling down rather than retried every turn. Never spend less by accident.
 - **Refuses a switch the target cannot hold.** The base model here reads 1M
   tokens while the Codex frontier models hold 272K, and this machine's p90
   request context is 452K. Escalating anyway would compact the session — losing
   the context the escalation was meant to reason over — so the router stays put
   and says why. In practice this makes escalation an early-task move, which is
   where the task-boundary design wanted it anyway.
+- **Subagent children hold the base without judging.** Children inherit
+  `router/auto`, so the extension still loads in them and registers the model
+  they are pointed at; a child's `route()` sees `PI_SUBAGENT_CHILD` and answers
+  with the base, no judgement call.
 
-## Configuration
+## Models
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PI_ROUTER` | unset (on) | `off` / `0` / `false` disables it for the process |
-| `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which the router leaves the current model (to mid or frontier) |
-| `PI_ROUTER_FRONTIER_THRESHOLD` | `2.5` | rating at or above which the target is the frontier tier rather than mid (the two thresholds are ordered, so the lower starts mid and the higher starts frontier) |
-| `PI_ROUTER_MID` | `openai-codex/gpt-5.6-luna` | mid-tier preference order, substring-matched against `provider/model` |
-| `PI_ROUTER_FRONTIER` | `openai-codex/gpt-6-astra,openai-codex/gpt-5.6-sol,grok-4.6,qwen3.8-max,kimi-k3` | frontier-tier preference order, substring-matched against `provider/model` |
-| `PI_ROUTER_MID_THINKING` | `xhigh` | thinking level set when the router targets the mid tier. Unknown/blank values fall back to `xhigh`. Pi has no `ultra`. |
-| `PI_ROUTER_FRONTIER_THINKING` | `medium` | thinking level set when the router targets the frontier tier. Unknown/blank values fall back to `medium`, so Astra is not paired with high-effort by default. |
-| `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
-| `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
+The model lists live in `<agent-dir>/router.json` (usually
+`~/.pi/agent/router.json`), seeded with the built-in defaults on first load and
+re-read on every judgement — edit it while pi runs and the change takes effect
+at the next task, no restart:
 
-In-session: `/route` for status and counters, `/route off` and `/route on`.
+```json
+{
+  "base": [{ "model": "openai-codex/gpt-5.6-luna" }],
+  "mid": [
+    { "model": "openai-codex/gpt-5.6-luna", "thinking": "xhigh" },
+    { "model": "openai-codex/gpt-5.6-luna", "thinking": "medium" }
+  ],
+  "frontier": [
+    { "model": "openai-codex/gpt-5.6-sol", "thinking": "max" },
+    { "model": "openai-codex/gpt-5.6-sol", "thinking": "xhigh" },
+    { "model": "openai-codex/gpt-6-astra", "thinking": "medium" },
+    { "model": "openai-codex/gpt-6-astra", "thinking": "low" },
+    { "model": "grok-4.6", "thinking": "medium" },
+    { "model": "qwen3.8-max", "thinking": "medium" },
+    { "model": "kimi-k3", "thinking": "medium" }
+  ]
+}
+```
+
+- Each key is a preference order of `{ "model", "thinking" }` pairs, matched as
+  substrings of `provider/model`. A legacy string is accepted and means that
+  model at the selected reasoning level.
+- The selected virtual-model reasoning level is a hard cap. Candidates above it
+  are filtered before model selection; the first remaining pair wins. A missing
+  `thinking` follows the selected level.
+- A missing key keeps the built-in default; an explicit `[]` keeps the tier
+  empty, which is a decision — a rating that wants that tier holds the current
+  model and says why.
+- A broken file narrows routing to the defaults and warns once per session, so
+  a typo costs a warning, not a session.
+- Patterns are matched against the session's model scope first, so `--models`
+  still caps what the router may reach for.
+- `PI_CODING_AGENT_DIR` moves the file with the rest of the agent directory.
 
 Qualify a pattern with its provider (`openai-codex/gpt-6-astra`) to pin which
 subscription pays for it. **GPT models are restricted to `openai-codex` even
@@ -97,6 +142,20 @@ subscriptions, and the catalogue order decided it once: a live run escalated to
 skipped rather than billed to a reseller, and the next pattern is tried. A
 pattern that names its provider is taken literally, and non-GPT patterns
 (`grok-4.6`, `qwen3.8-max`) are never restricted this way.
+
+## Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PI_ROUTER` | unset (on) | `off` / `0` / `false` skips judgements and holds the base for the process |
+| `PI_ROUTER_THRESHOLD` | `1.5` | difficulty rating at which the router leaves the base (to mid or frontier) |
+| `PI_ROUTER_FRONTIER_THRESHOLD` | `2.5` | rating at or above which the target is the frontier tier rather than mid (the two thresholds are ordered, so the lower starts mid and the higher starts frontier) |
+| `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
+| `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
+
+In-session: `/route` for status and counters, `/route off` and `/route on`.
+`off` skips judgements and holds the base; it does not change which model is
+selected. `/route status` prints the config path and the lists it is using.
 
 ## Knowing the threshold is set right
 
@@ -115,9 +174,9 @@ cheaper models. Lower the threshold, find more, pay more.
 
 That evidence covers only the line at which the router leaves the current model.
 It says nothing about where mid ends and frontier begins: the 2.5 split and the
-mid list are curated design choices, not measurements, and the mid tier is one
-verified entry rather than a benchmark result. The thinking defaults (mid
-`xhigh`, frontier `medium`) are the same kind of dial — curated, not measured.
+pair order are curated design choices, not measurements. The claim that
+`Sol@xhigh` or `Sol@max` should beat `Astra@low` is represented by the editable
+order in `router.json`, not asserted by the router's measurement code.
 
 ## What leaves your machine
 
@@ -165,10 +224,12 @@ second except `/route off`, or not escalating.
 
 ## Tests
 
-`node --test packages/router/test/*.test.mjs` — 26 cases: the state builder
-matching what was measured, threshold routing, model resolution and scoping, and
-a fake-pi end-to-end pass over escalation, holding, stepping down, auth failure,
-subagent children and the kill switch.
+`node --test packages/router/test/*.test.mjs` — 120 cases across the package:
+the decision helpers and what was measured, pair-cap selection, the config
+file's merge semantics, threshold routing, model resolution and scoping, the
+session and metrics arithmetic, and 45 end-to-end cases against a fake pi that
+drive the real `route()` over escalation, holding, step-down, retries, children,
+capacity, live reload, and the kill switch.
 
 ## What an audit of this extension found
 
@@ -180,6 +241,13 @@ found real defects. Fixed, each with a test:
 | The judgement budget never reset | Three judgements early in a session made every later task unroutable | A task boundary resets it |
 | Step-down ignored the task boundary | A stuck, failing task could be downgraded mid-failure | Stepping down requires a new task |
 | The router assumed ownership of any model | Start A → user picks B → router escalates → easy task restored **A** | `model_select` ends ownership; the baseline is captured immediately before switching |
+
+Most of that ownership machinery no longer exists. The virtual-model port
+replaced it with pi's own selection/dispatch split: a manually picked model is a
+deselection, the baseline is configuration, and a decision that changes nothing
+mid-flight is just a held continuation. What replaced the state machine is
+router state on the session branch, which also follows forks and survives
+compaction — things the module-level version could not do.
 | `PI_SUBAGENT_CHILD` was read per prompt | pi-subagents clears it before the child's first prompt, so children *were* routed | Captured at factory time |
 | A decision could land after `/route off` | A stale judgement still switched models | Re-checked after the await |
 | Failed judgements were free and unlimited | A dead judge was retried every turn | Counted as attempts, with a cooldown |
@@ -191,9 +259,10 @@ Still open, and written down rather than fixed: `difficulty` is a
 probability-weighted mean, so two very different distributions can share a 1.5;
 uncertainty and confidence are discarded; the difficulty scale mixes reasoning
 complexity with the cost of being wrong; a 2,000-character prompt truncation can
-hide the real requirement; a rating is not a prompt-injection boundary; and a
-queued or steered prompt can bypass `before_agent_start` entirely, so a long
-autonomous loop cannot be rescued from here.
+hide the real requirement; and a rating is not a prompt-injection boundary. The
+router now sees every request, including steering and retries, but holds retries
+deliberately: a provider-outage retry stays on the model that failed rather than
+re-rolling the decision.
 
 ## Metrics
 

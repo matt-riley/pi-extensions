@@ -51,6 +51,21 @@ export const DEFAULT_FRONTIER_PATTERNS = [
 ];
 
 /**
+ * The default base model, matched as substrings of "provider/model".
+ *
+ * A virtual model must name a physical model for every request, including the
+ * ones it does not want to judge, so the base cannot be "whatever the user
+ * happened to have selected": routing only happens while `router/auto` is
+ * selected, and this seeds the `base` key in router.json.
+ *
+ * Luna is the curated default because it is the mid list's only verified entry
+ * and the measured workhorse. An unresolvable base falls back to the session's
+ * last physical model, then the catalogue's first entry, so a missing
+ * subscription degrades instead of erroring.
+ */
+export const DEFAULT_BASE_PATTERNS = ["openai-codex/gpt-5.6-luna"];
+
+/**
  * The curated mid tier, best first.
  *
  * One verified entry, not a benchmark result: luna is the model Matt picked by
@@ -73,29 +88,42 @@ export const DEFAULT_TIERS = {
  */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-/**
- * Default thinking for a routed (model, thinking) pair.
- *
- * Curated, not measured: Luna at xhigh is the workhorse, and a frontier model
- * is not paired with high-effort thinking by default.
- */
-export const DEFAULT_TIER_THINKING = { mid: "xhigh", frontier: "medium" };
-
 /** Index in THINKING_LEVELS, or -1 when the value is not a Pi thinking level. */
 export function thinkingRank(level) {
   return THINKING_LEVELS.indexOf(level);
 }
 
-/** Thinking the router wants for `tier`, or null when the tier has no default. */
-export function thinkingForTier(tier, map = DEFAULT_TIER_THINKING) {
-  return map?.[tier] ?? null;
+/**
+ * Normalize a configured model/reasoning pair.
+ *
+ * Strings remain valid for backwards compatibility and mean "this model at
+ * the caller's selected level". Objects make the pair explicit, which is what
+ * lets the router compare Sol@xhigh with Astra@low instead of ranking models
+ * independently from their reasoning level.
+ */
+export function routePair(entry) {
+  const object = entry && typeof entry === "object" ? entry : null;
+  const model = object ? (object.model ?? object.pattern) : entry;
+  const rawThinking = object ? (object.thinking ?? object.thinkingLevel) : null;
+  const pattern = String(model ?? "").trim();
+  if (!pattern) return null;
+  const thinking = String(rawThinking ?? "")
+    .trim()
+    .toLowerCase();
+  return {
+    model: pattern,
+    thinking: THINKING_LEVELS.includes(thinking) ? thinking : null,
+  };
 }
 
-/** Does a "provider/model" key match any of the patterns? */
+/** Does a "provider/model" key match any of the patterns or pair entries? */
 export function isFrontierModel(key, patterns) {
   const value = String(key ?? "").toLowerCase();
   if (!value) return false;
-  return (patterns ?? []).some((pattern) => value.includes(String(pattern).toLowerCase()));
+  return (patterns ?? []).some((entry) => {
+    const pair = routePair(entry);
+    return pair && value.includes(pair.model.toLowerCase());
+  });
 }
 
 /**
@@ -124,8 +152,8 @@ export function tierRank(tier) {
  * Providers to prefer when several candidates match the same pattern.
  *
  * Patterns are only half the rule: a GPT pattern can still match a reseller,
- * so this decides between matches. Custom patterns passed via
- * `PI_ROUTER_FRONTIER` get the same treatment.
+ * so this decides between matches. Custom patterns from the `frontier` list in
+ * router.json get the same treatment.
  */
 const DEFAULT_PROVIDER_PREFERENCE = ["openai-codex"];
 
@@ -169,14 +197,14 @@ export function buildQuestions() {
 }
 
 /**
- * Group a session branch into turns, the way the measured state expects.
+ * Group a request's messages into turns, the way the measured state expects.
  *
- * Tolerates both shapes pi hands out — entries carrying `message`, and bare
- * messages — because the SDK's branch type is loose and a router that crashes
- * on a shape change is worse than one that reads less.
+ * `request.messages` is the wire form: bare messages, with the current prompt
+ * last. Tolerates the wrapped shape too — the SDK's branch type is loose, and a
+ * router that crashes on a shape change is worse than one that reads less.
  */
-export function turnsFromBranch(branch, limit = WINDOW) {
-  const entries = Array.isArray(branch) ? branch : [];
+export function turnsFromMessages(messages, limit = WINDOW) {
+  const entries = Array.isArray(messages) ? messages : [];
   const turns = [];
   let start = 0;
   const requested = Number(limit);
@@ -352,8 +380,11 @@ function isGptKey(key) {
 }
 
 /**
- * Pick the best model available for `tier`, respecting the session's own model
- * scoping: if the user used `--models`, routing must not reach outside it.
+ * Pick the best available model/reasoning pair for `tier`.
+ *
+ * Pair entries are preference-ordered. An entry above `thinkingCap` is
+ * filtered out before model selection; the router never picks Astra and then
+ * silently clamps it when a stronger Sol pair was available within the cap.
  *
  * GPT patterns are restricted to preferred providers even when the pattern does
  * not name one: a GPT model should be served by the subscription that owns it,
@@ -361,15 +392,17 @@ function isGptKey(key) {
  * provider is taken literally, and non-GPT patterns are never restricted.
  *
  * @param candidates [{model}|model strings] from ctx.scopedModels or getAvailable()
- * @param tier       "frontier" or "mid"
- * @param tiers      tier name → preference order, matched as substrings of "provider/id"
+ * @param tier       "base", "frontier" or "mid"
+ * @param tiers      tier name → preference-ordered model/reasoning pairs
  * @param providers  providers a GPT pattern is allowed to resolve to
+ * @param thinkingCap the caller's maximum allowed reasoning level
  */
 export function chooseModelForTier(
   candidates,
   tier,
   tiers = DEFAULT_TIERS,
   providers = DEFAULT_PROVIDER_PREFERENCE,
+  thinkingCap = null,
 ) {
   const patterns = tiers?.[tier];
   if (!Array.isArray(patterns) || !patterns.length) return null;
@@ -379,11 +412,16 @@ export function chooseModelForTier(
     const key = modelKey(model);
     if (key) keys.push({ key, model });
   }
-  for (const pattern of patterns) {
-    const matches = keys.filter((entry) => isFrontierModel(entry.key, [pattern]));
+  for (let order = 0; order < patterns.length; order++) {
+    const pair = routePair(patterns[order]);
+    if (!pair) continue;
+    if (thinkingCap && pair.thinking && thinkingRank(pair.thinking) > thinkingRank(thinkingCap)) {
+      continue;
+    }
+    const matches = keys.filter((entry) => isFrontierModel(entry.key, [pair.model]));
     if (!matches.length) continue;
 
-    const restrict = !namesProvider(pattern) && matches.every((entry) => isGptKey(entry.key));
+    const restrict = !namesProvider(pair.model) && matches.every((entry) => isGptKey(entry.key));
     const eligible = restrict
       ? matches.filter((entry) => providerRank(entry.key, providers) < providers.length)
       : matches;
@@ -394,7 +432,37 @@ export function chooseModelForTier(
     const best = [...eligible].sort(
       (a, b) => providerRank(a.key, providers) - providerRank(b.key, providers),
     )[0];
-    return { model: best.model, key: best.key, pattern, tier };
+    return {
+      model: best.model,
+      key: best.key,
+      pattern: pair.model,
+      thinking: pair.thinking,
+      order,
+      tier,
+    };
+  }
+  return null;
+}
+
+/**
+ * Preference position of the current pair within a tier, or null when the
+ * configured list cannot describe that pair at its current reasoning level.
+ */
+export function pairOrder(key, thinking, tier, tiers = DEFAULT_TIERS) {
+  const patterns = tiers?.[tier];
+  if (!Array.isArray(patterns)) return null;
+  for (let order = 0; order < patterns.length; order++) {
+    const pair = routePair(patterns[order]);
+    if (
+      !pair ||
+      !String(key ?? "")
+        .toLowerCase()
+        .includes(pair.model.toLowerCase())
+    )
+      continue;
+    if (!pair.thinking || thinkingRank(thinking ?? "") >= thinkingRank(pair.thinking)) {
+      return order;
+    }
   }
   return null;
 }
