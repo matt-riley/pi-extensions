@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Repository invariants, checked from syntax rather than matching import text.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { parseFrontmatter } from "../packages/skill-select/library.mjs";
 
 const SDK = "@earendil-works/pi-coding-agent";
 const SDK_EXPORTS = {
@@ -134,8 +136,72 @@ export function checkConventions(root) {
   return errors;
 }
 
+// A prompt that names "the `x` skill" must name one this repo or the curated
+// library owns. A skill that only exists under a harness's own root (e.g.
+// ~/.codex/skills/.system) can vanish on that harness's next update, which is
+// how /review once depended on Codex's review-agent.
+const SKILL_REFERENCE = /\bthe (?:`([a-z0-9][a-z0-9-]*)`|([a-z0-9]+(?:-[a-z0-9]+)+)) skill\b/gi;
+const DEFAULT_SKILL_LIBRARY = path.join(os.homedir(), ".pi", "agent", "skill-library");
+
+function ownedSkillNames(dirs) {
+  const names = new Set();
+  const visited = new Set();
+  const walk = (dir) => {
+    let real;
+    try {
+      real = fs.realpathSync(dir);
+    } catch {
+      return;
+    }
+    if (visited.has(real)) return;
+    visited.add(real);
+    for (const entry of fs.readdirSync(real, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const full = path.join(real, entry.name);
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        if (fs.statSync(full, { throwIfNoEntry: false })?.isDirectory()) walk(full);
+      } else if (/^skill\.md$/i.test(entry.name)) {
+        const { name } = parseFrontmatter(fs.readFileSync(full, "utf8"));
+        names.add(name || path.basename(real));
+      }
+    }
+  };
+  for (const dir of dirs) walk(dir);
+  return names;
+}
+
+/** @returns {{ errors: string[], skipped: string | null }} */
+export function checkSkillReferences(root, { library = DEFAULT_SKILL_LIBRARY } = {}) {
+  if (!fs.existsSync(library))
+    return {
+      errors: [],
+      skipped: `skill library ${library} not found; skill references unchecked`,
+    };
+  const promptDir = path.join(root, "prompts");
+  if (!fs.existsSync(promptDir)) return { errors: [], skipped: null };
+  const owned = ownedSkillNames([root, library]);
+  const errors = [];
+  for (const file of fs
+    .readdirSync(promptDir)
+    .filter((name) => name.endsWith(".md"))
+    .sort()) {
+    const text = fs.readFileSync(path.join(promptDir, file), "utf8");
+    for (const match of text.matchAll(SKILL_REFERENCE)) {
+      const name = match[1] ?? match[2];
+      if (!owned.has(name))
+        errors.push(
+          `prompts/${file}: references the "${name}" skill, which is not in this repo or ${library}`,
+        );
+    }
+  }
+  return { errors, skipped: null };
+}
+
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  const errors = checkConventions(path.resolve(import.meta.dirname, ".."));
+  const root = path.resolve(import.meta.dirname, "..");
+  const references = checkSkillReferences(root);
+  if (references.skipped) console.log(`Skipped: ${references.skipped}`);
+  const errors = [...checkConventions(root), ...references.errors];
   for (const error of errors) console.error(error);
   if (!errors.length) console.log("Repository conventions pass");
   process.exitCode = errors.length ? 1 : 0;

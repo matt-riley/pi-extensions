@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { checkConventions, runtimeImports } from "./check-conventions.mjs";
+import { checkConventions, checkSkillReferences, runtimeImports } from "./check-conventions.mjs";
 
 test("runtime imports distinguish erased types, mixed bindings, empty imports and dynamic imports", () => {
   const found = runtimeImports(
@@ -65,4 +65,32 @@ test("conventions catch missing/duplicate registration, metadata, dependencies a
     "unapproved runtime import",
   ])
     assert.ok(errors.includes(expected), expected);
+});
+
+test("prompt skill references must resolve to this repo or the curated library", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "pi-skill-refs-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const library = path.join(root, "library");
+  mkdirSync(path.join(root, "prompts"), { recursive: true });
+  mkdirSync(path.join(library, "owned-review"), { recursive: true });
+  mkdirSync(path.join(root, "packages", "x", "local-skill"), { recursive: true });
+  writeFileSync(
+    path.join(library, "owned-review", "SKILL.md"),
+    "---\nname: owned-review\ndescription: d\n---\n",
+  );
+  writeFileSync(path.join(root, "packages", "x", "local-skill", "SKILL.md"), "no frontmatter");
+  writeFileSync(
+    path.join(root, "prompts", "ok.md"),
+    "Use the `owned-review` skill, then the local-skill skill. The right skill is fine.",
+  );
+  assert.deepEqual(checkSkillReferences(root, { library }), { errors: [], skipped: null });
+
+  writeFileSync(path.join(root, "prompts", "bad.md"), "Use the review-agent skill to review.");
+  const { errors } = checkSkillReferences(root, { library });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /prompts\/bad\.md: references the "review-agent" skill/);
+
+  const missing = checkSkillReferences(root, { library: path.join(root, "nope") });
+  assert.deepEqual(missing.errors, []);
+  assert.match(missing.skipped, /not found/);
 });
