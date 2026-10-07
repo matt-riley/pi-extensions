@@ -16,6 +16,7 @@
     "fallow:report": "fallow",
     "test": "node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
     "verify": "node scripts/verify-tools.mjs",
+    "collisions": "node packages/skill-select/collisions.mjs",
     "conventions": "node scripts/check-conventions.mjs",
     "smoke": "node scripts/smoke-pi.mjs"
   },
