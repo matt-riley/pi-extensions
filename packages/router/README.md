@@ -152,10 +152,37 @@ pattern that names its provider is taken literally, and non-GPT patterns
 | `PI_ROUTER_FRONTIER_THRESHOLD` | `2.5` | rating at or above which the target is the frontier tier rather than mid (the two thresholds are ordered, so the lower starts mid and the higher starts frontier) |
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
 | `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
+| `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and playbook injection |
 
 In-session: `/route` for status and counters, `/route off` and `/route on`.
 `off` skips judgements and holds the base; it does not change which model is
 selected. `/route status` prints the config path and the lists it is using.
+
+## Playbooks
+
+Skills only help when the model thinks to search for them. Playbooks don't wait
+for that: at each new task (the same boundary gate the router uses), one
+TypeSafe call asks what kind of work it is: `bug`, `feature`, `refactor`,
+`investigation`, `autonomous` or `none`. The matching file in
+[`playbooks/`](./playbooks) (six numbered steps) is appended to the system prompt
+for every run of that task, and the footer shows `playbook: <type>`.
+
+- **One judgement per task.** Follow-ups keep the task's playbook without
+  another call. The next task boundary judges again and can drop it.
+- **Nothing when unsure.** `none`, a chosen type below 0.5 probability, a
+  missing key or a failed call all inject nothing. A wrong playbook costs more
+  than a missing one. The 0.5 line is a dial, not a measurement.
+- **No second call when routing.** With `router/auto` selected, the same batched
+  call also rates difficulty, and `route()` uses that answer for the same prompt
+  instead of asking again.
+- **Not in subagent children.** Their task comes from the orchestrator.
+- Each judgement is recorded as a `router-playbook` entry (type and whether it
+  was a boundary), kept apart from `router-decision` so the routing reports are
+  unchanged.
+
+Unmeasured: whether the task-type answer is accurate on real prompts, and
+whether a playbook changes outcomes. Both need a pass over the session corpus
+before the types or the threshold are tuned.
 
 ## Knowing the threshold is set right
 

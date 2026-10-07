@@ -37,6 +37,13 @@ import { askSystemOne } from "../../shared/systemone.mjs";
 import { ensureRouterConfig, readRouterConfig, routerConfigPath } from "./config.mjs";
 import { gateTurn } from "./lib.mjs";
 import {
+  buildTaskTypeQuestion,
+  loadPlaybook,
+  NO_PLAYBOOK,
+  taskTypeFromAnswer,
+  withPlaybook,
+} from "./playbook.mjs";
+import {
   buildDifficultyState,
   buildQuestions,
   chooseModelForTier,
@@ -169,6 +176,11 @@ export default function piRouterExtension(
       .trim()
       .toLowerCase() !== "prompt";
 
+  const playbooksEnabled =
+    String(process.env?.PI_ROUTER_PLAYBOOKS ?? "")
+      .trim()
+      .toLowerCase() !== "off";
+
   const config = {
     enabled: envFlag(),
     threshold: envNumber("PI_ROUTER_THRESHOLD", DIFFICULTY_THRESHOLD),
@@ -189,6 +201,13 @@ export default function piRouterExtension(
   };
   let last: { difficulty: number; reason: string } | null = null;
   let lastState: RouterState | null = null;
+  // The playbook judged for the current task: held until the next task
+  // boundary, so a task is judged once and keeps its playbook on follow-ups.
+  // `undefined` means nothing has been judged in this process yet.
+  let playbook: { type: string; text: string | null } | undefined;
+  // Difficulty answers fetched in before_agent_start for this prompt, so
+  // route() can use them instead of asking again for the same task.
+  let pending: { prompt: string; answers: unknown } | null = null;
 
   const notify = (ctx: ExtensionContext, text: string, level = "info") => {
     try {
@@ -406,17 +425,24 @@ export default function piRouterExtension(
     let outcome = "held";
     let decided: ReturnType<typeof routeFromDifficulty> | null = null;
 
+    // The playbook judgement for this prompt already rated difficulty: spend
+    // that answer instead of a second call. Consumed once, whatever happens.
+    const prefetched = pending && pending.prompt === prompt ? pending.answers : null;
+    pending = null;
+
     if (judgeable) {
       try {
-        const result = await ask({
-          state: buildDifficultyState({
-            prompt,
-            window: shareWindow ? history : [],
-            cwd: ctx?.cwd,
-          }),
-          questions: buildQuestions(),
-          signal: AbortSignal.timeout(config.timeoutMs),
-        });
+        const result = prefetched
+          ? { answers: prefetched }
+          : await ask({
+              state: buildDifficultyState({
+                prompt,
+                window: shareWindow ? history : [],
+                cwd: ctx?.cwd,
+              }),
+              questions: buildQuestions(),
+              signal: AbortSignal.timeout(config.timeoutMs),
+            });
         decided = routeFromDifficulty(result?.answers, {
           threshold: config.threshold,
           frontierThreshold: config.frontierThreshold,
@@ -590,6 +616,73 @@ export default function piRouterExtension(
     route,
   });
 
+  const setPlaybookStatus = (ctx: ExtensionContext, type: string | null) => {
+    try {
+      ctx?.ui?.setStatus?.(
+        "playbook",
+        type && type !== NO_PLAYBOOK ? `playbook: ${type}` : undefined,
+      );
+    } catch {
+      // Decoration only.
+    }
+  };
+
+  // A new task gets one judgement: what kind of work it is (and, when the
+  // router is the selected model, how hard — the same batched call route()
+  // would otherwise make). The playbook rides in the system prompt for every
+  // run of that task. No key, an error or an unsure answer injects nothing.
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!playbooksEnabled || isSubagentChild) return;
+    const prompt = String(event?.prompt ?? "")
+      .trim()
+      .slice(0, 2000);
+    if (!prompt) return;
+
+    const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
+    const turns = turnsFromMessages(branch, WINDOW + 1);
+    // The branch may or may not hold the prompt being started yet.
+    const tail = turns[turns.length - 1];
+    const history = (
+      tail && tail.prompt.slice(0, 2000) === prompt && !tail.lastResponse
+        ? turns.slice(0, -1)
+        : turns
+    ).slice(-WINDOW);
+    const boundary = gateTurn({ prompt, previousTurn: history[history.length - 1] ?? null });
+
+    if (boundary.route || playbook === undefined) {
+      const routing = config.enabled && modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
+      let type = NO_PLAYBOOK;
+      try {
+        const result = await ask({
+          state: buildDifficultyState({
+            prompt,
+            window: shareWindow ? history : [],
+            cwd: ctx?.cwd,
+          }),
+          questions: {
+            task_type: buildTaskTypeQuestion(),
+            ...(routing ? buildQuestions() : {}),
+          },
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
+        type = taskTypeFromAnswer(result?.answers?.task_type);
+        if (routing && result?.answers) pending = { prompt, answers: result.answers };
+      } catch {
+        // Judge unavailable: no playbook for this task, and no retry until the next one.
+      }
+      playbook = { type, text: loadPlaybook(type) };
+      try {
+        pi.appendEntry?.("router-playbook", { at: Date.now(), type, boundary: boundary.route });
+      } catch {
+        // Telemetry only.
+      }
+      setPlaybookStatus(ctx, playbook.text ? type : null);
+    }
+
+    if (!playbook?.text) return;
+    return { systemPrompt: withPlaybook(event.systemPrompt, playbook.text) };
+  });
+
   pi.on("session_start", (_event, ctx) => {
     counters.turns = 0;
     counters.judged = 0;
@@ -599,6 +692,9 @@ export default function piRouterExtension(
     counters.tooBig = 0;
     last = null;
     lastState = null;
+    playbook = undefined;
+    pending = null;
+    setPlaybookStatus(ctx, null);
     const selected = modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
     setStatus(
       ctx,
@@ -653,6 +749,7 @@ export default function piRouterExtension(
             ? `routed to ${lastState.model ?? "?"} (${lastState.tier}) · base ${lastState.base ?? "?"}`
             : "no routing decision yet",
           lastLine,
+          `playbooks ${playbooksEnabled ? "on" : "off"} · this task: ${playbook?.type ?? "not judged"}`,
         ].join("\n"),
       );
     },
