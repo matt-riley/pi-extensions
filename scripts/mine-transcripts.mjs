@@ -32,6 +32,8 @@ export function parseArgs(argv) {
     limit: 300,
     project: null,
     json: false,
+    context: null,
+    line: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -44,12 +46,21 @@ export function parseArgs(argv) {
     } else if (arg === "--limit") opts.limit = positive(argv[++i], opts.limit);
     else if (arg === "--project") opts.project = argv[++i] ?? null;
     else if (arg === "--dir") opts.dir = argv[++i] ?? SESSIONS_DIR;
+    else if (arg === "--context") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) throw new Error("--context requires a source file");
+      opts.context = value;
+    } else if (arg === "--line") opts.line = Number(argv[++i]);
     else if (arg === "--json") opts.json = true;
     else if (arg.startsWith("-")) throw new Error(`Unknown flag: ${arg}`);
   }
   // A project filter ignores the default window: an idle project would otherwise
   // silently return nothing. Only an explicit --since narrows it.
   if (opts.project && !opts.sinceExplicit) opts.sinceDays = Infinity;
+  if (opts.line !== null && !opts.context) throw new Error("--line requires --context");
+  if (opts.context && (!Number.isInteger(opts.line) || opts.line < 1)) {
+    throw new Error("--context requires --line with a positive integer");
+  }
   return opts;
 }
 
@@ -64,10 +75,10 @@ function messageText(content) {
 
 // Pure: one transcript's raw JSONL lines -> that transcript's user messages,
 // oldest first. Malformed lines are skipped. cwd tracks the session header.
-export function extractUserMessages(lines) {
+export function extractUserMessages(lines, source = "") {
   const out = [];
   let cwd = "";
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     let entry;
     try {
       entry = JSON.parse(line);
@@ -84,7 +95,7 @@ export function extractUserMessages(lines) {
     if (!text) continue;
     const raw = entry.timestamp ?? message.timestamp;
     const ts = typeof raw === "number" ? new Date(raw).toISOString() : (raw ?? "");
-    out.push({ ts, cwd, text });
+    out.push({ ts, cwd, text, source, line: index + 1, id: entry.id ?? null });
   }
   return out;
 }
@@ -95,7 +106,44 @@ export function formatMessage(event) {
     typeof event.ts === "number" ? new Date(event.ts).toISOString() : String(event.ts ?? "");
   const date = iso.length >= 10 ? iso.slice(0, 10) : "unknown";
   const project = event.cwd ? path.basename(event.cwd) : "?";
-  return `${date} [${project}] ${text}`;
+  return `${date} [${project}] ${text}${event.source ? ` (${event.source}:${event.line}${event.id ? ` id=${event.id}` : ""})` : ""}`;
+}
+
+// Only requested candidates get context: at most 9 physical records, 1,200
+// characters each. Include tool-call arguments, but never image/binary payloads.
+export function extractContext(lines, line, source = "") {
+  if (!Number.isInteger(line) || line < 1 || line > lines.length) {
+    throw new Error("Context line is outside the transcript");
+  }
+  const result = [];
+  for (let index = Math.max(0, line - 5); index < Math.min(lines.length, line + 4); index++) {
+    let entry;
+    try {
+      entry = JSON.parse(lines[index]);
+    } catch {
+      continue;
+    }
+    if (entry?.type !== "message" || !entry.message) continue;
+    const message = entry.message;
+    const calls = Array.isArray(message.content)
+      ? message.content
+          .filter((part) => part?.type === "toolCall")
+          .map((part) => `${part.name}(${JSON.stringify(part.arguments)})`)
+          .join("\n")
+      : "";
+    const text = [messageText(message.content), calls].filter(Boolean).join("\n");
+    result.push({
+      source,
+      line: index + 1,
+      id: entry.id ?? null,
+      role: message.role,
+      tool: message.toolName,
+      candidate: index + 1 === line,
+      text: text.slice(0, 1200),
+      truncated: text.length > 1200,
+    });
+  }
+  return result;
 }
 
 function sessionFiles(dir) {
@@ -111,6 +159,11 @@ function sessionFiles(dir) {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.context) {
+    const lines = fs.readFileSync(opts.context, "utf8").split("\n");
+    console.log(JSON.stringify(extractContext(lines, opts.line, opts.context), null, 2));
+    return;
+  }
   const cutoff = Number.isFinite(opts.sinceDays) ? Date.now() - opts.sinceDays * 86_400_000 : null;
 
   const events = [];
@@ -131,7 +184,7 @@ function main() {
     } catch {
       continue;
     }
-    const found = extractUserMessages(lines).filter(
+    const found = extractUserMessages(lines, file).filter(
       (event) => !opts.project || event.cwd.includes(opts.project),
     );
     if (found.length === 0) continue;

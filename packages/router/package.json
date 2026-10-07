@@ -1,0 +1,7 @@
+{
+  "name": "pi-router",
+  "version": "0.1.0",
+  "description": "Task-aware virtual model routing for pi.",
+  "license": "MIT",
+  "type": "module"
+}

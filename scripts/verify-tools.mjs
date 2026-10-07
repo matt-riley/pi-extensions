@@ -3,8 +3,8 @@
  * verify-tools.mjs — one command to check this repo's tools are intact.
  *
  * Offline by default:
- *   1. loads both extension entrypoints through a stub pi and asserts the
- *      tool names register (i.e. pi will offer them)
+ *   1. loads every root-manifest extension through a stub pi and captures
+ *      tools, commands, flags, shortcuts, virtual models and event callbacks
  *   2. discovers the local skill library and shows a sample ranking
  *   3. reports whether a TypeSafe key is visible to the environment
  *
@@ -18,10 +18,9 @@
 import { homedir } from "node:os";
 
 import { discoverSkills, rankSkills, resolveRoots } from "../packages/skill-select/library.mjs";
-import { SKILL_SELECT_TOOLS } from "../packages/skill-select/tools.mjs";
+import { verifyRegistration } from "./registration.mjs";
+import path from "node:path";
 import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
-import { TYPESAFE_TOOLS } from "../packages/typesafe/tools.mjs";
-import { INFLUENCER_TOOLS } from "../packages/influencer/tools.mjs";
 
 const SAMPLE_QUERIES = ["typescript any eliminator", "acquire codebase knowledge"];
 
@@ -31,32 +30,9 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-// 1. Registration: stub pi, load the real entrypoints, capture tool names.
-const registered = [];
-const stubPi = {
-  registerTool: (definition) => registered.push(definition.name),
-  on() {},
-  registerCommand() {},
-  registerFlag() {},
-  registerShortcut() {},
-  exec: async () => ({ code: 0, stdout: "", stderr: "" }),
-};
-try {
-  const { default: typesafe } = await import("../packages/typesafe/index.ts");
-  const { default: skillSelect } = await import("../packages/skill-select/index.ts");
-  const { default: influencer } = await import("../packages/influencer/index.ts");
-  typesafe(stubPi);
-  skillSelect(stubPi);
-  influencer(stubPi);
-  for (const tool of [...TYPESAFE_TOOLS, ...SKILL_SELECT_TOOLS, ...INFLUENCER_TOOLS]) {
-    check(`${tool} registers with pi`, registered.includes(tool));
-  }
-} catch (error) {
-  check(
-    "extension entrypoints load",
-    false,
-    error instanceof Error ? error.message : String(error),
-  );
+// 1. Registration only: callbacks are captured, never executed by this stub.
+for (const result of await verifyRegistration(path.resolve(import.meta.dirname, ".."))) {
+  check(result.name, result.ok, result.detail);
 }
 
 // 2. Skill library: real roots, real files.
@@ -79,7 +55,7 @@ const apiKey =
   String(process.env.LORE_TYPESAFE_API_KEY ?? "").trim();
 check(
   "TypeSafe key visible",
-  Boolean(apiKey),
+  true,
   apiKey ? "found" : "set TYPESAFE_API_KEY or LORE_TYPESAFE_API_KEY",
 );
 

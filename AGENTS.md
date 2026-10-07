@@ -3,7 +3,7 @@
 ## Structure
 
 Each extension lives in `packages/<name>/` with `index.ts` as the pi
-entrypoint, a `package.json` (name/description only — **no `pi` key**), and a
+entrypoint, a `package.json` (metadata including name/description — **no `pi` key**), and a
 README. The **root `package.json` is the single registration point**: its
 `pi.extensions` list is what pi loads when the repo is cloned into
 `~/.pi/agent/extensions/`. Per-package `pi` keys would risk double
@@ -12,11 +12,14 @@ package is published to npm on its own.
 
 ## Conventions
 
-- Zero runtime dependencies. Import only pi's `typebox` built-in and `node:`
-  core modules. Type-only imports from `@earendil-works/pi-coding-agent` are
-  erased at runtime. `typebox`, `typescript`, and `@types/node` are
-  devDependencies (tooling only — `npm run check`'s `tsc --noEmit` step),
-  never imported at runtime beyond the erased type-only import above.
+- Zero installed runtime dependencies. Extension runtime imports are local modules,
+  `node:` core modules, and pi's built-in `typebox`. SDK imports from
+  `@earendil-works/pi-coding-agent` are type-only except the subagent host APIs:
+  `getAgentDir`/`parseFrontmatter` in its entrypoint and
+  `createAgentSession`/`DefaultResourceLoader`/`SessionManager`/`getAgentDir`
+  in `spawn.mjs`. These are supplied by pi. `typebox`, `typescript`, and
+  `@types/node` stay in devDependencies for local tooling; TypeScript is also
+  used by the repository convention checker, never by extension runtime code.
 - The real `@earendil-works/pi-coding-agent` npm types are not used for
   `tsc` — see `types/pi-coding-agent.d.ts` for why (its published types are
   stricter than what pi's runtime actually enforces) and keep that stub's
@@ -34,8 +37,8 @@ package is published to npm on its own.
 
 ## Commands
 
-- `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs'`).
-- `npm run check` — the full gate, in order: `tsc --noEmit`, `oxlint
+- `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'`).
+- `npm run check` — the full gate, in order: repository conventions, `tsc --noEmit`, `oxlint
   --deny-warnings`, `oxfmt --check`, `knip`, `fallow dead-code`, then the tests.
   This is what has to pass before pushing.
 - `npm run lint` / `lint:fix` — oxlint (`.oxlintrc.json`). Warnings fail too, so
@@ -47,7 +50,9 @@ package is published to npm on its own.
 - `npm run fallow` — dead code, cycles and dependency hygiene (`.fallowrc.json`).
   `npm run fallow:report` adds duplication and complexity: reported, not gated,
   because both are judgement calls rather than pass/fail.
-- `npm run verify` — checks tool registration against a stub pi.
+- `npm run verify` — checks all manifest extension registrations against a stub pi.
+- `npm run smoke` — exercises the real pi host with isolated fixtures and a local
+  scripted provider; see `docs/verification.md` for scope and limitations.
 
 Fixing beats suppressing: the only rule exceptions are the five in
 `.oxlintrc.json`, each with its reason next to it. `fallow fix` can remove unused

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractUserMessages, formatMessage, parseArgs } from "./mine-transcripts.mjs";
+import {
+  extractContext,
+  extractUserMessages,
+  formatMessage,
+  parseArgs,
+} from "./mine-transcripts.mjs";
 
 const line = (value) => JSON.stringify(value);
 const sessionLine = line({
@@ -31,6 +36,9 @@ test("keeps only user-authored text and tracks the session cwd", () => {
     ts: "2026-10-01T10:01:00.000Z",
     cwd: "/home/me/projects/proj",
     text: "fix the thing",
+    source: "",
+    line: 2,
+    id: null,
   });
   assert.equal(events[1].text, "and this");
 });
@@ -85,4 +93,39 @@ test("parseArgs reads flags, keeps defaults, rejects unknown flags", () => {
   assert.equal(parseArgs(["--project", "workv3", "--since", "7"]).sinceDays, 7);
   assert.equal(parseArgs(["--json"]).json, true);
   assert.throws(() => parseArgs(["--nope"]), /Unknown flag/);
+});
+
+test("source pointers survive malformed lines and context retains bounded tool evidence", () => {
+  const lines = [
+    sessionLine,
+    "bad json",
+    line({
+      type: "message",
+      id: "a1",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "bash", arguments: { command: "pwd" } }],
+      },
+    }),
+    line({
+      type: "message",
+      message: { role: "toolResult", toolName: "bash", content: "x".repeat(2000) },
+    }),
+    userLine("stop", "2026-10-01"),
+  ];
+  assert.equal(extractUserMessages(lines, "/tmp/session.jsonl")[0].line, 5);
+  const context = extractContext(lines, 5, "/tmp/session.jsonl");
+  assert.match(context[0].text, /bash.*pwd/);
+  assert.equal(context[0].id, "a1");
+  assert.equal(context[1].text.length, 1200);
+  assert.equal(context[1].truncated, true);
+  assert.equal(context[2].candidate, true);
+  assert.equal(context[2].source, "/tmp/session.jsonl");
+  assert.throws(() => extractContext(lines, 0), /outside/);
+  assert.throws(() => parseArgs(["--context", "file"]), /requires --line/);
+  assert.throws(() => parseArgs(["--context"]), /requires a source file/);
+  assert.throws(() => parseArgs(["--context", "--line", "3"]), /requires a source file/);
+  assert.throws(() => parseArgs(["--line", "3"]), /requires --context/);
+  assert.equal(parseArgs(["--context", "file", "--line", "5"]).line, 5);
+  assert.equal(extractContext(Array(30).fill(userLine("a", "2026-10-01")), 15).length, 9);
 });
