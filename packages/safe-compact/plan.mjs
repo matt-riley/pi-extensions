@@ -443,14 +443,14 @@ export function planBoundary({ entries, keepRecentTokens = DEFAULT_KEEP_RECENT }
 }
 
 /**
- * Compose the inline handoff for a turn_end boundary. Returns a status object:
- * `compacted` with the draft, `empty` when there is nothing worth compacting
- * yet, or `unverified` when a handoff could not be verified or would not be
- * smaller. Only `unverified` is worth warning about.
+ * Compose the inline handoff for a turn_end boundary. Returns the draft payload
+ * (without `type`) or null when there is nothing worth compacting or the
+ * handoff cannot be verified. The caller keeps the context either way and can
+ * tell the two apart with `planBoundary` before warning.
  */
 export async function buildBoundaryCompaction({ entries, keepRecentTokens, note, ask, signal }) {
   const plan = planBoundary({ entries, keepRecentTokens });
-  if (!plan) return { status: "empty" };
+  if (!plan) return null;
   const result = await composeHandoff({
     messages: plan.messages,
     previousSummary: plan.previousSummary,
@@ -460,17 +460,14 @@ export async function buildBoundaryCompaction({ entries, keepRecentTokens, note,
     ask,
     signal,
   });
-  if (!result) return { status: "unverified" };
+  if (!result) return null;
   return {
-    status: "compacted",
-    draft: {
-      firstKeptEntryId: plan.firstKeptEntryId,
-      summary: result.summary,
-      details: {
-        ...result.details,
-        readFiles: plan.fileLists.readFiles,
-        modifiedFiles: plan.fileLists.modifiedFiles,
-      },
+    firstKeptEntryId: plan.firstKeptEntryId,
+    summary: result.summary,
+    details: {
+      ...result.details,
+      readFiles: plan.fileLists.readFiles,
+      modifiedFiles: plan.fileLists.modifiedFiles,
     },
   };
 }

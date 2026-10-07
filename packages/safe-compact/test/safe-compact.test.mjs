@@ -402,28 +402,27 @@ test("buildBoundaryCompaction: verified draft carries the note and file lists", 
   entries[1] = project("e1", [user(`ALWAYS use tabs ${"x".repeat(3600)}`)]);
   entries[2] = project("e2", [readCall("c2", "src/client.ts")]);
   entries[3] = project("e3", [readResult("c2", `retry code ${"x".repeat(3600)}`)]);
-  const outcome = await buildBoundaryCompaction({
+  const result = await buildBoundaryCompaction({
     entries,
     keepRecentTokens: 20000,
     note: "next: run the tests",
     ask: fakeAsk(),
   });
-  assert.equal(outcome.status, "compacted");
-  const { draft } = outcome;
-  assert.match(draft.summary, /GOALMARK fix the retry logic/);
-  assert.match(draft.summary, /ALWAYS use tabs/);
-  assert.match(draft.summary, /next: run the tests/);
-  assert.deepEqual(draft.details.readFiles, ["src/client.ts"]);
-  assert.equal(draft.details.safeCompact.segments, 8);
+  assert.ok(result);
+  assert.match(result.summary, /GOALMARK fix the retry logic/);
+  assert.match(result.summary, /ALWAYS use tabs/);
+  assert.match(result.summary, /next: run the tests/);
+  assert.deepEqual(result.details.readFiles, ["src/client.ts"]);
+  assert.equal(result.details.safeCompact.segments, 8);
 });
 
-test("buildBoundaryCompaction: nothing worth compacting is reported as empty, not a failure", async () => {
-  const outcome = await buildBoundaryCompaction({
+test("buildBoundaryCompaction: nothing worth compacting returns null, not a failed handoff", async () => {
+  const result = await buildBoundaryCompaction({
     entries: [project("u1", [user("hi")]), project("a1", [assistant("hello")])],
     keepRecentTokens: 20000,
     ask: fakeAsk(),
   });
-  assert.deepEqual(outcome, { status: "empty" });
+  assert.equal(result, null);
 });
 
 test("planBoundary: a long history is summarized in capped chunks, not refused", () => {
@@ -515,6 +514,7 @@ test("session_before_compact merges previous details into the handoff file lists
 function wiring() {
   const handlers = new Map();
   const tools = new Map();
+  const notices = [];
   safeCompact(
     {
       registerTool: (definition) => tools.set(definition.name, definition),
@@ -534,8 +534,49 @@ function wiring() {
       this.compacted = true;
     },
     getContextUsage: () => ({ tokens: 30000, contextWindow: 40000, percent: 80 }),
-    ui: { notify: () => {} },
+    ui: { notify: (title, level) => notices.push({ title, level }) },
     sessionManager: { getBranch: () => [] },
   };
-  return { handlers, tools, ctx, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
+  return {
+    handlers,
+    tools,
+    ctx,
+    notices,
+    cleanup: () => rmSync(cwd, { recursive: true, force: true }),
+  };
 }
+
+test("turn_end stays silent when there is nothing worth compacting", async () => {
+  const { handlers, ctx, notices, cleanup } = wiring();
+  try {
+    const event = { entries: [], context: { contextEntries: [project("u1", [user("hi")])] } };
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.deepEqual(notices, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("turn_end warns when a planned handoff cannot be verified", async () => {
+  const { handlers, ctx, notices, cleanup } = wiring();
+  try {
+    // A planned span whose handoff is almost all verbatim constraints: the
+    // size guard rejects it, which is the case the warning exists for.
+    const entries = [
+      project("c0", [user(`ALWAYS keep tabs ${"x".repeat(4000)}`)]),
+      project("c1", [user(`ALWAYS keep tabs ${"x".repeat(4000)}`)]),
+      project("e2", [assistant("y".repeat(6100))]),
+      project("e3", [assistant("y".repeat(6100))]),
+      project("e4", [assistant("y".repeat(6100))]),
+      project("e5", [assistant("y".repeat(6100))]),
+    ];
+    const event = { entries: [], context: { contextEntries: entries } };
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.deepEqual(
+      notices.filter((notice) => notice.level === "warning").map((notice) => notice.title),
+      ["safe-compact: could not verify a smaller handoff, keeping context"],
+    );
+  } finally {
+    cleanup();
+  }
+});

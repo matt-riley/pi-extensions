@@ -21,6 +21,7 @@ import {
   decideTrigger,
   fileListsFromDetails,
   mergeFileLists,
+  planBoundary,
 } from "./plan.mjs";
 import { messageText } from "./segment.mjs";
 
@@ -192,11 +193,12 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     const entries = event?.context?.contextEntries;
     if (!Array.isArray(entries) || entries.length === 0) return;
 
-    let outcome;
+    const keepRecentTokens = keepRecentFor(ctx);
+    let draft;
     try {
-      outcome = await buildBoundaryCompaction({
+      draft = await buildBoundaryCompaction({
         entries,
-        keepRecentTokens: keepRecentFor(ctx),
+        keepRecentTokens,
         note: pendingNote,
         ask,
         signal: ctx.signal,
@@ -206,21 +208,22 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       ctx.ui?.notify?.(`safe-compact: ${message}, keeping context`, "warning");
       return;
     }
-    // Nothing meaningful to summarize yet is the normal steady state; only a
-    // handoff that was attempted and rejected is worth a warning.
-    if (outcome.status === "empty") return;
-    if (outcome.status === "unverified") {
-      ctx.ui?.notify?.(
-        "safe-compact: could not verify a smaller handoff, keeping context",
-        "warning",
-      );
+    if (!draft) {
+      // Nothing worth summarizing yet is the normal steady state; only warn
+      // when a handoff was actually planned and then rejected.
+      if (planBoundary({ entries, keepRecentTokens })) {
+        ctx.ui?.notify?.(
+          "safe-compact: could not verify a smaller handoff, keeping context",
+          "warning",
+        );
+      }
       return;
     }
     snapshot(ctx);
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
-    return { entries: [...drafts, { type: "compaction", ...outcome.draft }] };
+    return { entries: [...drafts, { type: "compaction", ...draft }] };
   });
 
   pi.on("session_before_compact", async (event, ctx) => {
