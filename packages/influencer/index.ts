@@ -167,7 +167,7 @@ async function submitCommandRequest(pi, ctx, directory, typed) {
   const recipe = await loadRecipe(rest[0] || "foundational");
   const slots = parseSlotAssignments(rest.slice(1).join(" "));
   const renderedRecipe = ensureRecipeBody(recipe, slots);
-  const guidance = await loadGuidance();
+  const guidance = await loadGuidance({ seedance: recipe.guidance === "seedance-2-5" });
   await sendBrief(
     pi,
     ctx,
@@ -252,11 +252,11 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
     name: PROMPT_TOOL,
     label: PROMPT_TOOL,
     description:
-      "Build an on-demand AI influencer prompt brief from bundled guidance, a saved character, and a reusable recipe such as a foundational prompt or single-image character sheet.",
+      "Build an on-demand AI influencer image or Seedance 2.5 video prompt brief from bundled specialist guidance, a saved character, and a reusable recipe.",
     promptSnippet:
-      "influencer_prompt: build a prompt brief from bundled guidance, a saved character, and a recipe",
+      "influencer_prompt: build an image or Seedance video prompt brief from bundled guidance, a saved character, and a recipe",
     promptGuidelines: [
-      "Use influencer_prompt for AI influencer image prompts, visual turnaround sheets, and future recipe-based variations; the extension reads its bundled skill and reference material on demand.",
+      "Use influencer_prompt for AI influencer image prompts, visual turnaround sheets, and Seedance 2.5 prompts for fal.ai; the extension reads only the selected recipe's bundled guidance on demand.",
     ],
     parameters: PROMPT_PARAMETERS,
     async execute(_toolCallId, params) {
@@ -271,8 +271,9 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
         const slug = slugify(params.character);
         const character = await readCharacter(directory, slug);
         if (!character) return toolError(`No character named ${slug}. Use influencer_list first.`);
-        const recipe = ensureRecipeBody(await loadRecipe(params.recipe), params.slots ?? {});
-        const guidance = await loadGuidance();
+        const loadedRecipe = await loadRecipe(params.recipe);
+        const recipe = ensureRecipeBody(loadedRecipe, params.slots ?? {});
+        const guidance = await loadGuidance({ seedance: loadedRecipe.guidance === "seedance-2-5" });
         return toolText(buildPromptBrief({ character, recipe, guidance }), {
           character: slug,
           recipe: recipe.id,

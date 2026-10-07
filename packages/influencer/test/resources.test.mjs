@@ -18,10 +18,13 @@ test("bundled recipes are discoverable by id and alias", async () => {
   const recipes = await listRecipes();
   assert.deepEqual(
     recipes.map((recipe) => recipe.id),
-    ["character-sheet", "foundational"],
+    ["character-sheet", "foundational", "seedance-video"],
   );
   const sheet = await loadRecipe("sheet");
   assert.equal(sheet.id, "character-sheet");
+  const video = await loadRecipe("video");
+  assert.equal(video.mode, "video");
+  assert.equal(video.guidance, "seedance-2-5");
 });
 
 test("recipe slots render defaults and explicit variations", async () => {
@@ -32,6 +35,15 @@ test("recipe slots render defaults and explicit variations", async () => {
   assert.match(defaultBody, /established outfit from the locked identity/);
   assert.match(variantBody, /a red leather jacket/);
   assert.doesNotMatch(variantBody, /\{\{/);
+});
+
+test("video recipe defaults render without unresolved placeholders", async () => {
+  const recipe = await loadRecipe("seedance-video");
+  const rendered = renderRecipe(recipe);
+  assert.match(rendered, /Seedance 2.5 video-generation prompt/);
+  assert.match(rendered, /Platform: fal.ai/);
+  assert.match(rendered, /16:9 horizontal/);
+  assert.doesNotMatch(rendered, /\{\{/);
 });
 
 test("recipe rendering rejects unknown or missing slots", async () => {

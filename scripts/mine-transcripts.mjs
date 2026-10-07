@@ -6,6 +6,7 @@
 //   node scripts/mine-transcripts.mjs --since 90 --limit 600
 //   node scripts/mine-transcripts.mjs --project workv3 --json
 //   node scripts/mine-transcripts.mjs --all
+//   node scripts/mine-transcripts.mjs --grep "virtuali[sz]ation"   # /recall: all history
 //
 // This is the deterministic half of /mine: extraction. Which sessions matter and
 // which messages are corrections is judgment, so it stays with the agent.
@@ -31,6 +32,7 @@ export function parseArgs(argv) {
     sinceExplicit: false,
     limit: 300,
     project: null,
+    grep: null,
     json: false,
     context: null,
     line: null,
@@ -45,7 +47,11 @@ export function parseArgs(argv) {
       opts.sinceExplicit = true;
     } else if (arg === "--limit") opts.limit = positive(argv[++i], opts.limit);
     else if (arg === "--project") opts.project = argv[++i] ?? null;
-    else if (arg === "--dir") opts.dir = argv[++i] ?? SESSIONS_DIR;
+    else if (arg === "--grep") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) throw new Error("--grep requires a pattern");
+      opts.grep = new RegExp(value, "i");
+    } else if (arg === "--dir") opts.dir = argv[++i] ?? SESSIONS_DIR;
     else if (arg === "--context") {
       const value = argv[++i];
       if (!value || value.startsWith("--")) throw new Error("--context requires a source file");
@@ -54,9 +60,9 @@ export function parseArgs(argv) {
     else if (arg === "--json") opts.json = true;
     else if (arg.startsWith("-")) throw new Error(`Unknown flag: ${arg}`);
   }
-  // A project filter ignores the default window: an idle project would otherwise
-  // silently return nothing. Only an explicit --since narrows it.
-  if (opts.project && !opts.sinceExplicit) opts.sinceDays = Infinity;
+  // A project or grep filter ignores the default window: an idle project or an
+  // old topic would otherwise silently return nothing. Only --since narrows it.
+  if ((opts.project || opts.grep) && !opts.sinceExplicit) opts.sinceDays = Infinity;
   if (opts.line !== null && !opts.context) throw new Error("--line requires --context");
   if (opts.context && (!Number.isInteger(opts.line) || opts.line < 1)) {
     throw new Error("--context requires --line with a positive integer");
@@ -185,7 +191,9 @@ function main() {
       continue;
     }
     const found = extractUserMessages(lines, file).filter(
-      (event) => !opts.project || event.cwd.includes(opts.project),
+      (event) =>
+        (!opts.project || event.cwd.includes(opts.project)) &&
+        (!opts.grep || opts.grep.test(event.text)),
     );
     if (found.length === 0) continue;
     sessions += 1;
@@ -200,12 +208,15 @@ function main() {
     return;
   }
 
-  const window = opts.project
-    ? `project ~ ${opts.project}`
+  const window = [opts.project && `project ~ ${opts.project}`, opts.grep && `grep ${opts.grep}`]
+    .filter(Boolean)
+    .join(", ");
+  const scope = window
+    ? window
     : cutoff === null
       ? "all sessions"
       : `since ${new Date(cutoff).toISOString().slice(0, 10)}`;
-  console.log(`# ${events.length} user messages across ${sessions} sessions (${window})`);
+  console.log(`# ${events.length} user messages across ${sessions} sessions (${scope})`);
   console.log(`# showing the newest ${shown.length}; widen with --limit, --since, or --all`);
   for (const event of shown) console.log(formatMessage(event));
 }

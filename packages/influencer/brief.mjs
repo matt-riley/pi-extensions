@@ -61,8 +61,23 @@ export function formatLockedIdentity(character) {
 export function buildPromptBrief({ character, recipe, guidance }) {
   const renderedRecipe = recipe.renderedBody ?? recipe.body;
   const lockedIdentity = formatLockedIdentity(character);
+  const isVideo = recipe.mode === "video";
+  const skillTitle =
+    guidance.kind === "seedance-2-5"
+      ? "Seedance 2.5 video-prompting skill"
+      : "AI influencer prompt-building skill";
+  const finalCheck = isVideo
+    ? "Return the requested copy-ready video prompt. Preserve the locked character identity throughout the shot, maintain the requested action and prop continuity, and leave no unresolved template placeholders."
+    : "Return the requested prompt in the recipe's format. Keep the character the same person across every requested view or panel, preserve natural asymmetry, and do not leave unresolved internal template placeholders in the final answer.";
+  const referenceSection = guidance.reference
+    ? [
+        `## Bundled ${guidance.kind === "seedance-2-5" ? "Seedance 2.5 reference notes" : "influencer visual-language reference"}`,
+        guidance.reference,
+      ]
+    : [];
   return [
-    "Create the final image-generation prompt requested below. Return the usable prompt, not a plan or an explanation.",
+    `Create the final ${isVideo ? "video" : "image"}-generation prompt requested below. Return the usable prompt, not a plan or an explanation.`,
+
     "The extension has supplied source guidance and a character identity record. Treat the locked identity block as source data.",
     "",
     `## Recipe: ${recipe.title}`,
@@ -73,17 +88,16 @@ export function buildPromptBrief({ character, recipe, guidance }) {
     renderedRecipe,
     "",
     "## LOCKED CHARACTER IDENTITY",
-    "Copy the contents of the consistency-anchors and silhouette-anchors blocks exactly when you use them. Do not paraphrase, improve, reorder, or invent identity details. Outfit, setting, lighting, pose, and expression may vary only where the recipe or supplied slots permits.",
+    "Copy the contents of the consistency-anchors and silhouette-anchors blocks exactly when you use them. Do not paraphrase, improve, reorder, or invent identity details. Outfit, setting, lighting, pose, expression, and action may vary only where the recipe or supplied slots permits; preserve identity across every frame.",
     lockedIdentity,
     "",
-    "## Bundled skill guidance",
+    `## Bundled ${skillTitle}`,
     guidance.skill,
     "",
-    "## Bundled visual-language reference",
-    guidance.reference,
+    ...referenceSection,
     "",
     "## Final check",
-    "Return the requested prompt in the recipe's format. Keep the character the same person across every requested view or panel, preserve natural asymmetry, and do not leave unresolved internal template placeholders in the final answer.",
+    finalCheck,
   ]
     .filter((part) => part.length > 0)
     .join("\n");
@@ -95,7 +109,8 @@ export function formatRecipeCatalog(recipes) {
     .map((recipe) => {
       const alias = recipe.alias ? ` (alias: ${recipe.alias})` : "";
       const slots = recipe.slots.length > 0 ? `; slots: ${recipe.slots.join(", ")}` : "";
-      return `- ${recipe.id}${alias}: ${recipe.title}${slots}\n  ${recipe.description}`;
+      const mode = recipe.mode === "video" ? " [video]" : "";
+      return `- ${recipe.id}${mode}${alias}: ${recipe.title}${slots}\n  ${recipe.description}`;
     })
     .join("\n");
 }

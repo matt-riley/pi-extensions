@@ -78,6 +78,38 @@ test("prompt briefs contain the recipe, guidance, and no unresolved slots", asyn
   assert.match(brief, /a sage linen set/);
   assert.match(brief, /warm hazel eyes/);
   assert.match(brief, /influencer-visual-language/);
+  assert.doesNotMatch(brief, /Seedance 2.5 video-prompting skill/);
+  assert.doesNotMatch(brief, /\{\{/);
+});
+
+test("video recipes load Seedance guidance and use a video-specific brief", async () => {
+  const [recipe, guidance] = await Promise.all([
+    loadRecipe("seedance-video"),
+    loadGuidance({ seedance: true }),
+  ]);
+  const brief = buildPromptBrief({
+    character: {
+      slug: "maya",
+      name: "Maya",
+      lockedAt: "now",
+      inputs: { niche: "beauty and fashion creator" },
+      anchors: ["Slightly almond-shaped vivid emerald-green eyes with a softly hooded upper lid"],
+      silhouette: [
+        "Chest-length dark espresso-brown hair with loose natural waves and a center part",
+      ],
+    },
+    recipe: { ...recipe, renderedBody: renderRecipe(recipe) },
+    guidance,
+  });
+
+  assert.equal(guidance.kind, "seedance-2-5");
+  assert.match(guidance.reference, /fal.ai/);
+  assert.match(brief, /final video-generation prompt/);
+  assert.match(brief, /Seedance 2.5 video-prompting skill/);
+  assert.match(brief, /exact labels shown by the target interface/);
+  assert.match(brief, /Platform: fal.ai/);
+  assert.match(brief, /@Image1/);
+  assert.doesNotMatch(brief, /Influencer Visual Language Reference/);
   assert.doesNotMatch(brief, /\{\{/);
 });
 

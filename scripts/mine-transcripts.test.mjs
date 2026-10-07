@@ -92,6 +92,10 @@ test("parseArgs reads flags, keeps defaults, rejects unknown flags", () => {
   assert.equal(parseArgs(["--project", "workv3"]).sinceDays, Infinity);
   assert.equal(parseArgs(["--project", "workv3", "--since", "7"]).sinceDays, 7);
   assert.equal(parseArgs(["--json"]).json, true);
+  assert.ok(parseArgs(["--grep", "Virtual"]).grep.test("virtualization"));
+  assert.equal(parseArgs(["--grep", "x"]).sinceDays, Infinity);
+  assert.equal(parseArgs(["--grep", "x", "--since", "7"]).sinceDays, 7);
+  assert.throws(() => parseArgs(["--grep"]), /requires a pattern/);
   assert.throws(() => parseArgs(["--nope"]), /Unknown flag/);
 });
 

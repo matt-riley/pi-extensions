@@ -1,11 +1,11 @@
 # pi-influencer
 
-A self-contained Pi extension for reusable AI influencer identities and image
-prompt recipes.
+A self-contained Pi extension for reusable AI influencer identities and
+image/video prompt recipes.
 
-The extension reads its bundled `resources/ai-influencer-prompt-builder/` files
-on demand. Nothing is installed as a global skill and no settings change is
-required.
+The extension reads bundled specialist guidance on demand. Nothing is installed
+as a global skill and no settings change is required. The Seedance 2.5 prompting
+skill is loaded only when a video recipe is selected.
 
 ## Tools
 
@@ -13,8 +13,8 @@ required.
   anchors, silhouette anchors, and style signature.
 - `influencer_show` — retrieve the locked identity block verbatim.
 - `influencer_list` — list saved characters and draft/locked status.
-- `influencer_prompt` — build a prompt brief from a saved character and a
-  recipe.
+- `influencer_prompt` — build an image or Seedance 2.5 video prompt brief from
+  a saved character and a recipe.
 
 Characters are stored under `~/.pi/agent/influencers/<slug>.json`.
 
@@ -25,6 +25,7 @@ Characters are stored under `~/.pi/agent/influencers/<slug>.json`.
 /influencer list
 /influencer maya sheet
 /influencer maya sheet outfit=red leather jacket, black trousers
+/influencer maya video duration=12 location=commuter train action=speaks to camera dialogue=...
 ```
 
 `/influencer` opens an intake dialog for the character name and five identity
@@ -45,3 +46,8 @@ frontmatter and can be added without changing the extension code. The bundled
 This intentionally produces one image rather than seven separate prompts.
 Reference images can be attached in the image-generation tool; the recipe
 instructs the model to treat the reference as the primary identity source.
+
+The bundled `seedance-video` recipe builds Seedance 2.5 video prompts. It loads
+`resources/seedance-2-5-prompting/SKILL.md` and its fal.ai reference notes for
+that recipe. The skill covers reference roles, timelines when needed, physical
+continuity, camera blocking, dialogue/audio distinctions, and ending state.

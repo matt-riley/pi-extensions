@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const RECIPE_DIR = path.join(PACKAGE_DIR, "prompt-recipes");
 const GUIDANCE_DIR = path.join(PACKAGE_DIR, "resources", "ai-influencer-prompt-builder");
+const SEEDANCE_GUIDANCE_DIR = path.join(PACKAGE_DIR, "resources", "seedance-2-5-prompting");
 const cache = new Map();
 
 const DEFAULT_SLOTS = Object.freeze({
@@ -12,6 +13,18 @@ const DEFAULT_SLOTS = Object.freeze({
     "the established outfit from the locked identity; if no outfit is established, a simple neutral everyday outfit kept identical across all photographs",
   setting: "a simple neutral studio or indoor-wall background",
   lighting: "soft, neutral, real-world lighting similar to window light or soft studio light",
+  duration:
+    "Use the requested duration; otherwise allow enough time for natural action and dialogue without padding.",
+  aspect_ratio: "16:9 horizontal unless the user requests another aspect ratio.",
+  references:
+    "Name only attached references, assign each one a distinct role, and use the exact labels shown by the target interface.",
+  location: "the location and environment requested by the user",
+  action: "the main action requested by the user, performed naturally and in real time",
+  dialogue: "No dialogue unless the user provides or requests it; do not invent spoken words.",
+  audio:
+    "Use supplied exact dialogue audio as the spoken track when available; otherwise use natural location ambience and no unrequested music.",
+  camera: "A stable, natural camera framing suited to the scene and requested action.",
+  ending: "End after the requested action and any dialogue finish; hold a natural final state.",
 });
 
 function parseScalar(value) {
@@ -47,12 +60,16 @@ async function readCached(filename) {
   return cache.get(filename);
 }
 
-export async function loadGuidance() {
+export async function loadGuidance({ seedance = false } = {}) {
+  const root = seedance ? SEEDANCE_GUIDANCE_DIR : GUIDANCE_DIR;
+  const referencePath = seedance
+    ? path.join(root, "references", "fal-seedance-2-5.md")
+    : path.join(root, "references", "influencer-visual-language.md");
   const [skill, reference] = await Promise.all([
-    readCached(path.join(GUIDANCE_DIR, "SKILL.md")),
-    readCached(path.join(GUIDANCE_DIR, "references", "influencer-visual-language.md")),
+    readCached(path.join(root, "SKILL.md")),
+    readCached(referencePath),
   ]);
-  return { skill, reference };
+  return { skill, reference, kind: seedance ? "seedance-2-5" : "influencer" };
 }
 
 export async function listRecipes(directory = RECIPE_DIR) {
@@ -68,6 +85,8 @@ export async function listRecipes(directory = RECIPE_DIR) {
       title: String(parsed.metadata.title ?? id),
       alias: parsed.metadata.alias ? String(parsed.metadata.alias) : null,
       description: String(parsed.metadata.description ?? ""),
+      mode: String(parsed.metadata.mode ?? "image"),
+      guidance: String(parsed.metadata.guidance ?? "influencer"),
       slots: Array.isArray(parsed.metadata.slots) ? parsed.metadata.slots.map(String) : [],
       body: parsed.body,
     });
