@@ -49,7 +49,15 @@ Unknown or disabled types error. There is no general-purpose fallback.
 | `worker` | Implements a fully-specified change: edits files, runs checks, reports a diff summary. | edit/write + full bash |
 | `researcher` | Web/docs research with cited sources and a concise brief. | read-only |
 
-All inherit the parent model. Read-only types get bash restricted to plan-mode's
+`reviewer` and `oracle` default to `model: cross-family`: the strongest model
+listed in `~/.pi/agent/router.json` (frontier, then mid, then base) that is
+authenticated and from a different family than the parent (families are read
+from the model id, so `openai/gpt-*` and `openai-codex/gpt-*` count as one). A
+reviewer on the author's own family tends to share its blind spots. With
+nothing eligible, or when the parent is the router's virtual `router/auto`
+model, they inherit the parent and the result carries a note saying so. The
+rest inherit the parent model. A per-call `model` parameter (`provider/id` or
+`cross-family`) overrides the type's default. Read-only types get bash restricted to plan-mode's
 fail-closed allowlist. The `worker` is write-capable with prompt-level guard
 rails only (stay in scope, never commit/push/install, stop early on ambiguity).
 Builtins are pre-tuned: `scout` (10 turns, low thinking), `reviewer` (15/high),
@@ -88,7 +96,7 @@ Copy-paste examples live in [`examples/custom-agents/`](./examples/custom-agents
 a write-capable `writer` and a read-only `docs-auditor`. Drop them into
 `~/.pi/agent/agents/` (or `<cwd>/.pi/agents/`) to use them as `subagent` types.
 
-v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`),
+v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or `cross-family`),
 `thinking`, `max_turns` (1–30), `timeout_ms` (ms), `enabled`.
 
 ## Limits

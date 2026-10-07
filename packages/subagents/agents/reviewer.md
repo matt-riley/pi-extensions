@@ -2,6 +2,7 @@
 name: reviewer
 description: Code review for bugs, tests, and simplicity — findings with path:line
 tools: read, grep, find, ls, bash, repo_map, code_search, file_outline, find_definition
+model: cross-family
 max_turns: 15
 thinking: high
 ---

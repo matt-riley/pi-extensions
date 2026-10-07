@@ -7,6 +7,7 @@ import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
+import { CROSS_FAMILY, resolveCrossFamily } from "./cross-family.mjs";
 import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
@@ -55,7 +56,10 @@ interface UiCtx {
   isProjectTrusted?: () => boolean;
   model?: unknown;
   thinkingLevel?: string;
-  modelRegistry?: { getModel?: (provider: string, id: string) => unknown };
+  modelRegistry?: {
+    getModel?: (provider: string, id: string) => unknown;
+    getAvailable?: () => unknown;
+  };
   signal?: AbortSignal;
   ui?: {
     notify?: (title: string, level?: string) => void;
@@ -196,6 +200,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           description: "Turn cap for this child (1-30). May only lower the resolved cap.",
         }),
       ),
+      model: Type.Optional(
+        Type.String({
+          description:
+            'Optional "provider/id" for this child, or "cross-family". Overrides the agent type\'s default model.',
+        }),
+      ),
       timeout_ms: Type.Optional(
         Type.Integer({
           minimum: 1,
@@ -281,11 +291,18 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       }
 
       pi.events.emit("subagents:started", { id: entry.id, type: agent.name, description });
-      const { model, note: modelNote } = resolveChildModel(
-        ctx?.modelRegistry,
-        ctx?.model,
-        agent.model,
-      );
+      const modelSpec =
+        typeof params?.model === "string" && params.model.trim()
+          ? params.model.trim()
+          : agent.model;
+      const { model, note: modelNote } =
+        modelSpec === CROSS_FAMILY
+          ? await resolveCrossFamily(
+              ctx?.modelRegistry,
+              ctx?.model,
+              path.join(getAgentDir(), "router.json"),
+            )
+          : resolveChildModel(ctx?.modelRegistry, ctx?.model, modelSpec);
       const runsDir = path.join(getAgentDir(), "subagent-runs");
       if (!runsPruned) {
         runsPruned = true;
