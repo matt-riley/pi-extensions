@@ -1,0 +1,7 @@
+{
+  "name": "pi-done-gate",
+  "version": "0.1.0",
+  "description": "Remind the agent to run the repo's checks when a pi run ends with code edits made after the last verification, and list leftover [DEBUG- instrumentation tags. Text only; no dependencies.",
+  "license": "MIT",
+  "type": "module"
+}
