@@ -1,0 +1,46 @@
+[
+  {
+    "id": "decimal-good",
+    "split": "development",
+    "a": "1.5",
+    "b": "2",
+    "expected": "3.5",
+    "implementation": "console.log(Number(process.argv[2]) + Number(process.argv[3]));",
+    "ordinaryA": "1",
+    "ordinaryB": "2",
+    "ordinaryExpected": "3"
+  },
+  {
+    "id": "decimal-bug",
+    "split": "development",
+    "a": "1.5",
+    "b": "2",
+    "expected": "3.5",
+    "implementation": "console.log(parseInt(process.argv[2], 10) + parseInt(process.argv[3], 10));",
+    "ordinaryA": "1",
+    "ordinaryB": "2",
+    "ordinaryExpected": "3"
+  },
+  {
+    "id": "zero-good",
+    "split": "held-out",
+    "a": "0",
+    "b": "4",
+    "expected": "0",
+    "implementation": "console.log(Number(process.argv[2]) * Number(process.argv[3]));",
+    "ordinaryA": "2",
+    "ordinaryB": "4",
+    "ordinaryExpected": "8"
+  },
+  {
+    "id": "zero-bug",
+    "split": "held-out",
+    "a": "0",
+    "b": "4",
+    "expected": "0",
+    "implementation": "console.log((Number(process.argv[2]) || 1) * Number(process.argv[3]));",
+    "ordinaryA": "2",
+    "ordinaryB": "4",
+    "ordinaryExpected": "8"
+  }
+]

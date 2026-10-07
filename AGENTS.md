@@ -35,6 +35,11 @@ package is published to npm on its own.
   (its tsconfig `include` covers every `packages/**/*.ts` entrypoint, so new
   packages are checked with no script edits) and run the test suite.
 
+## Verification recipe
+
+Use `docs/verification.md` for this project's setup, real-host fixture, expected
+behavior, target revision and cleanup.
+
 ## Commands
 
 - `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'`).

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Actual pi RPC + local deterministic model fixture. No external model calls.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, rm, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -37,6 +37,13 @@ const server = createServer(async (req, res) => {
   if (isChild) childRequests++;
   let tool;
   let content = isChild ? "SMOKE_CHILD_OK" : "SMOKE_PARENT_OK";
+  if (last?.role !== "tool" && isChild && ["verified", "failed"].includes(phase)) {
+    tool = {
+      name: "bash",
+      arguments: { command: phase === "verified" ? "pwd" : "cat missing-smoke-file" },
+    };
+    content = null;
+  }
   if (last?.role !== "tool" && !isChild) {
     tool =
       phase === "blocked"
@@ -47,6 +54,16 @@ const server = createServer(async (req, res) => {
               agent: "scout",
               task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
               timeout_ms: 20000,
+              ...(phase === "verified" || phase === "failed"
+                ? {
+                    acceptance: [
+                      {
+                        criterion: "Fixture command completes",
+                        command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
+                      },
+                    ],
+                  }
+                : {}),
             },
           };
     content = null;
@@ -104,6 +121,24 @@ async function prompt(message) {
 try {
   await mkdir(agentDir);
   await mkdir(cwd);
+  execFileSync("git", ["init", "-q"], { cwd, timeout: 10000 });
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "user.name=Smoke",
+      "-c",
+      "user.email=smoke@example.test",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "fixture",
+    ],
+    { cwd, timeout: 10000 },
+  );
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
   await writeFile(
@@ -214,7 +249,18 @@ try {
   assert.ok(childRequests > 0, "Child never called the local fixture model");
   assert.match(JSON.stringify(childEvents), /SMOKE_CHILD_OK/);
   assert.match(JSON.stringify(childEvents), /completed/);
-  console.log("ok: leave plan mode, explicitly enable subagents, complete real child session");
+  assert.match(JSON.stringify(childEvents), /task outcome: unknown/);
+  console.log(
+    "ok: leave plan mode, explicitly enable subagents, complete child with unknown task outcome",
+  );
+  for (const expected of ["verified", "failed"]) {
+    phase = expected;
+    const proof = await prompt(`SMOKE_PARENT: ${expected} command contract.`);
+    assert.match(JSON.stringify(proof), new RegExp(`task outcome: ${expected}`));
+    console.log(
+      `ok: actual child command evidence reports ${expected} separately from execution completion`,
+    );
+  }
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

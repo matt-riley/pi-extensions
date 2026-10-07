@@ -33,3 +33,24 @@ credential there, and repeat `/plan start`, the harmless blocked bash command,
 `/plan exit`, `/subagents on`, and a child request. Record the actual tool result
 and child completion. Do not count a provider response or the registration stub
 as evidence that the blocked action or child execution worked.
+
+## Project recipe
+
+Target: record the requested base/head and `git rev-parse HEAD` before running.
+For uncommitted work include staged, unstaged and untracked content identity;
+subagent results provide `assessment.revision.fingerprint` when Git is available.
+Any intervening edit invalidates earlier evidence for the final state.
+
+| Step | Command / fixture | Expected observation |
+| --- | --- | --- |
+| Setup | `npm ci` only when dependency installation is authorized; otherwise use the existing installation | Node, dev tools and `pi` are available; report missing setup |
+| Static and behavior checks | `npm run check` | Exit 0; all repository checks and tests pass |
+| Registration | `npm run verify` | Every manifest entry registers; no live TypeSafe call |
+| Host startup and fixture | `npm run smoke` starts pi RPC and its disposable local provider | All manifest extensions load in the actual host |
+| Changed behavior | Smoke attempts `touch smoke-blocked` during `/plan start`, then exits and runs a child | Tool is blocked, file absent, real child completes |
+| Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
+
+Choose additional acceptance-specific checks for changes outside that smoke's
+coverage. A green registration stub alone is insufficient. For UI/native work,
+use an explicitly configured project verifier with those tools or report the
+capability gap. No universal extra tool grant is implied by this recipe.

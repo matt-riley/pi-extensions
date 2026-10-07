@@ -75,8 +75,8 @@ export function preflightQuestions({ writeCapable }) {
       type: "noul",
       instructions:
         "`agent_can_edit_files` is true, so `task` will be carried out by an assistant that edits files. Would " +
-        "doing it well force that assistant to make a design decision `task` does not settle — choosing an API " +
-        "shape, a name, a dependency, or between two reasonable behaviours?",
+        "doing it well require an unauthorized public API/compatibility change, new dependency, destructive action, " +
+        "or unresolved product decision? Routine local naming and implementation choices within the stated scope are permitted.",
       criteria: yesNo(
         "A real choice is left open that the requester would want to make themselves.",
         "The change is fully specified, or any remaining choice is trivial.",
@@ -108,7 +108,7 @@ export function routePreflight(answers, { writeCapable } = {}) {
   if (writeCapable && decision !== null && decision > THRESHOLDS.needsDecision) {
     return {
       reject:
-        "Task rejected: it leaves a design decision open (API shape, naming, dependency, or behaviour) that a " +
+        "Task rejected: it leaves a design decision open (unauthorized public API/compatibility change, dependency addition, product decision, or behaviour) that a " +
         "write-capable child should not make alone. Decide it and state it in the task, then resubmit. " +
         "If the child should choose, resubmit unchanged and it will run.",
       hints: [],

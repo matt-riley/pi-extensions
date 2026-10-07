@@ -20,6 +20,7 @@ import {
   tokensFromUsage,
   turnAction,
 } from "./result.mjs";
+import { assessEvidence, collectEvidence, revisionSnapshot } from "./evidence.mjs";
 import { formatLastTool } from "./widget.mjs";
 
 const WRAP_MESSAGE = "Wrap up immediately — provide your final answer now.";
@@ -30,12 +31,13 @@ const warnMessage = (left) =>
 
 // One JSON message per line. Best-effort: a failed write never fails the child.
 function writeTranscript(runFile, messages) {
-  if (!runFile || !Array.isArray(messages)) return;
+  if (!runFile || !Array.isArray(messages)) return false;
   try {
     mkdirSync(path.dirname(runFile), { recursive: true });
     writeFileSync(runFile, `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`);
+    return true;
   } catch {
-    // ignore
+    return false;
   }
 }
 
@@ -77,8 +79,11 @@ export async function runChild({
   onEvent,
   bind,
   runFile,
+  acceptance = [],
 } = {}) {
   const startedAt = Date.now();
+  const beforeRevision = await revisionSnapshot(cwd);
+  const evidence = [];
   const allowlistBash = usesAllowlistedBash(agent);
   const blockWriters = allowlistBash;
   let session;
@@ -163,6 +168,7 @@ export async function runChild({
     }
 
     unsub = session.subscribe((event) => {
+      collectEvidence(evidence, event);
       if (event?.type === "turn_end") {
         turns += 1;
         emit({ turns });
@@ -217,14 +223,23 @@ export async function runChild({
     }
   }
 
-  function finish(error) {
+  async function finish(error) {
     const messages = session?.messages ?? session?.agent?.state?.messages;
     const finalStatus = resolveFinalStatus({ status, wrapSent, turns, maxTurns });
     const lastText = extractLastAssistantText(messages);
     const clean = finalStatus === "completed" || finalStatus === "wrapped up";
-    writeTranscript(runFile, messages);
+    const transcriptSaved = writeTranscript(runFile, messages);
+    const assessment = assessEvidence({
+      criteria: acceptance,
+      evidence,
+      before: beforeRevision,
+      after: await revisionSnapshot(cwd),
+      status: finalStatus,
+      transcriptSaved,
+    });
     return {
       status: finalStatus,
+      assessment,
       text:
         clean && lastText.trim() ? lastText : buildPartialReport(messages, toolTrace) || lastText,
       turns,

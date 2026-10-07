@@ -170,6 +170,22 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         description:
           "The full task for the child. It cannot see this conversation: give the goal, concrete paths/symbols, constraints, the output you want back, and when it is done.",
       }),
+      acceptance: Type.Optional(
+        Type.Array(
+          Type.Object({
+            criterion: Type.String({ description: "Acceptance criterion supplied by the parent" }),
+            command: Type.String({
+              description:
+                "Exact bash command whose successful execution establishes this criterion",
+            }),
+          }),
+          {
+            maxItems: 8,
+            description:
+              "Optional explicit acceptance contracts. Command success verifies only these contracts on an unchanged revision; it does not validate arbitrary prose.",
+          },
+        ),
+      ),
       description: Type.Optional(
         Type.String({ description: "Short 3-5 word summary shown in the widget" }),
       ),
@@ -282,7 +298,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         const result = await runChild({
           cwd,
           agent,
-          task: childTask,
+          task:
+            childTask +
+            (params.acceptance?.length
+              ? `\nAcceptance commands supplied by the parent:\n${JSON.stringify(params.acceptance)}`
+              : ""),
+          acceptance: params.acceptance,
           model,
           thinkingLevel: agent.thinking ?? ctx?.thinkingLevel,
           maxTurns,
@@ -361,11 +382,17 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           text: result.error && !result.text ? result.error : result.text,
           note,
           runFile,
+          assessment: result.assessment,
         });
         return {
           content: [{ type: "text", text }],
           isError: false,
           usage: result.usage,
+          details: {
+            executionStatus: result.status,
+            assessment: result.assessment,
+            transcript: runFile,
+          },
         };
       } finally {
         pool.release(entry.id);

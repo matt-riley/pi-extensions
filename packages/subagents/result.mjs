@@ -73,13 +73,20 @@ export function formatResult({
   text,
   note,
   runFile,
+  assessment,
 } = {}) {
   const who = agent || "agent";
   const label = description ? `[${who}] ${description} — ${status}` : `[${who}] — ${status}`;
   const stats = formatUsageLine({ turns, tokens, durationMs });
   const header = stats ? `${label} · ${stats}` : label;
   const body = truncateText(text);
-  const extra = [note, runFile ? `transcript: ${runFile}` : ""]
+  const extra = [
+    assessment
+      ? `task outcome: ${assessment.outcome} (parent acceptance commands only)\nrevision: ${JSON.stringify(assessment.revision)}\nevidence: ${JSON.stringify(assessment.checks)}\ngaps: ${assessment.gaps.join("; ") || "none"}`
+      : "",
+    note,
+    runFile ? `transcript: ${runFile}` : "",
+  ]
     .filter(Boolean)
     .map((line) => `\n${line}`)
     .join("");
