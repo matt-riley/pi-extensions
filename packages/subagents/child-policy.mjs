@@ -31,12 +31,14 @@ export function createChildPolicyExtension({ allowlistBash = false, blockWriters
   };
 }
 
-// Extensions a child should not load: they inject persona, memory, routing or
+// Extensions a child should not load: they inject persona, memory or
 // prompt-rewriting meant for the interactive session, which costs tokens and
 // distracts a focused worker. Tool extensions (code-search, web-fetch, typesafe,
-// guardrail) stay.
+// guardrail) stay. The router is loaded on purpose: a child inherits the
+// `router/auto` model, so the extension that registers it must be there. Its
+// route() sees PI_SUBAGENT_CHILD and holds the base model without judging.
 const CHILD_EXCLUDED =
-  /[\\/](?:extensions[\\/]lore|packages[\\/](?:router|prompt-coach|influencer|skill-select))[\\/]/;
+  /[\\/](?:extensions[\\/]lore|packages[\\/](?:prompt-coach|influencer|skill-select))[\\/]/;
 
 export function keepChildExtension(extension) {
   const where = `${extension?.resolvedPath ?? extension?.path ?? ""}`;

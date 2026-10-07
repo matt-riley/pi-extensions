@@ -46,11 +46,13 @@ test("write-capable path does not apply the bash allowlist", () => {
   );
 });
 
-test("keepChildExtension drops persona/routing extensions and keeps tools", async () => {
+test("keepChildExtension drops persona extensions and keeps tools and the router", async () => {
   const { keepChildExtension } = await import("../child-policy.mjs");
   const at = (resolvedPath) => ({ resolvedPath });
   assert.equal(keepChildExtension(at("/h/.pi/agent/extensions/lore/lore-pi.ts")), false);
-  assert.equal(keepChildExtension(at("/x/pi-extensions/packages/router/index.ts")), false);
+  // The router registers the virtual model a child inherits, so it must load;
+  // its route() holds the base model for children instead of judging.
+  assert.equal(keepChildExtension(at("/x/pi-extensions/packages/router/index.ts")), true);
   assert.equal(keepChildExtension(at("/x/pi-extensions/packages/code-search/index.ts")), true);
   assert.equal(keepChildExtension(at("/x/pi-extensions/packages/guardrail/index.ts")), true);
   assert.equal(keepChildExtension(at("<inline:0>")), true);
