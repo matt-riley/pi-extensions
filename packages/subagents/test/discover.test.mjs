@@ -302,15 +302,19 @@ test("shipped builtins resolve with the expected fleet and policy", () => {
     "researcher",
     "reviewer",
     "scout",
+    "verifier",
     "worker",
   ]);
 
   const worker = findAgent(agents, "worker");
   const researcher = findAgent(agents, "researcher");
   const scout = findAgent(agents, "scout");
+  const verifier = findAgent(agents, "verifier");
 
   assert.equal(isWriteCapable(worker), true);
   assert.equal(usesAllowlistedBash(worker), false);
+  assert.equal(isWriteCapable(verifier), true);
+  assert.equal(usesAllowlistedBash(verifier), false);
   assert.equal(isWriteCapable(researcher), false);
   assert.equal(usesAllowlistedBash(researcher), true);
 

@@ -44,6 +44,7 @@ Unknown or disabled types error. There is no general-purpose fallback.
 | --- | --- | --- |
 | `scout` | Fast recon. repo_map → code_search → key files → compressed start-here. | read-only |
 | `reviewer` | Reviews the diff (not the whole file). Findings with `path:line`, severity, verdict. No edits. | read-only |
+| `verifier` | Independently reproduces a change. Runs the build, tests, and artifact, and reports observed evidence. | write-capable (bash unrestricted) |
 | `oracle` | Second opinion. Challenge assumptions. Name what is missing. | read-only |
 | `worker` | Implements a fully-specified change: edits files, runs checks, reports a diff summary. | edit/write + full bash |
 | `researcher` | Web/docs research with cited sources and a concise brief. | read-only |
@@ -52,7 +53,7 @@ All inherit the parent model. Read-only types get bash restricted to plan-mode's
 fail-closed allowlist. The `worker` is write-capable with prompt-level guard
 rails only (stay in scope, never commit/push/install, stop early on ambiguity).
 Builtins are pre-tuned: `scout` (10 turns, low thinking), `reviewer` (15/high),
-`oracle` (8/high), `worker` (30/high), `researcher` (12/high).
+`verifier` (25/high), `oracle` (8/high), `worker` (30/high), `researcher` (12/high).
 
 ## Custom types
 

@@ -45,7 +45,7 @@ function pruneRuns(dir: string) {
 const TOOL_DESCRIPTION = [
   "Spawn a specialist child with a complete, self-contained task: goal, concrete paths/symbols, constraints, the deliverable format, and a done-condition.",
   "Fire multiple subagent calls in one turn to run them in parallel, then synthesize.",
-  "Built-in types: scout (recon), reviewer (code review), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
+  "Built-in types: scout (recon), reviewer (code review), verifier (reproduces a change and reports observed evidence), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
   "Custom types live in .pi/agents/*.md or ~/.pi/agent/agents/*.md. Children cannot spawn children.",
 ].join(" ");
 
@@ -160,10 +160,11 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
     label: "Subagent",
     description: TOOL_DESCRIPTION,
     promptSnippet:
-      "Spawn a specialist subagent (scout, reviewer, oracle, worker, researcher, or a custom type)",
+      "Spawn a specialist subagent (scout, reviewer, verifier, oracle, worker, researcher, or a custom type)",
     parameters: Type.Object({
       agent: Type.String({
-        description: "Agent type (scout, reviewer, oracle, worker, researcher, or a custom name)",
+        description:
+          "Agent type (scout, reviewer, verifier, oracle, worker, researcher, or a custom name)",
       }),
       task: Type.String({
         description:
