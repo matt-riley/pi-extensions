@@ -1,6 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["packages/*/index.ts", "packages/*/test/*.test.mjs", "scripts/*.mjs"],
+  "entry": [
+    "packages/*/index.ts",
+    "packages/*/test/*.test.mjs",
+    "scripts/*.mjs",
+    "scripts/*.test.mjs"
+  ],
   "project": ["packages/**/*.{ts,mjs}", "shared/**/*.mjs", "scripts/**/*.mjs", "types/**/*.d.ts"],
   "ignoreDependencies": ["@earendil-works/pi-coding-agent"]
 }

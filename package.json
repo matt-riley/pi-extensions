@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && oxlint --deny-warnings . && oxfmt --check . && knip && fallow dead-code && node --test 'packages/**/*.test.mjs'",
+    "check": "tsc --noEmit && oxlint --deny-warnings . && oxfmt --check . && knip && fallow dead-code && node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",
@@ -14,7 +14,7 @@
     "knip": "knip",
     "fallow": "fallow dead-code",
     "fallow:report": "fallow",
-    "test": "node --test 'packages/**/*.test.mjs'",
+    "test": "node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
     "verify": "node scripts/verify-tools.mjs"
   },
   "devDependencies": {
