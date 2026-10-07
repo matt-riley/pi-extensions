@@ -19,7 +19,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-router`](./packages/router) | Rates how hard the current task is and escalates to a frontier model when it clears a threshold — once per task, never mid-task, and never downgrading a model you chose. Judged, because the rules measured 7% precision on this repo's own history. |
 | [`pi-prompt-coach`](./packages/prompt-coach) | On-demand `/improve`: probe the repo, rewrite locally with Gemma4, verify intent with TypeSafe, and submit the rewrite with original-prompt fallback. |
 | [`pi-influencer`](./packages/influencer) | Stores reusable AI influencer identities and builds recipe-driven image-prompt briefs, including single-image character turnaround sheets. |
-| [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
+| [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
 ### Package dependencies
@@ -95,7 +95,8 @@ settings `prompts` array. Register the repo's `prompts/` directory in
 ```
 
 Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
-`/review`, `/upgrade`, `/migrate`, `/retro`, …) are silently unavailable.
+`/review`, `/mine`, `/triage`, `/garden`, `/upgrade`, `/migrate`, `/retro`, …) are
+silently unavailable.
 
 ## Requirements
 
