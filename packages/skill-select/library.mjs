@@ -14,7 +14,7 @@ export const MAX_LIMIT = 20;
 const SKILL_FILE = /^skill\.md$/i;
 // `archived` holds retired skills: searchable would mean an agent could follow
 // guidance nobody maintains any more, so it is skipped like vendor/build dirs.
-const SKIP_DIRS = new Set(["node_modules", ".git", "archived"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "archived", "fixtures"]);
 const MAX_DEPTH = 6;
 const MAX_SKILLS = 500;
 const DESCRIPTION_CHARS = 200;
