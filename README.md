@@ -97,7 +97,7 @@ settings `prompts` array. Register the repo's `prompts/` directory in
 ```
 
 Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
-`/review`, `/mine`, `/triage`, `/garden`, `/upgrade`, `/migrate`, `/retro`, …) are
+`/review`, `/debug`, `/verify-setup`, `/mine`, `/triage`, `/garden`, `/upgrade`, `/migrate`, `/retro`, …) are
 silently unavailable.
 
 ## Requirements
