@@ -28,15 +28,12 @@ import {
   switchCosts,
   thresholdPosition,
 } from "../packages/router/metrics.mjs";
-import { DEFAULT_FRONTIER_PATTERNS } from "../packages/router/model-battery.mjs";
+import { readRouterConfig } from "../packages/router/config.mjs";
 import { findSessionFiles, readSession } from "./lib/sessions.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
-const PATTERNS = process.env.PI_ROUTER_FRONTIER
-  ? process.env.PI_ROUTER_FRONTIER.split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
-  : DEFAULT_FRONTIER_PATTERNS;
+// The same file the router reads, so the report measures what routing does.
+const PATTERNS = readRouterConfig().frontier;
 
 function main() {
   const sessions = findSessionFiles(SESSIONS_DIR).map((file) => readSession(file));
