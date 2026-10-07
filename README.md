@@ -16,6 +16,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
 | [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Attaches one line to failed tool results: name the root cause, then check the evidence with `typesafe_ask`. Text only, never blocks a call. |
 | [`pi-done-gate`](./packages/done-gate) | Reminds the agent to run the repo's checks when a run ends with code edits made after the last verification, and lists leftover `[DEBUG-` tags. Text only, never blocks a call. |
+| [`pi-until`](./packages/until) | `/until <cmd>`: keeps the agent working until a shell predicate exits 0, re-checking at every settle, capped, with a TSV decision log per iteration. |
 | [`pi-guardrail`](./packages/guardrail) | Stops destructive tool use before it runs: deterministic rules for the 97% that are obviously fine, a TypeSafe judgment for the ambiguous middle, and an Approve / Deny / Suggest-an-alternative dialog for the rest. Refuses the catastrophic set outright. |
 | [`pi-router`](./packages/router) | Rates how hard the current task is and escalates to a frontier model when it clears a threshold — once per task, never mid-task, and never downgrading a model you chose. Judged, because the rules measured 7% precision on this repo's own history. |
 | [`pi-prompt-coach`](./packages/prompt-coach) | On-demand `/improve`: probe the repo, rewrite locally with Gemma4, verify intent with TypeSafe, and submit the rewrite with original-prompt fallback. |
@@ -53,7 +54,7 @@ renaming one can break another:
   destroy?", and both need to tell operators from literal text.
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
-`pi-diagnosis-nudge`, `pi-done-gate`, and `pi-footer` have no dependencies on other packages in
+`pi-diagnosis-nudge`, `pi-done-gate`, `pi-until`, and `pi-footer` have no dependencies on other packages in
 this repo.
 
 ## Install

@@ -43,6 +43,7 @@
       "./packages/influencer/index.ts",
       "./packages/diagnosis-nudge/index.ts",
       "./packages/done-gate/index.ts",
+      "./packages/until/index.ts",
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts",
       "./packages/safe-compact/index.ts"
