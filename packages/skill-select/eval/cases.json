@@ -47,7 +47,7 @@
   {
     "source": "history",
     "query": "write a complete implementation plan with dependencies, verification, affected flows, risks, and rollout before coding",
-    "accept": ["plan-review"]
+    "accept": ["implementation-review"]
   },
   {
     "source": "history",
@@ -152,7 +152,7 @@
   {
     "source": "paraphrase",
     "query": "poke holes in my migration plan before I commit to it",
-    "accept": ["grill-me", "plan-review"]
+    "accept": ["grill-me", "implementation-review"]
   },
   {
     "source": "paraphrase",
@@ -207,7 +207,7 @@
   {
     "source": "paraphrase",
     "query": "keep the API spec in step with what the endpoints really do",
-    "accept": ["http-api-openapi"]
+    "accept": ["http-api"]
   },
   {
     "source": "paraphrase",
