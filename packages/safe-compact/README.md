@@ -20,13 +20,16 @@ handoff is assembled and verified rather than trusted to one note.
    uncertain or load-bearing content is never dropped).
 5. **Select.** Jev picks decision sentences and the relevant line windows of large file reads.
    Output is copied spans and `path:start-end` pointers, never generated prose.
-6. **Verify.** Jev checks that lossy entries are faithful and that important segments are still
-   represented. A gap re-includes that segment verbatim and rebuilds (up to 3 rounds).
+6. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
+   faithful, and that important segments are still represented. A gap re-includes that segment
+   verbatim and rebuilds (up to 3 rounds); a verbatim copy is taken as-is.
 7. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would not
    meaningfully shrink the summarized span is simply not committed: the context stays as it is and
-   pi's native threshold compaction remains the backstop. Inside `session_before_compact` (manual,
-   threshold, overflow), a failure returns nothing so pi's native summary runs instead. Before every
-   compaction the full branch is snapshotted to `.pi/safe-compact/<timestamp>.jsonl`.
+   pi's native threshold compaction remains the backstop. A history longer than one handoff can
+   verify is summarized in capped chunks over successive boundaries, so long sessions still
+   compact. Inside `session_before_compact` (manual, threshold, overflow), a failure returns nothing
+   so pi's native summary runs instead. Before every compaction the full branch is snapshotted to
+   `.pi/safe-compact/<timestamp>.jsonl`.
 
 ## Surface
 

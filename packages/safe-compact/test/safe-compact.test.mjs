@@ -212,14 +212,19 @@ test("a coverage failure re-includes the segment verbatim on the next round", as
   assert.equal(result.details.safeCompact.forced, 1);
 });
 
-test("a lossy entry still flagged after re-inclusion returns null instead of shipping", async () => {
-  const huge = `${"a".repeat(3000)} MIDMARK ${"b".repeat(3000)}`; // over the verbatim cap
+test("a huge flagged segment is re-included as a capped verbatim excerpt, not re-flagged forever", async () => {
+  // Over VERBATIM_MAX, so the re-included copy is itself truncated. Comparing
+  // that copy against its source would fail forever and never compact.
+  const huge = `${"a".repeat(3000)} MIDMARK ${"b".repeat(3000)}`;
   const result = await composeHandoff({
     messages: [...transcript(), assistant(huge)],
     tokensBefore: 100000,
     ask: fakeAsk({ faithful: () => 0.1 }),
   });
-  assert.equal(result, null);
+  assert.ok(result);
+  assert.match(result.summary, /a{100}/);
+  assert.equal(result.details.safeCompact.forced, 1);
+  assert.equal(result.details.safeCompact.rounds, 2);
 });
 
 test("an unusable verifier answer is not treated as a failure", async () => {
@@ -397,18 +402,49 @@ test("buildBoundaryCompaction: verified draft carries the note and file lists", 
   entries[1] = project("e1", [user(`ALWAYS use tabs ${"x".repeat(3600)}`)]);
   entries[2] = project("e2", [readCall("c2", "src/client.ts")]);
   entries[3] = project("e3", [readResult("c2", `retry code ${"x".repeat(3600)}`)]);
-  const result = await buildBoundaryCompaction({
+  const outcome = await buildBoundaryCompaction({
     entries,
     keepRecentTokens: 20000,
     note: "next: run the tests",
     ask: fakeAsk(),
   });
+  assert.equal(outcome.status, "compacted");
+  const { draft } = outcome;
+  assert.match(draft.summary, /GOALMARK fix the retry logic/);
+  assert.match(draft.summary, /ALWAYS use tabs/);
+  assert.match(draft.summary, /next: run the tests/);
+  assert.deepEqual(draft.details.readFiles, ["src/client.ts"]);
+  assert.equal(draft.details.safeCompact.segments, 8);
+});
+
+test("buildBoundaryCompaction: nothing worth compacting is reported as empty, not a failure", async () => {
+  const outcome = await buildBoundaryCompaction({
+    entries: [project("u1", [user("hi")]), project("a1", [assistant("hello")])],
+    keepRecentTokens: 20000,
+    ask: fakeAsk(),
+  });
+  assert.deepEqual(outcome, { status: "empty" });
+});
+
+test("planBoundary: a long history is summarized in capped chunks, not refused", () => {
+  const entries = largeEntries(500);
+  const plan = planBoundary({ entries, keepRecentTokens: 20000 });
+  assert.ok(plan);
+  // One handoff must stay within the segment budget composeHandoff can verify;
+  // the next boundary compacts the rest.
+  assert.equal(plan.messages.length, 400);
+  assert.equal(plan.firstKeptEntryId, "e400");
+});
+
+test("an ambiguous faithfulness score keeps the excerpt instead of forcing it verbatim", async () => {
+  const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
+  const result = await composeHandoff({
+    messages: [...transcript(), assistant(long)],
+    tokensBefore: 100000,
+    ask: fakeAsk({ faithful: () => 0.4 }),
+  });
   assert.ok(result);
-  assert.match(result.summary, /GOALMARK fix the retry logic/);
-  assert.match(result.summary, /ALWAYS use tabs/);
-  assert.match(result.summary, /next: run the tests/);
-  assert.deepEqual(result.details.readFiles, ["src/client.ts"]);
-  assert.equal(result.details.safeCompact.segments, 8);
+  assert.equal(result.details.safeCompact.forced, 0);
 });
 
 test("turn_end commits a compaction draft instead of aborting through ctx.compact", async () => {

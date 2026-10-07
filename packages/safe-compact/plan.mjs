@@ -23,6 +23,8 @@ const EXCERPT_MAX = 300;
 const PREVIOUS_MAX = 6000;
 /** A handoff this close to the transcript it replaces frees nothing. */
 const MAX_SIZE_RATIO = 0.6;
+/** Faithful is judged as "did the entry misstate the source"; ambiguous scores keep the excerpt. */
+const FAITHFUL_FAILS_BELOW = 0.35;
 
 const KEEP_BELOW = 0.4; // hard-rule thresholds sit low: a false keep is cheap, a false drop is not
 
@@ -220,7 +222,10 @@ export async function composeHandoff({
     const entries = await buildEntries({ segments, scores, forced, select });
     const summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
 
-    const lossy = entries.filter((e) => e.lossy);
+    // Faithfulness is judged on entries that restate their source. A verbatim
+    // copy cannot misstate it — even a capped one — and coverage decides
+    // whether what was kept is enough.
+    const restated = entries.filter((e) => e.lossy && e.disposition !== "keep_verbatim");
     const important = segments.filter(
       (segment, index) =>
         !forced.has(segment.id) &&
@@ -229,7 +234,7 @@ export async function composeHandoff({
     );
     const [faithful, covered] = await Promise.all([
       verifyEntries({
-        entries: lossy.map((e) => ({ entry: e.text, source: e.segment.text })),
+        entries: restated.map((e) => ({ entry: e.text, source: e.segment.text })),
         ask,
         signal,
       }),
@@ -238,7 +243,9 @@ export async function composeHandoff({
 
     // Only a definite "no" blocks; an unusable answer is not evidence of a gap.
     const failed = new Set([
-      ...lossy.filter((_, i) => faithful[i] !== null && faithful[i] < 0.5).map((e) => e.segment.id),
+      ...restated
+        .filter((_, i) => faithful[i] !== null && faithful[i] < FAITHFUL_FAILS_BELOW)
+        .map((e) => e.segment.id),
       ...important.filter((_, i) => covered[i] !== null && covered[i] < 0.5).map((s) => s.id),
     ]);
     const stats = {
@@ -283,6 +290,18 @@ const estimateMessageTokens = (message) => estimateTokens(messageText(message));
 
 const entryTokens = (entry) =>
   (entry?.messages ?? []).reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+
+/** The segments a handoff would carry for `entries[startIndex, cutIndex)`. */
+const summarizableMessages = (entries, startIndex, cutIndex) => {
+  let count = 0;
+  for (let i = startIndex; i < cutIndex; i++) {
+    if (entries[i]?.sourceEntry?.type === "compaction") continue;
+    for (const message of entries[i]?.messages ?? []) {
+      if (message?.role !== "system" && messageText(message).trim()) count++;
+    }
+  }
+  return count;
+};
 
 const isCutEntry = (entry) =>
   entry?.sourceEntry?.type !== "compaction" &&
@@ -386,6 +405,18 @@ export function planBoundary({ entries, keepRecentTokens = DEFAULT_KEEP_RECENT }
     cutIndex--;
   }
 
+  // One handoff cannot verify unbounded input: cap the summarized span and let
+  // the next boundary compact the rest. Without this, any session that grows
+  // past the cap could never compact at all.
+  while (
+    cutIndex > startIndex &&
+    summarizableMessages(entries, startIndex, cutIndex) > MAX_SEGMENTS
+  ) {
+    const earlier = cutPoints.findLast((point) => point < cutIndex);
+    if (earlier === undefined) return null;
+    cutIndex = earlier;
+  }
+
   const summarized = entries.slice(startIndex, cutIndex);
   const summarizedTokens = summarized.reduce((sum, entry) => sum + entryTokens(entry), 0);
   // A trailing span (often huge tool results) can push the cut late enough
@@ -412,13 +443,14 @@ export function planBoundary({ entries, keepRecentTokens = DEFAULT_KEEP_RECENT }
 }
 
 /**
- * Compose the inline handoff for a turn_end boundary. Returns the compaction
- * draft payload (without `type`) or null when the handoff cannot be verified
- * or would not be smaller; the caller then falls back to native compaction.
+ * Compose the inline handoff for a turn_end boundary. Returns a status object:
+ * `compacted` with the draft, `empty` when there is nothing worth compacting
+ * yet, or `unverified` when a handoff could not be verified or would not be
+ * smaller. Only `unverified` is worth warning about.
  */
 export async function buildBoundaryCompaction({ entries, keepRecentTokens, note, ask, signal }) {
   const plan = planBoundary({ entries, keepRecentTokens });
-  if (!plan) return null;
+  if (!plan) return { status: "empty" };
   const result = await composeHandoff({
     messages: plan.messages,
     previousSummary: plan.previousSummary,
@@ -428,14 +460,17 @@ export async function buildBoundaryCompaction({ entries, keepRecentTokens, note,
     ask,
     signal,
   });
-  if (!result) return null;
+  if (!result) return { status: "unverified" };
   return {
-    firstKeptEntryId: plan.firstKeptEntryId,
-    summary: result.summary,
-    details: {
-      ...result.details,
-      readFiles: plan.fileLists.readFiles,
-      modifiedFiles: plan.fileLists.modifiedFiles,
+    status: "compacted",
+    draft: {
+      firstKeptEntryId: plan.firstKeptEntryId,
+      summary: result.summary,
+      details: {
+        ...result.details,
+        readFiles: plan.fileLists.readFiles,
+        modifiedFiles: plan.fileLists.modifiedFiles,
+      },
     },
   };
 }

@@ -192,9 +192,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     const entries = event?.context?.contextEntries;
     if (!Array.isArray(entries) || entries.length === 0) return;
 
-    let draft;
+    let outcome;
     try {
-      draft = await buildBoundaryCompaction({
+      outcome = await buildBoundaryCompaction({
         entries,
         keepRecentTokens: keepRecentFor(ctx),
         note: pendingNote,
@@ -206,7 +206,10 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       ctx.ui?.notify?.(`safe-compact: ${message}, keeping context`, "warning");
       return;
     }
-    if (!draft) {
+    // Nothing meaningful to summarize yet is the normal steady state; only a
+    // handoff that was attempted and rejected is worth a warning.
+    if (outcome.status === "empty") return;
+    if (outcome.status === "unverified") {
       ctx.ui?.notify?.(
         "safe-compact: could not verify a smaller handoff, keeping context",
         "warning",
@@ -217,7 +220,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
-    return { entries: [...drafts, { type: "compaction", ...draft }] };
+    return { entries: [...drafts, { type: "compaction", ...outcome.draft }] };
   });
 
   pi.on("session_before_compact", async (event, ctx) => {

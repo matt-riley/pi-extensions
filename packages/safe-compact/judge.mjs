@@ -199,10 +199,11 @@ export function verifyEntries({ entries, ask = askSystemOne, signal }) {
       state: { entry: excerpt(entry, MAX_TEXT_CHARS), source: excerpt(source, MAX_TEXT_CHARS) },
       questions: {
         faithful: noul(
-          "Compare `entry` with `source`. Does the entry accurately reflect the source without contradicting " +
-            "it, overstating it, or dropping a qualifier that changes its meaning?",
-          "Faithful: it says what the source says.",
-          "Distorted, contradicted, or missing a qualifier that changes the meaning.",
+          "`entry` is a shortened excerpt of `source`. Does `entry` misrepresent `source` by contradicting " +
+            "it, overstating it, inventing something, or dropping a qualifier that changes what it says? " +
+            "Missing detail is expected in an excerpt.",
+          "Nothing the entry says contradicts or overstates the source, and no meaning-changing qualifier was dropped.",
+          "The entry contradicts, overstates or invents content, or drops a qualifier that changes the meaning.",
         ),
       },
       signal,
