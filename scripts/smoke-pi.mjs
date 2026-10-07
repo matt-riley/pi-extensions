@@ -44,7 +44,14 @@ const server = createServer(async (req, res) => {
     };
     content = null;
   }
-  if (last?.role !== "tool" && !isChild) {
+  const pushedBack = JSON.stringify(messages).split("A plateau is not a stop").length > 2;
+  if (phase === "edit" || phase === "until") {
+    if (last?.role !== "tool" && phase === "edit" && !JSON.stringify(last).includes("Done check"))
+      tool = { name: "write", arguments: { path: "smoke-edit.js", content: "export {};\n" } };
+    if (last?.role !== "tool" && phase === "until" && pushedBack)
+      tool = { name: "bash", arguments: { command: "touch smoke-done" } };
+    if (tool) content = null;
+  } else if (last?.role !== "tool" && !isChild) {
     tool =
       phase === "blocked"
         ? { name: "bash", arguments: { command: "touch smoke-blocked" } }
@@ -261,6 +268,24 @@ try {
       `ok: actual child command evidence reports ${expected} separately from execution completion`,
     );
   }
+  phase = "edit";
+  let before = requests;
+  const gated = await prompt("SMOKE_EDIT: write the fixture file, then stop.");
+  assert.match(JSON.stringify(gated), /Done check: 1 file\(s\) changed/);
+  assert.equal(requests - before, 3, "done-gate should buy exactly one extra model turn");
+  console.log("ok: done-gate continues once after an unverified edit");
+  phase = "until";
+  before = requests;
+  const start = events.length;
+  await prompt("/until test -f smoke-done");
+  const deadline = Date.now() + 30000;
+  while (!events.slice(start).some((event) => event.type === "agent_settled")) {
+    if (Date.now() > deadline) throw new Error(`until never settled: ${stderr}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  await access(path.join(cwd, "smoke-done"));
+  assert.ok(requests - before >= 3, "until should push the agent back at least once");
+  console.log("ok: /until sends the agent back until the predicate exits 0");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

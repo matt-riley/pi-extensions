@@ -13,6 +13,9 @@ all manifest extensions, enters plan mode, attempts a harmless `touch
 smoke-blocked` command through real tool dispatch, verifies it was blocked and
 that the file does not exist, exits plan mode, explicitly enables subagents,
 and completes a scout child through the actual child-session implementation.
+It then has the fixture model write a file and stop, and checks that done-gate
+buys exactly one extra turn with its "Done check" message; and runs
+`/until test -f smoke-done`, checking the agent is sent back until the file exists.
 It fails on missing capabilities, failed assertions, or a 30-second RPC timeout.
 
 The smoke creates a temporary working directory and agent configuration, uses
@@ -47,7 +50,7 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Static and behavior checks | `npm run check` | Exit 0; all repository checks and tests pass |
 | Registration | `npm run verify` | Every manifest entry registers; no live TypeSafe call |
 | Host startup and fixture | `npm run smoke` starts pi RPC and its disposable local provider | All manifest extensions load in the actual host |
-| Changed behavior | Smoke attempts `touch smoke-blocked` during `/plan start`, then exits and runs a child | Tool is blocked, file absent, real child completes |
+| Changed behavior | Smoke attempts `touch smoke-blocked` during `/plan start`, then exits and runs a child | Tool is blocked, file absent, real child completes; done-gate continues once; `/until` loops to its predicate |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
 Choose additional acceptance-specific checks for changes outside that smoke's
