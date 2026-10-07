@@ -101,11 +101,6 @@
   },
   {
     "source": "paraphrase",
-    "query": "make the slow page load faster and check LCP",
-    "accept": ["web-perf"]
-  },
-  {
-    "source": "paraphrase",
     "query": "the build shows a red X in CI on my branch, work out why",
     "accept": ["github-actions-failure-triage"]
   },
@@ -166,11 +161,6 @@
   },
   {
     "source": "paraphrase",
-    "query": "put bot protection on my signup form",
-    "accept": ["turnstile-spin"]
-  },
-  {
-    "source": "paraphrase",
     "query": "ship a new release of my Go command-line tool with binaries",
     "accept": ["goreleaser-release-pipeline", "go-cli-development"]
   },
@@ -208,11 +198,6 @@
     "source": "paraphrase",
     "query": "keep the API spec in step with what the endpoints really do",
     "accept": ["http-api"]
-  },
-  {
-    "source": "paraphrase",
-    "query": "build a stateful websocket chat room on Cloudflare",
-    "accept": ["durable-objects"]
   },
   {
     "source": "paraphrase",
