@@ -195,6 +195,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
 
     const keepRecentTokens = keepRecentFor(ctx);
     let draft;
+    let rejection: string | undefined;
     try {
       draft = await buildBoundaryCompaction({
         entries,
@@ -202,6 +203,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         note: pendingNote,
         ask,
         signal: ctx.signal,
+        onRejected: (reason: string) => {
+          rejection = reason;
+        },
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -213,7 +217,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       // when a handoff was actually planned and then rejected.
       if (planBoundary({ entries, keepRecentTokens })) {
         ctx.ui?.notify?.(
-          "safe-compact: could not verify a smaller handoff, keeping context",
+          `safe-compact: ${rejection ?? "could not verify a smaller handoff"}, keeping context`,
           "warning",
         );
       }

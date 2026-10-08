@@ -27,7 +27,9 @@ handoff is assembled and verified rather than trusted to one note.
    meaningfully shrink the summarized span is simply not committed: the context stays as it is and
    pi's native threshold compaction remains the backstop. A history longer than one handoff can
    verify is summarized in capped chunks over successive boundaries, so long sessions still
-   compact. Inside `session_before_compact` (manual, threshold, overflow), a failure returns nothing
+   compact. The size check counts both the replaced messages and the previous summary; rejected
+   handoffs report the specific reason (including size estimates) without relaxing verification.
+   Inside `session_before_compact` (manual, threshold, overflow), a failure returns nothing
    so pi's native summary runs instead. Before every compaction the full branch is snapshotted to
    `.pi/safe-compact/<timestamp>.jsonl`.
 

@@ -205,9 +205,17 @@ export async function composeHandoff({
   tokensBefore,
   ask = askSystemOne,
   signal,
+  onRejected,
 }) {
+  const reject = (reason) => {
+    onRejected?.(reason);
+    return null;
+  };
   const segments = segmentMessages(messages);
-  if (segments.length === 0 || segments.length > MAX_SEGMENTS) return null;
+  if (segments.length === 0) return reject("no text to summarize");
+  if (segments.length > MAX_SEGMENTS) {
+    return reject(`${segments.length} segments exceeds the ${MAX_SEGMENTS}-segment limit`);
+  }
 
   const goal = await pickGoal({
     userSegments: segments.filter((s) => s.role === "user"),
@@ -255,14 +263,20 @@ export async function composeHandoff({
       forced: forced.size,
     };
     if (failed.size === 0) {
-      if (estimateTokens(summary) >= tokensBefore * MAX_SIZE_RATIO) return null;
+      const summaryTokens = estimateTokens(summary);
+      if (summaryTokens >= tokensBefore * MAX_SIZE_RATIO) {
+        return reject(
+          `handoff estimates ${summaryTokens} tokens; must be below ${Math.ceil(tokensBefore * MAX_SIZE_RATIO)} ` +
+            `(60% of ${tokensBefore} replaced tokens)`,
+        );
+      }
       return { summary, details: { safeCompact: stats, note: note ?? null } };
     }
     const fresh = [...failed].filter((id) => !forced.has(id));
-    if (fresh.length === 0) return null; // verbatim already and still flagged: give up safely
+    if (fresh.length === 0) return reject("coverage still failed after re-inclusion");
     for (const id of fresh) forced.add(id);
   }
-  return null;
+  return reject(`verification did not converge in ${MAX_ROUNDS} rounds`);
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +462,14 @@ export function planBoundary({ entries, keepRecentTokens = DEFAULT_KEEP_RECENT }
  * handoff cannot be verified. The caller keeps the context either way and can
  * tell the two apart with `planBoundary` before warning.
  */
-export async function buildBoundaryCompaction({ entries, keepRecentTokens, note, ask, signal }) {
+export async function buildBoundaryCompaction({
+  entries,
+  keepRecentTokens,
+  note,
+  ask,
+  signal,
+  onRejected,
+}) {
   const plan = planBoundary({ entries, keepRecentTokens });
   if (!plan) return null;
   const result = await composeHandoff({
@@ -456,9 +477,11 @@ export async function buildBoundaryCompaction({ entries, keepRecentTokens, note,
     previousSummary: plan.previousSummary,
     fileLists: plan.fileLists,
     note,
-    tokensBefore: plan.summarizedTokens,
+    // The new handoff replaces both the old summary and this message span.
+    tokensBefore: plan.summarizedTokens + estimateTokens(plan.previousSummary ?? ""),
     ask,
     signal,
+    onRejected,
   });
   if (!result) return null;
   return {

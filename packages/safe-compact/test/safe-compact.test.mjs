@@ -237,10 +237,21 @@ test("an unusable verifier answer is not treated as a failure", async () => {
   assert.ok(result);
 });
 
-test("a handoff not smaller than the transcript falls back", async () => {
+test("a handoff not smaller than the transcript falls back with a size diagnostic", async () => {
+  const reasons = [];
   assert.equal(
-    await composeHandoff({ messages: transcript(), tokensBefore: 10, ask: fakeAsk() }),
+    await composeHandoff({
+      messages: transcript(),
+      tokensBefore: 10,
+      ask: fakeAsk(),
+      onRejected: (reason) => reasons.push(reason),
+    }),
     null,
+  );
+  assert.equal(reasons.length, 1);
+  assert.match(
+    reasons[0],
+    /handoff estimates \d+ tokens; must be below 6 \(60% of 10 replaced tokens\)/,
   );
 });
 
@@ -416,6 +427,22 @@ test("buildBoundaryCompaction: verified draft carries the note and file lists", 
   assert.equal(result.details.safeCompact.segments, 8);
 });
 
+test("buildBoundaryCompaction: shrinkage includes the previous summary being replaced", async () => {
+  const previousSummary = "earlier context ".repeat(400);
+  const entries = [
+    projectCompaction("old", previousSummary, {}, [
+      { role: "compactionSummary", summary: previousSummary },
+    ]),
+    ...largeEntries(6),
+  ];
+  const result = await buildBoundaryCompaction({
+    entries,
+    keepRecentTokens: 2000,
+    ask: fakeAsk(),
+  });
+  assert.ok(result, "a handoff replacing the old summary and new messages should compact");
+});
+
 test("buildBoundaryCompaction: nothing worth compacting returns null, not a failed handoff", async () => {
   const result = await buildBoundaryCompaction({
     entries: [project("u1", [user("hi")]), project("a1", [assistant("hello")])],
@@ -572,9 +599,11 @@ test("turn_end warns when a planned handoff cannot be verified", async () => {
     ];
     const event = { entries: [], context: { contextEntries: entries } };
     assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
-    assert.deepEqual(
-      notices.filter((notice) => notice.level === "warning").map((notice) => notice.title),
-      ["safe-compact: could not verify a smaller handoff, keeping context"],
+    const warnings = notices.filter((notice) => notice.level === "warning");
+    assert.equal(warnings.length, 1);
+    assert.match(
+      warnings[0].title,
+      /safe-compact: handoff estimates \d+ tokens; must be below \d+ \(60% of \d+ replaced tokens\), keeping context/,
     );
   } finally {
     cleanup();
