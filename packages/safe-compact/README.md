@@ -22,7 +22,9 @@ handoff is assembled and verified rather than trusted to one note.
    Output is copied spans and `path:start-end` pointers, never generated prose.
 6. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
    faithful, and that important segments are still represented. A gap re-includes that segment
-   verbatim and rebuilds (up to 3 rounds); a verbatim copy is taken as-is.
+   verbatim and the handoff is rebuilt; a verbatim copy is taken as-is. The check runs once —
+   a re-ask against the rebuilt handoff can only flip a settled answer into forcing another
+   segment, never uncover a gap the first pass missed.
 7. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would not
    meaningfully shrink the summarized span is simply not committed: the context stays as it is and
    pi's native threshold compaction remains the backstop. A history longer than one handoff can

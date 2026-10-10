@@ -200,7 +200,7 @@ test("composeHandoff keeps the constraint verbatim, drops noise, carries the not
   assert.equal(result.details.safeCompact.rounds, 1);
 });
 
-test("a coverage failure re-includes the segment verbatim on the next round", async () => {
+test("a coverage failure re-includes the segment verbatim in the rebuilt handoff", async () => {
   const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
   const result = await composeHandoff({
     messages: [...transcript(), assistant(long)],
@@ -235,6 +235,36 @@ test("an unusable verifier answer is not treated as a failure", async () => {
     ask: fakeAsk({ coverage: () => null }),
   });
   assert.ok(result);
+});
+
+test("verification runs once, so a judge that flips on a re-ask cannot churn rounds", async () => {
+  // Under re-verification this sequence never settled: each round flipped a
+  // segment that had already passed, so the third round still had a fresh
+  // failure and the handoff was discarded as "not converged".
+  const flips = new Map(
+    [
+      ["alpha", "x"],
+      ["beta", "y"],
+      ["gamma", "z"],
+    ].map(([name, fill], index) => [`MIDMARK ${name} ${fill.repeat(400)}`, index + 1]),
+  );
+  const asks = new Map();
+  const ask = fakeAsk({
+    coverage: (text) => {
+      const nth = (asks.get(text) ?? 0) + 1;
+      asks.set(text, nth);
+      return flips.get(text) === nth ? 0.1 : 0.9;
+    },
+  });
+  const result = await composeHandoff({
+    messages: [...transcript(), ...[...flips.keys()].map(assistant)],
+    tokensBefore: 100000,
+    ask,
+  });
+  assert.ok(result);
+  assert.equal(result.details.safeCompact.forced, 1);
+  assert.equal(result.details.safeCompact.rounds, 2);
+  for (const count of asks.values()) assert.equal(count, 1);
 });
 
 test("a handoff not smaller than the transcript falls back with a size diagnostic", async () => {

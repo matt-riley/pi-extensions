@@ -16,7 +16,6 @@ import {
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
-const MAX_ROUNDS = 3;
 const MAX_SEGMENTS = 400;
 const VERBATIM_MAX = 4000;
 const EXCERPT_MAX = 300;
@@ -86,7 +85,7 @@ async function scoreSegments({ segments, goal, ask, signal }) {
   return scores;
 }
 
-/** Derived selections are computed once per segment and reused across verification rounds. */
+/** Derived selections are computed once per segment and reused when the handoff is rebuilt. */
 function selector({ goal, ask, signal }) {
   const memo = new Map();
   const once = (key, compute) => {
@@ -226,57 +225,66 @@ export async function composeHandoff({
   const select = selector({ goal, ask, signal });
   const forced = new Set();
 
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
-    const entries = await buildEntries({ segments, scores, forced, select });
-    const summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
+  // One verification pass, then a rebuild with every flagged segment verbatim.
+  // Checking again would re-ask questions already answered: forced segments
+  // have left the checked set, every other entry is unchanged, and the rebuilt
+  // handoff only grows — so a re-ask can only flip a settled answer into
+  // forcing yet another segment, never uncover a gap the first pass missed.
+  let entries = await buildEntries({ segments, scores, forced, select });
+  let summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
 
-    // Faithfulness is judged on entries that restate their source. A verbatim
-    // copy cannot misstate it — even a capped one — and coverage decides
-    // whether what was kept is enough.
-    const restated = entries.filter((e) => e.lossy && e.disposition !== "keep_verbatim");
-    const important = segments.filter(
-      (segment, index) =>
-        !forced.has(segment.id) &&
-        !entries.some((e) => e.index === index && e.disposition === "keep_verbatim" && !e.lossy) &&
-        ((scores[index]?.load_bearing ?? 0) >= 0.6 || (scores[index]?.decision ?? 0) >= 0.5),
-    );
-    const [faithful, covered] = await Promise.all([
-      verifyEntries({
-        entries: restated.map((e) => ({ entry: e.text, source: e.segment.text })),
-        ask,
-        signal,
-      }),
-      verifyCoverage({ handoff: summary, segments: important, ask, signal }),
-    ]);
+  // Faithfulness is judged on entries that restate their source. A verbatim
+  // copy cannot misstate it — even a capped one — and coverage decides
+  // whether what was kept is enough.
+  const restated = entries.filter((e) => e.lossy && e.disposition !== "keep_verbatim");
+  const important = segments.filter(
+    (segment, index) =>
+      !forced.has(segment.id) &&
+      !entries.some((e) => e.index === index && e.disposition === "keep_verbatim" && !e.lossy) &&
+      ((scores[index]?.load_bearing ?? 0) >= 0.6 || (scores[index]?.decision ?? 0) >= 0.5),
+  );
+  const [faithful, covered] = await Promise.all([
+    verifyEntries({
+      entries: restated.map((e) => ({ entry: e.text, source: e.segment.text })),
+      ask,
+      signal,
+    }),
+    verifyCoverage({ handoff: summary, segments: important, ask, signal }),
+  ]);
 
-    // Only a definite "no" blocks; an unusable answer is not evidence of a gap.
-    const failed = new Set([
-      ...restated
-        .filter((_, i) => faithful[i] !== null && faithful[i] < FAITHFUL_FAILS_BELOW)
-        .map((e) => e.segment.id),
-      ...important.filter((_, i) => covered[i] !== null && covered[i] < 0.5).map((s) => s.id),
-    ]);
-    const stats = {
-      segments: segments.length,
-      rounds: round,
-      kept: entries.length,
-      forced: forced.size,
-    };
-    if (failed.size === 0) {
-      const summaryTokens = estimateTokens(summary);
-      if (summaryTokens >= tokensBefore * MAX_SIZE_RATIO) {
-        return reject(
-          `handoff estimates ${summaryTokens} tokens; must be below ${Math.ceil(tokensBefore * MAX_SIZE_RATIO)} ` +
-            `(60% of ${tokensBefore} replaced tokens)`,
-        );
-      }
-      return { summary, details: { safeCompact: stats, note: note ?? null } };
-    }
-    const fresh = [...failed].filter((id) => !forced.has(id));
-    if (fresh.length === 0) return reject("coverage still failed after re-inclusion");
-    for (const id of fresh) forced.add(id);
+  // Only a definite "no" blocks; an unusable answer is not evidence of a gap.
+  const failed = new Set([
+    ...restated
+      .filter((_, i) => faithful[i] !== null && faithful[i] < FAITHFUL_FAILS_BELOW)
+      .map((e) => e.segment.id),
+    ...important.filter((_, i) => covered[i] !== null && covered[i] < 0.5).map((s) => s.id),
+  ]);
+  for (const id of failed) forced.add(id);
+  if (failed.size > 0) {
+    entries = await buildEntries({ segments, scores, forced, select });
+    summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
   }
-  return reject(`verification did not converge in ${MAX_ROUNDS} rounds`);
+
+  const summaryTokens = estimateTokens(summary);
+  if (summaryTokens >= tokensBefore * MAX_SIZE_RATIO) {
+    return reject(
+      `handoff estimates ${summaryTokens} tokens; must be below ${Math.ceil(tokensBefore * MAX_SIZE_RATIO)} ` +
+        `(60% of ${tokensBefore} replaced tokens)`,
+    );
+  }
+  return {
+    summary,
+    details: {
+      safeCompact: {
+        segments: segments.length,
+        // One verification pass, plus the rebuild when it forced anything.
+        rounds: failed.size > 0 ? 2 : 1,
+        kept: entries.length,
+        forced: forced.size,
+      },
+      note: note ?? null,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
