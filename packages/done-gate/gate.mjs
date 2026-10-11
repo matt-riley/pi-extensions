@@ -34,12 +34,13 @@ export function isVerifyCommand(command) {
 
 /** Fresh state; reset on each user input so every run is judged on its own. */
 export function createGateState() {
-  return { dirty: new Set(), nudged: false };
+  return { dirty: new Set(), nudged: false, verificationSeen: false };
 }
 
 export function resetGateState(state) {
   state.dirty.clear();
   state.nudged = false;
+  state.verificationSeen = false;
   return state;
 }
 
@@ -48,7 +49,8 @@ export function resetGateState(state) {
  *
  * - a successful edit/write to a non-doc file marks that path unverified
  * - a verification command clears every unverified path, pass or fail: the
- *   model has seen the result either way
+ *   model has seen the result either way — and is remembered as
+ *   `verificationSeen`, which tells the claim judgment whether any check ran
  */
 export function observeToolResult(state, { toolName, input, isError } = {}) {
   if (EDIT_TOOLS.has(toolName)) {
@@ -60,6 +62,7 @@ export function observeToolResult(state, { toolName, input, isError } = {}) {
   }
   if (toolName === "bash" && isVerifyCommand(input?.command)) {
     state.dirty.clear();
+    state.verificationSeen = true;
   }
 }
 
@@ -134,8 +137,13 @@ const list = (items) =>
     ? `${items.slice(0, MAX_LISTED).join(", ")} and ${items.length - MAX_LISTED} more`
     : items.join(", ");
 
-/** The nudge. Marks the state nudged so a run gets at most one. */
-export function buildNudge(state, debugHits = []) {
+/**
+ * The nudge. Marks the state nudged so a run gets at most one.
+ *
+ * `claimText` is the claim judgment's line when it has one. It goes last,
+ * where the model reads it immediately before deciding what to do next.
+ */
+export function buildNudge(state, debugHits = [], claimText = null) {
   state.nudged = true;
   const files = [...state.dirty];
   const lines = [
@@ -145,6 +153,9 @@ export function buildNudge(state, debugHits = []) {
   ];
   if (debugHits.length > 0) {
     lines.push(`Leftover debug instrumentation to remove: ${list(debugHits)}.`);
+  }
+  if (typeof claimText === "string" && claimText.trim()) {
+    lines.push(claimText.trim());
   }
   return lines.join(" ");
 }
