@@ -6,6 +6,11 @@
 // the model reads it before the turn closes. It also lists `[DEBUG-` tags left
 // in the working-tree diff.
 //
+// The reminder cannot read the claim it is answering, so System One does: the
+// last assistant message goes to `claim.mjs`, and a claim that reports success
+// with the unverified edits unmentioned gains a second sentence. A claim that
+// names its gap gets nothing, because the reminder already asked for that.
+//
 // Text only: it never blocks a tool call. One nudge per user input, only after
 // a completed run (not an abort or error), and only for non-doc edits.
 
@@ -14,6 +19,8 @@ import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { messageText } from "../../shared/message-text.mjs";
+import { claimLine, judgeDoneClaim } from "./claim.mjs";
 import {
   DIFF_ARGS,
   buildNudge,
@@ -32,6 +39,7 @@ const MAX_UNTRACKED_BYTES = 1_000_000;
 
 export default function piDoneGateExtension(pi: ExtensionAPI) {
   const state = createGateState();
+  let lastClaim: string | undefined;
 
   const git = async (cwd: string, args: string[]) => {
     const result = await pi.exec("git", ["-C", cwd, ...args], { timeout: GIT_TIMEOUT_MS });
@@ -63,10 +71,24 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async () => {
     resetGateState(state);
+    lastClaim = undefined;
   });
 
   pi.on("input", async () => {
     resetGateState(state);
+    lastClaim = undefined;
+  });
+
+  // The claim judgment needs the message that closes the run, so keep the last
+  // one that carried text. A tool-call-only assistant message leaves it alone.
+  pi.on("message_end", async (event) => {
+    if (event?.message?.role !== "assistant") {
+      return;
+    }
+    const text = messageText(event.message.content).trim();
+    if (text) {
+      lastClaim = text;
+    }
   });
 
   pi.on("tool_result", async (event) => {
@@ -81,7 +103,19 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     if (!shouldNudge(state, event?.outcome)) {
       return;
     }
-    const content = buildNudge(state, await findDebugTags(ctx.cwd ?? process.cwd()));
+    // Both are best effort and neither may fail the run: the debug scan
+    // swallows its own errors, and the judge reports every failure as
+    // "unjudged". The judge takes its own timeout rather than `ctx.signal`,
+    // because an inherited abort would drop the judgment silently.
+    const [debugHits, judged] = await Promise.all([
+      findDebugTags(ctx.cwd ?? process.cwd()),
+      judgeDoneClaim({
+        claim: lastClaim,
+        files: [...state.dirty],
+        verificationSeen: state.verificationSeen,
+      }),
+    ]);
+    const content = buildNudge(state, debugHits, claimLine(judged));
     // Keep earlier handlers' drafts; only ever set continue to true so another
     // extension's continuation is never cleared.
     return {

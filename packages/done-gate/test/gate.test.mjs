@@ -164,3 +164,24 @@ test("finds debug tags in a whole untracked file", () => {
   assert.deepEqual(debugTagsInFile("new.py", "a\nprint('[DEBUG-9] b')\nc"), ["new.py:2"]);
   assert.deepEqual(debugTagsInFile("clean.py", "a\nb"), []);
 });
+
+test("a verification command is remembered for the claim judgment", () => {
+  const state = createGateState();
+  assert.equal(state.verificationSeen, false, "a fresh run has seen no check");
+  observeToolResult(state, bash("npm test"));
+  assert.equal(state.verificationSeen, true);
+  resetGateState(state);
+  assert.equal(state.verificationSeen, false, "the next run starts over");
+});
+
+test("the nudge carries a claim judgment, and nothing when there is none", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  const judged = buildNudge(state, [], "TypeSafe reads that claim as done.");
+  assert.match(judged, /Done check: 1 file\(s\) changed/);
+  assert.match(judged, /TypeSafe reads that claim as done\.$/);
+
+  const quiet = createGateState();
+  observeToolResult(quiet, edit("src/a.ts"));
+  assert.doesNotMatch(buildNudge(quiet), /TypeSafe/);
+});
