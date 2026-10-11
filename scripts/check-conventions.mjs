@@ -7,6 +7,18 @@ import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { parseFrontmatter } from "../packages/skill-select/library.mjs";
 
+// TypeScript's bundled/native line (v7+) ships no compiler API at the package
+// root — only a version shim and `typescript/unstable/*`. Parsing imports below
+// needs `createSourceFile`, so say why instead of failing inside the first
+// parse with "Cannot read properties of undefined (reading 'Latest')".
+if (typeof ts?.createSourceFile !== "function" || ts.ScriptTarget === undefined) {
+  throw new Error(
+    `check-conventions needs the TypeScript 5 compiler API, and the installed ` +
+      `typescript (${ts?.version ?? "unknown"}) does not expose it. Keep typescript on v5 until this ` +
+      "checker moves to typescript/unstable/*.",
+  );
+}
+
 const SDK = "@earendil-works/pi-coding-agent";
 const SDK_EXPORTS = {
   "packages/subagents/index.ts": ["getAgentDir", "parseFrontmatter"],
