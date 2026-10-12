@@ -52,6 +52,15 @@ function hardKeep(scores, segment) {
   return constraint || problem;
 }
 
+/** Tool output that names where it came from, so a pointer can stand in for it. */
+function recoverableSource(scores, segment) {
+  return (
+    segment.role === "toolResult" &&
+    (scores?.recoverable ?? 0) >= 0.6 &&
+    Boolean(segment.path || segment.command)
+  );
+}
+
 /** Route one segment. `null` scores mean scoring failed, which keeps it. */
 export function classify(scores, segment) {
   if (!scores || hardKeep(scores, segment)) return "keep_verbatim";
@@ -145,7 +154,7 @@ function selector({ goal, ask, signal }) {
 }
 
 /** Build the entries for one round. `forced` segments are pinned to verbatim. */
-async function buildEntries({ segments, scores, forced, select }) {
+async function buildEntries({ segments, scores, forced, pointed = new Set(), select }) {
   const entries = [];
   await mapPool(segments, async (segment, index) => {
     const s = scores[index];
@@ -155,7 +164,11 @@ async function buildEntries({ segments, scores, forced, select }) {
     // span. They stay verbatim when there is room and are cut last.
     const constraint = segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW;
     const pinned = forced.has(segment.id) || constraint;
-    const disposition = pinned ? "keep_verbatim" : classify(s, segment);
+    const disposition = pinned
+      ? "keep_verbatim"
+      : pointed.has(segment.id)
+        ? "point"
+        : classify(s, segment);
     const open = hardKeep(s, segment) ? 1 : 0;
     // Unscored segments weigh the most: not knowing is no reason to cut first.
     const base = { segment, disposition, index, pinned, weight: open + (s?.load_bearing ?? 1) };
@@ -164,6 +177,11 @@ async function buildEntries({ segments, scores, forced, select }) {
       const text = excerpt(segment.text, VERBATIM_MAX);
       const section = constraint ? "constraints" : "context";
       entries.push({ ...base, section, text, lossy: text !== segment.text });
+    } else if (disposition === "point" && !segment.path) {
+      // Command output: name the command, never tell the reader to re-run it
+      // blindly, since a command that wrote or deployed must not run twice.
+      const text = `$ ${excerpt(segment.command, 200)} (output not kept; re-run only if safe)`;
+      entries.push({ ...base, section: "pointers", text, lossy: false });
     } else if (disposition === "point") {
       const windows = await select.fileWindows(segment);
       const lines =
@@ -343,9 +361,17 @@ export async function composeHandoff({
       .map((e) => e.segment.id),
     ...important.filter((_, i) => covered[i] !== null && covered[i] < 0.5).map((s) => s.id),
   ]);
-  for (const id of failed) forced.add(id);
+  // A flagged entry comes back verbatim, unless it is tool output that can be
+  // re-read or re-run: then a pointer covers it at a fraction of the size.
+  // Forced copies were most of what pushed measured handoffs past the target.
+  const pointed = new Set();
+  segments.forEach((segment, index) => {
+    if (!failed.has(segment.id)) return;
+    if (recoverableSource(scores[index], segment)) pointed.add(segment.id);
+    else forced.add(segment.id);
+  });
   if (failed.size > 0) {
-    entries = fitBudget(await buildEntries({ segments, scores, forced, select }), budget);
+    entries = fitBudget(await buildEntries({ segments, scores, forced, pointed, select }), budget);
     summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
   }
 
@@ -365,6 +391,7 @@ export async function composeHandoff({
         rounds: failed.size > 0 ? 2 : 1,
         kept: entries.length,
         forced: forced.size,
+        pointed: pointed.size,
         pinned: entries.filter((e) => e.pinned).length,
         // Where the handoff's tokens went, so a bloated one can be diagnosed.
         tokens: entries.reduce((by, e) => {

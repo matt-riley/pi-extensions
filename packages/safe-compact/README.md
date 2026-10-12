@@ -29,7 +29,8 @@ handoff is assembled and verified rather than trusted to one note.
    copies never, so those alone can carry a handoff past the target.
 7. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
    faithful, and that important segments are still represented. A gap re-includes that segment
-   verbatim and the handoff is rebuilt; a verbatim copy is taken as-is. The check runs once —
+   verbatim and the handoff is rebuilt, except tool output that can be re-read or re-run, which comes
+   back as a pointer (`path:lines`, or the command with "re-run only if safe"); a verbatim copy is taken as-is. The check runs once —
    a re-ask against the rebuilt handoff can only flip a settled answer into forcing another
    segment, never uncover a gap the first pass missed.
 8. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would still
