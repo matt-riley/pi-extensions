@@ -112,6 +112,7 @@ async function attempt(entries, ask, counter) {
     // Entries the budget could not cut: user constraints and verification-forced copies.
     pinned: draft?.details?.safeCompact?.pinned ?? null,
     forced: draft?.details?.safeCompact?.forced ?? null,
+    pointed: draft?.details?.safeCompact?.pointed ?? null,
     tokens: draft?.details?.safeCompact?.tokens ?? null,
     calls: counter.calls - before,
     seconds,
@@ -153,7 +154,9 @@ for (const file of corpus(Number(values.sessions))) {
     const r = initial;
     console.log(
       `${row.session}  ${r.ok ? "ok  " : "FAIL"}  replaced ${String(r.replaced).padStart(6)}  ` +
-        `handoff ${pct(r.ratio)}  tool ${pct(r.toolShare)}  ${String(r.calls).padStart(4)} calls ${r.seconds.toFixed(1).padStart(5)}s` +
+        `handoff ${pct(r.ratio)} ${String(r.handoff ?? "-").padStart(6)} tok  tool ${pct(r.toolShare)}  ` +
+        `forced ${String(r.forced ?? "-").padStart(3)} pointed ${String(r.pointed ?? "-").padStart(3)}  ` +
+        `${String(r.calls).padStart(4)} calls ${r.seconds.toFixed(1).padStart(5)}s` +
         (retry
           ? `  | retry ${retry.ok ? "ok  " : "FAIL"} ${String(retry.calls).padStart(4)} calls ${retry.seconds.toFixed(1).padStart(5)}s`
           : "") +
@@ -171,6 +174,8 @@ const summary = {
   succeeded: results.filter((r) => r.initial.ok).length,
   retrySucceeded: results.filter((r) => r.retry?.ok).length,
   medianRatio: median(results.map((r) => r.initial.ratio)),
+  medianHandoff: median(results.map((r) => r.initial.handoff)),
+  maxHandoff: Math.max(0, ...results.map((r) => r.initial.handoff ?? 0)),
   medianToolShare: median(results.map((r) => r.initial.toolShare)),
   medianSeconds: median(results.map((r) => r.initial.seconds)),
   medianRetryCalls: median(results.map((r) => r.retry?.calls ?? null)),
