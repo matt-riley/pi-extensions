@@ -31,6 +31,20 @@ const MAX_HARD = 90;
 const MOMENT_TIMEOUT_MS = 8000;
 const RECENT_ENTRIES = 8;
 const DEFAULT_KEEP_RECENT = 20000;
+/**
+ * The window percentages are measured against, at most. On a 1M-token model
+ * 50% is 500K, and every turn re-sends that prefix: measured compactions here
+ * fired at p50 266K, with cache reads 60% of all spend. Capping the window
+ * makes a 1M model compact where a 272K one does.
+ */
+const MAX_EFFECTIVE_WINDOW = 300_000;
+
+/** Context usage as a percentage of the capped window. */
+const usedPercent = (usage: { tokens?: number | null; percent?: number | null } | undefined) => {
+  const percent = usage?.percent;
+  if (percent === null || percent === undefined) return percent;
+  return Math.max(percent, ((usage?.tokens ?? 0) / MAX_EFFECTIVE_WINDOW) * 100);
+};
 
 type Ask = (request: {
   state: unknown;
@@ -159,7 +173,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     if (compacting) return;
     const { soft, hard } = thresholds();
     if (!requested) {
-      const percent = ctx.getContextUsage?.()?.percent;
+      const percent = usedPercent(ctx.getContextUsage?.());
       if (percent === null || percent === undefined || percent < soft) return;
 
       if (percent < hard) {
@@ -333,7 +347,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     description: "Show safe-compact thresholds and current context usage",
     handler: async (_args, ctx) => {
       const { soft, hard } = thresholds();
-      const percent = ctx.getContextUsage?.()?.percent;
+      const percent = usedPercent(ctx.getContextUsage?.());
       ctx.ui?.notify?.(
         `safe-compact: ${percent === null || percent === undefined ? "?" : Math.round(percent)}% used, soft ${soft}%, compact at ${hard}%`,
         "info",

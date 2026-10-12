@@ -10,6 +10,8 @@ handoff is assembled and verified rather than trusted to one note.
    `--compact-at` (default 70%, max 90%), Jev judges each turn boundary (mid-change? debugging?
    just finished?) and compaction runs at the first clean one. At the hard threshold, or when the
    agent calls `self_compact`, it runs regardless.
+   Percentages are of the context window capped at 300K tokens, so a 1M-token model compacts where
+   a 272K one does instead of re-sending a half-million-token prefix every turn.
 2. **Commit at the boundary.** The handoff is appended as a compaction entry through pi's `turn_end`
    boundary, so the run is never aborted: a mid-task agent continues from the compacted context,
    and a finished turn stays finished. `ctx.compact()` (which aborts the current operation) is
