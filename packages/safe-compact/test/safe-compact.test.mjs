@@ -15,6 +15,8 @@ import {
   classify,
   composeHandoff,
   decideTrigger,
+  fitBudget,
+  memoizeAsk,
   planBoundary,
 } from "../plan.mjs";
 import { segmentMessages } from "../segment.mjs";
@@ -653,4 +655,106 @@ test("turn_end warns when a planned handoff cannot be verified", async () => {
   } finally {
     cleanup();
   }
+});
+
+const bashResult = (text, isError = false) => ({
+  role: "toolResult",
+  toolName: "bash",
+  isError,
+  content: [{ type: "text", text }],
+});
+
+test("classify: tool output is excerpted unless it is an error; reads become pointers", () => {
+  const scores = { disposition: "keep_verbatim", confidence: 0.9, recoverable: 0.9 };
+  const [bash, failed, read] = segmentMessages([
+    bashResult("ok"),
+    bashResult("boom", true),
+    readResult("c1", "line"),
+  ]);
+  read.path = "src/a.ts";
+  assert.equal(classify(scores, bash), "excerpt");
+  assert.equal(classify(scores, failed), "keep_verbatim");
+  assert.equal(classify(scores, read), "point");
+});
+
+test("fitBudget: cuts the least load-bearing first and never touches pinned entries", () => {
+  const segment = (text, role = "toolResult") => ({ role, tool: "bash", text });
+  const entry = (text, extra) => ({
+    segment: segment(text),
+    disposition: "keep_verbatim",
+    section: "context",
+    text,
+    lossy: false,
+    pinned: false,
+    weight: 0.5,
+    ...extra,
+  });
+  const entries = [
+    entry("p".repeat(4000), { pinned: true, weight: 0 }),
+    entry("a".repeat(4000), { weight: 0.9 }),
+    entry("b".repeat(4000), { weight: 0.1 }),
+    { ...entry("decision"), disposition: "excerpt", section: "decisions", weight: 0 },
+  ];
+  assert.equal(fitBudget(entries, 100000), entries);
+
+  const fitted = fitBudget(entries, 2200);
+  assert.equal(fitted[0], entries[0]);
+  assert.equal(
+    fitted[1],
+    entries[1],
+    "the load-bearing copy survives when the cheap one is enough",
+  );
+  assert.equal(fitted[2].disposition, "excerpt");
+  assert.ok(fitted[2].text.length < 400);
+
+  // Tighter than every excerpt allows: plain context goes, decisions and pins stay.
+  const tight = fitBudget(entries, 10);
+  assert.deepEqual(
+    tight.map((e) => e.section),
+    ["context", "decisions"],
+  );
+  assert.equal(tight[0].pinned, true);
+});
+
+test("composeHandoff fits a tool-heavy span that verbatim copies would push past the size limit", async () => {
+  const messages = [user("GOALMARK fix the retry logic")];
+  for (let i = 0; i < 30; i++) {
+    messages.push(assistant(`run ${i}`), bashResult(`output ${i} ${"z".repeat(3000)}`));
+  }
+  const keepEverything = async ({ questions, state }) => {
+    if ("disposition" in questions) {
+      return {
+        answers: {
+          load_bearing: noul(0.5),
+          user_constraint: noul(0),
+          decision: noul(0),
+          unresolved: noul(0),
+          recoverable: noul(0.9),
+          disposition: { type: "choice", choice: "keep_verbatim", confidence: 0.9 },
+        },
+      };
+    }
+    return fakeAsk()({ questions, state });
+  };
+  const tokensBefore = 30 * 800;
+  const result = await composeHandoff({ messages, tokensBefore, ask: keepEverything });
+  assert.ok(result);
+  assert.ok(result.summary.length / 4 <= tokensBefore * 0.25, "within the target");
+});
+
+test("memoizeAsk answers an identical request once, ignores the signal and keeps no failures", async () => {
+  let calls = 0;
+  let fail = true;
+  const ask = memoizeAsk(async (request) => {
+    calls++;
+    if (fail) throw new Error("down");
+    return { answers: { echo: request.state } };
+  });
+  await assert.rejects(ask({ state: 1, questions: {} }));
+  fail = false;
+  const first = await ask({ state: 1, questions: {}, signal: new AbortController().signal });
+  const again = await ask({ state: 1, questions: {} });
+  await ask({ state: 2, questions: {} });
+  assert.equal(first, again);
+  assert.equal(calls, 3);
 });
