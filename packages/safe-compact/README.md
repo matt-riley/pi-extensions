@@ -18,16 +18,21 @@ handoff is assembled and verified rather than trusted to one note.
    reserved for the manual `/safe-compact` command.
 3. **Score.** Each older message is scored by Jev: load-bearing, user constraint, decision,
    unresolved problem, recoverable, plus a keep/point/excerpt/drop choice.
-4. **Route.** Code applies hard rules (user constraints and unresolved errors are always verbatim;
-   uncertain or load-bearing content is never dropped).
+4. **Route.** Code applies hard rules: user constraints are always verbatim, and uncertain or
+   load-bearing content is never dropped outright. Open problems are kept verbatim when there is
+   room. Tool output is excerpted unless it is an error, because it can be re-run or re-read.
 5. **Select.** Jev picks decision sentences and the relevant line windows of large file reads.
    Output is copied spans and `path:start-end` pointers, never generated prose.
-6. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
+6. **Fit.** The handoff aims for 25% of what it replaces, at most 12K tokens. Over that, the
+   least load-bearing entries are cut first: verbatim copies become excerpts, then plain context
+   excerpts are dropped. Open problems are cut last; user constraints and verification-forced
+   copies never, so those alone can carry a handoff past the target.
+7. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
    faithful, and that important segments are still represented. A gap re-includes that segment
    verbatim and the handoff is rebuilt; a verbatim copy is taken as-is. The check runs once —
    a re-ask against the rebuilt handoff can only flip a settled answer into forcing another
    segment, never uncover a gap the first pass missed.
-7. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would not
+8. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would not
    meaningfully shrink the summarized span is simply not committed: the context stays as it is and
    pi's native threshold compaction remains the backstop. A history longer than one handoff can
    verify is summarized in capped chunks over successive boundaries, so long sessions still
@@ -36,6 +41,9 @@ handoff is assembled and verified rather than trusted to one note.
    Inside `session_before_compact` (manual, threshold, overflow), a failure returns nothing
    so pi's native summary runs instead. Before every compaction the full branch is snapshotted to
    `.pi/safe-compact/<timestamp>.jsonl`.
+
+Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
+an overlapping span, pays only for messages it has not judged yet.
 
 ## Surface
 

@@ -22,6 +22,13 @@ const EXCERPT_MAX = 300;
 const PREVIOUS_MAX = 6000;
 /** A handoff this close to the transcript it replaces frees nothing. */
 const MAX_SIZE_RATIO = 0.6;
+/**
+ * What a handoff aims for. Over it, the least load-bearing entries are cut
+ * down until it fits; only pinned content (user constraints, open problems,
+ * entries verification forced verbatim) can push it past, up to MAX_SIZE_RATIO.
+ */
+const TARGET_RATIO = 0.25;
+const MAX_HANDOFF_TOKENS = 12000;
 /** Faithful is judged as "did the entry misstate the source"; ambiguous scores keep the excerpt. */
 const FAITHFUL_FAILS_BELOW = 0.35;
 
@@ -33,17 +40,30 @@ export function decideTrigger({ percent, soft, hard, moment }) {
   return "wait";
 }
 
-/** Route one segment. `null` scores mean scoring failed, which keeps it. */
-export function classify(scores, segment) {
-  if (!scores) return "keep_verbatim";
-  // Role-scoped: constraints come from the user, and file contents are not an
-  // error report even when they mention a bug.
+/**
+ * Content the hard rules keep verbatim whatever the budget. Role-scoped:
+ * constraints come from the user, and file contents are not an error report
+ * even when they mention a bug.
+ */
+function hardKeep(scores, segment) {
+  if (!scores) return false;
   const constraint = segment.role === "user" && (scores.user_constraint ?? 0) >= KEEP_BELOW;
   const problem = segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
-  if (constraint || problem) return "keep_verbatim";
+  return constraint || problem;
+}
+
+/** Route one segment. `null` scores mean scoring failed, which keeps it. */
+export function classify(scores, segment) {
+  if (!scores || hardKeep(scores, segment)) return "keep_verbatim";
   let disposition = Object.hasOwn(DISPOSITIONS, scores.disposition)
     ? scores.disposition
     : "keep_verbatim";
+  // Tool output was over half of every measured handoff, and it can be re-run
+  // or re-read. Verbatim is for what cannot: an error the agent has not fixed,
+  // which hardKeep already pinned when it is still open.
+  if (disposition === "keep_verbatim" && segment.role === "toolResult" && !segment.isError) {
+    disposition = "excerpt";
+  }
   // Uncertain or load-bearing content is never dropped outright.
   if (
     disposition === "drop" &&
@@ -129,15 +149,20 @@ async function buildEntries({ segments, scores, forced, select }) {
   const entries = [];
   await mapPool(segments, async (segment, index) => {
     const s = scores[index];
-    const disposition = forced.has(segment.id) ? "keep_verbatim" : classify(s, segment);
-    const base = { segment, disposition, index };
+    // Pinned: what the budget may never cut. User constraints are few and
+    // cheap. Open problems are not pinned: the judge sees one segment ahead,
+    // so a fix a few turns later is invisible and it flagged 29% of a measured
+    // span. They stay verbatim when there is room and are cut last.
+    const constraint = segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW;
+    const pinned = forced.has(segment.id) || constraint;
+    const disposition = pinned ? "keep_verbatim" : classify(s, segment);
+    const open = hardKeep(s, segment) ? 1 : 0;
+    // Unscored segments weigh the most: not knowing is no reason to cut first.
+    const base = { segment, disposition, index, pinned, weight: open + (s?.load_bearing ?? 1) };
     if (disposition === "drop") return;
     if (disposition === "keep_verbatim") {
       const text = excerpt(segment.text, VERBATIM_MAX);
-      const section =
-        segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW
-          ? "constraints"
-          : "context";
+      const section = constraint ? "constraints" : "context";
       entries.push({ ...base, section, text, lossy: text !== segment.text });
     } else if (disposition === "point") {
       const windows = await select.fileWindows(segment);
@@ -165,6 +190,59 @@ async function buildEntries({ segments, scores, forced, select }) {
     }
   });
   return entries.sort((a, b) => a.index - b.index);
+}
+
+const handoffTokens = (entry) => estimateTokens(entry.text) + 1;
+
+/**
+ * Cut unpinned entries down until they fit `budget` tokens, least
+ * load-bearing first: verbatim copies become excerpts, then plain context
+ * excerpts are dropped. Decisions and pointers are small and stay. Pinned
+ * entries are never touched, so the result can still exceed the budget.
+ */
+export function fitBudget(entries, budget) {
+  let total = entries.reduce((sum, e) => sum + handoffTokens(e), 0);
+  if (total <= budget) return entries;
+  const out = [...entries];
+  const order = out
+    .map((entry, at) => ({ entry, at }))
+    .filter(({ entry }) => !entry.pinned)
+    .sort(
+      (a, b) => a.entry.weight - b.entry.weight || handoffTokens(b.entry) - handoffTokens(a.entry),
+    );
+  for (const { entry, at } of order) {
+    if (total <= budget) break;
+    if (entry.disposition !== "keep_verbatim") continue;
+    const text = `[${label(entry.segment)}] ${excerpt(entry.segment.text, EXCERPT_MAX)}`;
+    const shorter = { ...entry, disposition: "excerpt", section: "context", text, lossy: true };
+    total += handoffTokens(shorter) - handoffTokens(entry);
+    out[at] = shorter;
+  }
+  const dropped = new Set();
+  for (const { at } of order) {
+    if (total <= budget) break;
+    if (out[at].section !== "context") continue;
+    total -= handoffTokens(out[at]);
+    dropped.add(at);
+  }
+  return out.filter((_, at) => !dropped.has(at));
+}
+
+/**
+ * Wrap `ask` so an identical request is answered once. Old messages do not
+ * change between turns, so a retry after a rejection, or the next compaction
+ * over an overlapping span, pays only for what is new. Failures are not kept.
+ */
+export function memoizeAsk(ask, max = 2000) {
+  const memo = new Map();
+  return async ({ signal, ...request }) => {
+    const key = JSON.stringify(request);
+    if (memo.has(key)) return memo.get(key);
+    const answer = await ask({ ...request, signal });
+    memo.set(key, answer);
+    if (memo.size > max) memo.delete(memo.keys().next().value);
+    return answer;
+  };
 }
 
 const bullets = (items) => items.map((text) => `- ${text.replace(/\n/g, "\n  ")}`).join("\n");
@@ -230,7 +308,13 @@ export async function composeHandoff({
   // have left the checked set, every other entry is unchanged, and the rebuilt
   // handoff only grows — so a re-ask can only flip a settled answer into
   // forcing yet another segment, never uncover a gap the first pass missed.
-  let entries = await buildEntries({ segments, scores, forced, select });
+  // The entries' share of the target: the fixed sections cost what they cost.
+  const overhead = estimateTokens(
+    renderHandoff({ goal, entries: [], fileLists, previousSummary, note }),
+  );
+  const budget = Math.min(tokensBefore * TARGET_RATIO, MAX_HANDOFF_TOKENS) - overhead;
+  // Fitting comes before verification, so what is verified is what ships.
+  let entries = fitBudget(await buildEntries({ segments, scores, forced, select }), budget);
   let summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
 
   // Faithfulness is judged on entries that restate their source. A verbatim
@@ -261,7 +345,7 @@ export async function composeHandoff({
   ]);
   for (const id of failed) forced.add(id);
   if (failed.size > 0) {
-    entries = await buildEntries({ segments, scores, forced, select });
+    entries = fitBudget(await buildEntries({ segments, scores, forced, select }), budget);
     summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
   }
 
@@ -281,6 +365,12 @@ export async function composeHandoff({
         rounds: failed.size > 0 ? 2 : 1,
         kept: entries.length,
         forced: forced.size,
+        pinned: entries.filter((e) => e.pinned).length,
+        // Where the handoff's tokens went, so a bloated one can be diagnosed.
+        tokens: entries.reduce((by, e) => {
+          by[e.segment.role] = (by[e.segment.role] ?? 0) + estimateTokens(e.text);
+          return by;
+        }, {}),
       },
       note: note ?? null,
     },
