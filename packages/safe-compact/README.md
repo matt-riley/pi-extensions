@@ -46,6 +46,10 @@ handoff is assembled and verified rather than trusted to one note.
 Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
 an overlapping span, pays only for messages it has not judged yet.
 
+`node scripts/safe-compact-eval.mjs` replays real sessions from `~/.pi/agent/sessions` to the hard
+threshold and reports success, handoff size, tool-output share, and the calls and seconds of the
+first attempt and a retry. It makes real TypeSafe calls.
+
 ## Surface
 
 - Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
