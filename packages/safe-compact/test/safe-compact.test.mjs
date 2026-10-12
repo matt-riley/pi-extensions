@@ -773,3 +773,46 @@ test("memoizeAsk answers an identical request once, ignores the signal and keeps
   assert.equal(first, again);
   assert.equal(calls, 3);
 });
+
+test("a flagged tool result that can be re-run comes back as a pointer, other flags verbatim", async () => {
+  const output = `BIGOUT ${"q".repeat(3000)}`;
+  const messages = [
+    user("GOALMARK fix the retry logic"),
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "npm test" } }],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "b1",
+      toolName: "bash",
+      content: [{ type: "text", text: output }],
+    },
+    assistant(`MINDMARK we settled on exponential backoff ${"m".repeat(1200)}`),
+  ];
+  const ask = async ({ questions, state }) => {
+    if ("disposition" in questions) {
+      const text = state.segment.text;
+      return {
+        answers: {
+          load_bearing: noul(/BIGOUT|MINDMARK/.test(text) ? 0.9 : 0.1),
+          user_constraint: noul(0),
+          decision: noul(0),
+          unresolved: noul(0),
+          recoverable: noul(text.includes("BIGOUT") ? 0.9 : 0.1),
+          disposition: { type: "choice", choice: "excerpt", confidence: 0.9 },
+        },
+      };
+    }
+    // Coverage fails both important segments; everything else passes.
+    if ("covered" in questions) return { answers: { covered: noul(0.1) } };
+    return fakeAsk()({ questions, state });
+  };
+  const result = await composeHandoff({ messages, tokensBefore: 100000, ask });
+  assert.ok(result);
+  assert.match(result.summary, /\$ npm test \(output not kept; re-run only if safe\)/);
+  assert.doesNotMatch(result.summary, /q{400}/, "the output is not copied back");
+  assert.match(result.summary, /m{1000}/, "an unrecoverable flag still comes back verbatim");
+  assert.equal(result.details.safeCompact.pointed, 1);
+  assert.equal(result.details.safeCompact.forced, 1);
+});

@@ -50,6 +50,7 @@ export function segmentMessages(messages) {
       tokens: estimateTokens(text),
       tool: message.toolName ?? call?.name,
       path: typeof args.path === "string" ? args.path : undefined,
+      command: typeof args.command === "string" ? args.command : undefined,
       offset: Number.isInteger(args.offset) && args.offset > 0 ? args.offset : 1,
       isError: message.isError === true,
     });
