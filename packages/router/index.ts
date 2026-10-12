@@ -34,7 +34,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { askSystemOne } from "../../shared/systemone.mjs";
-import { ensureRouterConfig, readRouterConfig, routerConfigPath } from "./config.mjs";
+import {
+  ensureRouterConfig,
+  readRouterConfig,
+  routerConfigPath,
+  unmatchedPatterns,
+} from "./config.mjs";
 import { gateTurn } from "./lib.mjs";
 import {
   buildTaskTypeQuestion,
@@ -243,13 +248,14 @@ export default function piRouterExtension(
   // edit takes effect at the next task. A broken file narrows routing to the
   // built-in defaults and says so once.
   let configErrorNotified = false;
+  let staleNotified = false;
   function modelTiers(ctx: ExtensionContext) {
     const loaded = readRouterConfig(configPath);
     if (loaded.error && !configErrorNotified) {
       configErrorNotified = true;
       notify(ctx, `Router: ${loaded.error} — using the built-in model lists.`, "warning");
     }
-    return { base: loaded.base, mid: loaded.mid, frontier: loaded.frontier };
+    return { base: loaded.base, mid: loaded.mid, frontier: loaded.frontier, error: loaded.error };
   }
 
   /** Every physical model the router may choose: the session's scope wins. */
@@ -352,6 +358,17 @@ export default function piRouterExtension(
     const selected = parseThinking(request?.thinkingLevel, DEFAULT_THINKING);
     const offers = await candidates(ctx);
     const tiers = modelTiers(ctx);
+    // A broken file already said so; its stand-in defaults are not the user's list.
+    if (!staleNotified && !tiers.error && offers.length) {
+      staleNotified = true;
+      const stale = unmatchedPatterns(tiers, offers.map(modelKey).filter(Boolean));
+      if (stale.length)
+        notify(
+          ctx,
+          `Router: ${configPath} names models not available here: ${stale.join(", ")}`,
+          "warning",
+        );
+    }
     const branchState = readState(request?.state);
     const previousKey = modelKey(request?.previous?.model ?? null);
 

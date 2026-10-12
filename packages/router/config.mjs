@@ -114,6 +114,20 @@ export function readRouterConfig(file = routerConfigPath()) {
 }
 
 /**
+ * Configured patterns that match no offered model, by the same
+ * case-insensitive substring rule the tiers use. A stale entry is otherwise
+ * skipped in silence, and the tier quietly falls through to its next pair.
+ */
+export function unmatchedPatterns(tiers, offerKeys) {
+  const keys = offerKeys.map((key) => String(key).toLowerCase());
+  const missing = new Set();
+  for (const tier of ["base", "mid", "frontier"])
+    for (const { model } of tiers?.[tier] ?? [])
+      if (!keys.some((key) => key.includes(model.toLowerCase()))) missing.add(model);
+  return [...missing];
+}
+
+/**
  * Write the default pairs if the file does not exist yet, so there is always
  * something to open and edit. Never overwrites: `wx` fails if the file appeared
  * between the read and the write.
