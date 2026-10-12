@@ -32,9 +32,10 @@ handoff is assembled and verified rather than trusted to one note.
    verbatim and the handoff is rebuilt; a verbatim copy is taken as-is. The check runs once —
    a re-ask against the rebuilt handoff can only flip a settled answer into forcing another
    segment, never uncover a gap the first pass missed.
-8. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would not
-   meaningfully shrink the summarized span is simply not committed: the context stays as it is and
-   pi's native threshold compaction remains the backstop. A history longer than one handoff can
+8. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would still
+   be 60% of the summarized span is not committed. The next attempt waits until the context has
+   grown another 10K tokens, so a rejection is not rebuilt at every turn; a rejection at the hard
+   threshold runs pi's own compaction once the run settles, never mid-run. A history longer than one handoff can
    verify is summarized in capped chunks over successive boundaries, so long sessions still
    compact. The size check counts both the replaced messages and the previous summary; rejected
    handoffs report the specific reason (including size estimates) without relaxing verification.
