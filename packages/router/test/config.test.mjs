@@ -13,6 +13,7 @@ import {
   ensureRouterConfig,
   readRouterConfig,
   routerConfigPath,
+  unmatchedPatterns,
 } from "../config.mjs";
 
 const tempDirs = [];
@@ -76,4 +77,18 @@ test("the agent directory honours PI_CODING_AGENT_DIR", () => {
     "/tmp/agent-dir/router.json",
   );
   assert.equal(routerConfigPath({}), path.join(os.homedir(), ".pi", "agent", "router.json"));
+});
+
+test("patterns that match no offered model are named once, by substring", () => {
+  const tiers = {
+    base: [{ model: "openai-codex/gpt-5.6-luna" }],
+    mid: [{ model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" }],
+    frontier: [{ model: "qwen3.8-max" }, { model: "Kimi-K3" }, { model: "retired-model" }],
+  };
+  const offers = [
+    "openai-codex/gpt-5.6-luna",
+    "openrouter/qwen/qwen3.8-max-0902",
+    "github-copilot/kimi-k3",
+  ];
+  assert.deepEqual(unmatchedPatterns(tiers, offers), ["retired-model"]);
 });
