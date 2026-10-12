@@ -9,6 +9,10 @@ skill is loaded only when a video recipe is selected.
 
 ## Tools
 
+The tools are registered with `deferred` exposure, so they stay out of the
+prompt in unrelated sessions. `/influencer` activates them, and codemode
+scripts or `tool_search` can still find them by name.
+
 - `influencer_save` — persist a character's foundational prompt, consistency
   anchors, silhouette anchors, and style signature.
 - `influencer_show` — retrieve the locked identity block verbatim.
