@@ -151,6 +151,8 @@ declare module "@earendil-works/pi-coding-agent" {
     description?: string;
     promptSnippet?: string;
     promptGuidelines?: string[];
+    /** How the model reaches the tool; `deferred` keeps it out of the prompt until loaded. */
+    exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
     parameters: TParams;
     execute(
       toolCallId: string,

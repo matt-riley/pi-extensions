@@ -182,6 +182,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: SAVE_TOOL,
     label: SAVE_TOOL,
+    exposure: "deferred",
     description:
       "Save or update an AI influencer character. Use this after creating a foundational prompt so the prompt, consistency anchors, silhouette anchors, and style signature persist across sessions.",
     promptSnippet:
@@ -210,6 +211,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: SHOW_TOOL,
     label: SHOW_TOOL,
+    exposure: "deferred",
     description:
       "Show a saved AI influencer's identity block. Use it before generating a new image so the locked anchors can be copied verbatim.",
     promptSnippet:
@@ -234,6 +236,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: LIST_TOOL,
     label: LIST_TOOL,
+    exposure: "deferred",
     description:
       "List saved AI influencer characters and whether each identity is still a draft or locked.",
     promptSnippet: "influencer_list: list saved AI influencer characters",
@@ -251,6 +254,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: PROMPT_TOOL,
     label: PROMPT_TOOL,
+    exposure: "deferred",
     description:
       "Build an on-demand AI influencer image or Seedance 2.5 video prompt brief from bundled specialist guidance, a saved character, and a reusable recipe.",
     promptSnippet:
@@ -292,6 +296,9 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
         notify(ctx, "Influencer prompts wait until the agent is idle.", "warning");
         return;
       }
+      // The tools are deferred so they cost nothing in unrelated sessions;
+      // the command is the moment they become needed.
+      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...INFLUENCER_TOOLS])]);
 
       const typed = String(args ?? "").trim();
       try {
