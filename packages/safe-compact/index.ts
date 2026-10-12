@@ -14,12 +14,14 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { askSystemOne } from "../../shared/systemone.mjs";
 import { judgeMoment } from "./judge.mjs";
 import {
   buildBoundaryCompaction,
   composeHandoff,
   decideTrigger,
   fileListsFromDetails,
+  memoizeAsk,
   mergeFileLists,
   planBoundary,
 } from "./plan.mjs";
@@ -31,6 +33,11 @@ const MAX_HARD = 90;
 const MOMENT_TIMEOUT_MS = 8000;
 const RECENT_ENTRIES = 8;
 const DEFAULT_KEEP_RECENT = 20000;
+/**
+ * Tokens the context must grow after a rejected handoff before the next try.
+ * Retrying at every turn rebuilt the same handoff and was rejected the same way.
+ */
+const RETRY_GROWTH = 10000;
 /**
  * The window percentages are measured against, at most. On a 1M-token model
  * 50% is 500K, and every turn re-sends that prefix: measured compactions here
@@ -58,7 +65,8 @@ const percentFlag = (raw: unknown, fallback: number) => {
 };
 
 export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {}) {
-  const ask = options.ask;
+  // One memo per session: a retry or an overlapping span reuses old answers.
+  const ask = memoizeAsk(options.ask ?? askSystemOne);
 
   pi.registerFlag("compact-soft-at", {
     description: `Context % where Jev starts looking for a clean moment to compact (default ${DEFAULT_SOFT})`,
@@ -73,6 +81,10 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   let requested = false;
   let compacting = false;
   let noteConsumed = false;
+  /** Context size at the last rejected handoff; null once one succeeds. */
+  let rejectedAt: number | null = null;
+  /** A handoff failed at the hard threshold: pi compacts once the run settles. */
+  let fallback = false;
 
   const thresholds = () => {
     const hard = Math.min(percentFlag(pi.getFlag("compact-at"), DEFAULT_HARD), MAX_HARD);
@@ -172,9 +184,12 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   pi.on("turn_end", async (event, ctx) => {
     if (compacting) return;
     const { soft, hard } = thresholds();
+    const usage = ctx.getContextUsage?.();
+    const tokens = usage?.tokens ?? 0;
+    const percent = usedPercent(usage);
     if (!requested) {
-      const percent = usedPercent(ctx.getContextUsage?.());
       if (percent === null || percent === undefined || percent < soft) return;
+      if (rejectedAt !== null && tokens < rejectedAt + RETRY_GROWTH) return;
 
       if (percent < hard) {
         const messages = branchMessages(ctx);
@@ -208,6 +223,12 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     if (!Array.isArray(entries) || entries.length === 0) return;
 
     const keepRecentTokens = keepRecentFor(ctx);
+    const rejected = (reason: string) => {
+      rejectedAt = tokens;
+      fallback ||= (percent ?? 0) >= hard;
+      const next = fallback ? "pi compacts when this run settles" : "keeping context";
+      ctx.ui?.notify?.(`safe-compact: ${reason}, ${next}`, "warning");
+    };
     let draft;
     let rejection: string | undefined;
     try {
@@ -222,21 +243,18 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      ctx.ui?.notify?.(`safe-compact: ${message}, keeping context`, "warning");
+      rejected(error instanceof Error ? error.message : String(error));
       return;
     }
     if (!draft) {
       // Nothing worth summarizing yet is the normal steady state; only warn
       // when a handoff was actually planned and then rejected.
       if (planBoundary({ entries, keepRecentTokens })) {
-        ctx.ui?.notify?.(
-          `safe-compact: ${rejection ?? "could not verify a smaller handoff"}, keeping context`,
-          "warning",
-        );
+        rejected(rejection ?? "could not verify a smaller handoff");
       }
       return;
     }
+    rejectedAt = null;
     snapshot(ctx);
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
@@ -294,6 +312,15 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     }
   });
 
+  // The fallback waits for the run to settle: ctx.compact() mid-run would
+  // abort it. Pi's compaction then asks this extension for a handoff once more
+  // and, if that fails too, writes its own summary.
+  pi.on("agent_settled", async (event, ctx) => {
+    if (!fallback || event?.aborted) return;
+    fallback = false;
+    start(ctx);
+  });
+
   pi.on("session_compact", () => {
     // Native fallback ran: the note never reached a summary, so deliver it as
     // its own message rather than lose it.
@@ -306,6 +333,8 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     pendingNote = undefined;
     noteConsumed = false;
     compacting = false;
+    rejectedAt = null;
+    fallback = false;
   });
 
   pi.registerCommand("safe-compact", {

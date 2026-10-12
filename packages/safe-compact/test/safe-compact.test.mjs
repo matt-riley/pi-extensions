@@ -340,7 +340,12 @@ test("the extension registers its tools, commands and flags", () => {
   assert.deepEqual(seen.tools, ["self_compact", "view_context"]);
   assert.deepEqual(seen.commands, ["safe-compact", "safe-compact-plan", "safe-compact-info"]);
   assert.deepEqual(seen.flags, ["compact-soft-at", "compact-at"]);
-  assert.deepEqual(seen.events.sort(), ["session_before_compact", "session_compact", "turn_end"]);
+  assert.deepEqual(seen.events.sort(), [
+    "agent_settled",
+    "session_before_compact",
+    "session_compact",
+    "turn_end",
+  ]);
 });
 
 test("relevantLines keeps the lines a segment matches, even from the middle of a huge handoff", () => {
@@ -650,8 +655,18 @@ test("turn_end warns when a planned handoff cannot be verified", async () => {
     assert.equal(warnings.length, 1);
     assert.match(
       warnings[0].title,
-      /safe-compact: handoff estimates \d+ tokens; must be below \d+ \(60% of \d+ replaced tokens\), keeping context/,
+      /safe-compact: handoff estimates \d+ tokens; must be below \d+ \(60% of \d+ replaced tokens\), pi compacts when this run settles/,
     );
+
+    // The same context next turn is not retried: it would be rejected the same way.
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.equal(notices.filter((notice) => notice.level === "warning").length, 1);
+
+    // An aborted run is left alone; a settled one hands over to pi's compaction.
+    await handlers.get("agent_settled")({ aborted: true }, ctx);
+    assert.equal(ctx.compacted, false);
+    await handlers.get("agent_settled")({ aborted: false }, ctx);
+    assert.equal(ctx.compacted, true);
   } finally {
     cleanup();
   }
