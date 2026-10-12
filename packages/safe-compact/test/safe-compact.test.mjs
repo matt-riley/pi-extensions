@@ -534,6 +534,21 @@ test("turn_end commits a compaction draft instead of aborting through ctx.compac
   }
 });
 
+test("a 1M window is measured against the capped window, so 220K tokens is past the hard threshold", async () => {
+  const { handlers, ctx, cleanup } = wiring();
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) }, toolResults: [] };
+    ctx.getContextUsage = () => ({ tokens: 22000, contextWindow: 1_000_000, percent: 2.2 });
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+
+    ctx.getContextUsage = () => ({ tokens: 220000, contextWindow: 1_000_000, percent: 22 });
+    const result = await handlers.get("turn_end")(event, ctx);
+    assert.equal(result.entries[0].type, "compaction");
+  } finally {
+    cleanup();
+  }
+});
+
 test("session_before_compact merges previous details into the handoff file lists", async () => {
   const { handlers, ctx, cleanup } = wiring();
   try {
