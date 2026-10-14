@@ -9,6 +9,8 @@ import {
   formatAnswers,
   resolveConfig,
   validateQuestions,
+  validateReferences,
+  validateRequest,
   validateState,
 } from "../../../shared/systemone.mjs";
 
@@ -275,6 +277,79 @@ test("validateState refuses a state past the API limit before the round trip", (
   // The limit is the API's, and a request past it fails whole: measured, so a
   // change to the number here has to face the real one.
   assert.equal(JSON.stringify(huge).length > 60_000, true);
+});
+
+test("validateReferences refuses a question that names a path the state lacks", () => {
+  const state = { goal: "ship it", segment: { role: "user", path: null }, next: "(none)" };
+  const question = (instructions) => ({
+    load_bearing: { type: "noul", instructions, criteria: { true: "y", false: "n" } },
+  });
+  validateReferences(state, question("Does `segment` carry load-bearing detail?"));
+  validateReferences(state, question("Is `next` the start of a new task?"));
+  assert.throws(
+    () => validateReferences(state, question("Is `segment.path.length` set?")),
+    /Question "load_bearing" refers to `segment.path.length`, and the state has no `segment.path.length`. The state has: goal, segment, next./,
+  );
+  // References to things that are not state are none of this check's business:
+  // a disposition name, a path with a line range, a shell command, prose. The
+  // boundary is the first part of the reference — a state key renamed without
+  // its question (`segments.s0` after `segment`) is not caught here, because
+  // flagging every unknown head would flag ordinary prose.
+  validateReferences(
+    state,
+    question("Prefer `keep_verbatim` over `path:12-40` after `git add -A`."),
+  );
+  validateReferences(state, question("Is `segments.s0` in the state?"));
+});
+
+test("validateRequest refuses a state that JSON would not carry intact", async () => {
+  const questions = {
+    ok: {
+      type: "noul",
+      instructions: "Does `text` read as done?",
+      criteria: { true: "y", false: "n" },
+    },
+  };
+  validateRequest({ state: { text: "done", nested: { list: [1, 2, null] } }, questions });
+
+  assert.throws(
+    () => validateRequest({ state: { text: undefined }, questions }),
+    /state\.text is undefined, which JSON drops/,
+  );
+  assert.throws(
+    () => validateRequest({ state: { text: () => {} }, questions }),
+    /state\.text is a function, which JSON drops/,
+  );
+  assert.throws(
+    () => validateRequest({ state: { text: new Map([["a", 1]]) }, questions }),
+    /state\.text is a Map, which JSON serializes as \{\}/,
+  );
+  assert.throws(
+    () => validateRequest({ state: { text: Number.NaN }, questions }),
+    /state\.text is NaN, which JSON turns into null/,
+  );
+  const circular = { text: "done" };
+  circular.self = circular;
+  assert.throws(() => validateRequest({ state: circular, questions }), /circular/);
+  // A question that names a path the state lacks is refused too, and the caller
+  // learns it before a request is paid for.
+  await assert.rejects(
+    askSystemOne({
+      state: { text: { body: "done" } },
+      questions: {
+        ok: {
+          type: "noul",
+          instructions: "Is `text.missing` set?",
+          criteria: { true: "y", false: "n" },
+        },
+      },
+      env: ENV,
+      fetchImpl: async () => {
+        throw new Error("no request should be made");
+      },
+    }),
+    /refers to `text.missing`, and the state has no `text.missing`/,
+  );
 });
 
 test("askSystemOne refuses an oversized state without calling the provider", async () => {

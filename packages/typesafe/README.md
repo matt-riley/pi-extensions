@@ -19,6 +19,12 @@ typesafe_ask(state, questions, model?)
 All questions are answered in **one request** and run in parallel, so batch
 independent questions rather than calling repeatedly.
 
+A request that could not be answered as asked is refused before it is sent: a state past Jev's 60000
+characters, a state value JSON would drop (`undefined`, a function, a `Map` — the model sees the key
+as absent), or a question naming a path the state does not have. Each refusal names the size, the
+path or the question id, because an answer about absent state is indistinguishable from a considered
+"no".
+
 ## Judging files and commands without loading them
 
 Give `typesafe_ask` `paths` and/or `command` and the content is read locally and

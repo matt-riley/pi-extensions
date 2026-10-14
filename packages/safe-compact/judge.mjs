@@ -70,7 +70,9 @@ function segmentState({ goal, segment, next }) {
     segment: {
       role: segment.role,
       tool: segment.tool,
-      path: segment.path,
+      // null, not undefined: JSON drops an undefined key, so the model would see
+      // a segment with no way to tell "not a file" from "field missing".
+      path: segment.path ?? null,
       text: excerpt(segment.text, MAX_TEXT_CHARS),
     },
     next: next ? excerpt(next.text, 400) : "(none)",
