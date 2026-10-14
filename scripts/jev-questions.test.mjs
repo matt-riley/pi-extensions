@@ -83,6 +83,11 @@ const CASES = {
       state: buildClaimState({ claim: "done", files: ["a.mjs"], verificationSeen: true }),
       questions: buildClaimQuestionSet(),
     }),
+  // The key is what makes selection ask at all, and it is resolved from the
+  // injected env or the machine's config file. Without it in the env this case
+  // asks nothing on a machine with no config — CI has none — and the sweep
+  // passed there while exercising no question set at all. The key is a value in
+  // the env, never a request: the stand-in above is the only ask.
   "skill-select tiebreak": (ask) =>
     selectSkills({
       skills: [
@@ -90,7 +95,7 @@ const CASES = {
         { name: "skill-select", description: "Choose a skill for a task." },
       ],
       query: "review the go code in this repo and tell me what to fix",
-      env: { [TIEBREAK_ENV]: "1" },
+      env: { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "test-key" },
       ask,
     }),
   "subagents preflight": (ask) =>
