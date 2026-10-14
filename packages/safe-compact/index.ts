@@ -8,7 +8,8 @@
 // compaction runs, and the manual `/safe-compact` command still uses
 // ctx.compact() for the idle case.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -45,6 +46,37 @@ const RETRY_GROWTH = 10000;
  * makes a 1M model compact where a 272K one does.
  */
 const MAX_EFFECTIVE_WINDOW = 300_000;
+
+/** Where pre-compaction transcripts live: the agent dir, never the repository. */
+const SNAPSHOT_DIR = ".pi/agent/safe-compact";
+/** A long session compacts many times; keep the newest few and no more. */
+const MAX_SNAPSHOTS = 50;
+
+type Snapshot = { file: string; restore: { path: string; entries: number } };
+
+function snapshotDir(env = process.env) {
+  const override =
+    typeof env?.PI_SAFE_COMPACT_DIR === "string" ? env.PI_SAFE_COMPACT_DIR.trim() : "";
+  return override || join(homedir(), SNAPSHOT_DIR);
+}
+
+/** `~`-shortened for the handoff, which is read by a model paying per token. */
+function displayPath(file: string) {
+  const home = homedir();
+  return file.startsWith(`${home}/`) ? `~${file.slice(home.length)}` : file;
+}
+
+/** Names are millisecond timestamps, so sort order is write order. */
+function pruneSnapshots(dir: string, keeping: string) {
+  const stale = readdirSync(dir)
+    .filter((name) => name.endsWith(".jsonl"))
+    .sort()
+    .toReversed()
+    .slice(MAX_SNAPSHOTS)
+    .map((name) => join(dir, name))
+    .filter((file) => file !== keeping);
+  for (const file of stale) rmSync(file, { force: true });
+}
 
 /** Context usage as a percentage of the capped window. */
 const usedPercent = (usage: { tokens?: number | null; percent?: number | null } | undefined) => {
@@ -97,16 +129,41 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       .filter((entry) => entry?.type === "message")
       .map((entry) => entry.message);
 
-  const snapshot = (ctx: ExtensionContext) => {
+  /**
+   * Snapshot the branch that is about to be replaced, and return the record the
+   * handoff names. Written under the agent dir rather than the working
+   * directory: a transcript dumped into a project is one `git add -A` from
+   * being committed, and pi's own session log is the only other copy.
+   */
+  const snapshot = (ctx: ExtensionContext): Snapshot | null => {
     try {
-      const dir = join(ctx.cwd ?? process.cwd(), ".pi", "safe-compact");
-      mkdirSync(dir, { recursive: true });
+      const dir = snapshotDir();
       const lines = ((ctx.sessionManager?.getBranch?.() ?? []) as unknown[]).map((entry) =>
         JSON.stringify(entry),
       );
-      writeFileSync(join(dir, `${Date.now()}.jsonl`), `${lines.join("\n")}\n`);
+      const file = join(dir, `${Date.now()}.jsonl`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(file, `${lines.join("\n")}\n`);
+      pruneSnapshots(dir, file);
+      return { file, restore: { path: displayPath(file), entries: lines.length } };
     } catch {
-      // A failed snapshot must not block compaction; pi's own history still exists.
+      // A failed snapshot must not block compaction: the handoff then has no
+      // way back, and pi's own history still exists.
+      return null;
+    }
+  };
+
+  /**
+   * A snapshot only exists for a handoff that points at it. A rejected handoff,
+   * or one pi's own compaction replaces, would otherwise leave a transcript
+   * dump nobody references.
+   */
+  const discardSnapshot = (snap: Snapshot | null) => {
+    if (!snap) return;
+    try {
+      rmSync(snap.file, { force: true });
+    } catch {
+      // Best effort: an orphaned snapshot is untidy, never harmful.
     }
   };
 
@@ -229,6 +286,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       const next = fallback ? "pi compacts when this run settles" : "keeping context";
       ctx.ui?.notify?.(`safe-compact: ${reason}, ${next}`, "warning");
     };
+    // Written before the handoff that names it, and thrown away again if what
+    // ships is not that handoff.
+    const snap = snapshot(ctx);
     let draft;
     let rejection: string | undefined;
     try {
@@ -236,6 +296,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         entries,
         keepRecentTokens,
         note: pendingNote,
+        restore: snap?.restore,
         ask,
         signal: ctx.signal,
         onRejected: (reason: string) => {
@@ -243,10 +304,12 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         },
       });
     } catch (error) {
+      discardSnapshot(snap);
       rejected(error instanceof Error ? error.message : String(error));
       return;
     }
     if (!draft) {
+      discardSnapshot(snap);
       // Nothing worth summarizing yet is the normal steady state; only warn
       // when a handoff was actually planned and then rejected.
       if (planBoundary({ entries, keepRecentTokens })) {
@@ -255,7 +318,6 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       return;
     }
     rejectedAt = null;
-    snapshot(ctx);
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
@@ -264,7 +326,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
 
   pi.on("session_before_compact", async (event, ctx) => {
     const { preparation, branchEntries, signal } = event;
-    snapshot(ctx);
+    const snap = snapshot(ctx);
 
     const fileOps = preparation.fileOps;
     const previousDetails = (branchEntries as Array<{ type?: string; details?: unknown }>)
@@ -282,11 +344,13 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         previousSummary: preparation.previousSummary,
         fileLists,
         note: pendingNote,
+        restore: snap?.restore,
         tokensBefore: preparation.tokensBefore,
         ask,
         signal,
       });
       if (!result) {
+        discardSnapshot(snap);
         ctx.ui?.notify?.(
           "safe-compact: could not verify a handoff, using native compaction",
           "warning",
@@ -307,6 +371,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         },
       };
     } catch (error) {
+      discardSnapshot(snap);
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui?.notify?.(`safe-compact: ${message}, using native compaction`, "warning");
     }

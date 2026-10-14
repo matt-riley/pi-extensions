@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -535,6 +535,42 @@ test("planBoundary: a long history is summarized in capped chunks, not refused",
   assert.equal(plan.firstKeptEntryId, "e400");
 });
 
+test("composeHandoff names the way back, and counts it against the budget", async () => {
+  const restore = { path: "~/.pi/agent/safe-compact/1759.jsonl", entries: 412 };
+  const messages = [...transcript(), assistant("x".repeat(4000)), assistant("y".repeat(4000))];
+  const without = await composeHandoff({ messages, tokensBefore: 100000, ask: fakeAsk() });
+  const withWayBack = await composeHandoff({
+    messages,
+    tokensBefore: 100000,
+    ask: fakeAsk(),
+    restore,
+  });
+  assert.ok(without && withWayBack);
+  assert.doesNotMatch(without.summary, /Full transcript/);
+  assert.match(withWayBack.summary, /~\/\.pi\/agent\/safe-compact\/1759\.jsonl` \(412 entries/);
+  assert.match(withWayBack.summary, /rg -n '<term>' ~\/\.pi\/agent\/safe-compact\/1759\.jsonl/);
+  // It is not an entry, so fitBudget can never cut it — and it is measured, so
+  // the handoff stays inside the same target with it.
+  assert.ok(withWayBack.details.safeCompact.kept <= without.details.safeCompact.kept);
+});
+
+test("a way back too long to fit is refused, not shipped over budget", async () => {
+  const messages = [...transcript(), assistant("x".repeat(4000))];
+  // A path nobody would have, to put the fixed sections alone over the size
+  // guard: if the recovery line were not measured, this would ship.
+  const restore = { path: `~/.pi/agent/safe-compact/${"9".repeat(200000)}.jsonl`, entries: 1 };
+  const reasons = [];
+  const result = await composeHandoff({
+    messages,
+    tokensBefore: 3000,
+    ask: fakeAsk(),
+    restore,
+    onRejected: (reason) => reasons.push(reason),
+  });
+  assert.equal(result, null);
+  assert.match(reasons[0], /handoff estimates \d+ tokens; must be below/);
+});
+
 test("an ambiguous faithfulness score keeps the excerpt instead of forcing it verbatim", async () => {
   const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
   const result = await composeHandoff({
@@ -547,7 +583,7 @@ test("an ambiguous faithfulness score keeps the excerpt instead of forcing it ve
 });
 
 test("turn_end commits a compaction draft instead of aborting through ctx.compact", async () => {
-  const { handlers, tools, ctx, cleanup } = wiring();
+  const { handlers, tools, ctx, snapshots, cleanup } = wiring();
   try {
     const event = { entries: [], context: { contextEntries: largeEntries(30) }, toolResults: [] };
     const result = await handlers.get("turn_end")(event, ctx);
@@ -558,7 +594,14 @@ test("turn_end commits a compaction draft instead of aborting through ctx.compac
     assert.equal(result.entries[0].type, "compaction");
     assert.equal(typeof result.entries[0].firstKeptEntryId, "string");
     assert.ok(result.entries[0].details.safeCompact);
-    assert.ok(readdirSync(join(ctx.cwd, ".pi", "safe-compact")).length > 0);
+    // The pre-compaction transcript goes under the agent dir: a dump inside the
+    // working tree is one `git add -A` from being committed, and the handoff
+    // that names it is the only thing that keeps it alive.
+    assert.equal(readdirSync(snapshots).length, 1);
+    assert.equal(existsSync(join(ctx.cwd, ".pi")), false);
+    assert.match(result.entries[0].summary, /## Full transcript \(searchable\)/);
+    assert.match(result.entries[0].summary, new RegExp(snapshots));
+    assert.match(result.entries[0].summary, /rg -n '<term>'/);
 
     // The tool schedules the same boundary compaction even below the soft
     // threshold, and still never aborts.
@@ -625,8 +668,8 @@ test("session_before_compact merges previous details into the handoff file lists
   }
 });
 
-/** A stub pi whose snapshots land under a temp cwd instead of the repo. */
-function wiring() {
+/** A stub pi whose snapshots land under a temp dir instead of the agent dir. */
+function wiring(ask = fakeAsk()) {
   const handlers = new Map();
   const tools = new Map();
   const notices = [];
@@ -639,9 +682,12 @@ function wiring() {
       getFlag: () => undefined,
       getSettings: () => ({ compaction: { keepRecentTokens: 20000 } }),
     },
-    { ask: fakeAsk() },
+    { ask },
   );
   const cwd = mkdtempSync(join(tmpdir(), "safe-compact-"));
+  const snapshots = mkdtempSync(join(tmpdir(), "safe-compact-snap-"));
+  const previousSnapshotDir = process.env.PI_SAFE_COMPACT_DIR;
+  process.env.PI_SAFE_COMPACT_DIR = snapshots;
   const ctx = {
     cwd,
     compacted: false,
@@ -657,9 +703,30 @@ function wiring() {
     tools,
     ctx,
     notices,
-    cleanup: () => rmSync(cwd, { recursive: true, force: true }),
+    snapshots,
+    cleanup: () => {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(snapshots, { recursive: true, force: true });
+      if (previousSnapshotDir === undefined) delete process.env.PI_SAFE_COMPACT_DIR;
+      else process.env.PI_SAFE_COMPACT_DIR = previousSnapshotDir;
+    },
   };
 }
+
+test("a rejected handoff leaves no transcript snapshot behind", async () => {
+  const { handlers, ctx, snapshots, cleanup } = wiring(async () => {
+    throw new Error("TypeSafe unreachable");
+  });
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    // Nothing points at the snapshot, so nothing keeps it: a native compaction
+    // still has pi's own session log.
+    assert.deepEqual(readdirSync(snapshots), []);
+  } finally {
+    cleanup();
+  }
+});
 
 test("turn_end stays silent when there is nothing worth compacting", async () => {
   const { handlers, ctx, notices, cleanup } = wiring();

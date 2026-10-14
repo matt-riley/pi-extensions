@@ -23,7 +23,11 @@ handoff is assembled and verified rather than trusted to one note.
    room. Tool output is excerpted unless it is an error, because it can be re-run or re-read.
 5. **Select.** Jev picks decision sentences and the relevant line windows of large file reads.
    Output is copied spans and `path:start-end` pointers, never generated prose.
-6. **Fit.** The handoff aims for 25% of what it replaces, at most 12K tokens. Over that, the
+6. **Fit.** The handoff ends with a fixed line code writes, never the model: the verbatim
+   pre-compaction transcript and how to search it, because a handoff is a note plus a way to check
+   it. (Measured on cross-session capsules, one search of the transcript a capsule replaced was
+   worth 20–33 points of recall — more than any wording of the note.) The handoff aims for 25% of
+   what it replaces, at most 12K tokens. Over that, the
    least load-bearing entries are cut first: verbatim copies become excerpts, then plain context
    excerpts are dropped. Open problems are cut last; user constraints, the session's first user message and
    verification-forced copies never, so those alone can carry a handoff past the target.
@@ -41,8 +45,14 @@ handoff is assembled and verified rather than trusted to one note.
    compact. The size check counts both the replaced messages and the previous summary; rejected
    handoffs report the specific reason (including size estimates) without relaxing verification.
    Inside `session_before_compact` (manual, threshold, overflow), a failure returns nothing
-   so pi's native summary runs instead. Before every compaction the full branch is snapshotted to
-   `.pi/safe-compact/<timestamp>.jsonl`.
+   so pi's native summary runs instead.
+
+   Before the handoff that names it, the branch about to be replaced is snapshotted to
+   `~/.pi/agent/safe-compact/<timestamp>.jsonl` (one JSON object per entry, oldest first;
+   `PI_SAFE_COMPACT_DIR` overrides the directory, the newest 50 are kept). If the handoff is
+   rejected, or pi's own compaction is what ships, the file is deleted again: the previous
+   behaviour left transcript dumps inside the working tree, one `git add -A` from being
+   committed, with nothing pointing at them.
 
 Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
 an overlapping span, pays only for messages it has not judged yet.
@@ -58,6 +68,8 @@ first attempt and a retry. It makes real TypeSafe calls.
   `/safe-compact-info`.
 - Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`.
 - Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
+- `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
+  (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
 
 ## Files
 

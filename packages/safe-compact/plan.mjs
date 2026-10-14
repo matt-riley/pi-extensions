@@ -265,7 +265,23 @@ export function memoizeAsk(ask, max = 2000) {
 
 const bullets = (items) => items.map((text) => `- ${text.replace(/\n/g, "\n  ")}`).join("\n");
 
-function renderHandoff({ goal, entries, fileLists, previousSummary, note }) {
+/**
+ * The way back, in the handoff's own voice. A handoff is a note plus a way to
+ * check it: measured on cross-session capsules, one search of the transcript a
+ * capsule replaced was worth 20-33 points of recall — more than any wording of
+ * the note. This is a fixed line the model never writes.
+ */
+function wayBack(restore) {
+  if (!restore?.path) return "";
+  const entries = Number(restore.entries) || 0;
+  return (
+    `The conversation this replaced is on disk, verbatim: \`${restore.path}\` (${entries} entries, ` +
+    "one JSON object per line, oldest first). Search it before guessing at anything not stated above: " +
+    `\`rg -n '<term>' ${restore.path}\`.`
+  );
+}
+
+function renderHandoff({ goal, entries, fileLists, previousSummary, note, restore }) {
   const bySection = (name) => entries.filter((e) => e.section === name).map((e) => e.text);
   const files = [
     fileLists.readFiles.length ? `read: ${fileLists.readFiles.join(", ")}` : "",
@@ -280,6 +296,7 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note }) {
     ["Pointers (re-read on demand)", bullets(pointers)],
     ["Earlier context", previousSummary ? excerpt(previousSummary, PREVIOUS_MAX) : ""],
     ["Agent note (verbatim)", note ?? ""],
+    ["Full transcript (searchable)", wayBack(restore)],
   ];
   return sections
     .filter(([, body]) => body.trim())
@@ -297,6 +314,7 @@ export async function composeHandoff({
   previousSummary,
   fileLists = { readFiles: [], modifiedFiles: [] },
   note,
+  restore,
   tokensBefore,
   ask = askSystemOne,
   signal,
@@ -336,12 +354,12 @@ export async function composeHandoff({
   // forcing yet another segment, never uncover a gap the first pass missed.
   // The entries' share of the target: the fixed sections cost what they cost.
   const overhead = estimateTokens(
-    renderHandoff({ goal, entries: [], fileLists, previousSummary, note }),
+    renderHandoff({ goal, entries: [], fileLists, previousSummary, note, restore }),
   );
   const budget = Math.min(tokensBefore * TARGET_RATIO, MAX_HANDOFF_TOKENS) - overhead;
   // Fitting comes before verification, so what is verified is what ships.
   let entries = fitBudget(await buildEntries({ segments, scores, forced, select }), budget);
-  let summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
+  let summary = renderHandoff({ goal, entries, fileLists, previousSummary, note, restore });
 
   // Faithfulness is judged on entries that restate their source. A verbatim
   // copy cannot misstate it — even a capped one — and coverage decides
@@ -380,7 +398,7 @@ export async function composeHandoff({
   });
   if (failed.size > 0) {
     entries = fitBudget(await buildEntries({ segments, scores, forced, pointed, select }), budget);
-    summary = renderHandoff({ goal, entries, fileLists, previousSummary, note });
+    summary = renderHandoff({ goal, entries, fileLists, previousSummary, note, restore });
   }
 
   const summaryTokens = estimateTokens(summary);
@@ -599,6 +617,7 @@ export async function buildBoundaryCompaction({
   entries,
   keepRecentTokens,
   note,
+  restore,
   ask,
   signal,
   onRejected,
@@ -610,6 +629,7 @@ export async function buildBoundaryCompaction({
     previousSummary: plan.previousSummary,
     fileLists: plan.fileLists,
     note,
+    restore,
     // The new handoff replaces both the old summary and this message span.
     tokensBefore: plan.summarizedTokens + estimateTokens(plan.previousSummary ?? ""),
     ask,
