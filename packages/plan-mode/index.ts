@@ -30,6 +30,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
+import { messageText } from "../../shared/message-text.mjs";
+import { resolveApiKey } from "../../shared/systemone.mjs";
+import { decideGate, judgeQuestion } from "./ask-gate.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
@@ -38,6 +41,22 @@ import { SKILL_SELECT_TOOLS } from "../skill-select/tools.mjs";
 import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
+const GATE_ENV = "PI_PLAN_JUDGE";
+
+/** Off means off, and no key means no request rather than a lost question. */
+function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = String(env?.[GATE_ENV] ?? "")
+    .trim()
+    .toLowerCase();
+  if (["0", "false", "off", "no"].includes(flag)) {
+    return false;
+  }
+  try {
+    return Boolean(resolveApiKey(env));
+  } catch {
+    return false;
+  }
+}
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
 const SEARCH_TOOL = "web_search";
@@ -142,12 +161,19 @@ interface UiCtx {
 
 interface PlanModeState {
   enabled: boolean;
+  /** The user's own words: the evidence that a question is already answered. */
+  lastUserMessage: string;
   previousTools: string[] | null;
   planPath: string | null;
 }
 
 export default function planMode(pi: ExtensionAPI) {
-  const state: PlanModeState = { enabled: false, previousTools: null, planPath: null };
+  const state: PlanModeState = {
+    enabled: false,
+    previousTools: null,
+    planPath: null,
+    lastUserMessage: "",
+  };
   // Content we last wrote to planPath, so revisions can overwrite in place
   // while user edits are never clobbered.
   let lastWritten: string | null = null;
@@ -368,7 +394,17 @@ export default function planMode(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
+    state.lastUserMessage = "";
     if (pi.getFlag("plan") && !state.enabled) enterPlanMode(ctx);
+  });
+
+  // What the user asked for is the evidence a question is already answered, so
+  // the last thing they said is kept. Only the last: an earlier turn's wording
+  // would be answering a question nobody is asking any more.
+  pi.on("message_end", (event) => {
+    if (event?.message?.role !== "user") return;
+    const text = messageText(event.message.content).trim();
+    if (text) state.lastUserMessage = text;
   });
 
   // --- Prompt injection + tool enforcement ----------------------------------
@@ -440,6 +476,36 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      // A question the context already settles does not deserve a dialog. The
+      // judgment is deliberately conservative and silent on doubt: a
+      // preference, a cost, an interface, a deletion, thin confidence or no
+      // recommendation to check against all ask the user exactly as before.
+      if (gateEnabled()) {
+        const judged = await judgeQuestion({
+          question,
+          options,
+          recommended,
+          request: state.lastUserMessage,
+        });
+        const decision = decideGate({ question, options, recommended }, judged);
+        if (decision.answer) {
+          if (ctx.hasUI && ctx.ui?.notify) {
+            ctx.ui.notify(`Plan mode: answered from context — ${decision.reason}`, "info");
+          }
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `User answered: ${decision.answer}\n\n` +
+                  `(Not the user: the plan-mode judge inferred this from the context — ${decision.reason}. ` +
+                  "State that in the plan, and ask the user directly if the reading is wrong.)",
+              },
+            ],
+          };
+        }
+      }
+
       if (!ctx.hasUI || !ctx.ui?.select) {
         return {
           content: [

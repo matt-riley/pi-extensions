@@ -16,6 +16,7 @@ import {
 import { TIEBREAK_ENV, selectSkills } from "../packages/skill-select/select.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "../packages/subagents/judge.mjs";
 import { judgeFailure } from "../packages/diagnosis-nudge/triage.mjs";
+import { judgeQuestion } from "../packages/plan-mode/ask-gate.mjs";
 import { buildTaskTypeQuestion } from "../packages/router/playbook.mjs";
 import { buildDifficultyState, buildQuestions } from "../packages/router/model-battery.mjs";
 import { buildQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
@@ -97,6 +98,14 @@ const CASES = {
       ],
       query: "review the go code in this repo and tell me what to fix",
       env: { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "test-key" },
+      ask,
+    }),
+  "plan-mode ask gate": (ask) =>
+    judgeQuestion({
+      question: "Which package manager should I use for zod?",
+      options: ["pnpm", "npm"],
+      recommended: "pnpm",
+      request: "add zod validation to the loaders",
       ask,
     }),
   "diagnosis triage": (ask) =>

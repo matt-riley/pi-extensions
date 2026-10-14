@@ -103,6 +103,23 @@ so plan mode needs no in-memory plan retention.
   them; use `plan_fetch_url` / `web_search` for web research instead. The model is
   additionally instructed not to mutate.
 
+## Answering a question the context already settles
+
+`plan_mode_question` is where a discoverable question becomes a dialog, so it
+is also where that can be enforced: the tool, not the prompt. Before showing a
+dialog it asks Jev two things — which option the context supports, and whether
+the context settles the question at all — and answers only when both clear
+0.9. A preference, a cost, an interface others rely on, a deletion, a question
+with no recommended answer or a thin reading all ask the user exactly as
+before; that check is a deterministic list in `ask-gate.mjs`, not the judge's
+opinion. When it does answer, the user sees one line naming the reason and the
+agent is told the answer was inferred rather than given, so the plan cannot
+claim the user chose it.
+
+`PI_PLAN_JUDGE=off` disables it, and without a TypeSafe key it is skipped
+silently. Same failure mode as everywhere else: a slow or missing judge means
+the dialog happens, never that a question is answered by nobody.
+
 ## Development
 
 ```sh
