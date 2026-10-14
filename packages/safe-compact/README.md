@@ -86,6 +86,35 @@ be measured the same way.
 threshold and reports success, handoff size, tool-output share, and the calls and seconds of the
 first attempt and a retry. It makes real TypeSafe calls.
 
+## Does the handoff hold up?
+
+Size says nothing about whether a handoff can be worked from, so
+`node scripts/safe-compact-recall.mjs --session newest` asks Jev two things about a real one:
+for the instructions the user had most recently given (stated, pointed at, or shown by the handoff to
+be finished), does the handoff still carry them; and is each line of the handoff supported by the
+session it replaced. Both are counts, not prose, and the session text is sampled evenly rather than
+from the head, because a claim is usually about the end of a session.
+
+Run over the handoffs in `~/.pi/agent/sessions`:
+
+| handoff | instructions in force | conveyed | checkable claims | contradicted |
+| --- | --- | --- | --- | --- |
+| 38k chars, 69 segments | 2 | 2 | 6 | 0 |
+| 41k chars, 80 segments | 6 | 1 | 5 | 0 |
+| 49k chars, 116 segments | 3 | 0 | 0 of 12 (12 outside a 3% excerpt) | 0 |
+
+**3 of 11 instructions still in force were no longer conveyed; 0 of 11 checkable claims were
+contradicted.** The weak side is retention, not invention: the handoff never asserted something the
+session did not support, but the last three instructions in the third session — the newest asks,
+including one whose vocabulary does appear in the handoff — came back at mean p=0.13 and 0.29 on two
+runs of the same input. Those two runs kept the same count (0 of 3) while the mean moved 0.16, so
+read the counts, not the mean, and read them as a small sample: two to six instructions per session.
+
+Claims outside the excerpt are counted but not scored — a 40k-character excerpt stands for 3-8% of
+a 138-150k-token session, so *not_in_excerpt* is a limit of the exam, not evidence of invention.
+A handoff past ~54k characters cannot ride in the state beside the fact it is being checked and is
+refused with its size; the exam is for handoffs that fit.
+
 ## Surface
 
 - Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
