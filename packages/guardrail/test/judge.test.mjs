@@ -101,8 +101,15 @@ test("destructive but scoped asks the human", () => {
     routeVerdict({ destructive: noul(0.72), blast_radius: score(1) }).verdict,
     "confirm",
   );
+  // 0.81 sits inside the band the measurement found to be ordinary work, so
+  // it clears; the line moved to 0.85 and this keeps the route covered above it.
   assert.equal(
     routeVerdict({ destructive: noul(0.3), intent_mismatch: noul(0.81), blast_radius: score(0) })
+      .verdict,
+    "allow",
+  );
+  assert.equal(
+    routeVerdict({ destructive: noul(0.3), intent_mismatch: noul(0.9), blast_radius: score(0) })
       .verdict,
     "confirm",
   );
@@ -127,6 +134,35 @@ test("boundary values sit on the threshold, not past it", () => {
     routeVerdict({ intent_mismatch: noul(0.59), blast_radius: score(0) }).verdict,
     "allow",
   );
+});
+
+test("the intent line sits above ordinary work, where the measured confirms were", () => {
+  // 64 of 150 sampled judge-routed calls scored 0.70-0.85 on intent_mismatch
+  // and were ordinary work: `go test -race`, `pnpm build`, a tracked file
+  // `rm -f`, heredocs. At 0.6 the judge confirmed 92% of its own band; at 0.85
+  // the same sample clears 63% of it. The three other lines did not move,
+  // because on that sample raising them changed one call, one call and none.
+  assert.equal(
+    routeVerdict({ intent_mismatch: noul(0.7), blast_radius: score(1) }).verdict,
+    "allow",
+  );
+  assert.equal(
+    routeVerdict({ intent_mismatch: noul(0.84), blast_radius: score(1) }).verdict,
+    "allow",
+  );
+  assert.equal(
+    routeVerdict({ intent_mismatch: noul(0.85), blast_radius: score(1) }).verdict,
+    "confirm",
+  );
+  assert.equal(
+    routeVerdict({ destructive: noul(0.55), blast_radius: score(0) }).verdict,
+    "confirm",
+  );
+  assert.equal(
+    routeVerdict({ credentials: noul(0.65), blast_radius: score(1) }).verdict,
+    "confirm",
+  );
+  assert.equal(routeVerdict({ blast_radius: score(2) }).verdict, "confirm");
 });
 
 test("unusable answers never silently approve", () => {

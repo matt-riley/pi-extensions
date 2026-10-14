@@ -62,30 +62,43 @@ test: a `cd` did not make the directory it entered part of the workspace; `~`
 resolved to a literal directory named `~`; and inline JS was read with the shell
 rules, so every `=>` looked like a redirect.
 
-The policy layer only decides which calls *reach* the judge. `--judge 40` is the
-shadow trial for the other half: it judges a strided sample of those calls, so the
-interruption rate is measured rather than assumed. Of the 271 calls routed to the
-judge, the sample of 40 kept its verdict 37 times, cleared 3, blocked none, and
-left none unanswered — the judge moves the interruption rate from 1.85% to
-**1.75% of mutating calls (about 1 in 57)**, and 1.32% of that is a wait rather
-than a dialog.
-
 What the band is made of, over all 271: 210 deletions (78%), 48 git history
-operations, 11 credential reads, 2 inline-node destructive runs. What decides
-them, over the 40 sampled: `intent_mismatch` at or above 0.5 on **40 of 40**,
-`blast_radius` on 36, `destructive` on 4, `credentials` on 3. The intent
-question is carrying the judged band, and reading six of the thirty-seven
-confirms — `go test -race ./...` at 0.72, `zig fmt` at 0.68, `rm -f` of a
-file in the working tree at 0.64 — suggests it fires on everyday work too. That
-part is my reading, not a measurement: 3 of the 40 were cleared, and how many of
-the other 37 would have deserved a dialog is the open question the trial exists
-to expose.
+operations, 11 credential reads, 2 inline-node destructive runs.
+
+The policy layer only decides which calls *reach* the judge; `--judge 150` is
+the shadow trial for the other half. It judges a strided sample of those calls
+and keeps the raw signals (`--judge-json`), so a candidate threshold is scored
+offline by the production router and the judgments are paid for once.
+
+The sample says the intent line was doing almost all the interrupting. 64 of 150
+scored 0.70–0.85 on `intent_mismatch` and were ordinary work — `go test -race
+./...`, `pnpm build`, `rm -f` of a tracked file, a heredoc, a Blender render —
+while `destructive` sat below 0.5 on 127 and `blast_radius` at 2 or above on
+2. At `intentMismatch: 0.6` the judge confirmed 92% of its own band; the
+interruption rate was **1.75% of mutating calls (about 1 in 57)**.
+
+At **0.85** the same sample clears 62% of the band and interruption falls to
+**1.03% of mutating calls (about 1 in 97)**, with the `destructive >= 0.7` and
+`credentials` blocks untouched. Raising the other three lines was measured and
+rejected: `destructive` 0.5 → 0.9 changed one call, `credentials` 0.6 → 0.7 one,
+`blastRadius` 2 → 2.5 none. The 93 newly-cleared calls were screened against the
+classes that must never clear — unrecoverable deletion, history rewrite,
+credential reads, privilege change, remote effects — and every match was a
+tracked file, a regenerable artifact (rendered frames, `terraform.lock.hcl`), a
+scratch copy under `/tmp`, or the documented dummy `AKIA…EXAMPLE`.
+
+That screen is a reading of 93 commands, not a proof, which is what the labeled
+cases are for: `node scripts/validate-judge.mjs` is unmoved by the change —
+**24/24, 0 too strict, 0 too lax, 18/18 dangerous actions caught**.
 
 `node scripts/validate-judge.mjs` runs 24 labeled cases through the **whole**
-pipeline against the live judge and exits non-zero on a miss: **24/24, 0 too
-strict, 0 too lax, 18/18 dangerous actions caught** (as of 2026-09). `--policy`
-runs the deterministic layer alone: 0 misses, 19/19 dangerous caught, 4
-deferred to the judge.
+pipeline against the live judge and exits non-zero on a miss (as of 2026-10).
+`--policy` runs the deterministic layer alone: 0 misses, 19/19 dangerous
+caught, 4 deferred to the judge.
+
+`node scripts/judge-thresholds.mjs <sample.json>` scores candidate threshold
+sets against a saved shadow sample, for free: same judgments, any number of
+lines. `--show-allow` lists what each candidate would newly clear.
 
 Both scripts are read-only and never execute what they read. Run them after
 touching thresholds, question wording, or the shape tables.

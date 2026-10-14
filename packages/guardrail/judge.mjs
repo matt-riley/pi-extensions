@@ -26,7 +26,16 @@ export const BLAST_LEVELS = [
 
 const THRESHOLDS = {
   destructive: 0.5,
-  intentMismatch: 0.6,
+  /**
+   * The intent line was 0.6, which confirmed 92% of everything routed to the
+   * judge: ordinary work — `go test -race`, `pnpm build`, a tracked file
+   * `rm -f` — scored 0.70-0.85 and produced dialogs. On a 150-call sample of
+   * the band, 0.85 clears 63% of it and the labeled dangerous cases do not
+   * move: scripts/validate-judge.mjs stays 24/24, 18/18 caught. The other
+   * three lines stayed put because raising them changed one call, one call
+   * and none of that sample.
+   */
+  intentMismatch: 0.85,
   credentials: 0.6,
   /** Index into BLAST_LEVELS: 2 = "this machine" and above is confirmation-worthy. */
   blastRadius: 2,
