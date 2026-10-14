@@ -91,6 +91,11 @@ Answers come back with the same ids: `breaking: noul 0.88`,
   failure rather than silently return a default.
 - Zero runtime dependencies: `node:` built-ins and pi's typebox only.
 
+The 60,000-character state limit is enforced before the request, not by the
+API: a 58,846-character state was measured answered in 2.1 seconds, against
+0.99s for 29,846 and 1.89s for 54,846 (2026-10). Past it the caller is told to
+send less rather than left to discover it as a truncated prompt.
+
 Every request is built from a redacted copy of the state
 (`shared/redact.mjs`): PEM private keys, JWTs, AWS, GitHub, OpenAI and Slack
 tokens, bearer headers, and 16-character-plus `key = value` assignments become
