@@ -19,7 +19,7 @@ import {
   memoizeAsk,
   planBoundary,
 } from "../plan.mjs";
-import { segmentMessages } from "../segment.mjs";
+import { estimateTokens, segmentMessages } from "../segment.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
 
@@ -86,6 +86,18 @@ test("segmentMessages pairs tool results with their call's path and offset", () 
   assert.equal(segments[1].path, "src/a.ts");
   assert.equal(segments[1].offset, 101);
   assert.equal(segments[1].tool, "read");
+});
+
+test("estimateTokens is a calibrated estimate, not chars/4", () => {
+  // Words cost one per six letters and any other symbol nine tenths, so code
+  // and JSON estimate above the chars/4 rule this replaced, which undercounted
+  // real sessions by 1.8x. A dead regex would also return 0 for whitespace, so
+  // the non-zero branches are pinned with an exact count each.
+  assert.equal(estimateTokens("   \n\t "), 0);
+  assert.equal(estimateTokens("abcdefg"), 2);
+  assert.equal(estimateTokens("1234"), 2);
+  const json = JSON.stringify({ path: "src/client.ts", args: { offset: 101, recursive: true } });
+  assert.ok(estimateTokens(json) > json.length / 4, "JSON is dearer than chars/4 says");
 });
 
 test("classify: hard rules beat the model, uncertainty keeps", () => {
@@ -201,6 +213,7 @@ test("composeHandoff keeps the constraint verbatim, drops noise, carries the not
   assert.match(result.summary, /## Agent note \(verbatim\)\nnext: run the client tests/);
   assert.equal(result.details.safeCompact.rounds, 1);
 });
+
 
 test("a coverage failure re-includes the segment verbatim in the rebuilt handoff", async () => {
   const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
@@ -376,10 +389,10 @@ const readResult = (callId, text) => ({
   content: [{ type: "text", text }],
 });
 
-/** `count` entries of roughly 950 estimated tokens each. */
+/** `count` entries of roughly 950 estimated tokens each: a run of 5700 letters. */
 const largeEntries = (count) =>
   Array.from({ length: count }, (_, i) =>
-    project(`e${i}`, [user(`work ${i} ${"x".repeat(3800)}`)]),
+    project(`e${i}`, [user(`work ${i} ${"x".repeat(5700)}`)]),
   );
 
 test("planBoundary: the kept span never starts at a tool result", () => {
@@ -387,7 +400,10 @@ test("planBoundary: the kept span never starts at a tool result", () => {
   // A huge tool result sits just inside the budget boundary: the cut must land
   // after it, or the kept span begins with a result whose call was summarized.
   entries[25] = project("t25", [readResult("c25", "y".repeat(80000))]);
-  const plan = planBoundary({ entries, keepRecentTokens: 20000 });
+  // Below the tail plus that result, so the walk back crosses the budget on
+  // the result itself: without the cut-point rule the kept span would open with
+  // a tool result whose call had been summarized.
+  const plan = planBoundary({ entries, keepRecentTokens: 15000 });
   assert.ok(plan);
   assert.equal(plan.firstKeptEntryId, "e26");
   assert.equal(
@@ -461,7 +477,12 @@ test("buildBoundaryCompaction: verified draft carries the note and file lists", 
   assert.match(result.summary, /ALWAYS use tabs/);
   assert.match(result.summary, /next: run the tests/);
   assert.deepEqual(result.details.readFiles, ["src/client.ts"]);
-  assert.equal(result.details.safeCompact.segments, 8);
+  // The draft summarizes exactly the span planBoundary chose, not a shorter or
+  // longer one: the entry count is whatever that cut is.
+  assert.equal(
+    result.details.safeCompact.segments,
+    planBoundary({ entries, keepRecentTokens: 20000 }).messages.length,
+  );
 });
 
 test("buildBoundaryCompaction: shrinkage includes the previous summary being replaced", async () => {
@@ -642,12 +663,12 @@ test("turn_end warns when a planned handoff cannot be verified", async () => {
     // A planned span whose handoff is almost all verbatim constraints: the
     // size guard rejects it, which is the case the warning exists for.
     const entries = [
-      project("c0", [user(`ALWAYS keep tabs ${"x".repeat(4000)}`)]),
-      project("c1", [user(`ALWAYS keep tabs ${"x".repeat(4000)}`)]),
-      project("e2", [assistant("y".repeat(6100))]),
-      project("e3", [assistant("y".repeat(6100))]),
-      project("e4", [assistant("y".repeat(6100))]),
-      project("e5", [assistant("y".repeat(6100))]),
+      project("c0", [user(`ALWAYS keep tabs ${"x".repeat(6580)}`)]),
+      project("c1", [user(`ALWAYS keep tabs ${"x".repeat(6580)}`)]),
+      project("e2", [assistant("y".repeat(12000))]),
+      project("e3", [assistant("y".repeat(12000))]),
+      project("e4", [assistant("y".repeat(12000))]),
+      project("e5", [assistant("y".repeat(12000))]),
     ];
     const event = { entries: [], context: { contextEntries: entries } };
     assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
@@ -712,7 +733,9 @@ test("fitBudget: cuts the least load-bearing first and never touches pinned entr
   ];
   assert.equal(fitBudget(entries, 100000), entries);
 
-  const fitted = fitBudget(entries, 2200);
+  // Each 4000-char verbatim copy costs ~670 tokens under estimateTokens, so
+  // this buys room for one of them to be cut and the other to stay verbatim.
+  const fitted = fitBudget(entries, 1500);
   assert.equal(fitted[0], entries[0]);
   assert.equal(
     fitted[1],

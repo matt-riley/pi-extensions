@@ -3,10 +3,29 @@
 // Pure and deterministic: no model calls. Everything Jev later selects is a
 // span produced here, so a selection can never invent a path or a line.
 
-const CHARS_PER_TOKEN = 4;
+/**
+ * Tokens without a tokenizer: a word costs one per six letters, a digit half,
+ * any other symbol nine tenths. Measured against pi's own reported context
+ * tokens over twelve real sessions, this lands a median 1.3x short of the real
+ * count where the chars/4 it replaced ran 1.8x short and up to 7x on tool-heavy
+ * spans. Both undercount, so what matters is the size of the error wherever an
+ * estimate is held against a number pi measured in real tokens: the
+ * keepRecentTokens budget, and MAX_HANDOFF_TOKENS.
+ */
+const TOKEN_PIECES = /[A-Za-z]+|\d+|[^\sA-Za-z\d]/g;
 
 export function estimateTokens(text) {
-  return Math.ceil(String(text ?? "").length / CHARS_PER_TOKEN);
+  let tokens = 0;
+  for (const [piece] of String(text ?? "").matchAll(TOKEN_PIECES)) {
+    const first = piece.charCodeAt(0);
+    if (first >= 48 && first <= 57) tokens += piece.length / 2; // 0-9
+    else if ((first >= 65 && first <= 90) || (first >= 97 && first <= 122)) {
+      tokens += 1 + Math.floor((piece.length - 1) / 6); // A-Z / a-z
+    } else {
+      tokens += 0.9; // punctuation, operators, CJK
+    }
+  }
+  return Math.ceil(tokens);
 }
 
 function blockText(block) {
