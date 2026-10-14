@@ -32,6 +32,15 @@ const DEFAULT_SOFT = 50;
 const DEFAULT_HARD = 70;
 const MAX_HARD = 90;
 const MOMENT_TIMEOUT_MS = 8000;
+/** The whole handoff, hard stop: a boundary must not wait on a slow API forever. */
+const HANDOFF_TIMEOUT_MS = 90_000;
+/**
+ * Past this, optional work stops. Segment judging and verification are what the
+ * handoff needs, and they finish in seconds; the selections that turn a big tool
+ * result into a pointer are an enrichment, so an entry keeps its own excerpt
+ * rather than paying for one more request.
+ */
+const ENRICH_DEADLINE_MS = 20_000;
 const RECENT_ENTRIES = 8;
 const DEFAULT_KEEP_RECENT = 20000;
 /**
@@ -53,6 +62,12 @@ const SNAPSHOT_DIR = ".pi/agent/safe-compact";
 const MAX_SNAPSHOTS = 50;
 
 type Snapshot = { file: string; restore: { path: string; entries: number } };
+
+/** One signal that fires when any input does; none if there is nothing to watch. */
+function anySignal(signals: Array<AbortSignal | undefined>) {
+  const live = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  return live.length === 0 ? undefined : AbortSignal.any(live);
+}
 
 function snapshotDir(env = process.env) {
   const override =
@@ -257,16 +272,13 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         const previousWork = asText(
           messages.slice(Math.max(0, lastUser - RECENT_ENTRIES), Math.max(0, lastUser)),
         );
-        const signals = [AbortSignal.timeout(MOMENT_TIMEOUT_MS), ctx.signal].filter(
-          (s): s is AbortSignal => Boolean(s),
-        );
         let moment;
         try {
           moment = await judgeMoment({
             recentText,
             currentRequest,
             previousWork,
-            signal: AbortSignal.any(signals),
+            signal: anySignal([AbortSignal.timeout(MOMENT_TIMEOUT_MS), ctx.signal]),
           });
         } catch {
           return; // Jev unavailable: wait for the hard threshold
@@ -278,6 +290,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
 
     const entries = event?.context?.contextEntries;
     if (!Array.isArray(entries) || entries.length === 0) return;
+    const deadlineAt = Date.now() + ENRICH_DEADLINE_MS;
 
     const keepRecentTokens = keepRecentFor(ctx);
     const rejected = (reason: string) => {
@@ -297,8 +310,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         keepRecentTokens,
         note: pendingNote,
         restore: snap?.restore,
+        deadlineAt,
         ask,
-        signal: ctx.signal,
+        signal: anySignal([ctx.signal, AbortSignal.timeout(HANDOFF_TIMEOUT_MS)]),
         onRejected: (reason: string) => {
           rejection = reason;
         },
@@ -346,8 +360,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         note: pendingNote,
         restore: snap?.restore,
         tokensBefore: preparation.tokensBefore,
+        deadlineAt: Date.now() + ENRICH_DEADLINE_MS,
         ask,
-        signal,
+        signal: anySignal([signal, AbortSignal.timeout(HANDOFF_TIMEOUT_MS)]),
       });
       if (!result) {
         discardSnapshot(snap);
@@ -419,8 +434,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         const result = await composeHandoff({
           messages,
           tokensBefore: ctx.getContextUsage?.()?.tokens ?? Number.MAX_SAFE_INTEGER,
+          deadlineAt: Date.now() + ENRICH_DEADLINE_MS,
           ask,
-          signal: ctx.signal,
+          signal: anySignal([ctx.signal, AbortSignal.timeout(HANDOFF_TIMEOUT_MS)]),
         });
         if (!result) {
           ctx.ui?.notify?.(

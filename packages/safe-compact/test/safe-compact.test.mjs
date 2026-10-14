@@ -230,6 +230,65 @@ test("the first user message is pinned even when Jev would drop it", async () =>
   assert.equal(result.details.safeCompact.rounds, 1);
 });
 
+test("a failed segment request is counted, and what it lost is kept, not dropped", async () => {
+  let thrown = false;
+  const ask = async (request) => {
+    // Only the per-segment judgments: a rating (goal picking) has no such question.
+    if ("load_bearing" in request.questions && !thrown) {
+      thrown = true;
+      throw new Error("TypeSafe 500");
+    }
+    return fakeAsk()(request);
+  };
+  const result = await composeHandoff({ messages: transcript(), tokensBefore: 100000, ask });
+  assert.ok(result);
+  // A null answer reads as uncertainty, so the lost segment is kept verbatim
+  // rather than dropped — and the count says the judgment was lost, so a
+  // degraded handoff does not look like a clean one.
+  assert.equal(result.details.safeCompact.judging.failed, 1);
+  assert.ok(result.details.safeCompact.judging.requests > 0);
+});
+
+test("an expired clock refuses the handoff instead of shipping half a judgment", async () => {
+  const reasons = [];
+  const result = await composeHandoff({
+    messages: transcript(),
+    tokensBefore: 100000,
+    ask: fakeAsk(),
+    deadlineAt: Date.now() - 1,
+    onRejected: (reason) => reasons.push(reason),
+  });
+  assert.equal(result, null);
+  assert.match(reasons[0], /ran out of time after 0 requests/);
+});
+
+test("a clock that runs out mid-handoff pays for no enrichment at all", async () => {
+  const asked = [];
+  // Only the asks after the scoring phase are enrichment; picking the goal also
+  // rates candidates, and that one is not optional.
+  let scored = false;
+  const ask = async (request) => {
+    if (request.state.candidate && scored) asked.push(request.state.candidate);
+    if (request.state.segment) scored = true;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return fakeAsk()(request);
+  };
+  const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
+  const reasons = [];
+  // Long enough to reach the judgments, short enough to be up before the
+  // selections that turn big results into pointers.
+  const result = await composeHandoff({
+    messages: [...transcript(), assistant(long)],
+    tokensBefore: 100000,
+    ask,
+    deadlineAt: Date.now() + 8,
+    onRejected: (reason) => reasons.push(reason),
+  });
+  assert.equal(result, null);
+  assert.match(reasons[0], /ran out of time after \d+ requests/);
+  assert.deepEqual(asked, [], "no selection request was paid for");
+});
+
 test("a coverage failure re-includes the segment verbatim in the rebuilt handoff", async () => {
   const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;
   const result = await composeHandoff({

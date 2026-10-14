@@ -57,6 +57,31 @@ handoff is assembled and verified rather than trusted to one note.
 Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
 an overlapping span, pays only for messages it has not judged yet.
 
+## What a compaction costs
+
+Every judgment is one request, so a 58-segment span is 58 scoring requests plus one per verification
+item. Scoring and verification always run to completion; the selections that turn a big tool result
+into a pointer instead of a copy are an enrichment, and stop being asked for 20 seconds in. If the
+handoff has still not finished at 90 seconds, or a phase would start after the clock is up, it is
+refused and pi's native summary runs — a half-judged handoff is never shipped. The compaction
+details carry `judging.requests` and `judging.failed`, so a handoff missing a lost judgment does not
+read as a clean one.
+
+**Batching those requests was tried and rejected.** Measured on one real 58-segment span, against
+Jev's own repeat of the identical request as the control:
+
+| run | requests | judgments changed |
+| --- | --- | --- |
+| same request, both times (control) | 58 + 58 | 0 of 58 |
+| segment scoring, 8 segments per request | 58 → 8 | 6 of 58 |
+| coverage, same request twice (control) | 58 + 58 | 2 of 58 |
+| coverage, 8 checks per request | 58 → 18 | 7 of 58 |
+
+Worse than the drift was its direction: the segments that flipped to `keep_verbatim` carried 21k
+tokens of verbatim copy where the unbatched run carried 0.6k, and verbatim copies are what push a
+handoff past its target. The eval script below reports calls and seconds, so a future attempt can
+be measured the same way.
+
 `node scripts/safe-compact-eval.mjs` replays real sessions from `~/.pi/agent/sessions` to the hard
 threshold and reports success, handoff size, tool-output share, and the calls and seconds of the
 first attempt and a retry. It makes real TypeSafe calls.

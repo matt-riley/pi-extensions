@@ -99,25 +99,42 @@ function firstLine(text) {
   return excerpt(line.trim(), 80);
 }
 
-/** Score every segment; if every call failed, surface the error so the caller falls back. */
+/**
+ * Score every segment, one request each; if none survived, surface the error so
+ * the caller falls back.
+ *
+ * Batching these six-questions-per-segment requests was measured and rejected:
+ * eight segments to one request moved dispositions on 6 of 58 segments, where
+ * repeating the unbatched request verbatim moved 0 of 58, and the segments that
+ * flipped to keep_verbatim carried 21k tokens of verbatim copy against the
+ * unbatched run's 0.6k. The clock is the lever that actually cuts the cost.
+ */
 async function scoreSegments({ segments, goal, ask, signal }) {
   let firstError;
+  let failed = 0;
   const scores = await mapPool(segments, async (segment, index) => {
     try {
       return await judgeSegment({ goal, segment, next: segments[index + 1], ask, signal });
     } catch (error) {
       firstError ??= error;
+      failed += 1;
       return null;
     }
   });
   if (firstError && scores.every((s) => s === null)) throw firstError;
-  return scores;
+  return { scores, failed };
 }
 
+/** Past its instant, optional work stops: `deadlineAt` unset means no clock. */
+const isExpired = (deadlineAt) => deadlineAt !== undefined && Date.now() >= deadlineAt;
+
 /** Derived selections are computed once per segment and reused when the handoff is rebuilt. */
-function selector({ goal, ask, signal }) {
+function selector({ goal, ask, signal, deadlineAt }) {
   const memo = new Map();
   const once = (key, compute) => {
+    // Selections are an enrichment: an entry keeps its own excerpt when the
+    // clock is up rather than paying for another request.
+    if (isExpired(deadlineAt)) return Promise.resolve([]);
     if (!memo.has(key)) memo.set(key, compute());
     return memo.get(key);
   };
@@ -318,6 +335,7 @@ export async function composeHandoff({
   tokensBefore,
   ask = askSystemOne,
   signal,
+  deadlineAt,
   onRejected,
 }) {
   const reject = (reason) => {
@@ -335,8 +353,22 @@ export async function composeHandoff({
     ask,
     signal,
   });
-  const scores = await scoreSegments({ segments, goal, ask, signal });
-  const select = selector({ goal, ask, signal });
+  // Asking is what costs and what can stall; the judgments already paid for are
+  // worth keeping, so the clock gates work that has not started, not the pieces
+  // that are done. Past it the handoff is refused rather than shipped half
+  // judged — the caller falls back to pi's own summary.
+  // One request per judgment, so this is the number of items asked about. A
+  // failed request answers null for every question, which the policy reads as
+  // "keep", and one good answer used to hide the rest: the count is reported,
+  // not inferred from a loop that skipped something.
+  const judging = { requests: 0, failed: 0 };
+  const outOfTime = () => reject(`handoff ran out of time after ${judging.requests} requests`);
+  if (isExpired(deadlineAt)) return outOfTime();
+  const scored = await scoreSegments({ segments, goal, ask, signal });
+  const scores = scored.scores;
+  judging.requests += segments.length;
+  judging.failed += scored.failed;
+  const select = selector({ goal, ask, signal, deadlineAt });
   // The first user message states the task the session exists for, and pi
   // replaces everything before the cut with this one handoff: nothing else can
   // carry it. Pin it verbatim whatever Jev scored, as constraints are.
@@ -371,6 +403,7 @@ export async function composeHandoff({
       !entries.some((e) => e.index === index && e.disposition === "keep_verbatim" && !e.lossy) &&
       ((scores[index]?.load_bearing ?? 0) >= 0.6 || (scores[index]?.decision ?? 0) >= 0.5),
   );
+  if (isExpired(deadlineAt)) return outOfTime();
   const [faithful, covered] = await Promise.all([
     verifyEntries({
       entries: restated.map((e) => ({ entry: e.text, source: e.segment.text })),
@@ -379,6 +412,7 @@ export async function composeHandoff({
     }),
     verifyCoverage({ handoff: summary, segments: important, ask, signal }),
   ]);
+  judging.requests += restated.length + important.length;
 
   // Only a definite "no" blocks; an unusable answer is not evidence of a gap.
   const failed = new Set([
@@ -413,6 +447,8 @@ export async function composeHandoff({
     details: {
       safeCompact: {
         segments: segments.length,
+        // Requests issued for judging, and how many of them failed.
+        judging,
         // One verification pass, plus the rebuild when it forced anything.
         rounds: failed.size > 0 ? 2 : 1,
         kept: entries.length,
@@ -620,6 +656,7 @@ export async function buildBoundaryCompaction({
   restore,
   ask,
   signal,
+  deadlineAt,
   onRejected,
 }) {
   const plan = planBoundary({ entries, keepRecentTokens });
@@ -634,6 +671,7 @@ export async function buildBoundaryCompaction({
     tokensBefore: plan.summarizedTokens + estimateTokens(plan.previousSummary ?? ""),
     ask,
     signal,
+    deadlineAt,
     onRejected,
   });
   if (!result) return null;

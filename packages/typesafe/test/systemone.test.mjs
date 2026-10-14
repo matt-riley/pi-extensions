@@ -9,6 +9,7 @@ import {
   formatAnswers,
   resolveConfig,
   validateQuestions,
+  validateState,
 } from "../../../shared/systemone.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
@@ -264,6 +265,33 @@ test("validateQuestions accepts the three primitives and rejects malformed ones"
     () => validateQuestions({ a: { type: "score", instructions: "?", criteria: "not-an-array" } }),
     /at least two ordered levels/i,
   );
+});
+
+test("validateState refuses a state past the API limit before the round trip", () => {
+  validateState({ small: "x".repeat(1000) });
+  validateState(undefined);
+  const huge = { text: "x".repeat(60_001) };
+  assert.throws(() => validateState(huge), /state is \d+ characters; the limit is 60000/);
+  // The limit is the API's, and a request past it fails whole: measured, so a
+  // change to the number here has to face the real one.
+  assert.equal(JSON.stringify(huge).length > 60_000, true);
+});
+
+test("askSystemOne refuses an oversized state without calling the provider", async () => {
+  let called = false;
+  await assert.rejects(
+    askSystemOne({
+      state: { text: "x".repeat(60_001) },
+      questions: { a: { type: "noul", instructions: "?", criteria: { true: "y", false: "n" } } },
+      env: { TYPESAFE_API_KEY: "test-key" },
+      fetchImpl: async () => {
+        called = true;
+        return { ok: true, json: async () => ({ answers: {} }) };
+      },
+    }),
+    /state is \d+ characters/,
+  );
+  assert.equal(called, false);
 });
 
 test("askSystemOne posts state and questions verbatim and returns answers", async () => {

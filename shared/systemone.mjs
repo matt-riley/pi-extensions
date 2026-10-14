@@ -19,6 +19,9 @@ const DEFAULT_TIMEOUT_MS = 30000;
 
 const MAX_ERROR_BODY_CHARS = 300;
 
+/** Jev's state limit. Past this the request fails whole, so it is refused here. */
+const MAX_STATE_CHARS = 60_000;
+
 const QUESTION_TYPES = new Set(["choice", "noul", "score"]);
 
 function positiveInteger(value, fallback) {
@@ -171,6 +174,21 @@ export function validateQuestions(questions) {
   return questions;
 }
 
+/**
+ * Jev refuses a state past its limit, and the whole request fails with it — so
+ * the size is refused here, before the round trip, where the message can name
+ * the limit and the actual size instead of an error body that says the same
+ * thing less clearly, and without paying for a request that cannot succeed.
+ */
+export function validateState(state) {
+  const size = JSON.stringify(state ?? {}).length;
+  if (size > MAX_STATE_CHARS) {
+    throw new Error(
+      `TypeSafe state is ${size} characters; the limit is ${MAX_STATE_CHARS}. Send less per request.`,
+    );
+  }
+}
+
 async function readErrorBody(response) {
   if (typeof response?.text !== "function") {
     return "";
@@ -198,6 +216,7 @@ export async function askSystemOne({
   signal,
 } = {}) {
   validateQuestions(questions);
+  validateState(state);
   const config = resolveConfig(env);
   if (!config.apiKey) {
     const sources = apiKeySources(env);
