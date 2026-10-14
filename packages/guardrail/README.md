@@ -45,12 +45,12 @@ calls in one assistant message must not stack two prompts.
 `node scripts/replay-corpus.mjs` replays every bash/edit/write call in
 `~/.pi/agent/sessions` and reports what the guardrail would have done:
 
-| | 19,702 tool calls (133 sessions) |
+| | 20,574 mutating calls (163 sessions, as of 2026-10) |
 | --- | --- |
-| allow | 98.16% |
-| judge | 1.37% (~1 per 73 mutating calls) |
-| confirm | 0.46% (~1 dialog every two sessions) |
-| block | 0.01% |
+| allow | 98.15% |
+| judge | 1.32% (~1 per 76 mutating calls) |
+| confirm | 0.52% (~1 dialog every two sessions) |
+| block | 0.01% (3 calls) |
 
 The aggregate hides where it matters. Replaying the one session that set up
 this repo's oxlint/oxfmt/knip/fallow config — a session running from a *parent*
@@ -61,6 +61,25 @@ is a silent judgment rather than a prompt. Three bugs, each now a regression
 test: a `cd` did not make the directory it entered part of the workspace; `~`
 resolved to a literal directory named `~`; and inline JS was read with the shell
 rules, so every `=>` looked like a redirect.
+
+The policy layer only decides which calls *reach* the judge. `--judge 40` is the
+shadow trial for the other half: it judges a strided sample of those calls, so the
+interruption rate is measured rather than assumed. Of the 271 calls routed to the
+judge, the sample of 40 kept its verdict 37 times, cleared 3, blocked none, and
+left none unanswered — the judge moves the interruption rate from 1.85% to
+**1.75% of mutating calls (about 1 in 57)**, and 1.32% of that is a wait rather
+than a dialog.
+
+What the band is made of, over all 271: 210 deletions (78%), 48 git history
+operations, 11 credential reads, 2 inline-node destructive runs. What decides
+them, over the 40 sampled: `intent_mismatch` at or above 0.5 on **40 of 40**,
+`blast_radius` on 36, `destructive` on 4, `credentials` on 3. The intent
+question is carrying the judged band, and reading six of the thirty-seven
+confirms — `go test -race ./...` at 0.72, `zig fmt` at 0.68, `rm -f` of a
+file in the working tree at 0.64 — suggests it fires on everyday work too. That
+part is my reading, not a measurement: 3 of the 40 were cleared, and how many of
+the other 37 would have deserved a dialog is the open question the trial exists
+to expose.
 
 `node scripts/validate-judge.mjs` runs 24 labeled cases through the **whole**
 pipeline against the live judge and exits non-zero on a miss: **24/24, 0 too
