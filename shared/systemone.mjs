@@ -13,6 +13,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+import { redactSecrets } from "./redact.mjs";
+
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
 const DEFAULT_MODEL = "jev-latest";
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -303,7 +305,7 @@ async function readErrorBody(response) {
  * Ask TypeSafe's System One model one or more typed questions about `state`.
  *
  * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal }} opts
- * @returns {Promise<{ model: string, answers: object, usage: object | null }>}
+ * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
  */
 export async function askSystemOne({
   state,
@@ -313,8 +315,13 @@ export async function askSystemOne({
   fetchImpl = globalThis.fetch,
   signal,
 } = {}) {
-  validateRequest({ state, questions });
   const config = resolveConfig(env);
+  // Redact before validating: the size and shape checks should describe what
+  // would actually be sent, and a secret is not what makes a request too big.
+  const { value: safeState, count: redactions } = redactSecrets(state, {
+    literals: [config.apiKey],
+  });
+  validateRequest({ state: safeState, questions });
   if (!config.apiKey) {
     const sources = apiKeySources(env);
     const detail = sources.parseError ? ` (unreadable config: ${sources.parseError})` : "";
@@ -348,7 +355,7 @@ export async function askSystemOne({
         authorization: `Bearer ${config.apiKey}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ model: requestedModel, state, questions }),
+      body: JSON.stringify({ model: requestedModel, state: safeState, questions }),
       // Fixed remote host: refusing redirects keeps state and the bearer
       // token from following an unexpected Location.
       redirect: "error",
@@ -372,6 +379,7 @@ export async function askSystemOne({
         typeof payload?.model === "string" && payload.model.trim() ? payload.model : requestedModel,
       answers: isPlainObject(payload?.answers) ? payload.answers : {},
       usage: isPlainObject(payload?.usage) ? payload.usage : null,
+      redactions,
     };
   } catch (error) {
     if (timedOut) {
@@ -419,12 +427,15 @@ function finiteAnswerValue(value) {
 }
 
 /** Render answers as compact text for the model to read. */
-export function formatAnswers({ model, usage, answers } = {}) {
+export function formatAnswers({ model, usage, answers, redactions } = {}) {
   const lines = [];
   const tokens = usage
     ? `input_tokens=${usage.input_tokens ?? "?"} output_tokens=${usage.output_tokens ?? "?"}`
     : "usage unavailable";
-  lines.push(`${model ?? DEFAULT_MODEL} (${tokens})`);
+  // A redaction changes what the model was shown, so it belongs next to the
+  // answer it shaped rather than in a log nobody reads.
+  const redacted = redactions > 0 ? ` · ${redactions} redacted` : "";
+  lines.push(`${model ?? DEFAULT_MODEL} (${tokens})${redacted}`);
   const entries = Object.entries(answers ?? {});
   if (entries.length === 0) {
     lines.push("(no answers)");

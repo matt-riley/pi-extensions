@@ -91,6 +91,15 @@ Answers come back with the same ids: `breaking: noul 0.88`,
   failure rather than silently return a default.
 - Zero runtime dependencies: `node:` built-ins and pi's typebox only.
 
+Every request is built from a redacted copy of the state
+(`shared/redact.mjs`): PEM private keys, JWTs, AWS, GitHub, OpenAI and Slack
+tokens, bearer headers, and 16-character-plus `key = value` assignments become
+`<REDACTED:kind>`, and the caller's own API key is replaced wherever it appears.
+The count comes back on the result and is printed next to the answers, so a
+redaction is never silent. Secrets are replaced rather than dropped, because a
+question about *why* a command touches a credential still needs a sentence to
+reason about.
+
 ## Tests
 
 `npm test` — `systemone.test.mjs` covers request shape, validation, transport,
