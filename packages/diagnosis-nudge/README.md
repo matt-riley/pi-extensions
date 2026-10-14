@@ -39,6 +39,13 @@ not be quoted again. Advice appears only at 0.6 confidence or above: below
 that, wrong advice is worse than none. The triage runs once per distinct
 failure, at most 30 times a session, takes a 2.5s deadline of its own, and any
 failure of the judgment leaves the deterministic nudge exactly as it was.
+
+A redaction is a leak signal in its own right: the redactor knows it replaced
+a credential before the request left, and the model answering "does this
+output contain a secret?" cannot see what was replaced — a first live run
+scored the token in `GH_TOKEN=<redacted>` at 0.77 for exactly that reason. So
+the count returned by the client raises the leak signal to certain, and the
+model is asked anyway, because it catches the shapes no rule covers yet.
 `PI_DIAGNOSIS_TRIAGE=off` turns the classification off; with no key it is
 skipped silently.
 

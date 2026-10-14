@@ -167,6 +167,35 @@ test("a repeated failure is judged once, up to a cap", () => {
   assert.equal(capped.judged, MAX_TRIAGE_PER_SESSION, "a refusal does not spend the cap");
 });
 
+test("a redaction is a leak signal, not a question for the model", async () => {
+  // The redactor replaced something before the request left, so the model
+  // answering "does the output contain a secret?" cannot see what it was. The
+  // count it reports is evidence; the model's 0.1 here is not a contradiction.
+  const judged = await judgeFailure({
+    toolName: "bash",
+    action: "env | grep -i token",
+    output: "GITHUB_TOKEN=<REDACTED:github>",
+    ask: async () => ({
+      redactions: 1,
+      answers: {
+        failure_class: { type: "choice", choice: "no_failure", confidence: 1 },
+        leaks_secret: noul(0.1),
+      },
+    }),
+  });
+  assert.equal(judged.redacted, 1);
+  assert.equal(judged.leaksSecret, 1, "a redaction is certain, not inferred");
+  assert.match(triageText(judged), /do not repeat the value/);
+  // A clean run trusts the model's own reading, at the published threshold.
+  const unclear = await judgeFailure({
+    toolName: "bash",
+    output: "ok",
+    ask: async () => ({ redactions: 0, answers: { leaks_secret: noul(0.77) } }),
+  });
+  assert.equal(unclear.leaksSecret, 0.77);
+  assert.equal(triageText(unclear), null, "0.77 is not the leak line");
+});
+
 test("memoKeyFor keys on what the question actually sees", () => {
   const long = "y".repeat(4000);
   assert.equal(

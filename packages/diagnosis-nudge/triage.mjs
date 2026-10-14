@@ -149,12 +149,24 @@ export async function judgeFailure({
       model,
       signal: signal ?? AbortSignal.timeout(timeoutMs),
     });
-    return { ...readTriage(result?.answers), unavailable: false };
+    const judged = readTriage(result?.answers);
+    // A redaction is a leak signal that is certain rather than inferred: the
+    // redactor replaced a credential before the request left, and the model
+    // answering the question cannot see what was replaced. The model still
+    // gets asked, because it catches the shapes no rule covers yet.
+    const redacted = usableNumber(result?.redactions) ?? 0;
+    return {
+      ...judged,
+      leaksSecret: redacted > 0 ? 1 : judged.leaksSecret,
+      redacted,
+      unavailable: false,
+    };
   } catch (error) {
     return {
       failureClass: null,
       confidence: null,
       leaksSecret: null,
+      redacted: 0,
       unavailable: true,
       reason: error instanceof Error ? error.message : String(error),
     };
