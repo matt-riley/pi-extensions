@@ -148,6 +148,51 @@ export function checkConventions(root) {
   return errors;
 }
 
+// Text files only: a binary that happens to hold a control byte is not a bug,
+// and a stray byte inside a PNG is not a check that compares nothing.
+const TEXT_FILE = /\.(?:ts|mjs|js|json|md|yml|yaml|toml|sh|txt)$/i;
+const ALLOWED_CONTROL = "\n\t\r";
+
+/**
+ * Control bytes in text: a `\b` written through a template literal arrives as
+ * a real backspace (0x08), so the regex that wanted a word boundary silently
+ * required a backspace character instead — it matches nothing, and a check
+ * that matches nothing still reports success. The same channel eats \u0000,
+ * \f and \v. Cheap to look for, and the failure it prevents is invisible.
+ */
+export function controlByteErrors(root) {
+  const errors = [];
+  const skip = new Set(["node_modules", ".git", "coverage", "dist"]);
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.isFile() || !TEXT_FILE.test(entry.name)) continue;
+      let text;
+      try {
+        text = fs.readFileSync(full, "utf8");
+      } catch {
+        continue;
+      }
+      const bad = [...text].find(
+        (character) => character.charCodeAt(0) < 32 && !ALLOWED_CONTROL.includes(character),
+      );
+      if (bad !== undefined) {
+        const code = bad.charCodeAt(0).toString(16).padStart(2, "0");
+        errors.push(
+          `${path.relative(root, full)}: control byte 0x${code} — a stray backspace from a template literal makes a regex match nothing`,
+        );
+      }
+    }
+  };
+  walk(root);
+  return errors;
+}
+
 // A prompt that names "the `x` skill" must name one this repo or the curated
 // library owns. A skill that only exists under a harness's own root (e.g.
 // ~/.codex/skills/.system) can vanish on that harness's next update, which is
@@ -213,7 +258,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   const root = path.resolve(import.meta.dirname, "..");
   const references = checkSkillReferences(root);
   if (references.skipped) console.log(`Skipped: ${references.skipped}`);
-  const errors = [...checkConventions(root), ...references.errors];
+  const errors = [...checkConventions(root), ...controlByteErrors(root), ...references.errors];
   for (const error of errors) console.error(error);
   if (!errors.length) console.log("Repository conventions pass");
   process.exitCode = errors.length ? 1 : 0;

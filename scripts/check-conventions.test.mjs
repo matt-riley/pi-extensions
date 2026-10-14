@@ -3,7 +3,35 @@ import test from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { checkConventions, checkSkillReferences, runtimeImports } from "./check-conventions.mjs";
+import {
+  checkConventions,
+  checkSkillReferences,
+  controlByteErrors,
+  runtimeImports,
+} from "./check-conventions.mjs";
+
+test("a control byte in a text file is caught, and ordinary whitespace is not", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "conventions-"));
+  try {
+    mkdirSync(path.join(root, "packages"), { recursive: true });
+    const BS = String.fromCharCode(8);
+    writeFileSync(
+      path.join(root, "packages", "broken.mjs"),
+      `const word = /prefix${BS}(one|two)/;`,
+    );
+    writeFileSync(
+      path.join(root, "packages", "fine.mjs"),
+      "const word = /prefix\\b(one|two)/;\nconst lines = `a\nb`;\n",
+    );
+    writeFileSync(path.join(root, "packages", "binary.png"), Buffer.from([8, 8, 8]));
+    const errors = controlByteErrors(root);
+    assert.equal(errors.length, 1, "exactly the broken file");
+    assert.match(errors[0], /packages\/broken\.mjs: control byte 0x08/);
+    assert.match(errors[0], /match nothing/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("runtime imports distinguish erased types, mixed bindings, empty imports and dynamic imports", () => {
   const found = runtimeImports(
