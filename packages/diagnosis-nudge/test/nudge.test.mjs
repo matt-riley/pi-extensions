@@ -63,8 +63,11 @@ test("handles missing fields defensively", () => {
 test("resetNudgeState clears everything for a new session", () => {
   const state = createNudgeState();
   observeToolResult(state, { toolName: "bash", isError: true });
+  // The triage half spends judgments per session; a new session gets them back.
+  state.seen.add("a failure");
+  state.judged = 3;
   resetNudgeState(state);
-  assert.deepEqual(state, { unaddressed: false, nudged: false });
+  assert.deepEqual(state, { unaddressed: false, nudged: false, seen: new Set(), judged: 0 });
 });
 
 test("appendNudge adds a block without touching the original content", () => {

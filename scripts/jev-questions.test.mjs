@@ -15,6 +15,7 @@ import {
 } from "../packages/done-gate/claim.mjs";
 import { TIEBREAK_ENV, selectSkills } from "../packages/skill-select/select.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "../packages/subagents/judge.mjs";
+import { judgeFailure } from "../packages/diagnosis-nudge/triage.mjs";
 import { buildTaskTypeQuestion } from "../packages/router/playbook.mjs";
 import { buildDifficultyState, buildQuestions } from "../packages/router/model-battery.mjs";
 import { buildQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
@@ -96,6 +97,14 @@ const CASES = {
       ],
       query: "review the go code in this repo and tell me what to fix",
       env: { [TIEBREAK_ENV]: "1", TYPESAFE_API_KEY: "test-key" },
+      ask,
+    }),
+  "diagnosis triage": (ask) =>
+    judgeFailure({
+      toolName: "bash",
+      action: "pnpm dev",
+      cwd: "/repo",
+      output: "Error: listen EADDRINUSE: address already in use :::3000",
       ask,
     }),
   "subagents preflight": (ask) =>

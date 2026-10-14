@@ -15,12 +15,14 @@ export const NUDGE_TEXT = [
 
 /** Fresh state; reset per session so a new session starts clean. */
 export function createNudgeState() {
-  return { unaddressed: false, nudged: false };
+  return { unaddressed: false, nudged: false, seen: new Set(), judged: 0 };
 }
 
 export function resetNudgeState(state) {
   state.unaddressed = false;
   state.nudged = false;
+  state.seen.clear();
+  state.judged = 0;
   return state;
 }
 
