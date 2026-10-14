@@ -107,14 +107,25 @@ so plan mode needs no in-memory plan retention.
 
 `plan_mode_question` is where a discoverable question becomes a dialog, so it
 is also where that can be enforced: the tool, not the prompt. Before showing a
-dialog it asks Jev two things — which option the context supports, and whether
-the context settles the question at all — and answers only when both clear
-0.9. A preference, a cost, an interface others rely on, a deletion, a question
-with no recommended answer or a thin reading all ask the user exactly as
-before; that check is a deterministic list in `ask-gate.mjs`, not the judge's
-opinion. When it does answer, the user sees one line naming the reason and the
-agent is told the answer was inferred rather than given, so the plan cannot
-claim the user chose it.
+dialog it asks Jev one thing — which option the agent's **own** `recommended`
+answer names — and answers only when that reading lands on the recommendation
+at 0.9 confidence or above. A question is a dialog because the agent was in
+two minds about it; a reading that agrees with the recommendation was not
+going to be news.
+
+The decision is about the agent, not the user, and it is conservative: a
+preference, a cost, an interface others rely on, a deletion, no recommended
+answer, an unfamiliar option, a reading that disagrees or is unsure all ask
+the user exactly as before. That list is deterministic, in `ask-gate.mjs`,
+not the judge's opinion. When it does answer, the user sees one line naming
+the reason and the agent is told the answer was inferred rather than given, so
+the plan cannot claim the user chose it.
+
+A first version asked the judge whether "the context settles this" and got
+0.32 and 0.57 on the most inferable questions in `node scripts/judge-live.mjs`
+— the right answer to the wrong question, since one line of request is not
+context. Reading the recommendation needs nothing the tool does not already
+have.
 
 `PI_PLAN_JUDGE=off` disables it, and without a TypeSafe key it is skipped
 silently. Same failure mode as everywhere else: a slow or missing judge means

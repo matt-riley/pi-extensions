@@ -4,16 +4,22 @@
 // settle, and the model still asks. This is the enforcement point: the tool
 // itself, where a question cannot be fired without passing through it.
 //
-// Conservative on purpose. Any doubt — a preference, a cost, an interface, a
-// deletion, thin confidence, no recommendation to check against — asks the
-// user exactly as before. The point is to remove the dialogs whose answer was
-// already in the repository, not to guess at the hard ones.
+// The decision is about the agent, not the user: if an independent reading of
+// the question lands on the option the agent itself recommends, the dialog was
+// going to confirm an answer nobody was in doubt about. Everything else — a
+// preference, a cost, an interface, a deletion, no recommendation, a reading
+// that disagrees or is unsure — asks the user exactly as before.
+//
+// A first version asked the judge whether "the context settles this" and got
+// 0.32 and 0.57 on the most inferable questions, which was the right answer to
+// the wrong question: one line of request is not context. Reading the
+// recommendation needs no more than the tool already has.
 
 import { askSystemOne, validateRequest } from "../../shared/systemone.mjs";
 
 /** The escape hatch. Without it, a model that must choose invents. */
 export const ASK_USER = "ask_user";
-/** Both the pick and the "context determines it" reading must clear this. */
+/** The reading of the recommendation must clear this. */
 const CONFIDENCE_FLOOR = 0.9;
 const DEFAULT_TIMEOUT_MS = 2500;
 const MAX_CHARS = 2000;
@@ -66,23 +72,17 @@ export function alwaysAsk(question) {
 export function buildGateQuestions(options = []) {
   const criteria = {};
   for (const option of options) {
-    criteria[String(option)] = `use "${option}"`;
+    criteria[String(option)] = `${option}`;
   }
-  criteria[ASK_USER] = "the context does not settle this: the user must decide";
+  criteria[ASK_USER] = "the recommendation names none of these, or not plainly enough to read";
   return {
     pick: {
       type: "choice",
       instructions:
-        "Which option does the context in `request` and `question` support for this project? " +
-        "Choose ask_user unless the repository, the request or the recommended answer settles it.",
+        "Which one option does the agent's own `recommended` answer name for `question`, read " +
+        "against `request`? Choose ask_user unless one of the criteria is plainly what the " +
+        "recommendation says.",
       criteria,
-    },
-    determined: {
-      type: "noul",
-      instructions:
-        "Do `question` and `options` describe something the context in `request` settles — a fact, a " +
-        "convention, or the agent's own `recommended` answer — rather than a preference, a tradeoff only " +
-        "the user can weigh, or something still to be discovered?",
     },
   };
 }
@@ -98,13 +98,11 @@ export function readGate(answers, options = []) {
   const answer = answers?.pick;
   const label = answer?.type === "choice" ? String(answer.choice ?? "") : "";
   const known = label === ASK_USER || (Array.isArray(options) && options.includes(label));
-  const determined = answers?.determined;
   return {
     pick: known ? label : null,
     confidence: known
       ? (usableNumber(answer?.confidence) ?? usableNumber(answer?.probabilities?.[label]))
       : null,
-    determined: determined?.type === "noul" ? usableNumber(determined.noul) : null,
   };
 }
 
@@ -124,14 +122,22 @@ export function decideGate({ question, options, recommended } = {}, judged = {})
   if (!pick || pick === ASK_USER || !Array.isArray(options) || !options.includes(pick)) {
     return { answer: null, reason: "the question is not settled" };
   }
+  // The recommendation is the evidence. An independent reading that lands on
+  // the same option confirms what the dialog would have confirmed; a reading
+  // that lands elsewhere is a disagreement worth a human, not a coin toss.
+  if (pick !== String(recommended).trim()) {
+    return {
+      answer: null,
+      reason: `the reading says "${pick}", the recommendation says otherwise`,
+    };
+  }
   const confidence = judged.confidence ?? 0;
-  const determined = judged.determined ?? 0;
-  if (confidence < CONFIDENCE_FLOOR || determined < CONFIDENCE_FLOOR) {
-    return { answer: null, reason: `below the ${CONFIDENCE_FLOOR} line` };
+  if (confidence < CONFIDENCE_FLOOR) {
+    return { answer: null, reason: `the reading is only ${confidence.toFixed(2)} sure` };
   }
   return {
     answer: pick,
-    reason: `${pick} at ${confidence.toFixed(2)} confidence, context-determined at ${determined.toFixed(2)}`,
+    reason: `the recommendation reads plainly as "${pick}" (${confidence.toFixed(2)})`,
   };
 }
 

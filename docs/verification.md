@@ -51,6 +51,8 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Registration | `npm run verify` | Every manifest entry registers; no live TypeSafe call |
 | Host startup and fixture | `npm run smoke` starts pi RPC and its disposable local provider | All manifest extensions load in the actual host |
 | Changed behavior | Smoke attempts `touch smoke-blocked` during `/plan start`, then exits and runs a child | Tool is blocked, file absent, real child completes; done-gate continues once; `/until` loops to its predicate |
+| Jev question sets | Part of `npm run check`: `node --test scripts/jev-questions.test.mjs` | Every call site's questions pass the production validator against the state its caller builds; a case that silently asks nothing is itself a failure |
+| Judgment quality, live | `node scripts/judge-live.mjs` | Exit 0 when every labelled case reached the judge; the labels are printed for a human to read, because a model's reading is a hypothesis and the wiring is what the unit tests prove |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
 Choose additional acceptance-specific checks for changes outside that smoke's
