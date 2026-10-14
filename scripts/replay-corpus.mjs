@@ -8,6 +8,7 @@
 //   node scripts/replay-corpus.mjs --samples 5     # plus examples per verdict
 //   node scripts/replay-corpus.mjs --list judge    # every judged command
 //   node scripts/replay-corpus.mjs --judge 40      # shadow the judged band too
+//   node scripts/replay-corpus.mjs --judge 150 --judge-json out.json   # raw signals
 //
 // The last one is the shadow trial: the deterministic policy says which calls
 // reach Jev, and this asks Jev about a sample of them, so the interruption rate
@@ -30,13 +31,14 @@ const CONFIG_KEYS = new Set(["command", "cmd", "script", "shell"]);
 const PATH_KEYS = new Set(["path", "file_path", "filePath", "target", "filename", "destination"]);
 
 function parseArgs(argv) {
-  const opts = { samples: 0, list: null, max: Infinity, judge: 0 };
+  const opts = { samples: 0, list: null, max: Infinity, judge: 0, judgeJson: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--samples") opts.samples = Number(argv[++i]) || 0;
     else if (arg === "--list") opts.list = argv[++i] ?? "judge";
     else if (arg === "--max") opts.max = Number(argv[++i]) || Infinity;
     else if (arg === "--judge") opts.judge = Number(argv[i + 1]) || 40;
+    else if (arg === "--judge-json") opts.judgeJson = argv[++i] ?? null;
     if (arg === "--judge" && Number(argv[i + 1])) i += 1;
   }
   return opts;
@@ -176,6 +178,18 @@ async function judgeBand(mutating, opts, policy) {
     6,
   );
   const seconds = (Date.now() - started) / 1000;
+
+  // Raw signals, kept so a candidate threshold can be scored offline against
+  // the production router instead of paying for the same judgments twice.
+  const records = results.map(({ call, judged }) => ({
+    action: String(actionOf(call)).slice(0, 400),
+    verdict: judged.judged === false ? null : (judged.verdict ?? null),
+    reason: judged.reason ?? null,
+    signals: judged.signals ?? null,
+  }));
+  if (opts.judgeJson) {
+    fs.writeFileSync(opts.judgeJson, JSON.stringify({ sampled: records.length, records }, null, 1));
+  }
 
   const counts = { allow: 0, confirm: 0, block: 0, unavailable: 0 };
   const samples = { allow: [], confirm: [], block: [], unavailable: [] };
