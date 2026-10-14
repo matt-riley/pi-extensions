@@ -18,15 +18,15 @@ handoff is assembled and verified rather than trusted to one note.
    reserved for the manual `/safe-compact` command.
 3. **Score.** Each older message is scored by Jev: load-bearing, user constraint, decision,
    unresolved problem, recoverable, plus a keep/point/excerpt/drop choice.
-4. **Route.** Code applies hard rules: user constraints are always verbatim, and uncertain or
-   load-bearing content is never dropped outright. Open problems are kept verbatim when there is
+4. **Route.** Code applies hard rules: user constraints and the session's first user message are
+   always verbatim, and uncertain or load-bearing content is never dropped outright. Open problems are kept verbatim when there is
    room. Tool output is excerpted unless it is an error, because it can be re-run or re-read.
 5. **Select.** Jev picks decision sentences and the relevant line windows of large file reads.
    Output is copied spans and `path:start-end` pointers, never generated prose.
 6. **Fit.** The handoff aims for 25% of what it replaces, at most 12K tokens. Over that, the
    least load-bearing entries are cut first: verbatim copies become excerpts, then plain context
-   excerpts are dropped. Open problems are cut last; user constraints and verification-forced
-   copies never, so those alone can carry a handoff past the target.
+   excerpts are dropped. Open problems are cut last; user constraints, the session's first user message and
+   verification-forced copies never, so those alone can carry a handoff past the target.
 7. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
    faithful, and that important segments are still represented. A gap re-includes that segment
    verbatim and the handoff is rebuilt, except tool output that can be re-read or re-run, which comes

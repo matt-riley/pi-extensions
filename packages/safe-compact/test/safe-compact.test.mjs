@@ -214,6 +214,21 @@ test("composeHandoff keeps the constraint verbatim, drops noise, carries the not
   assert.equal(result.details.safeCompact.rounds, 1);
 });
 
+test("the first user message is pinned even when Jev would drop it", async () => {
+  // It states the task the session exists for, and pi replaces everything
+  // before the cut with this one handoff, so nothing else can carry it.
+  const result = await composeHandoff({
+    messages: [user("NOISE the very first thing the user asked for"), user("GOALMARK fix it")],
+    tokensBefore: 100000,
+    ask: fakeAsk(),
+  });
+  assert.ok(result);
+  assert.match(result.summary, /NOISE the very first thing the user asked for/);
+  assert.equal(result.details.safeCompact.pinned, 1);
+  // Pinned, not verification-forced: nothing was checked, so no rebuild.
+  assert.equal(result.details.safeCompact.forced, 0);
+  assert.equal(result.details.safeCompact.rounds, 1);
+});
 
 test("a coverage failure re-includes the segment verbatim in the rebuilt handoff", async () => {
   const long = `${"a".repeat(500)} MIDMARK ${"b".repeat(500)}`;

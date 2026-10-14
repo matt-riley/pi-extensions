@@ -319,7 +319,15 @@ export async function composeHandoff({
   });
   const scores = await scoreSegments({ segments, goal, ask, signal });
   const select = selector({ goal, ask, signal });
-  const forced = new Set();
+  // The first user message states the task the session exists for, and pi
+  // replaces everything before the cut with this one handoff: nothing else can
+  // carry it. Pin it verbatim whatever Jev scored, as constraints are.
+  const task = segments.find((segment) => segment.role === "user");
+  // Seeds the same set verification adds to, so the budget and the coverage
+  // check treat it as pinned; excluded from the reported count below, which
+  // measures what verification forced.
+  const taskPin = task ? 1 : 0;
+  const forced = new Set(task ? [task.id] : []);
 
   // One verification pass, then a rebuild with every flagged segment verbatim.
   // Checking again would re-ask questions already answered: forced segments
@@ -390,7 +398,7 @@ export async function composeHandoff({
         // One verification pass, plus the rebuild when it forced anything.
         rounds: failed.size > 0 ? 2 : 1,
         kept: entries.length,
-        forced: forced.size,
+        forced: forced.size - taskPin,
         pointed: pointed.size,
         pinned: entries.filter((e) => e.pinned).length,
         // Where the handoff's tokens went, so a bloated one can be diagnosed.
