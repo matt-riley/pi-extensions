@@ -46,7 +46,8 @@
       "./packages/until/index.ts",
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts",
-      "./packages/safe-compact/index.ts"
+      "./packages/safe-compact/index.ts",
+      "./packages/review/index.ts"
     ],
     "prompts": [
       "./prompts"
