@@ -354,6 +354,7 @@ export async function askSystemOne({
       headers: {
         authorization: `Bearer ${config.apiKey}`,
         "content-type": "application/json",
+        "TypeSafe-Danger-Zone-Images": "true",
       },
       body: JSON.stringify({ model: requestedModel, state: safeState, questions }),
       // Fixed remote host: refusing redirects keeps state and the bearer

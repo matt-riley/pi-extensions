@@ -438,6 +438,7 @@ test("askSystemOne posts state and questions verbatim and returns answers", asyn
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.headers.authorization, "Bearer ts-secret-key");
   assert.equal(calls[0].init.headers["content-type"], "application/json");
+  assert.equal(calls[0].init.headers["TypeSafe-Danger-Zone-Images"], "true");
   assert.equal(calls[0].init.redirect, "error");
   assert.deepEqual(calls[0].body, { model: "jev-latest", state, questions });
   assert.deepEqual(result, {

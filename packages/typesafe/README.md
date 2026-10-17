@@ -67,6 +67,11 @@ The key is read at call time, so exporting it in your shell profile is enough
 base URL, refuse redirects, honor cancellation, and never include the key in
 errors.
 
+Requests include `TypeSafe-Danger-Zone-Images: true` to opt into TypeSafe's experimental
+image API. This header alone does not add image inputs to this tool: it still exposes
+text/JSON state and choice/noul/score questions, not `assets` or `box`. Use the
+[image API](https://docs.typesafe.ai/images) directly for those experiments.
+
 ## Example
 
 ```json
