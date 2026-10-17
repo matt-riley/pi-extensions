@@ -10,7 +10,7 @@ plain TypeScript loaded directly by pi.
 | --- | --- |
 | [`pi-exit`](./packages/exit) | `/exit` alias for pi's built-in `/quit`. |
 | [`pi-plan-mode`](./packages/plan-mode) | Codex-like read-only `/plan` mode that writes a Markdown plan you edit before implementation. |
-| [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. |
+| [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. `web_answer` returns only the passages that answer a question. |
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
 | [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed choice/noul/score questions over state and returns probabilities instead of prose. Environment-only config (`TYPESAFE_API_KEY`). |
 | [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
@@ -22,6 +22,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-prompt-coach`](./packages/prompt-coach) | On-demand `/improve`: probe the repo, rewrite locally with Gemma4, verify intent with TypeSafe, and submit the rewrite with original-prompt fallback. |
 | [`pi-influencer`](./packages/influencer) | Stores reusable AI influencer identities and builds recipe-driven image and Seedance 2.5 video-prompt briefs. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
+| [`pi-review`](./packages/review) | On-demand review with judgment behind it: `lint_change` scores a diff against this repo's standing preferences and commit rules, `verify_findings` drops findings whose own quotation is not in the diff before asking whether the rest hold. |
 | [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
 
 ### Package dependencies
@@ -37,12 +38,13 @@ renaming one can break another:
   plan mode's toolset), plus `SKILL_SELECT_TOOLS` from **`pi-skill-select`**'s
   `tools.mjs` (so planning can pull in a specialist skill without it living
   in the system prompt).
-- **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`** and
-  **`pi-router`** all import `askSystemOne` from the shared
-  `shared/systemone.mjs` for the tiebreaker, `typesafe_ask`, the destructive
-  action judge and the difficulty judgement respectively, so they share one
-  request validation, timeout and error handling instead of duplicating
-  transport.
+- **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`**,
+  **`pi-router`**, **`pi-review`**, **`pi-done-gate`**, **`pi-diagnosis-nudge`**,
+  **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`** and the
+  `scripts/` classifiers all import from the shared `shared/systemone.mjs` —
+  `askSystemOne` for the request, `validateRequest` for the state/question
+  contract, `usableNumber` for reading answers — so they share one request
+  validation, timeout and error handling instead of duplicating transport.
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root, and both
   `pi-plan-mode` and **`pi-guardrail`** import the FIFO dialog serializer from
@@ -54,8 +56,8 @@ renaming one can break another:
   destroy?", and both need to tell operators from literal text.
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
-`pi-diagnosis-nudge`, `pi-done-gate`, `pi-until`, and `pi-footer` have no dependencies on other packages in
-this repo.
+`pi-diagnosis-nudge`, `pi-done-gate`, `pi-until`, `pi-review` and `pi-footer` have
+no dependencies on other packages in this repo.
 
 ## Install
 
@@ -121,6 +123,21 @@ Dev tooling only — none of it ships with an extension:
 `npm run check` runs all four plus `tsc --noEmit` and the test suite. Every rule
 exception is written down in the config next to the rule it disables, so the gate
 stays honest instead of collecting suppress-comments.
+
+### Classifiers
+
+Three judgments that used to be made from memory in a prompt now live in
+`scripts/`, so the same input gets the same answer twice and every one is
+covered by `node --test`:
+
+| Script | What it decides |
+| --- | --- |
+| `scripts/ci-triage.mjs` | one CI failure → `flaky`, `regression`, `infra`, `configuration` or `dependency`, with its confidence. `/triage --ci` calls it. |
+| `scripts/promote-corrections.mjs` | a correction I gave more than once → the cheapest durable fix (`test`, `lint`, `guardrail`, `agents`, `prompt`, `none`) and how well existing guidance already covers it. `/mine` calls it. |
+| `scripts/memory-check.mjs` | a candidate lore memory → `duplicate`, `contradiction`, `refinement` or `new`, naming the memory to update. `/retro` calls it. |
+
+Each prints rather than applies, takes an injected `ask` in its tests, and says
+when it could not judge instead of inventing a verdict.
 
 ## Related
 

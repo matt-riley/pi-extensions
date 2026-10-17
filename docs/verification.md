@@ -55,6 +55,7 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Changed behavior | Smoke attempts `touch smoke-blocked` during `/plan start`, then exits and runs a child | Tool is blocked, file absent, real child completes; done-gate continues once, quietly, and not for an outside-cwd write; `/until` loops to its predicate |
 | Jev question sets | Part of `npm run check`: `node --test scripts/jev-questions.test.mjs` | Every call site's questions pass the production validator against the state its caller builds; a case that silently asks nothing is itself a failure |
 | Judgment quality, live | `node scripts/judge-live.mjs` | Exit 0 when every labelled case reached the judge; the labels are printed for a human to read, because a model's reading is a hypothesis and the wiring is what the unit tests prove |
+| Judgment paths, live | `node scripts/judges-live.mjs` (or `--only <name>`) | Exit 0 when every judgment path reached its judge: review lint, findings verification, `web_answer`, plan review, CI triage, correction promotion. Each line prints what came back; the readings are a model on a fixture, not ground truth. Costs one real request per case, so it is not part of `npm run check` |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
 Choose additional acceptance-specific checks for changes outside that smoke's
