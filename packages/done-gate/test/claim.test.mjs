@@ -6,6 +6,7 @@ import {
   buildClaimQuestionSet,
   buildClaimState,
   claimLine,
+  couldClaimRemote,
   judgeDoneClaim,
   routeClaim,
 } from "../claim.mjs";
@@ -15,9 +16,13 @@ const noul = (value) => ({ type: "noul", noul: value });
 // ---------------------------------------------------------------------------
 // The question set
 
-test("the claim battery is two typed questions that name their state fields", () => {
+test("the claim battery is three typed questions that name their state fields", () => {
   const questions = buildClaimQuestionSet();
-  assert.deepEqual(Object.keys(questions).sort(), ["acknowledges_gap", "asserts_verified"]);
+  assert.deepEqual(Object.keys(questions).sort(), [
+    "acknowledges_gap",
+    "asserts_verified",
+    "claims_remote",
+  ]);
   for (const question of Object.values(questions)) {
     assert.equal(question.type, "noul");
     assert.match(question.instructions, /`claim`/);
@@ -127,6 +132,7 @@ test("judgeDoneClaim sends the state, routes the answers and reports the model",
   assert.deepEqual(Object.keys(calls[0].questions).sort(), [
     "acknowledges_gap",
     "asserts_verified",
+    "claims_remote",
   ]);
   assert.ok(calls[0].signal instanceof AbortSignal, "the call always carries a timeout signal");
 });
@@ -167,4 +173,82 @@ test("unusable answers are unjudged, not a verdict", async () => {
 
 test("the default timeout is short because this sits in the settle path", () => {
   assert.equal(DEFAULT_TIMEOUT_MS, 4000);
+});
+
+// ---------------------------------------------------------------------------
+// Local evidence is not remote evidence
+
+test("a remote claim with no remote check outranks the generic unclosed claim", () => {
+  const routed = routeClaim(
+    {
+      asserts_verified: noul(0.7),
+      acknowledges_gap: noul(0.02),
+      claims_remote: noul(0.88),
+    },
+    undefined,
+    { remoteVerificationSeen: false },
+  );
+  assert.equal(routed.verdict, "remote_overreach");
+  assert.match(routed.reason, /claims_remote 0\.88/);
+});
+
+test("a remote check on this run clears the remote claim", () => {
+  const answers = { claims_remote: noul(0.88), acknowledges_gap: noul(0.02) };
+  assert.equal(
+    routeClaim(answers, undefined, { remoteVerificationSeen: true }).verdict,
+    null,
+    "the claim is backed by evidence",
+  );
+});
+
+test("a claim that names the gap stays acknowledged however it is read", () => {
+  const answers = {
+    asserts_verified: noul(0.6),
+    acknowledges_gap: noul(0.85),
+    claims_remote: noul(0.9),
+  };
+  assert.equal(routeClaim(answers).verdict, "acknowledged");
+});
+
+test("the remote line names the gap beside the evidence", () => {
+  const line = claimLine({
+    judged: true,
+    verdict: "remote_overreach",
+    signals: { claims_remote: 0.88, acknowledges_gap: 0.02 },
+  });
+  assert.match(line, /on a runner/);
+  assert.match(line, /claims_remote 0\.88/);
+  assert.match(line, /verified locally is not verified remotely/);
+});
+
+test("the pre-filter only fires on claims that could assert remote success", () => {
+  for (const claim of [
+    "CI is green.",
+    "The pipeline passed on GitHub Actions.",
+    "All checks pass — the PR is merged.",
+    "Deployed to production.",
+    "Tests pass locally and the runner is green.",
+  ]) {
+    assert.equal(couldClaimRemote(claim), true, claim);
+  }
+  for (const claim of [
+    "Tests pass locally.",
+    "CI is still running.",
+    "The pipeline failed on the upload step.",
+    "Fixed the loader and added a test.",
+    "",
+    undefined,
+  ]) {
+    assert.equal(couldClaimRemote(claim), false, String(claim));
+  }
+});
+
+test("the remote fact reaches the state the question reads", async () => {
+  const calls = [];
+  const ask = async (request) => {
+    calls.push(request);
+    return { answers: { claims_remote: noul(0.9), acknowledges_gap: noul(0.01) } };
+  };
+  await judgeDoneClaim({ claim: "CI is green.", files: [], remoteVerificationSeen: false, ask });
+  assert.equal(calls[0].state.remote_verification_seen, false);
 });

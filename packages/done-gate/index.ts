@@ -33,7 +33,7 @@ import { messageText } from "../../shared/message-text.mjs";
 // since the process started has to be read as a property, where a named import
 // fails. See the livePaths call below.
 import * as gateModule from "./gate.mjs";
-import { claimLine, judgeDoneClaim } from "./claim.mjs";
+import { claimLine, couldClaimRemote, judgeDoneClaim } from "./claim.mjs";
 import {
   DIFF_ARGS,
   buildNudge,
@@ -127,9 +127,20 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_before_settle", async (event, ctx) => {
-    if (!shouldNudge(state, event?.outcome)) {
+    const needsVerify = shouldNudge(state, event?.outcome);
+    // A run that changed nothing can still claim "CI is green" after checking
+    // only this machine. The claim is the whole trigger here, so it is read
+    // before anything is asked: no claim of remote success, no request.
+    const completed = event?.outcome === undefined || event?.outcome === "completed";
+    const checkRemote =
+      completed &&
+      !state.remoteNudged &&
+      !state.remoteVerificationSeen &&
+      couldClaimRemote(lastClaim);
+    if (!needsVerify && !checkRemote) {
       return;
     }
+
     const cwd = ctx.cwd ?? process.cwd();
     const untracked = await listUntracked(cwd);
     // A stale gate.mjs (see the namespace import) means no filter yet: keep the
@@ -139,24 +150,47 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       typeof gateModule.livePaths === "function"
         ? gateModule.livePaths([...state.dirty], live)
         : [...state.dirty];
-    // Everything was reverted, committed, ignored, or lives outside this repo.
-    if (files.length === 0) {
+    if (needsVerify && files.length === 0) {
+      // Everything was reverted, committed, ignored, or lives outside this repo.
       return;
     }
-    state.dirty = new Set(files);
 
     // Both are best effort and neither may fail the run: the debug scan
     // swallows its own errors, and the judge reports every failure as
     // "unjudged". The judge takes its own timeout rather than `ctx.signal`,
     // because an inherited abort would drop the judgment silently.
     const [debugHits, judged] = await Promise.all([
-      findDebugTags(cwd, untracked),
+      needsVerify ? findDebugTags(cwd, untracked) : Promise.resolve([]),
       judgeDoneClaim({
         claim: lastClaim,
         files,
         verificationSeen: state.verificationSeen,
+        remoteVerificationSeen: state.remoteVerificationSeen,
       }),
     ]);
+
+    if (!needsVerify) {
+      // Only the specific overclaim earns a line here: the generic "unclosed
+      // claim" nudge already had its run, and repeating it is noise.
+      if (judged.verdict !== "remote_overreach") {
+        return;
+      }
+      state.remoteNudged = true;
+      return {
+        entries: [
+          ...(event?.entries ?? []),
+          {
+            type: "custom_message",
+            customType: CUSTOM_TYPE,
+            content: claimLine(judged),
+            display: false,
+          },
+        ],
+        continue: true,
+      };
+    }
+
+    state.dirty = new Set(files);
     const content = buildNudge(state, debugHits, claimLine(judged));
     // Keep earlier handlers' drafts; only ever set continue to true so another
     // extension's continuation is never cleared.

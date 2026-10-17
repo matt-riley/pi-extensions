@@ -40,14 +40,45 @@ export function isVerifyCommand(command) {
 
 /** Fresh state; reset on each user input so every run is judged on its own. */
 export function createGateState() {
-  return { dirty: new Set(), nudged: false, verificationSeen: false };
+  return {
+    dirty: new Set(),
+    nudged: false,
+    verificationSeen: false,
+    remoteVerificationSeen: false,
+    remoteNudged: false,
+  };
 }
 
 export function resetGateState(state) {
   state.dirty.clear();
   state.nudged = false;
   state.verificationSeen = false;
+  state.remoteVerificationSeen = false;
+  state.remoteNudged = false;
   return state;
+}
+
+/**
+ * Commands that ask a runner what it thinks, as opposed to this machine.
+ *
+ * Only a successful one is evidence: `gh pr checks` exits non-zero when a
+ * check failed or is pending, and that is not the CI-green a claim would be
+ * resting on. `git push` is not here at all — a push starts CI, it does not
+ * report what CI said.
+ */
+const REMOTE_VERIFY_COMMANDS = [
+  String.raw`gh\s+pr\s+checks\b`,
+  String.raw`gh\s+run\s+(?:view|list|watch)\b`,
+  String.raw`gh\s+api\b.*\/check-runs\b`,
+  String.raw`gh\s+pr\s+view\b.*statusCheckRollup`,
+].map((body) => new RegExp(CMD_START + body));
+
+/** True when a bash command asks a remote runner for its result. */
+export function isRemoteVerifyCommand(command) {
+  if (typeof command !== "string") {
+    return false;
+  }
+  return REMOTE_VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()));
 }
 
 /**
@@ -83,6 +114,12 @@ export function observeToolResult(state, { toolName, input, isError, cwd } = {})
     const path = raw ? repoRelativePath(cwd, raw) : null;
     if (isError !== true && path && !DOC_FILE.test(path)) {
       state.dirty.add(path);
+    }
+    return;
+  }
+  if (toolName === "bash" && isRemoteVerifyCommand(input?.command)) {
+    if (isError !== true) {
+      state.remoteVerificationSeen = true;
     }
     return;
   }

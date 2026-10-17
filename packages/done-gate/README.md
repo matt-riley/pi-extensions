@@ -58,11 +58,14 @@ checks or by saying why they do not apply.
 
 The reminder cannot read the claim it is answering. When the gate fires and the
 run has a final assistant message, that message goes to TypeSafe's System One
-(`jev-latest` unless `TYPESAFE_MODEL` says otherwise) as two typed questions:
+(`jev-latest` unless `TYPESAFE_MODEL` says otherwise) as three typed questions:
 
 - **asserts_verified** — does the message claim the changed code was verified,
   or only describe what changed?
 - **acknowledges_gap** — does it say plainly what was left unverified?
+- **claims_remote** — does it assert that checks passed on a runner (CI, a
+  workflow, GitHub Actions, a PR's checks), or that the work is merged,
+  deployed or released?
 
 A claim that asserts success without naming the gap gains one sentence:
 
@@ -79,11 +82,40 @@ error in the settle path. Thresholds and routing live in `claim.mjs`, not in a
 prompt, and `judgeDoneClaim` takes an injectable `ask` so the tests never touch
 the network.
 
+## Local evidence is not remote evidence
+
+A run that verified locally can still close with "CI is green". That is the same
+overclaim one layer out: the evidence in the session is a local test run, and
+the claim is about a runner. The shape of the run cannot see it, so the claim is
+read instead.
+
+- **Remote evidence** is a successful `gh pr checks`, `gh run view|list|watch`,
+  `gh api …/check-runs` or `gh pr view …statusCheckRollup`, in command position.
+  A failing remote check is not evidence of a green one; `git push` is not
+  evidence at all, because a push starts CI rather than reporting it.
+- **The check runs on its own** when a completed run changes nothing, closes
+  with a claim that could assert remote success (`couldClaimRemote`), and the
+  session saw no remote check. The pre-filter is a sentence that names a runner
+  and a success, or names a merge, deploy or release; it is deliberately
+  generous, because a false positive costs one request that answers "no".
+- **The line names the gap beside the evidence**:
+
+```
+TypeSafe reads that claim as verification on a runner (claims_remote 0.88),
+and no check on a runner succeeded this run: verified locally is not verified
+remotely. Say which one you have.
+```
+
+A claim that names its gap is still left alone, and a remote check that did run
+clears the reading.
+
 ## Behaviour
 
 - **Edits** are successful `edit` / `write` calls to non-doc files inside the
   session cwd. Prose files (`.md`, `.mdx`, `.txt`, `.rst`, `.adoc`) do not
   count, and anything outside the cwd is not the repo's to check.
+- **Remote verification** is a successful `gh pr checks`, `gh run view|list|watch`,
+  `gh api …/check-runs` or `gh pr view …statusCheckRollup`, in command position.
 - **Verification** is a `bash` call that runs, in command position: `.pi/verify`,
   `npm|pnpm|yarn|bun [run] test|check|lint|typecheck|verify`, `node --test`,
   `go test|vet`, `cargo test|check|clippy`, `make test|check|lint|verify`, or
@@ -94,7 +126,9 @@ the network.
 - **One nudge per user input**, and only after a `completed` run, never after an
   abort or error. It is appended with `display: false`.
 - **One claim judgment** rides along with that nudge, when the run has a final
-  assistant message to read. It is a single request with a 4-second timeout, and
+  assistant message to read — and a second, claim-only judgment when a run that
+  changed nothing earns the remote check above. Each is a single request with a
+  4-second timeout, and
   credentials resolve exactly as they do for the guardrail
   (`shared/systemone.mjs`). Every failure degrades to no extra line.
 - **Debug tags.** At nudge time, added lines in `git diff -U0 HEAD` and untracked

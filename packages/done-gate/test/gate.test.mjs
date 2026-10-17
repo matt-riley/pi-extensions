@@ -11,6 +11,7 @@ import {
   createGateState,
   debugTagsInDiff,
   debugTagsInFile,
+  isRemoteVerifyCommand,
   isVerifyCommand,
   livePaths,
   observeToolResult,
@@ -220,4 +221,36 @@ test("the nudge asks for the explanation back, not a report about the reminder",
   const state = createGateState();
   observeToolResult(state, edit("src/a.ts"));
   assert.match(buildNudge(state), /close with your explanation of the work/);
+});
+
+test("only a successful remote check counts as remote evidence", () => {
+  const state = createGateState();
+  assert.equal(state.remoteVerificationSeen, false);
+  observeToolResult(state, { ...bash("gh pr checks 42"), isError: true });
+  assert.equal(state.remoteVerificationSeen, false, "a failing check is not CI green");
+  observeToolResult(state, bash("gh pr checks 42"));
+  assert.equal(state.remoteVerificationSeen, true);
+  resetGateState(state);
+  assert.equal(state.remoteVerificationSeen, false, "the next run starts over");
+});
+
+test("remote checks are recognized in command position only", () => {
+  for (const command of [
+    "gh pr checks",
+    "gh pr checks 42 --watch",
+    "gh run view 123 --log-failed",
+    "gh run list --limit 5",
+    "gh pr view 42 --json statusCheckRollup",
+  ]) {
+    assert.equal(isRemoteVerifyCommand(command), true, command);
+  }
+  for (const command of [
+    'grep -rn "gh pr checks" README.md',
+    "echo gh pr checks",
+    "git push origin main",
+    "npm test",
+    undefined,
+  ]) {
+    assert.equal(isRemoteVerifyCommand(command), false, String(command));
+  }
 });
