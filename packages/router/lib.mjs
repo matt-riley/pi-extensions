@@ -28,7 +28,7 @@ export const TOOL_GROUPS = {
   ],
   edit: ["edit", "write"],
   shell: ["bash", "shell"],
-  web: ["web_fetch", "batch_web_fetch", "web_search", "plan_fetch_url"],
+  web: ["web_fetch", "batch_web_fetch", "web_search", "web_answer", "plan_fetch_url"],
   memory: [
     "lore_recall",
     "lore_retain",
@@ -42,7 +42,7 @@ export const TOOL_GROUPS = {
   plan: ["plan_mode_question", "plan_mode_complete"],
   agents: ["subagent", "traycer_create_agent"],
   skill: ["skill_select"],
-  judge: ["typesafe_ask"],
+  judge: ["typesafe_ask", "lint_change", "verify_findings"],
 };
 
 const NAME_TO_GROUP = new Map();

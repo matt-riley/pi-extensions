@@ -5,6 +5,7 @@
 //   web_fetch       — one URL → markdown/html/text/json/raw + metadata
 //   batch_web_fetch — many URLs with bounded concurrency
 //   web_search      — keyless DuckDuckGo web search (titles/URLs/snippets)
+//   web_answer      — the passages of a page that answer a question (TypeSafe)
 //
 // GitHub URLs prefer the `gh` CLI (authenticated, structured) and fall back
 // to plain HTTP when gh is missing or unauthenticated. Zero runtime
@@ -12,6 +13,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { resolveConfig } from "../../shared/systemone.mjs";
+import { answerFromPage, formatAnswer } from "./answer.mjs";
 import { allocateItemBudget, chargeBudget } from "./batch.mjs";
 import { fetchPage, fetchSmart } from "./fetch.mjs";
 import { formatBatchResult, formatWebFetchResult, isKnownFormat } from "./format.mjs";
@@ -46,6 +49,12 @@ const SEARCH_DESCRIPTION = [
   "Search the web via DuckDuckGo (no API key required) or a configured SearXNG instance, returning ranked results with titles, URLs, and snippets.",
   "Use when you need current or source-backed information outside your training data: recent events, versions, docs, people.",
   "Results reflect the engine's index; verify claims against the linked sources before citing them.",
+].join(" ");
+
+const ANSWER_DESCRIPTION = [
+  "Fetch a page and return only the passages that answer a question, judged by TypeSafe System One.",
+  "Use it instead of web_fetch when the question is narrow: one judgment costs less than reading a whole page.",
+  "The passages are the page's own text, never a summary.",
 ].join(" ");
 
 const SEARCH_SNIPPET =
@@ -187,6 +196,109 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
       } catch (err) {
         return {
           content: [{ type: "text", text: errorText(`web_fetch failed for ${options.url}`, err) }],
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "web_answer",
+    label: "web_answer",
+    description: ANSWER_DESCRIPTION,
+    promptSnippet:
+      "web_answer(url, question, max_spans?): fetch a page and return only the passages that answer the question, judged by TypeSafe System One; the passages are the page's own text",
+    promptGuidelines: [
+      "Use web_answer instead of web_fetch when the question is narrow and the page is long: it pays one judgment to save reading a whole page. The passages are quoted from the page, so cite them as the source.",
+      "web_answer needs TYPESAFE_API_KEY. Without it, fall back to web_fetch and read the page.",
+    ],
+    parameters: Type.Object({
+      url: Type.String({ description: "The http(s) URL to fetch" }),
+      question: Type.String({
+        minLength: 2,
+        description: "The question the page should answer, in one sentence.",
+      }),
+      max_spans: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: 8,
+          description: "Max passages to return (default 3).",
+        }),
+      ),
+    }),
+
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const settings = await loadSettings({ cwd: ctx.cwd });
+      const url = String(params?.url ?? "").trim();
+      const question = String(params?.question ?? "").trim();
+      if (!url) {
+        return { content: [{ type: "text", text: "Rejected: url is empty." }] };
+      }
+      if (!URL.canParse(url)) {
+        return { content: [{ type: "text", text: `Rejected: "${url}" is not a valid URL.` }] };
+      }
+      if (question.length < 2) {
+        return { content: [{ type: "text", text: "Rejected: question is too short." }] };
+      }
+      if (!resolveConfig(process.env).apiKey) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Rejected: web_answer needs TYPESAFE_API_KEY. Use web_fetch and read the page instead.",
+            },
+          ],
+        };
+      }
+
+      onUpdate?.({ content: [{ type: "text", text: `Fetching ${url}…` }] });
+      try {
+        const outcome = await fetchSmart({
+          url,
+          format: "markdown",
+          maxChars: 120_000,
+          timeoutMs: settings.defaultTimeoutMs,
+          headers: {},
+          includeImages: false,
+          followAlternates: settings.followAlternates,
+          useGh: settings.useGh,
+          userAgent: settings.userAgent,
+          extraHeaders: settings.extraHeaders,
+          signal,
+        });
+        if (outcome.kind === "binary") {
+          return {
+            content: [
+              { type: "text", text: `web_answer: ${url} is not readable text (binary payload).` },
+            ],
+          };
+        }
+        const body = outcome.kind === "page" ? outcome.markdown : (outcome.text ?? "");
+        const source = outcome.finalUrl || url;
+        if (!String(body).trim()) {
+          return {
+            content: [{ type: "text", text: `web_answer: no readable text at ${source}.` }],
+          };
+        }
+        const result = await answerFromPage({
+          url: source,
+          question,
+          text: body,
+          maxSpans: clampInt(params?.max_spans, 3, 1, 8),
+          env: process.env,
+          signal,
+        });
+        return {
+          content: [{ type: "text", text: formatAnswer({ url: source, question, ...result }) }],
+          details: {
+            verdict: result.verdict,
+            answered: result.answered,
+            spans: result.spans.length,
+          },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: errorText(`web_answer failed for ${url}`, err) }],
+          isError: true,
         };
       }
     },

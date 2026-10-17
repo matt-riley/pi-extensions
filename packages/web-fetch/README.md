@@ -1,6 +1,7 @@
 # pi-web-fetch — browser-grade web fetching & search for pi
 
-Zero-dependency `web_fetch` / `batch_web_fetch` / `web_search` tools:
+Zero-dependency `web_fetch` / `batch_web_fetch` / `web_search` tools, plus
+`web_answer` when a TypeSafe key is present:
 browser-like request headers, clean readable extraction, page metadata,
 redirect handling, GitHub URLs via the `gh` CLI, bounded-concurrency batch
 fetching, and keyless web search via DuckDuckGo.
@@ -11,6 +12,7 @@ fetching, and keyless web search via DuckDuckGo.
 web_fetch(url, format?, maxChars?, timeoutMs?, headers?, includeImages?, followAlternates?)
 batch_web_fetch(requests, concurrency?, totalMaxChars?)
 web_search(query, max_results?)
+web_answer(url, question, max_spans?)
 ```
 
 `web_fetch` returns a metadata header (`title`, `url`, `published`, `author`,
@@ -18,6 +20,44 @@ web_search(query, max_results?)
 format. `batch_web_fetch` fans out with bounded concurrency and reports each
 item's result (or failure) independently. `web_search` returns ranked
 DuckDuckGo results (title, URL, snippet) without an API key.
+
+## `web_answer` — the passage, not the page
+
+```
+web_answer(url, question, max_spans?)
+```
+
+Fetching a long page to answer one narrow question pays for the whole page.
+`web_answer` fetches it, splits it into passages, and asks TypeSafe's System One
+whether each passage answers the question — one request, every passage asked at
+once, plus a Noul for whether the page answers at all.
+
+It returns the passages themselves, quoted verbatim, so the answer can be
+checked against its own text:
+
+```
+source: https://example.com/docs
+[passage 2 · 0.84]
+The uploader retries three times, with exponential backoff starting at 200 ms.
+```
+
+Three outcomes, and the tool says which one it is rather than guessing:
+
+- **answered** — the page answers the question; the strongest passages are returned.
+- **closest** — nothing cleared the threshold, but the nearest passages are
+  returned with a warning, because reading them beats re-fetching blind.
+- **not_found** — the page does not appear to answer; try another source
+  rather than reading this one.
+
+Requirements and limits:
+
+- **`TYPESAFE_API_KEY`** (`LORE_TYPESAFE_API_KEY`, or the lore config file — the
+  same chain `pi-typesafe` uses). Without it the tool refuses with a message
+  pointing at `web_fetch` rather than fetching and failing later.
+- The page is cut at 45,000 characters before splitting and at 12 passages
+  after, so the state stays inside Jev's limit; the reply says when it truncated.
+- It is a fetch plus a judgment, so it is slower than `web_fetch` and faster
+  than reading 40 KB of marketing copy. Use `web_fetch` when you want the page.
 
 ## Output formats
 
