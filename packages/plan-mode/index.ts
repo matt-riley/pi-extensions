@@ -34,6 +34,7 @@ import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { resolveApiKey } from "../../shared/systemone.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
+import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
@@ -580,9 +581,16 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      // The plan review AGENTS.md asks for, in code rather than in a promise to
+      // remember: each step is asked whether it names its verification and
+      // what else depends on it, and the answer is appended to the file the
+      // user is about to read. It never blocks the plan.
+      const review = await reviewPlan({ plan, env: process.env }).catch(() => ({ appendix: null }));
+      const reviewed = review.appendix ? `${plan}\n\n${review.appendix}` : plan;
+
       let savedPath: string;
       try {
-        savedPath = await writePlanFile(ctx, plan);
+        savedPath = await writePlanFile(ctx, reviewed);
       } catch (error) {
         return {
           content: [

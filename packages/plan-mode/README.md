@@ -72,13 +72,44 @@ While plan mode is active:
   then does it finish with `plan_mode_complete({ plan })`, which:
 
   1. validates the plan,
-  2. writes it to **`.pi/PLAN.md`** in the working directory (not repo-root
+  2. asks TypeSafe whether each step names its verification and identifies the
+     callers or consumers it affects, and appends the answer as a
+     **Plan check** section (see below),
+  3. writes it to **`.pi/PLAN.md`** in the working directory (not repo-root
      `PLAN.md` — that would collide with projects' own `PLAN.md` files and
      force a per-project gitignore entry)
      (revisions overwrite in place unless the file was edited — then they land
      in `.pi/PLAN.md.2`, `.3`, … so your edits are never clobbered; writes are
      atomic), and
-  3. ends the turn.
+  4. ends the turn.
+
+### The plan check
+
+The repo's AGENTS.md asks for a judgment before a plan is presented: does each
+step name how it will be verified, and are the callers it affects identified?
+That is per-step, so `plan-review.mjs` splits the plan into steps (list items
+first, then headings, then the plan as one step), asks both questions for every
+step in **one** request, and appends what falls short to the plan file:
+
+```
+## Plan check
+
+TypeSafe read the steps above and found:
+
+No verification named:
+- step 3 — Add a cache layer between the loader and the store
+
+Affected callers not identified:
+- step 5 — Rename config.timeout to config.deadline
+
+This is a reading of the plan text, not of the code. Edit the step or say why it holds.
+```
+
+It costs one request with an 8-second timeout and is never allowed to block the
+plan: no key, a failed request or an unusable answer means the plan is written
+exactly as submitted. A plan where every step holds up gets a one-line "every
+step names its verification" instead of silence, so the check is visible when it
+passes too.
 
 You then read/edit `.pi/PLAN.md` — directly, via `/plan edit` or `ctrl+alt+e`
 (Ctrl+G inside the dialog opens your `$EDITOR`; the plan is written back when
