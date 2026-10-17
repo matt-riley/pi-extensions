@@ -415,8 +415,15 @@ function formatProbabilities(probabilities, legend) {
     .join(" ");
 }
 
-/** Numeric answer values, accepting a numeric string but not a blank. */
-function finiteAnswerValue(value) {
+/**
+ * A number the answer actually gave, or null when it gave none.
+ *
+ * Number(null) and Number("") are both 0, and 0 is a real reading — so an
+ * absent value must never come back as a confident zero. Every caller routes
+ * "below the threshold" and "no answer" to opposite decisions, which is why
+ * this is one function rather than a copy per package.
+ */
+export function usableNumber(value) {
   if (value === null || value === undefined) {
     return null;
   }
@@ -444,7 +451,7 @@ export function formatAnswers({ model, usage, answers, redactions } = {}) {
   }
   for (const [id, answer] of entries) {
     if (answer?.type === "noul") {
-      const value = finiteAnswerValue(answer.noul);
+      const value = usableNumber(answer.noul);
       lines.push(
         value === null
           ? `${id}: unusable answer (no noul value)`
@@ -468,7 +475,7 @@ export function formatAnswers({ model, usage, answers, redactions } = {}) {
       continue;
     }
     if (answer?.type === "score") {
-      const value = finiteAnswerValue(answer.score);
+      const value = usableNumber(answer.score);
       if (value === null) {
         lines.push(`${id}: unusable answer (no score value)`);
         continue;

@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
+import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { resolveApiKey } from "../../shared/systemone.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
@@ -45,10 +46,7 @@ const GATE_ENV = "PI_PLAN_JUDGE";
 
 /** Off means off, and no key means no request rather than a lost question. */
 function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const flag = String(env?.[GATE_ENV] ?? "")
-    .trim()
-    .toLowerCase();
-  if (["0", "false", "off", "no"].includes(flag)) {
+  if (flagOff(env?.[GATE_ENV])) {
     return false;
   }
   try {

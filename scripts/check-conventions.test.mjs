@@ -8,6 +8,7 @@ import {
   checkSkillReferences,
   controlByteErrors,
   runtimeImports,
+  sharedHelperErrors,
 } from "./check-conventions.mjs";
 
 test("a control byte in a text file is caught, and ordinary whitespace is not", () => {
@@ -28,6 +29,38 @@ test("a control byte in a text file is caught, and ordinary whitespace is not", 
     assert.equal(errors.length, 1, "exactly the broken file");
     assert.match(errors[0], /packages\/broken\.mjs: control byte 0x08/);
     assert.match(errors[0], /match nothing/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a shared helper copied into a package is caught, and tests are exempt", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "shared-helpers-"));
+  try {
+    mkdirSync(path.join(root, "packages", "copy"), { recursive: true });
+    mkdirSync(path.join(root, "packages", "copy", "test"), { recursive: true });
+    writeFileSync(
+      path.join(root, "packages", "copy", "judge.mjs"),
+      'function usableNumber(raw) {\n  return Number(raw);\n}\nconst off = ["0", "false", "off", "no"].includes("x");\n',
+    );
+    writeFileSync(
+      path.join(root, "packages", "copy", "good.mjs"),
+      'import { usableNumber } from "../../shared/systemone.mjs";\nexport const n = usableNumber(1);\n',
+    );
+    writeFileSync(
+      path.join(root, "packages", "copy", "test", "stub.test.mjs"),
+      "function usableNumber(raw) {\n  return raw;\n}\n",
+    );
+    const errors = sharedHelperErrors(root);
+    assert.equal(errors.length, 2, "the definition and the flag list, not the import");
+    assert.match(
+      errors[0],
+      /packages\/copy\/judge\.mjs: a local usableNumber belongs in shared\/systemone\.mjs/,
+    );
+    assert.match(
+      errors[1],
+      /packages\/copy\/judge\.mjs: a local off-flag list belongs in shared\/env-flag\.mjs/,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -15,7 +15,7 @@
 // the wrong question: one line of request is not context. Reading the
 // recommendation needs no more than the tool already has.
 
-import { askSystemOne, validateRequest } from "../../shared/systemone.mjs";
+import { askSystemOne, usableNumber, validateRequest } from "../../shared/systemone.mjs";
 
 /** The escape hatch. Without it, a model that must choose invents. */
 export const ASK_USER = "ask_user";
@@ -85,12 +85,6 @@ export function buildGateQuestions(options = []) {
       criteria,
     },
   };
-}
-
-function usableNumber(raw) {
-  if (raw === null || raw === undefined) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
 }
 
 /** Read the answers without trusting their shape, or the option list. */

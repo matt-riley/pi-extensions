@@ -193,6 +193,42 @@ export function controlByteErrors(root) {
   return errors;
 }
 
+// A helper that already lives in shared/ gets re-typed into the next package
+// instead of imported, and then drifts: five copies of usableNumber disagreed
+// about a blank string, and three copies of the off-flag list could disagree
+// about what "off" means. shared/ is the one home, and this keeps it that way.
+const SHARED_HELPERS = [
+  {
+    pattern: /\bfunction\s+usableNumber\s*\(/,
+    what: "a local usableNumber",
+    home: "shared/systemone.mjs",
+  },
+  {
+    pattern: /\[\s*"0"\s*,\s*"false"\s*,\s*"off"\s*,\s*"no"\s*\]/,
+    what: "a local off-flag list",
+    home: "shared/env-flag.mjs",
+  },
+];
+
+/** Copies of a shared helper in packages/, found by definition rather than by name. */
+export function sharedHelperErrors(root) {
+  const errors = [];
+  const packages = path.join(root, "packages");
+  if (!fs.existsSync(packages)) return errors;
+  for (const file of fs.readdirSync(packages, { recursive: true })) {
+    if (!/\.(?:ts|mjs)$/.test(file) || file.endsWith(".d.ts")) continue;
+    const relative = `packages/${file.split(path.sep).join("/")}`;
+    // A test may stub a helper to prove the caller handles it; the drift this
+    // guards against is in runtime code.
+    if (relative.split("/").includes("test")) continue;
+    const text = fs.readFileSync(path.join(root, relative), "utf8");
+    for (const { pattern, what, home } of SHARED_HELPERS) {
+      if (pattern.test(text)) errors.push(`${relative}: ${what} belongs in ${home}`);
+    }
+  }
+  return errors;
+}
+
 // A prompt that names "the `x` skill" must name one this repo or the curated
 // library owns. A skill that only exists under a harness's own root (e.g.
 // ~/.codex/skills/.system) can vanish on that harness's next update, which is
@@ -258,7 +294,12 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   const root = path.resolve(import.meta.dirname, "..");
   const references = checkSkillReferences(root);
   if (references.skipped) console.log(`Skipped: ${references.skipped}`);
-  const errors = [...checkConventions(root), ...controlByteErrors(root), ...references.errors];
+  const errors = [
+    ...checkConventions(root),
+    ...controlByteErrors(root),
+    ...sharedHelperErrors(root),
+    ...references.errors,
+  ];
   for (const error of errors) console.error(error);
   if (!errors.length) console.log("Repository conventions pass");
   process.exitCode = errors.length ? 1 : 0;

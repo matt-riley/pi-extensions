@@ -7,7 +7,7 @@
 //
 // Plain .mjs so node --test covers the mapping without a TS loader.
 
-import { askSystemOne, validateRequest } from "../../shared/systemone.mjs";
+import { askSystemOne, usableNumber, validateRequest } from "../../shared/systemone.mjs";
 
 /** What the question sees. The published protocol ships the first 2000. */
 const OUTPUT_CHARS = 2000;
@@ -54,12 +54,6 @@ export function buildFailureQuestions() {
         "that a coding agent must not repeat in a reply, a file, or another command?",
     },
   };
-}
-
-function usableNumber(raw) {
-  if (raw === null || raw === undefined) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
 }
 
 function clip(text, limit = OUTPUT_CHARS) {

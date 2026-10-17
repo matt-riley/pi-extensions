@@ -11,7 +11,7 @@
 // no line at all, because a missing sentence is a smaller problem than a run
 // that cannot finish.
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
 
 /** Short on purpose: the run has finished and the person is waiting for it. */
 export const DEFAULT_TIMEOUT_MS = 4000;
@@ -23,15 +23,6 @@ const THRESHOLDS = {
 
 const MAX_CLAIM_CHARS = 1500;
 const MAX_FILES = 50;
-
-// Number(null) is 0, which would read as a confident "nothing claimed" — the
-// one direction a claim check must never fail in. Absent values are absent.
-function usableNumber(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
 
 function noulValue(answer) {
   if (!answer || answer.type !== "noul") return null;

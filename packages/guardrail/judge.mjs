@@ -11,7 +11,7 @@
 // the question becomes "would this be surprising to someone who asked for
 // exactly what the action says it does?".
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
 
 /** Short on purpose: this sits between a tool call and its execution. */
 export const DEFAULT_TIMEOUT_MS = 4000;
@@ -43,15 +43,6 @@ const THRESHOLDS = {
 
 const MAX_REQUEST_CHARS = 600;
 const MAX_ACTION_CHARS = 1500;
-
-// Number(null) is 0, which would read as a confident "no risk" — the one
-// direction a guardrail must never fail in. Absent values are absent.
-function usableNumber(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
 
 function noulValue(answer) {
   if (!answer || answer.type !== "noul") return null;

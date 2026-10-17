@@ -5,6 +5,7 @@
 // says so when no skill fits. Strictly fail-open: disabled, keyless, a provider
 // error or an unusable answer all leave the lexical order untouched.
 
+import { flagOff } from "../../shared/env-flag.mjs";
 import { askSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
 import { DEFAULT_LIMIT, rankSkills } from "./library.mjs";
 
@@ -23,10 +24,7 @@ export function tiebreakEnabled(env = process.env) {
   if (!resolveApiKey(env)) {
     return false;
   }
-  const flag = String(env?.[TIEBREAK_ENV] ?? "")
-    .trim()
-    .toLowerCase();
-  return !["0", "false", "off", "no"].includes(flag);
+  return !flagOff(env?.[TIEBREAK_ENV]);
 }
 
 /** A usable override only; a blank or junk value must not fall back to 30s. */

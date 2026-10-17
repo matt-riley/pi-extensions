@@ -17,6 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { resolveApiKey } from "../../shared/systemone.mjs";
 import { appendNudge, createNudgeState, observeToolResult, resetNudgeState } from "./nudge.mjs";
@@ -26,10 +27,7 @@ export const TRIAGE_ENV = "PI_DIAGNOSIS_TRIAGE";
 
 /** Off means off: anything but a yes leaves the deterministic nudge alone. */
 function triageEnabled(env = process.env) {
-  const flag = String(env?.[TRIAGE_ENV] ?? "")
-    .trim()
-    .toLowerCase();
-  if (["0", "false", "off", "no"].includes(flag)) {
+  if (flagOff(env?.[TRIAGE_ENV])) {
     return false;
   }
   try {

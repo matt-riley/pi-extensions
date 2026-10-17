@@ -11,6 +11,8 @@
 // seven questions cost the same as one and the gate in front of them matters
 // more than trimming the battery.
 
+import { usableNumber } from "../../shared/systemone.mjs";
+
 /** Probability above which an answer counts as "yes". */
 export const ROUTER_THRESHOLDS = {
   needs: 0.5,
@@ -123,15 +125,6 @@ export function buildRouterState({ prompt, previousTurn, cwd, recentTools } = {}
       : null,
     recent_tools: Array.isArray(recentTools) ? recentTools.slice(-20) : [],
   };
-}
-
-// Number(null) is 0, which would read as a confident "no" — the direction a
-// router must not fail in, because "no shell needed" removes a tool.
-function usableNumber(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === "string" && !raw.trim()) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
 }
 
 function noulValue(answer) {
