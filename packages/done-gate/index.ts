@@ -29,6 +29,10 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { messageText } from "../../shared/message-text.mjs";
+// Namespace import too: /reload can serve a cached gate.mjs, and a binding added
+// since the process started has to be read as a property, where a named import
+// fails. See the livePaths call below.
+import * as gateModule from "./gate.mjs";
 import { claimLine, judgeDoneClaim } from "./claim.mjs";
 import {
   DIFF_ARGS,
@@ -36,7 +40,6 @@ import {
   createGateState,
   debugTagsInDiff,
   debugTagsInFile,
-  livePaths,
   observeToolResult,
   resetGateState,
   shouldNudge,
@@ -129,7 +132,13 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
     const cwd = ctx.cwd ?? process.cwd();
     const untracked = await listUntracked(cwd);
-    const files = livePaths([...state.dirty], await findLiveFiles(cwd, untracked));
+    // A stale gate.mjs (see the namespace import) means no filter yet: keep the
+    // unfiltered paths rather than throwing into the settle boundary.
+    const live = await findLiveFiles(cwd, untracked);
+    const files =
+      typeof gateModule.livePaths === "function"
+        ? gateModule.livePaths([...state.dirty], live)
+        : [...state.dirty];
     // Everything was reverted, committed, ignored, or lives outside this repo.
     if (files.length === 0) {
       return;
