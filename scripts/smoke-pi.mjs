@@ -45,7 +45,12 @@ const server = createServer(async (req, res) => {
     content = null;
   }
   const pushedBack = JSON.stringify(messages).split("A plateau is not a stop").length > 2;
-  if (phase === "edit" || phase === "until") {
+  if (phase === "edit" || phase === "outside" || phase === "until") {
+    if (last?.role !== "tool" && phase === "outside")
+      tool = {
+        name: "write",
+        arguments: { path: path.join(fixture, "outside.js"), content: "export {};" },
+      };
     if (last?.role !== "tool" && phase === "edit" && !JSON.stringify(last).includes("Done check"))
       tool = { name: "write", arguments: { path: "smoke-edit.js", content: "export {};\n" } };
     if (last?.role !== "tool" && phase === "until" && pushedBack)
@@ -273,7 +278,18 @@ try {
   const gated = await prompt("SMOKE_EDIT: write the fixture file, then stop.");
   assert.match(JSON.stringify(gated), /Done check: 1 file\(s\) changed/);
   assert.equal(requests - before, 3, "done-gate should buy exactly one extra model turn");
+  assert.match(
+    JSON.stringify(gated),
+    /"display":false/,
+    "the reminder stays out of the transcript",
+  );
   console.log("ok: done-gate continues once after an unverified edit");
+  phase = "outside";
+  before = requests;
+  const outside = await prompt("SMOKE_OUTSIDE: write a file outside the workspace, then stop.");
+  assert.equal(requests - before, 2, "an edit outside the cwd should not buy a turn");
+  assert.doesNotMatch(JSON.stringify(outside), /Done check/);
+  console.log("ok: done-gate ignores edits outside the session cwd");
   phase = "until";
   before = requests;
   const start = events.length;

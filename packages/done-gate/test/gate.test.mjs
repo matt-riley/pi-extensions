@@ -12,6 +12,7 @@ import {
   debugTagsInDiff,
   debugTagsInFile,
   isVerifyCommand,
+  livePaths,
   observeToolResult,
   resetGateState,
   shouldNudge,
@@ -184,4 +185,39 @@ test("the nudge carries a claim judgment, and nothing when there is none", () =>
   const quiet = createGateState();
   observeToolResult(quiet, edit("src/a.ts"));
   assert.doesNotMatch(buildNudge(quiet), /TypeSafe/);
+});
+
+test("edits outside the session cwd do not arm the gate", () => {
+  const state = createGateState();
+  const cwd = "/work/repo";
+  observeToolResult(state, { ...edit("/tmp/probe.mjs"), cwd });
+  observeToolResult(state, { ...edit("../other/src/a.ts"), cwd });
+  observeToolResult(state, { ...edit("/Users/someone/.pi/agent/settings.json"), cwd });
+  assert.equal(shouldNudge(state, "completed"), false, "outside paths are not the repo's to check");
+
+  observeToolResult(state, { ...edit("/work/repo/src/a.ts"), cwd });
+  assert.deepEqual(
+    [...state.dirty],
+    ["src/a.ts"],
+    "an absolute path inside cwd is stored relative",
+  );
+});
+
+test("without a cwd every edit still arms the gate", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("/tmp/probe.mjs"));
+  assert.deepEqual([...state.dirty], ["/tmp/probe.mjs"]);
+});
+
+test("only edits the working tree still carries are gated", () => {
+  assert.deepEqual(livePaths(["src/a.ts", "src/b.ts"], ["src/b.ts", "new.ts"]), ["src/b.ts"]);
+  assert.deepEqual(livePaths(["./src/a.ts"], ["src/a.ts"]), ["./src/a.ts"]);
+  assert.deepEqual(livePaths(["src/a.ts"], []), [], "a reverted edit is not gated");
+  assert.deepEqual(livePaths(["src/a.ts"], null), ["src/a.ts"], "an unknown tree keeps the gate");
+});
+
+test("the nudge asks for the explanation back, not a report about the reminder", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  assert.match(buildNudge(state), /close with your explanation of the work/);
 });

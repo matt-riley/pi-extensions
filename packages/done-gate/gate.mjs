@@ -4,6 +4,12 @@
 // that is about to report "done" on faith. This tracks edits against
 // verification runs and, when the run settles dirty, produces one nudge.
 // Plain .mjs so node --test covers it without a TS loader (see AGENTS.md).
+//
+// It stays quiet by refusing to judge what the repo's checks cannot cover: an
+// edit outside the session cwd never arms it, and an edit the working tree no
+// longer carries is dropped before the nudge is built.
+
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
 
@@ -45,16 +51,36 @@ export function resetGateState(state) {
 }
 
 /**
+ * The edited path relative to the session cwd, or null when it is outside it.
+ *
+ * The nudge asks for the repo's checks, so the gate may only track files those
+ * checks can cover: a `/tmp` probe or a home dotfile is not one. No cwd means
+ * no filtering (tests, and any host that omits the field).
+ */
+function repoRelativePath(cwd, path) {
+  if (typeof cwd !== "string" || !cwd) {
+    return path;
+  }
+  const rel = relative(resolve(cwd), resolve(cwd, path));
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return null;
+  }
+  return rel;
+}
+
+/**
  * Observe one finished tool call.
  *
- * - a successful edit/write to a non-doc file marks that path unverified
+ * - a successful edit/write to a non-doc file inside the cwd marks that path
+ *   unverified, stored relative to the cwd
  * - a verification command clears every unverified path, pass or fail: the
  *   model has seen the result either way — and is remembered as
  *   `verificationSeen`, which tells the claim judgment whether any check ran
  */
-export function observeToolResult(state, { toolName, input, isError } = {}) {
+export function observeToolResult(state, { toolName, input, isError, cwd } = {}) {
   if (EDIT_TOOLS.has(toolName)) {
-    const path = typeof input?.path === "string" ? input.path : undefined;
+    const raw = typeof input?.path === "string" ? input.path : undefined;
+    const path = raw ? repoRelativePath(cwd, raw) : null;
     if (isError !== true && path && !DOC_FILE.test(path)) {
       state.dirty.add(path);
     }
@@ -72,6 +98,24 @@ export function shouldNudge(state, outcome) {
     return false;
   }
   return outcome === undefined || outcome === "completed";
+}
+
+const withoutDotSlash = (path) => String(path).replace(/^\.\//, "");
+
+/**
+ * The dirty paths the working tree still has a change for.
+ *
+ * `changed` is `git diff --name-only --relative HEAD` plus untracked files, so
+ * a path in neither was reverted during the run (or is ignored/generated) and
+ * there is nothing left to verify. `null` means git could not answer — keep
+ * every path rather than silently disabling the gate.
+ */
+export function livePaths(dirty, changed) {
+  if (!Array.isArray(changed)) {
+    return [...dirty];
+  }
+  const live = new Set(changed.map(withoutDotSlash));
+  return [...dirty].filter((path) => live.has(withoutDotSlash(path)));
 }
 
 const DEBUG_TAG = "[DEBUG-";
@@ -140,6 +184,10 @@ const list = (items) =>
 /**
  * The nudge. Marks the state nudged so a run gets at most one.
  *
+ * The closing sentence matters as much as the verification request: without it
+ * the model answers the reminder instead of restating the work, and the person
+ * loses the explanation they were reading.
+ *
  * `claimText` is the claim judgment's line when it has one. It goes last,
  * where the model reads it immediately before deciding what to do next.
  */
@@ -150,6 +198,8 @@ export function buildNudge(state, debugHits = [], claimText = null) {
     `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`,
     "Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise the changed behavior,",
     "or say plainly why verification does not apply.",
+    "Then close with your explanation of the work plus one line of what the check proved,",
+    "not a report about this reminder.",
   ];
   if (debugHits.length > 0) {
     lines.push(`Leftover debug instrumentation to remove: ${list(debugHits)}.`);

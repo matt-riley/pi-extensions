@@ -6,6 +6,15 @@
 // the model reads it before the turn closes. It also lists `[DEBUG-` tags left
 // in the working-tree diff.
 //
+// Quiet on purpose. The reminder is `display: false`: the model reads it as a
+// user message, the transcript does not, and it asks for the closing message to
+// carry the explanation rather than a report about the reminder.
+//
+// It also refuses to judge what the repo's checks cannot cover. Only edits
+// inside `ctx.cwd` arm the gate, and at settle only paths the working tree
+// still has a change for are reported — a `/tmp` probe, a home dotfile, or an
+// edit reverted before settling is not a finding.
+//
 // The reminder cannot read the claim it is answering, so System One does: the
 // last assistant message goes to `claim.mjs`, and a claim that reports success
 // with the unverified edits unmentioned gains a second sentence. A claim that
@@ -27,6 +36,7 @@ import {
   createGateState,
   debugTagsInDiff,
   debugTagsInFile,
+  livePaths,
   observeToolResult,
   resetGateState,
   shouldNudge,
@@ -41,20 +51,33 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   const state = createGateState();
   let lastClaim: string | undefined;
 
-  const git = async (cwd: string, args: string[]) => {
+  // null means git could not answer — no repo, no HEAD, git missing. That is
+  // not the same as "nothing changed", so callers must not read it as one.
+  const git = async (cwd: string, args: string[]): Promise<string | null> => {
     const result = await pi.exec("git", ["-C", cwd, ...args], { timeout: GIT_TIMEOUT_MS });
-    return result.code === 0 ? result.stdout : "";
+    return result.code === 0 ? result.stdout : null;
+  };
+
+  const listUntracked = async (cwd: string): Promise<string[] | null> => {
+    const out = await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    return out === null ? null : out.split("\0").filter(Boolean);
+  };
+
+  // Paths the tree still carries a change for, relative to the cwd. Ignored and
+  // generated files never appear, so writing build output does not arm the gate.
+  const findLiveFiles = async (cwd: string, untracked: string[] | null) => {
+    const tracked = await git(cwd, ["diff", "--name-only", "--relative", "HEAD"]);
+    if (tracked === null || untracked === null) {
+      return null;
+    }
+    return [...tracked.split("\n"), ...untracked].filter(Boolean);
   };
 
   // Best effort: outside a git repo, or if git fails, there are simply no hits.
-  const findDebugTags = async (cwd: string): Promise<string[]> => {
+  const findDebugTags = async (cwd: string, untracked: string[] | null) => {
     try {
-      const hits = debugTagsInDiff(await git(cwd, DIFF_ARGS));
-      const untracked = (await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]))
-        .split("\0")
-        .filter(Boolean)
-        .slice(0, MAX_UNTRACKED_FILES);
-      for (const path of untracked) {
+      const hits = debugTagsInDiff((await git(cwd, DIFF_ARGS)) ?? "");
+      for (const path of (untracked ?? []).slice(0, MAX_UNTRACKED_FILES)) {
         const full = join(cwd, path);
         try {
           if ((await stat(full)).size > MAX_UNTRACKED_BYTES) continue;
@@ -91,11 +114,12 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", async (event, ctx) => {
     observeToolResult(state, {
       toolName: event?.toolName,
       input: event?.input,
       isError: event?.isError === true,
+      cwd: ctx?.cwd,
     });
   });
 
@@ -103,15 +127,24 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     if (!shouldNudge(state, event?.outcome)) {
       return;
     }
+    const cwd = ctx.cwd ?? process.cwd();
+    const untracked = await listUntracked(cwd);
+    const files = livePaths([...state.dirty], await findLiveFiles(cwd, untracked));
+    // Everything was reverted, committed, ignored, or lives outside this repo.
+    if (files.length === 0) {
+      return;
+    }
+    state.dirty = new Set(files);
+
     // Both are best effort and neither may fail the run: the debug scan
     // swallows its own errors, and the judge reports every failure as
     // "unjudged". The judge takes its own timeout rather than `ctx.signal`,
     // because an inherited abort would drop the judgment silently.
     const [debugHits, judged] = await Promise.all([
-      findDebugTags(ctx.cwd ?? process.cwd()),
+      findDebugTags(cwd, untracked),
       judgeDoneClaim({
         claim: lastClaim,
-        files: [...state.dirty],
+        files,
         verificationSeen: state.verificationSeen,
       }),
     ]);
@@ -121,7 +154,10 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     return {
       entries: [
         ...(event?.entries ?? []),
-        { type: "custom_message", customType: CUSTOM_TYPE, content, display: true },
+        // display: false — the model still receives this as a user message
+        // (see message-types.md); the terminal keeps the explanation and the
+        // checks instead of a block about them.
+        { type: "custom_message", customType: CUSTOM_TYPE, content, display: false },
       ],
       continue: true,
     };
