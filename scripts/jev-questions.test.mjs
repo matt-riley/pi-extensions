@@ -21,6 +21,21 @@ import { buildTaskTypeQuestion } from "../packages/router/playbook.mjs";
 import { buildDifficultyState, buildQuestions } from "../packages/router/model-battery.mjs";
 import { buildQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
 import { rateCandidates } from "../shared/spans.mjs";
+import { lintChange } from "../packages/review/lint.mjs";
+import { verifyFindings } from "../packages/review/findings.mjs";
+import { classifyCi } from "./ci-triage.mjs";
+import { promoteCorrections } from "./promote-corrections.mjs";
+import { answerFromPage } from "../packages/web-fetch/answer.mjs";
+import { reviewPlan } from "../packages/plan-mode/plan-review.mjs";
+import { checkMemory } from "./memory-check.mjs";
+
+const DIFF = [
+  "diff --git a/x.mjs b/x.mjs",
+  "@@ -1 +1 @@",
+  "-const a = 0;",
+  "+const a = 1;",
+  "",
+].join("\n");
 import {
   judgeSegment,
   pickGoal,
@@ -160,6 +175,58 @@ const CASES = {
         repository_probe: "src/loader.mjs: 42 lines",
       },
       questions: buildRewriteQuestions(),
+    }),
+  "memory check": (ask) =>
+    checkMemory({
+      memory: "Cloudflare MCP tools stay deferred.",
+      candidates: [
+        {
+          id: "a",
+          content: "Cloudflare MCP tools stay deferred: they are callable.",
+          kind: "commitment",
+        },
+      ],
+      ask,
+      env: {},
+    }),
+  "plan review": (ask) =>
+    reviewPlan({
+      plan: "- Add a retry loop to the uploader, covered by the existing retry test.\n- Rename the config key.",
+      ask,
+      env: {},
+    }),
+  "review lint": (ask) =>
+    lintChange({
+      diff: DIFF,
+      files: ["x.mjs"],
+      message: "feat: set a to 1",
+      task: "set a to 1",
+      ask,
+      env: {},
+    }),
+  "review findings": (ask) =>
+    verifyFindings({
+      findings: ["`const a = 1` is assigned but never read"],
+      diff: DIFF,
+      ask,
+      env: {},
+    }),
+  "ci triage": (ask) =>
+    classifyCi({ step: "npm run check", log: "Error: EADDRINUSE", reruns: 1, ask, env: {} }),
+  "promote corrections": (ask) =>
+    promoteCorrections({
+      corrections: [{ text: "printed example commands instead of running them", occurrences: 3 }],
+      guidance: "AGENTS.md says to run the commands",
+      ask,
+      env: {},
+    }),
+  "web answer": (ask) =>
+    answerFromPage({
+      url: "https://example.test/page",
+      question: "what is the retry count?",
+      text: "The retry count is three.\n\nUnrelated footer text.",
+      ask,
+      env: {},
     }),
   "safe-compact candidate rating": (ask) =>
     rateCandidates({
