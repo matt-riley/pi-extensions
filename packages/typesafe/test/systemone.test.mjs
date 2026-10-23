@@ -438,7 +438,7 @@ test("askSystemOne posts state and questions verbatim and returns answers", asyn
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.headers.authorization, "Bearer ts-secret-key");
   assert.equal(calls[0].init.headers["content-type"], "application/json");
-  assert.equal(calls[0].init.headers["TypeSafe-Danger-Zone-Images"], "true");
+  assert.equal("TypeSafe-Danger-Zone-Images" in calls[0].init.headers, false);
   assert.equal(calls[0].init.redirect, "error");
   assert.deepEqual(calls[0].body, { model: "jev-latest", state, questions });
   assert.deepEqual(result, {
@@ -523,6 +523,69 @@ test("askSystemOne surfaces HTTP failures with status detail and no key", async 
       return true;
     },
   );
+});
+
+const QUESTION = { a: { type: "noul", instructions: "?" } };
+
+test("askSystemOne retries 429 and 529 with backoff, then succeeds", async () => {
+  const { fetchImpl, calls } = capturingFetch((n) =>
+    n === 1
+      ? jsonResponse({ error: "rate limited" }, { status: 429 })
+      : n === 2
+        ? jsonResponse({ error: "overloaded" }, { status: 529 })
+        : jsonResponse({ answers: { a: { type: "noul", noul: 0.5 } } }),
+  );
+  const result = await askSystemOne({
+    state: "s",
+    questions: QUESTION,
+    env: ENV,
+    fetchImpl,
+    retryDelayMs: 1,
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(result.answers.a.noul, 0.5);
+});
+
+test("askSystemOne gives up after two retries and says so", async () => {
+  const { fetchImpl, calls } = capturingFetch(() =>
+    jsonResponse({ error: "busy" }, { status: 529 }),
+  );
+  await assert.rejects(
+    askSystemOne({ state: "s", questions: QUESTION, env: ENV, fetchImpl, retryDelayMs: 1 }),
+    /status 529 after 3 attempts/,
+  );
+  assert.equal(calls.length, 3);
+});
+
+test("askSystemOne does not retry other failures", async () => {
+  const { fetchImpl, calls } = capturingFetch(() =>
+    jsonResponse({ error: "bad" }, { status: 500 }),
+  );
+  await assert.rejects(
+    askSystemOne({ state: "s", questions: QUESTION, env: ENV, fetchImpl, retryDelayMs: 1 }),
+    /status 500: /,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("an abort during backoff stops the retries", async () => {
+  const controller = new AbortController();
+  const { fetchImpl, calls } = capturingFetch(() => {
+    setImmediate(() => controller.abort());
+    return jsonResponse({ error: "rate limited" }, { status: 429 });
+  });
+  await assert.rejects(
+    askSystemOne({
+      state: "s",
+      questions: QUESTION,
+      env: ENV,
+      fetchImpl,
+      signal: controller.signal,
+      retryDelayMs: 60_000,
+    }),
+    /aborted/,
+  );
+  assert.equal(calls.length, 1);
 });
 
 test("askSystemOne surfaces network failures", async () => {

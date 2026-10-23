@@ -67,9 +67,13 @@ The key is read at call time, so exporting it in your shell profile is enough
 base URL, refuse redirects, honor cancellation, and never include the key in
 errors.
 
-Requests include `TypeSafe-Danger-Zone-Images: true` to opt into TypeSafe's experimental
-image API. This header alone does not add image inputs to this tool: it still exposes
-text/JSON state and choice/noul/score questions, not `assets` or `box`. Use the
+A `429` (rate limited) or `529` (overloaded) is retried twice with exponential
+backoff (0.5s, then 1s), as [TypeSafe asks](https://docs.typesafe.ai/api/errors.md),
+within the same timeout and cancellation.
+
+The tool sends text/JSON state and choice/noul/score questions, not `assets` or
+`box`, so it doesn't send the `TypeSafe-Danger-Zone-Images` opt-in header, which
+TypeSafe wants only on requests that contain images. Use the
 [image API](https://docs.typesafe.ai/images) directly for those experiments.
 
 ## Example

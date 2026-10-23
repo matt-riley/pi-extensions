@@ -21,6 +21,16 @@ const DEFAULT_TIMEOUT_MS = 30000;
 
 const MAX_ERROR_BODY_CHARS = 300;
 
+/**
+ * TypeSafe asks for exponential backoff on 429 (rate limit) and 529
+ * (overloaded): https://docs.typesafe.ai/api/errors.md. Without it a gate
+ * that fails open skips its judgment on the first busy moment. Retries stay
+ * inside the request timeout and the caller's abort signal.
+ */
+const RETRY_STATUSES = new Set([429, 529]);
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 500;
+
 /** Jev's state limit. Past this the request fails whole, so it is refused here. */
 const MAX_STATE_CHARS = 60_000;
 
@@ -301,10 +311,29 @@ async function readErrorBody(response) {
   }
 }
 
+/** Wait `ms`, or reject as soon as `signal` aborts. */
+function backoff(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Ask TypeSafe's System One model one or more typed questions about `state`.
  *
- * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal }} opts
+ * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number }} opts
  * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
  */
 export async function askSystemOne({
@@ -314,6 +343,7 @@ export async function askSystemOne({
   env = process.env,
   fetchImpl = globalThis.fetch,
   signal,
+  retryDelayMs = RETRY_BASE_MS,
 } = {}) {
   const config = resolveConfig(env);
   // Redact before validating: the size and shape checks should describe what
@@ -349,23 +379,34 @@ export async function askSystemOne({
     if (signal) {
       signal.addEventListener("abort", forwardAbort, { once: true });
     }
-    const response = await fetchImpl(`${config.baseUrl}/systemone`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.apiKey}`,
-        "content-type": "application/json",
-        "TypeSafe-Danger-Zone-Images": "true",
-      },
-      body: JSON.stringify({ model: requestedModel, state: safeState, questions }),
-      // Fixed remote host: refusing redirects keeps state and the bearer
-      // token from following an unexpected Location.
-      redirect: "error",
-      signal: controller.signal,
-    });
+    const body = JSON.stringify({ model: requestedModel, state: safeState, questions });
+    let response;
+    let attempt = 0;
+    for (;;) {
+      response = await fetchImpl(`${config.baseUrl}/systemone`, {
+        method: "POST",
+        // No TypeSafe-Danger-Zone-Images header: TypeSafe wants it only on
+        // requests that carry images (`assets`), and this transport sends none.
+        headers: {
+          authorization: `Bearer ${config.apiKey}`,
+          "content-type": "application/json",
+        },
+        body,
+        // Fixed remote host: refusing redirects keeps state and the bearer
+        // token from following an unexpected Location.
+        redirect: "error",
+        signal: controller.signal,
+      });
+      if (response?.ok || !RETRY_STATUSES.has(response?.status) || attempt >= MAX_RETRIES) break;
+      await readErrorBody(response); // drain before retrying
+      await backoff(retryDelayMs * 2 ** attempt, controller.signal);
+      attempt++;
+    }
     if (!response?.ok) {
       const detail = await readErrorBody(response);
+      const tries = attempt > 0 ? ` after ${attempt + 1} attempts` : "";
       throw new Error(
-        `TypeSafe request failed with status ${response?.status ?? "unknown"}${detail}`,
+        `TypeSafe request failed with status ${response?.status ?? "unknown"}${tries}${detail}`,
       );
     }
     let payload;
