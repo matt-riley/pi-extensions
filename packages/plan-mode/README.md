@@ -28,8 +28,10 @@ pi --plan           start pi already in plan mode
 While plan mode is active, tool membership comes from annotations
 (`packages/plan-mode/tool-policy.mjs`), not a name list:
 
-- **Local readers** (`readOnlyHint` and not `openWorldHint`): the code-search
-  tools, `skill_select`, and `view_context`.
+- **Local readers this repo registers** (`readOnlyHint` and not
+  `openWorldHint`): the code-search tools, `skill_select`, and `view_context`.
+  `readOnlyHint: true` from any other tool is ignored. `readOnlyHint: false`
+  blocks, including a built-in that claims it.
 - **Plan mode's own tools**, activated even though they are deferred:
   `plan_mode_question`, `plan_fetch_url`, and `plan_mode_complete` (the last
   one writes only the plan file).
@@ -39,7 +41,8 @@ While plan mode is active, tool membership comes from annotations
 - **Unannotated tools from other packages** that were already allowed:
   `read`, `bash`, `grep`, `find`, `ls`, and `lore_recall` (lore's read-only
   memory recall; if lore is unloaded the name matches nothing).
-- **Deferred tools** other than the plan-mode trio stay inactive, so the
+- **Tools whose exposure is not `direct`** stay inactive, except the plan-mode
+  trio. That covers deferred, model-only, codemode, and hidden, so the
   influencer tools are not pulled into the planning prompt. Any other tool
   call is blocked, and the previous tool set is restored on exit.
   `view_context` is the one local reader newly available in the mode; it only

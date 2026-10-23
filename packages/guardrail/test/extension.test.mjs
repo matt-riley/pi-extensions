@@ -84,7 +84,7 @@ function harness({
 
 // ---------------------------------------------------------------------------
 
-test("a declared reader is not inspected", async () => {
+test("an outside read-only claim is still inspected", async () => {
   const h = harness({
     tools: [
       {
@@ -93,7 +93,22 @@ test("a declared reader is not inspected", async () => {
       },
     ],
   });
-  assert.equal(await h.run("custom_reader", { command: "rm -rf ~" }), undefined);
+  const result = await h.run("custom_reader", { command: "rm -rf ~" });
+  assert.equal(result.block, true);
+  assert.match(result.reason, /refusing to delete/);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("this repo's own reader is not inspected", async () => {
+  const h = harness({
+    tools: [
+      {
+        name: "code_search",
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+    ],
+  });
+  assert.equal(await h.run("code_search", { command: "rm -rf ~" }), undefined);
   assert.equal(h.dialogs.length, 0);
 });
 

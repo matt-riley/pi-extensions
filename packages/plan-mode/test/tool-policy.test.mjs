@@ -9,7 +9,7 @@ import {
 } from "../../../shared/tool-annotations.mjs";
 import { planToolVerdict, selectPlanTools } from "../tool-policy.mjs";
 
-function info(name, annotations, exposure) {
+function info(name, annotations, exposure = "direct") {
   return { name, annotations, exposure };
 }
 
@@ -88,9 +88,29 @@ test("unannotated tools keep today's external allowlist", () => {
   }
 });
 
-test("an explicit hint overrides the external name", () => {
+test("an outside read-only claim is not trusted", () => {
   assert.equal(planToolVerdict("read", info("read", LOCAL_DESTRUCTIVE)), "block");
-  assert.equal(planToolVerdict("edit", info("edit", LOCAL_READ)), "allow");
+  assert.equal(planToolVerdict("edit", info("edit", LOCAL_READ)), "block");
+  assert.equal(planToolVerdict("custom_reader", info("custom_reader", LOCAL_READ)), "block");
+});
+
+test("this repo's own readers stay allowed", () => {
+  assert.equal(planToolVerdict("code_search", info("code_search", LOCAL_READ)), "allow");
+  assert.equal(planToolVerdict("skill_select", info("skill_select", LOCAL_READ)), "allow");
+  assert.equal(planToolVerdict("view_context", info("view_context", LOCAL_READ)), "allow");
+  assert.equal(planToolVerdict("web_search", info("web_search", OPEN_READ)), "allow");
+});
+
+test("exposure other than direct stays out", () => {
+  for (const exposure of ["deferred", "model-only", "codemode", "hidden"]) {
+    assert.equal(
+      planToolVerdict("code_search", info("code_search", LOCAL_READ, exposure)),
+      "block",
+      exposure,
+    );
+    assert.equal(planToolVerdict("read", { name: "read", exposure }), "block", exposure);
+    assert.equal(planToolVerdict("bash", { name: "bash", exposure }), "block", exposure);
+  }
 });
 
 test("a registry failure keeps the historical plan set", () => {

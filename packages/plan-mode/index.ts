@@ -407,9 +407,10 @@ export default function planMode(pi: ExtensionAPI) {
 
   pi.on("tool_call", (event) => {
     if (!state.enabled) return;
-    // Readers come from annotations. Unannotated tools from other packages
-    // keep the previous external allowlist. Writers stay blocked, except
-    // plan_mode_complete, which only writes the plan file.
+    // readOnlyHint: true is trusted only for tools this repo registers.
+    // Unannotated tools from other packages keep the previous external
+    // allowlist. Writers stay blocked, except plan_mode_complete, which
+    // only writes the plan file.
     const tools = registeredTools();
     const info = tools?.find((tool) => tool.name === event.toolName);
     const verdict = planToolVerdict(event.toolName, info, {

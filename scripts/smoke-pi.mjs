@@ -25,6 +25,8 @@ let sequence = 0;
 let phase = "blocked";
 let requests = 0;
 let childRequests = 0;
+let offeredTools = [];
+const PLAN_TOOL_NAMES = ["plan_mode_question", "plan_mode_complete", "plan_fetch_url"];
 const server = createServer(async (req, res) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -35,6 +37,10 @@ const server = createServer(async (req, res) => {
     return;
   }
   requests++;
+  const declared = Array.isArray(body.tools) ? body.tools : [];
+  offeredTools = declared
+    .map((tool) => tool?.function?.name ?? tool?.custom?.name ?? tool?.name)
+    .filter((name) => typeof name === "string");
   const messages = body.messages ?? [];
   const last = messages.at(-1);
   const user = messages.findLast((message) => message.role === "user");
@@ -61,7 +67,7 @@ const server = createServer(async (req, res) => {
     if (last?.role !== "tool" && phase === "until" && pushedBack)
       tool = { name: "bash", arguments: { command: "touch smoke-done" } };
     if (tool) content = null;
-  } else if (last?.role !== "tool" && !isChild) {
+  } else if (last?.role !== "tool" && !isChild && phase !== "after-plan") {
     tool =
       phase === "blocked"
         ? { name: "bash", arguments: { command: "touch smoke-blocked" } }
@@ -259,7 +265,17 @@ try {
   assert.match(JSON.stringify(blocked), /Plan mode blocks bash/);
   await assert.rejects(access(path.join(cwd, "smoke-blocked")));
   console.log("ok: plan mode blocks harmless fixture write through real tool dispatch");
+  for (const name of PLAN_TOOL_NAMES) {
+    assert.ok(offeredTools.includes(name), `plan mode did not offer ${name}`);
+  }
+  console.log("ok: plan mode offers plan_mode_question, plan_mode_complete, and plan_fetch_url");
   await prompt("/plan exit");
+  phase = "after-plan";
+  await prompt("SMOKE_AFTER_PLAN: reply once and stop.");
+  for (const name of PLAN_TOOL_NAMES) {
+    assert.equal(offeredTools.includes(name), false, `${name} still offered after /plan exit`);
+  }
+  console.log("ok: plan tools are gone after /plan exit");
   await prompt("/subagents on");
   phase = "child";
   const childEvents = await prompt("SMOKE_PARENT: run the fixture child once.");

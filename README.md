@@ -35,6 +35,7 @@ renaming one can break another:
   `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
   (used to implement `plan_fetch_url`). Which other tools it allows is decided
   from their annotations at runtime, not from a sibling name list.
+  `readOnlyHint: true` is trusted only for tools this repo registers.
 - **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`**,
   **`pi-router`**, **`pi-review`**, **`pi-done-gate`**, **`pi-diagnosis-nudge`**,
   **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`** and the

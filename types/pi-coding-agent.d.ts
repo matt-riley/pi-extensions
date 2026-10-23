@@ -145,6 +145,15 @@ declare module "@earendil-works/pi-coding-agent" {
     ): ModelRoute<TState> | Promise<ModelRoute<TState>>;
   }
 
+  /** Where a registered tool, command, or extension was loaded from. Pi sets this; tools do not. */
+  export interface SourceInfo {
+    path: string;
+    source: string;
+    scope: "user" | "project" | "temporary";
+    origin: "package" | "top-level";
+    baseDir?: string;
+  }
+
   /** MCP-shaped hints. Author-declared and not verified by pi. */
   export interface ToolAnnotations {
     /** The tool does not modify its environment. */
@@ -162,8 +171,9 @@ declare module "@earendil-works/pi-coding-agent" {
     description?: string;
     parameters?: unknown;
     promptGuidelines?: string[];
-    exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+    exposure: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
     annotations?: ToolAnnotations;
+    sourceInfo: SourceInfo;
     [key: string]: unknown;
   }
 

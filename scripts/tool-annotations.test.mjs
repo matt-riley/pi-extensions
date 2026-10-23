@@ -7,6 +7,7 @@ import {
   LOCAL_READ,
   OPEN_DESTRUCTIVE,
   OPEN_READ,
+  OWNED_TOOL_NAMES,
 } from "../shared/tool-annotations.mjs";
 import { loadRegistrations } from "./registration.mjs";
 
@@ -50,6 +51,7 @@ test("every tool declares annotations and only rare tools are deferred", async (
     [],
   );
   assert.equal(tools.length, EXPECTED.size, tools.map((tool) => tool.name).join(", "));
+  assert.deepEqual([...OWNED_TOOL_NAMES].sort(), [...EXPECTED.keys()].sort());
 
   const seen = new Set();
   for (const tool of tools) {

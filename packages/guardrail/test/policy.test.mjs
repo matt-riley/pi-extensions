@@ -324,22 +324,27 @@ test("unannotated read-only names are never inspected", () => {
   }
 });
 
-test("annotations decide, and a missing hint does not trust this repo's tools", () => {
+test("readOnlyHint true is trusted only for this repo's tools", () => {
   const reader = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const writer = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+  // An outside claim does not skip the command or secret-path checks.
   assert.equal(
     tool("custom_writer", { path: "~/.ssh/id_rsa", command: "rm -rf ~" }, { annotations: reader }),
-    "allow",
+    "block",
   );
+  // false is stricter for anyone, including a name that looks read-only.
   assert.equal(tool("get_secret", { path: "~/.ssh/id_rsa" }, { annotations: writer }), "block");
   assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: writer }), "block");
-  assert.equal(tool("code_search", { command: "rm -rf ~" }), "block");
+  // This repo's own reader still takes the fast path. A missing hint does not.
   assert.equal(tool("code_search", { command: "rm -rf ~" }, { annotations: reader }), "allow");
+  assert.equal(tool("code_search", { command: "rm -rf ~" }), "block");
+  // A missing or non-boolean hint keeps the name rule.
   assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: {} }), "allow");
   assert.equal(
     tool("get_transcript", { path: "~/.ssh/id_rsa" }, { annotations: { destructiveHint: true } }),
     "allow",
   );
+  assert.equal(tool("get_transcript", { command: "rm -rf ~" }, { annotations: reader }), "allow");
 });
 
 test("get_/list_-style extension tools are trusted as readers", () => {

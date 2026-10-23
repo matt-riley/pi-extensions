@@ -35,6 +35,7 @@ import {
   stripHeredocs,
   tokenize,
 } from "../../shared/shell-parse.mjs";
+import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
 
 const VERDICT_RANK = { allow: 0, judge: 1, confirm: 2, block: 3 };
 
@@ -884,9 +885,11 @@ function evaluateFileTool(toolName, input, { cwd } = {}) {
   return { verdict, reason, evidence };
 }
 
-// Fallback for tools that do not declare annotations — pi's built-ins and
-// other packages. Tools in this repo declare readOnlyHint and are not listed
-// here; a missing hint must not keep them on the fast path.
+// Fallback for tools that do not declare a trusted hint — pi's built-ins and
+// other packages. An outside readOnlyHint: true is not trusted (Pi copies MCP
+// hints unverified). A missing hint, or an untrusted true, keeps this name
+// rule. Tools in this repo are not listed here; without their own hint they
+// are inspected unless the name itself matches.
 const UNANNOTATED_READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
@@ -908,14 +911,6 @@ function isReadOnlyToolName(name) {
   );
 }
 
-// Explicit readOnlyHint wins. A missing or non-boolean hint keeps the
-// name fallback, which is today's behaviour for unannotated tools.
-function explicitReadOnly(annotations) {
-  if (!annotations || typeof annotations !== "object") return null;
-  if (typeof annotations.readOnlyHint !== "boolean") return null;
-  return annotations.readOnlyHint;
-}
-
 /**
  * The single entry point: classify one tool call before it runs.
  * Returns { verdict, reason, evidence }.
@@ -930,7 +925,9 @@ export function evaluateToolCall({
 } = {}) {
   const name = String(toolName ?? "");
   const lower = name.toLowerCase();
-  const hinted = explicitReadOnly(annotations);
+  // false from anyone is inspected. true is the fast path only for this
+  // repo's tools. Anything else keeps the name rule above.
+  const hinted = trustedReadOnlyHint(lower, annotations);
   const readOnly = hinted === null ? isReadOnlyToolName(lower) : hinted;
 
   if (readOnly) return { verdict: "allow", reason: null, evidence: { shapes: [] } };

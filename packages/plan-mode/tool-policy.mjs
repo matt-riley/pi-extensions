@@ -1,5 +1,9 @@
-// Which tools plan mode may run. Annotations decide for tools that declare
-// them. Tools from other packages that declare none keep today's allowlist.
+import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
+
+// Which tools plan mode may run. readOnlyHint: true is trusted only for tools
+// this repo registers. readOnlyHint: false blocks any tool. Tools that declare
+// neither keep today's allowlist. Only exposure "direct" is a candidate;
+// deferred, model-only, codemode, and hidden stay out unless plan mode owns them.
 
 const EXTERNAL_PLAN_TOOLS = new Set(["read", "grep", "find", "ls", "lore_recall"]);
 
@@ -34,6 +38,10 @@ const HISTORICAL_PLAN_TOOLS = [
 
 const EXTERNAL_PREFIX = ["read", "bash", "grep", "find", "ls", "lore_recall"];
 
+function knownExposure(info) {
+  return typeof info?.exposure === "string" ? info.exposure : null;
+}
+
 /**
  * @param {string} name
  * @param {{ annotations?: { readOnlyHint?: boolean, openWorldHint?: boolean }, exposure?: string } | undefined} info
@@ -46,15 +54,20 @@ export function planToolVerdict(name, info, options = {}) {
     if (tool === "bash") return "bash";
     return HISTORICAL_PLAN_TOOLS.includes(tool) ? "allow" : "block";
   }
+  // Plan mode activates its own tools, including the deferred writer.
+  if (PLAN_OWNED.has(tool)) return "allow";
+  const exposure = knownExposure(info);
+  // A recorded exposure other than direct is not offered. A missing exposure
+  // means the registry snapshot had no entry, and the name rule below applies.
+  if (exposure !== null && exposure !== "direct") return "block";
   if (tool === "bash") return "bash";
-  if (tool === "plan_mode_complete") return "allow";
-  const exposure = info?.exposure;
-  if (exposure === "deferred" && !PLAN_OWNED.has(tool)) return "block";
-  const annotations = info?.annotations;
-  if (annotations && typeof annotations.readOnlyHint === "boolean") {
-    if (annotations.readOnlyHint !== true) return "block";
-    const open = annotations.openWorldHint === true;
-    if (open && !PLAN_OWNED.has(tool) && !PLAN_OPEN_WORLD.has(tool)) return "block";
+  // false from anyone is stricter than the name allowlist. true is trusted
+  // only for tools this repo registers.
+  const readOnly = trustedReadOnlyHint(tool, info?.annotations);
+  if (readOnly === false) return "block";
+  if (readOnly === true) {
+    const open = info?.annotations?.openWorldHint === true;
+    if (open && !PLAN_OPEN_WORLD.has(tool)) return "block";
     return "allow";
   }
   if (EXTERNAL_PLAN_TOOLS.has(tool)) return "allow";
