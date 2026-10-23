@@ -3,5 +3,12 @@
     "github>matt-riley/renovate-config",
     "github>matt-riley/renovate-config:github-actions",
     "github>matt-riley/renovate-config:schedule-thursday"
+  ],
+  "packageRules": [
+    {
+      "description": "Hold TypeScript on v5: scripts/check-conventions.mjs needs the TS 5 compiler API (createSourceFile), which TypeScript 7's native build no longer ships at the package root. Lift this once the checker moves to typescript/unstable/*.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6"
+    }
   ]
 }
