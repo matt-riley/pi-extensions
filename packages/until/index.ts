@@ -118,7 +118,7 @@ export default function piUntilExtension(pi: ExtensionAPI) {
       }
       loop = { command: parsed.command, task: parsed.task, max: parsed.max, iteration: 0, logPath };
       ctx.ui?.setStatus?.(STATUS_ID, `until 0/${loop.max}`);
-      await pi.sendUserMessage(kickoffMessage(loop));
+      await pi.sendUserMessage(kickoffMessage(loop), { deliverAs: "followUp" });
     },
   });
 }

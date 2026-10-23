@@ -69,8 +69,3 @@ export function loadPlaybook(type, dir = PLAYBOOK_DIR) {
   }
   return cache.get(file);
 }
-
-export function withPlaybook(systemPrompt, text) {
-  if (!text) return systemPrompt;
-  return `${systemPrompt ?? ""}\n\n${text}`;
-}
