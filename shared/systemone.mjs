@@ -16,7 +16,11 @@ import { isAbsolute, join } from "node:path";
 import { redactSecrets } from "./redact.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
-const DEFAULT_MODEL = "jev-latest";
+// Pinned, not `jev-latest`: the guardrail, router, safe-compact and scripts/
+// thresholds were measured on this version, and TypeSafe says to send a
+// versioned ID once thresholds are tuned. Re-run scripts/judge-thresholds.mjs
+// and scripts/replay-corpus.mjs on a new version before moving this pin.
+const DEFAULT_MODEL = "jev-1.13.0";
 const DEFAULT_TIMEOUT_MS = 30000;
 
 const MAX_ERROR_BODY_CHARS = 300;

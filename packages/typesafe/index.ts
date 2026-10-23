@@ -121,7 +121,7 @@ export default function piTypesafeExtension(pi: ExtensionAPI) {
       }),
       model: Type.Optional(
         Type.String({
-          description: "Override the model for this call (default: TYPESAFE_MODEL or jev-latest).",
+          description: "Override the model for this call (default: TYPESAFE_MODEL or jev-1.13.0).",
         }),
       ),
     }),

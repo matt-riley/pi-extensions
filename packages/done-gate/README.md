@@ -58,7 +58,7 @@ checks or by saying why they do not apply.
 
 The reminder cannot read the claim it is answering. When the gate fires and the
 run has a final assistant message, that message goes to TypeSafe's System One
-(`jev-latest` unless `TYPESAFE_MODEL` says otherwise) as three typed questions:
+(`jev-1.13.0` unless `TYPESAFE_MODEL` says otherwise) as three typed questions:
 
 - **asserts_verified** — does the message claim the changed code was verified,
   or only describe what changed?
