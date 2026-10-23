@@ -9,6 +9,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 
 import { askSystemOne, formatAnswers } from "../../shared/systemone.mjs";
 import {
@@ -73,6 +74,7 @@ export default function piTypesafeExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: ASK_TOOL,
     label: "typesafe_ask",
+    annotations: OPEN_READ,
     description:
       "Ask TypeSafe's System One model (Jev) for calibrated, typed judgments about state. Independent questions " +
       "are batched into one request and return probabilities and confidence rather than prose: noul = probability " +
@@ -183,6 +185,7 @@ export default function piTypesafeExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: READ_RELEVANT_TOOL,
     label: "read_relevant",
+    annotations: OPEN_READ,
     description:
       "Read only the lines of a file that matter to a goal. Big files are scanned in windows by TypeSafe's Jev " +
       "model and you get back a few tight, line-numbered ranges (exact file text) instead of the whole file. " +

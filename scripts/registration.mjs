@@ -11,13 +11,14 @@ export const getAgentDir = unavailable, parseFrontmatter = unavailable,
   createAgentSession = unavailable, DefaultResourceLoader = unavailable, SessionManager = unavailable;
 `)}`;
 
-export async function verifyRegistration(root) {
+export async function loadRegistrations(root) {
   const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const fixture = await mkdtemp(path.join(tmpdir(), "pi-registration-config-"));
   process.env.PI_CODING_AGENT_DIR = fixture;
   const seen = new Map();
   const results = [];
+  const tools = [];
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
       return specifier === "@earendil-works/pi-coding-agent"
@@ -38,7 +39,10 @@ export async function verifyRegistration(root) {
         count++;
       };
       const pi = {
-        registerTool: (def) => capture("tool", def.name, def),
+        registerTool: (def) => {
+          capture("tool", def.name, def);
+          tools.push(def);
+        },
         registerCommand: (name, def) => capture("command", name, def),
         registerFlag: (name, def) => capture("flag", name, def),
         registerShortcut: (name, def) => capture("shortcut", name, def),
@@ -63,5 +67,9 @@ export async function verifyRegistration(root) {
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(fixture, { recursive: true, force: true });
   }
-  return results;
+  return { results, tools };
+}
+
+export async function verifyRegistration(root) {
+  return (await loadRegistrations(root)).results;
 }

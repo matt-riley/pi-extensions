@@ -318,19 +318,28 @@ test("a write outside the session's cwd is routine, not suspicious", () => {
 // ---------------------------------------------------------------------------
 // Tool dispatch
 
-test("read-only tools are never inspected", () => {
-  for (const name of [
-    "read",
-    "grep",
-    "code_search",
-    "web_fetch",
-    "typesafe_ask",
-    "lore_recall",
-    "skill_select",
-    "plan_mode_question",
-  ]) {
+test("unannotated read-only names are never inspected", () => {
+  for (const name of ["read", "grep", "lore_recall", "get_transcript", "read_relevant"]) {
     assert.equal(tool(name, { path: "~/.ssh/id_rsa", command: "rm -rf ~" }), "allow", name);
   }
+});
+
+test("annotations decide, and a missing hint does not trust this repo's tools", () => {
+  const reader = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+  const writer = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+  assert.equal(
+    tool("custom_writer", { path: "~/.ssh/id_rsa", command: "rm -rf ~" }, { annotations: reader }),
+    "allow",
+  );
+  assert.equal(tool("get_secret", { path: "~/.ssh/id_rsa" }, { annotations: writer }), "block");
+  assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: writer }), "block");
+  assert.equal(tool("code_search", { command: "rm -rf ~" }), "block");
+  assert.equal(tool("code_search", { command: "rm -rf ~" }, { annotations: reader }), "allow");
+  assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: {} }), "allow");
+  assert.equal(
+    tool("get_transcript", { path: "~/.ssh/id_rsa" }, { annotations: { destructiveHint: true } }),
+    "allow",
+  );
 });
 
 test("get_/list_-style extension tools are trusted as readers", () => {

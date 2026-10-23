@@ -9,10 +9,12 @@
 //
 // Backed by a persistent cache at <root>/.pi/cache/pi-code-search.json
 // (mtime-invalidated, atomic writes) holding the file inventory + per-file
-// symbol tables. Git-aware inventory via pi.exec; pure-node fallback walker.
+// symbol tables. That cache is a derived index, so the tools are annotated
+// read-only. Git-aware inventory via pi.exec; pure-node fallback walker.
 // Zero runtime dependencies: node: built-ins + pi's typebox only.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { Type } from "typebox";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -244,6 +246,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "repo_map",
     label: "repo_map",
+    annotations: LOCAL_READ,
     description:
       "Compact gitignore-aware map of the repository: header (root, branch, file count, size, languages), " +
       "a collapsed tree, key files (README, manifests, CI, test files), package.json highlights, and the " +
@@ -309,6 +312,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "code_search",
     label: "code_search",
+    annotations: LOCAL_READ,
     description:
       "Search repository file contents. Plain substring by default (case-insensitive); set regex=true for " +
       "regular expressions, wholeWord=true for word boundaries, caseSensitive=true for exact case, path=dir to " +
@@ -387,6 +391,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "file_outline",
     label: "file_outline",
+    annotations: LOCAL_READ,
     description:
       "Symbol outline of one file: functions, classes, methods, fields, interfaces, types, imports, and " +
       "their line numbers, sorted by line. Call this before reading a file fully to decide what to read.",
@@ -430,6 +435,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "find_definition",
     label: "find_definition",
+    annotations: LOCAL_READ,
     description:
       "Locate the definition of a symbol. When fromFile is given, the symbol's import/require/reexport in that " +
       "file is resolved (relative specifiers with extension/index probing, tsconfig/jsconfig path aliases, " +

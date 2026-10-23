@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { homedir } from "node:os";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
+import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import {
   characterDirectory,
   listCharacters,
@@ -183,6 +184,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
     name: SAVE_TOOL,
     label: SAVE_TOOL,
     exposure: "deferred",
+    annotations: LOCAL_DESTRUCTIVE,
     description:
       "Save or update an AI influencer character. Use this after creating a foundational prompt so the prompt, consistency anchors, silhouette anchors, and style signature persist across sessions.",
     promptSnippet:
@@ -212,6 +214,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
     name: SHOW_TOOL,
     label: SHOW_TOOL,
     exposure: "deferred",
+    annotations: LOCAL_READ,
     description:
       "Show a saved AI influencer's identity block. Use it before generating a new image so the locked anchors can be copied verbatim.",
     promptSnippet:
@@ -237,6 +240,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
     name: LIST_TOOL,
     label: LIST_TOOL,
     exposure: "deferred",
+    annotations: LOCAL_READ,
     description:
       "List saved AI influencer characters and whether each identity is still a draft or locked.",
     promptSnippet: "influencer_list: list saved AI influencer characters",
@@ -255,6 +259,7 @@ export default function piInfluencerExtension(pi: ExtensionAPI) {
     name: PROMPT_TOOL,
     label: PROMPT_TOOL,
     exposure: "deferred",
+    annotations: LOCAL_READ,
     description:
       "Build an on-demand AI influencer image or Seedance 2.5 video prompt brief from bundled specialist guidance, a saved character, and a reusable recipe.",
     promptSnippet:

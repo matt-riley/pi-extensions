@@ -103,14 +103,24 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     }
   };
 
+  const annotationsFor = (toolName: string) => {
+    try {
+      const tools = typeof pi.getAllTools === "function" ? pi.getAllTools() : [];
+      return tools.find((tool) => tool.name === toolName)?.annotations;
+    } catch {
+      return undefined;
+    }
+  };
+
   pi.on("tool_call", async (event, ctx) => {
     if (!state.enabled) return undefined;
 
     const toolName = String(event?.toolName ?? "");
     const input = event?.input ?? {};
     const cwd = ctx?.cwd ?? process.cwd();
+    const annotations = annotationsFor(toolName);
 
-    let decision = evaluateToolCall({ toolName, input, cwd });
+    let decision = evaluateToolCall({ toolName, input, cwd, annotations });
 
     // Follow one level of indirection: classify the scripts the command runs.
     const refs = decision?.evidence?.scriptRefs ?? [];
@@ -120,6 +130,7 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
         toolName,
         input,
         cwd,
+        annotations,
         scriptTexts,
         unresolvedScripts: unresolved,
       });

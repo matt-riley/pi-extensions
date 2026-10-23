@@ -12,6 +12,7 @@ import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
+import { OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
 import { orchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
@@ -162,6 +163,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: TOOL_NAME,
     label: "Subagent",
+    annotations: OPEN_DESTRUCTIVE,
     description: TOOL_DESCRIPTION,
     promptSnippet:
       "Spawn a specialist subagent (scout, reviewer, verifier, oracle, worker, researcher, or a custom type)",

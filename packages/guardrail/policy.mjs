@@ -884,9 +884,10 @@ function evaluateFileTool(toolName, input, { cwd } = {}) {
   return { verdict, reason, evidence };
 }
 
-// Tools that only ever read. Anything not listed here and not a known writer
-// is inspected for command- or path-shaped arguments instead of being trusted.
-const READ_ONLY_TOOLS = new Set([
+// Fallback for tools that do not declare annotations — pi's built-ins and
+// other packages. Tools in this repo declare readOnlyHint and are not listed
+// here; a missing hint must not keep them on the fast path.
+const UNANNOTATED_READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
   "ls",
@@ -894,18 +895,6 @@ const READ_ONLY_TOOLS = new Set([
   "glob",
   "read_file",
   "list_dir",
-  "code_search",
-  "file_outline",
-  "find_definition",
-  "repo_map",
-  "web_fetch",
-  "batch_web_fetch",
-  "web_search",
-  "plan_fetch_url",
-  "typesafe_ask",
-  "skill_select",
-  "plan_mode_question",
-  "plan_mode_complete",
   "todo_read",
   "task_list",
 ]);
@@ -913,22 +902,38 @@ const READ_ONLY_TOOLS = new Set([
 function isReadOnlyToolName(name) {
   const n = String(name ?? "").toLowerCase();
   return (
-    READ_ONLY_TOOLS.has(n) ||
+    UNANNOTATED_READ_ONLY_TOOLS.has(n) ||
     /^(get|list|search|read|fetch|query|describe|show|recall)_/.test(n) ||
     n.startsWith("lore_")
   );
+}
+
+// Explicit readOnlyHint wins. A missing or non-boolean hint keeps the
+// name fallback, which is today's behaviour for unannotated tools.
+function explicitReadOnly(annotations) {
+  if (!annotations || typeof annotations !== "object") return null;
+  if (typeof annotations.readOnlyHint !== "boolean") return null;
+  return annotations.readOnlyHint;
 }
 
 /**
  * The single entry point: classify one tool call before it runs.
  * Returns { verdict, reason, evidence }.
  */
-export function evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolvedScripts } = {}) {
+export function evaluateToolCall({
+  toolName,
+  input,
+  cwd,
+  scriptTexts,
+  unresolvedScripts,
+  annotations,
+} = {}) {
   const name = String(toolName ?? "");
   const lower = name.toLowerCase();
+  const hinted = explicitReadOnly(annotations);
+  const readOnly = hinted === null ? isReadOnlyToolName(lower) : hinted;
 
-  if (isReadOnlyToolName(lower))
-    return { verdict: "allow", reason: null, evidence: { shapes: [] } };
+  if (readOnly) return { verdict: "allow", reason: null, evidence: { shapes: [] } };
 
   // Command-shaped arguments run the shell rules, whatever the tool is called.
   // That covers bash, and any future extension tool that shells out — a

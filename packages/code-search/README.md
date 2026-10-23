@@ -42,9 +42,9 @@ Zero runtime dependencies: node built-ins + pi's `typebox` only.
 
 ## Plan mode
 
-`repo_map`, `code_search`, `file_outline`, and `find_definition` are added to
-plan mode's `PLAN_TOOLS` allowlist, so `/plan` gets the same discovery power
-(read-only tools, no bash changes).
+The four tools are annotated read-only and local, so plan mode keeps them
+without a name list. `/plan` gets the same discovery power (read-only tools,
+no bash changes).
 
 ## Notes and non-goals
 

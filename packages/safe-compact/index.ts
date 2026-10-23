@@ -16,6 +16,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 
 import { askSystemOne } from "../../shared/systemone.mjs";
+import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { judgeMoment } from "./judge.mjs";
 import {
   buildBoundaryCompaction,
@@ -216,6 +217,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   pi.registerTool({
     name: "self_compact",
     label: "self_compact",
+    annotations: LOCAL_DESTRUCTIVE,
     description:
       "Compact your own context at the next turn boundary. The turn is not interrupted: the run continues " +
       "with the verified handoff. Pass a note to your future self: it is carried through compaction verbatim.",
@@ -243,6 +245,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   pi.registerTool({
     name: "view_context",
     label: "view_context",
+    annotations: LOCAL_READ,
     description: "Show context window usage and the safe-compact thresholds.",
     promptSnippet: "view_context(): context usage and compaction thresholds",
     parameters: Type.Object({}),
