@@ -46,7 +46,6 @@ import {
   loadPlaybook,
   NO_PLAYBOOK,
   taskTypeFromAnswer,
-  withPlaybook,
 } from "./playbook.mjs";
 import {
   buildDifficultyState,
@@ -650,6 +649,8 @@ export default function piRouterExtension(
   // run of that task. No key, an error or an unsure answer injects nothing.
   pi.on("before_agent_start", async (event, ctx) => {
     if (!playbooksEnabled || isSubagentChild) return;
+    // Pi 1.2+: custom-message runs carry no prompt to judge.
+    if (event?.messageType !== "user") return;
     const prompt = String(event?.prompt ?? "")
       .trim()
       .slice(0, 2000);
@@ -696,8 +697,8 @@ export default function piRouterExtension(
       setPlaybookStatus(ctx, playbook.text ? type : null);
     }
 
-    if (!playbook?.text) return;
-    return { systemPrompt: withPlaybook(event.systemPrompt, playbook.text) };
+    // Pi 1.2+: a prompt section, not a full `systemPrompt` replacement.
+    if (playbook?.text) event.systemPromptOptions.sections.router_playbook = playbook.text;
   });
 
   pi.on("session_start", (_event, ctx) => {

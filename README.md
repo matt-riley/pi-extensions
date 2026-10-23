@@ -104,7 +104,10 @@ silently unavailable.
 
 ## Requirements
 
-- **Pi** with extension support (auto-discovers `~/.pi/agent/extensions/*`).
+- **Pi 1.4.0 or later.** The extensions use the 1.2.0 `before_agent_start`
+  contract (`messageType`, `systemPromptOptions` sections) and rely on 1.4.0's
+  fixes, such as concurrent extension dialogs. `npm run smoke` refuses older
+  hosts; extensions themselves can't read the host version.
 - **No added npm dependencies.** Imports are pi's `typebox` built-in and
   `node:` core modules. Most packages type-only-import `@earendil-works/pi-coding-agent`;
   `pi-subagents` also imports the host SDK at runtime (`createAgentSession`).

@@ -9,6 +9,11 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 
 const root = path.resolve(import.meta.dirname, "..");
+// The extensions need Pi 1.4.0 or later (README "Requirements").
+const piBin = process.env.PI_SMOKE_BIN || "pi";
+const piVersion = execFileSync(piBin, ["--version"], { encoding: "utf8", timeout: 10000 }).trim();
+const [major = 0, minor = 0] = (piVersion.match(/(\d+)\.(\d+)\.\d+/) ?? []).slice(1).map(Number);
+assert.ok(major > 1 || (major === 1 && minor >= 4), `pi ${piVersion} is older than 1.4.0`);
 const fixture = await mkdtemp(path.join(tmpdir(), "pi-smoke-"));
 const agentDir = path.join(fixture, "agent");
 const cwd = path.join(fixture, "workspace");
@@ -202,7 +207,7 @@ try {
     ...manifest.pi.extensions.flatMap((entry) => ["-e", path.resolve(root, entry)]),
   ];
   // Allowlist environment: no inherited API credentials, extension flags, or config.
-  child = spawn(process.env.PI_SMOKE_BIN || "pi", args, {
+  child = spawn(piBin, args, {
     cwd,
     env: {
       PATH: process.env.PATH,

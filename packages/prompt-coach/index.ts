@@ -126,7 +126,7 @@ export default function piPromptCoachExtension(
         });
         setStatus(ctx, "prompt-coach: original sent");
         try {
-          await pi.sendUserMessage(original);
+          await pi.sendUserMessage(original, { deliverAs: "followUp" });
         } catch (error) {
           notify(ctx, `Could not send the original prompt: ${errorText(error)}`, "error");
         }
@@ -164,7 +164,7 @@ export default function piPromptCoachExtension(
       });
 
       try {
-        await pi.sendUserMessage(sent);
+        await pi.sendUserMessage(sent, { deliverAs: "followUp" });
         setStatus(
           ctx,
           accepted ? "prompt-coach: improved prompt sent" : "prompt-coach: original sent",

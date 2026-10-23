@@ -408,10 +408,13 @@ export default function planMode(pi: ExtensionAPI) {
 
   // --- Prompt injection + tool enforcement ----------------------------------
 
+  // Pi 1.2+: add a prompt section instead of returning `systemPrompt`, which
+  // would replace the whole prompt (and every other extension's sections).
+  // Applies to custom-message runs too: plan mode restricts every run.
   pi.on("before_agent_start", (event) => {
     if (!state.enabled) return;
     pi.setActiveTools(PLAN_TOOLS);
-    return { systemPrompt: `${event.systemPrompt}\n\n${PLAN_MODE_PROMPT}` };
+    event.systemPromptOptions.sections.plan_mode = PLAN_MODE_PROMPT;
   });
 
   // --- Tool-call blocking ----------------------------------------------------

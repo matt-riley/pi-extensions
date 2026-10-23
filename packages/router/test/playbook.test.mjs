@@ -9,13 +9,7 @@ import os from "node:os";
 import path from "node:path";
 
 import piRouterExtension from "../index.ts";
-import {
-  loadPlaybook,
-  NO_PLAYBOOK,
-  PLAYBOOK_TYPES,
-  taskTypeFromAnswer,
-  withPlaybook,
-} from "../playbook.mjs";
+import { loadPlaybook, NO_PLAYBOOK, PLAYBOOK_TYPES, taskTypeFromAnswer } from "../playbook.mjs";
 
 const SAVED = {
   PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD,
@@ -59,11 +53,6 @@ test("the task type is the chosen option, or none when unsure or unknown", () =>
   assert.equal(taskTypeFromAnswer(choice("deploy", 0.9)), NO_PLAYBOOK);
   assert.equal(taskTypeFromAnswer({ type: "score", score: 2 }), NO_PLAYBOOK);
   assert.equal(taskTypeFromAnswer(undefined), NO_PLAYBOOK);
-});
-
-test("withPlaybook appends and leaves the prompt alone without text", () => {
-  assert.equal(withPlaybook("base", null), "base");
-  assert.equal(withPlaybook("base", "## P"), "base\n\n## P");
 });
 
 const user = (text) => ({ role: "user", content: [{ type: "text", text }] });
@@ -113,7 +102,17 @@ function harness({ answers, fail = false, selected = null } = {}) {
     setBranch: (messages) => {
       branch = messages.map((message) => ({ type: "message", message }));
     },
-    start: (prompt) => handlers.before_agent_start({ prompt, systemPrompt: "BASE" }, ctx),
+    // Resolves to the playbook section the handler left, or undefined.
+    start: async (prompt, messageType = "user") => {
+      const event = {
+        messageType,
+        prompt,
+        systemPrompt: "BASE",
+        systemPromptOptions: { sections: {} },
+      };
+      assert.equal(await handlers.before_agent_start(event, ctx), undefined);
+      return event.systemPromptOptions.sections.router_playbook;
+    },
     route: (prompt, messages) =>
       virtualModel.route({ reason: "user", thinkingLevel: "medium", messages }, ctx),
   };
@@ -121,8 +120,8 @@ function harness({ answers, fail = false, selected = null } = {}) {
 
 test("a bug report gets the bug playbook in the system prompt", async () => {
   const h = harness({ answers: () => ({ task_type: choice("bug", 0.8) }) });
-  const result = await h.start("the export command throws on empty input, fix it");
-  assert.match(result.systemPrompt, /^BASE\n\n## Playbook: bug fix/);
+  const section = await h.start("the export command throws on empty input, fix it");
+  assert.match(section, /^## Playbook: bug fix/);
   assert.deepEqual(Object.keys(h.asks[0].questions), ["task_type"]);
   assert.deepEqual(h.statuses.at(-1), { id: "playbook", text: "playbook: bug" });
   assert.equal(h.entries.at(-1).customType, "router-playbook");
@@ -145,7 +144,7 @@ test("a continuation keeps the playbook without judging again", async () => {
   h.setBranch([user(first), assistant("done the first pass")]);
   const again = await h.start("also the tokenizer tests");
   assert.equal(h.asks.length, 1);
-  assert.match(again.systemPrompt, /## Playbook: refactor/);
+  assert.match(again, /## Playbook: refactor/);
 });
 
 test("a new task is judged again and can drop the playbook", async () => {
@@ -157,6 +156,12 @@ test("a new task is judged again and can drop the playbook", async () => {
   const next = await h.start("completely different: which weekday was 1 march 2020 in london");
   assert.equal(h.asks.length, 2);
   assert.equal(next, undefined);
+});
+
+test("a run started by a custom message is not judged", async () => {
+  const h = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  assert.equal(await h.start("", "custom"), undefined);
+  assert.equal(h.asks.length, 0);
 });
 
 test("subagent children and PI_ROUTER_PLAYBOOKS=off never judge", async () => {

@@ -12,7 +12,7 @@ import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
-import { withOrchestratorPrompt } from "./orchestrate.mjs";
+import { orchestratorPrompt } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
 import { fallbackDescription, formatResult, resolveMaxTurns, resolveTimeoutMs } from "./result.mjs";
@@ -148,8 +148,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   // while the user enabled subagents and the tool is actually active.
   pi.on("before_agent_start", async (event, ctx) => {
     if (!enabled || !isToolActive()) return;
-    const agents = loadAgents(ctx);
-    return { systemPrompt: withOrchestratorPrompt(event.systemPrompt, agents) };
+    // Pi 1.2+: a prompt section, not a full `systemPrompt` replacement.
+    event.systemPromptOptions.sections.orchestrator = orchestratorPrompt(loadAgents(ctx));
   });
 
   pi.on("session_shutdown", async () => {

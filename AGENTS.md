@@ -26,6 +26,12 @@ package is published to npm on its own.
   exports in sync with what `packages/*/index.ts` import. `types/mjs-modules.d.ts`
   types every sibling `.mjs` import as `any`; those modules keep their own
   correctness contract via `node --test`, not `tsc`.
+- The minimum supported pi is **1.4.0** (README "Requirements"). In
+  `before_agent_start`, add text through `event.systemPromptOptions.sections`
+  rather than returning `systemPrompt` (that replaces the whole prompt), and
+  check `event.messageType` when a handler should only act on user prompts.
+  `pi.sendUserMessage()` from a command passes `deliverAs`, because it throws
+  while pi is busy without one.
 - pi's `ctx.ui.notify(title, level)` takes exactly two arguments — there is no
   message slot. Flatten text into the title.
 - Nontrivial logic (policies, parsers, state machines) goes in a plain `.mjs`

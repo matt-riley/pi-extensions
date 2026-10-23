@@ -44,11 +44,3 @@ For work spanning sessions, update only the identified delegated-task section of
 
 After children return, synthesize one answer: what was found, what conflicts, what to do next.`;
 }
-
-export function withOrchestratorPrompt(systemPrompt, agents) {
-  const base = typeof systemPrompt === "string" ? systemPrompt : "";
-  const extra = orchestratorPrompt(agents);
-  if (!base) return extra;
-  if (base.includes("# Orchestrator")) return base;
-  return `${base}\n\n${extra}`;
-}

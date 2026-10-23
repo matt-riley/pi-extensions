@@ -7,7 +7,7 @@ registrations; it does not dispatch events or execute tools. Missing TypeSafe
 credentials are informational offline. `npm run verify -- --live` explicitly
 opts into an external TypeSafe request using your configured credentials.
 
-Run `npm run smoke` with a supported `pi` executable on PATH (or set
+Run `npm run smoke` with `pi` 1.4.0 or later on PATH (or set
 `PI_SMOKE_BIN` to its executable path). This uses the actual pi RPC host, loads
 all manifest extensions, enters plan mode, attempts a harmless `touch
 smoke-blocked` command through real tool dispatch, verifies it was blocked and

@@ -97,7 +97,7 @@ function ensureRecipeBody(recipe, slots) {
 
 async function sendBrief(pi, ctx, brief) {
   try {
-    await pi.sendUserMessage(brief);
+    await pi.sendUserMessage(brief, { deliverAs: "followUp" });
   } catch (error) {
     notify(ctx, `Could not submit the influencer brief: ${errorText(error)}`, "error");
   }
