@@ -110,7 +110,7 @@ test("judgeDoneClaim sends the state, routes the answers and reports the model",
   const ask = async (request) => {
     calls.push(request);
     return {
-      model: "jev-latest",
+      model: "jev-1.13.0",
       answers: { asserts_verified: noul(0.9), acknowledges_gap: noul(0.02) },
       usage: { total_tokens: 12 },
     };
@@ -124,7 +124,7 @@ test("judgeDoneClaim sends the state, routes the answers and reports the model",
 
   assert.equal(judged.judged, true);
   assert.equal(judged.verdict, "unclosed");
-  assert.equal(judged.model, "jev-latest");
+  assert.equal(judged.model, "jev-1.13.0");
   assert.deepEqual(judged.usage, { total_tokens: 12 });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].state.claim, "All green, done.");

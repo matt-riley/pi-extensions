@@ -14,7 +14,7 @@ typesafe_ask(state, questions, model?)
   - `noul` — yes/no; returns the probability of yes.
   - `choice` — one of your options; returns the choice plus the distribution.
   - `score` — graded rating on ordered levels you describe.
-- `model` — optional override (default `TYPESAFE_MODEL` or `jev-latest`).
+- `model` — optional override (default `TYPESAFE_MODEL` or `jev-1.13.0`).
 
 All questions are answered in **one request** and run in parallel, so batch
 independent questions rather than calling repeatedly.
@@ -58,7 +58,7 @@ Environment only — no config file:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. Falls back to `LORE_TYPESAFE_API_KEY`, then to `typesafe.apiKey` in the lore config — the same locations lore itself checks: `LORE_CONFIG`, then `lore.json` under `LORE_HOME`, `XDG_CONFIG_HOME` or `~/.config`, with the legacy `~/.copilot/lore.json` fallback. One file therefore covers pi and lore on machines where shell exports never reach a GUI-launched agent. |
-| `TYPESAFE_MODEL` | `jev-latest` | Default model. |
+| `TYPESAFE_MODEL` | `jev-1.13.0` | Default model. Pinned because the repo's thresholds were measured on it; re-tune them before moving to a newer Jev. |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai/v1` | Override for a proxy or a test double. |
 | `TYPESAFE_TIMEOUT_MS` | `30000` | Request timeout. |
 

@@ -93,24 +93,24 @@ test("resolveConfig reads the environment with loopback-free defaults", () => {
   const config = resolveConfig(ENV);
   assert.equal(config.apiKey, "ts-secret-key");
   assert.equal(config.baseUrl, "https://api.typesafe.ai/v1");
-  assert.equal(config.model, "jev-latest");
+  assert.equal(config.model, "jev-1.13.0");
   assert.equal(config.timeoutMs, 30000);
 
   const custom = resolveConfig({
     TYPESAFE_API_KEY: "k",
     TYPESAFE_BASE_URL: "https://example.test/v1/",
-    TYPESAFE_MODEL: "jev-1.13",
+    TYPESAFE_MODEL: "jev-1.14.0",
     TYPESAFE_TIMEOUT_MS: "5000",
   });
   assert.equal(custom.baseUrl, "https://example.test/v1");
-  assert.equal(custom.model, "jev-1.13");
+  assert.equal(custom.model, "jev-1.14.0");
   assert.equal(custom.timeoutMs, 5000);
 });
 
 test("resolveConfig ignores blank values and rejects non-http base urls", () => {
   const config = resolveConfig({ TYPESAFE_API_KEY: "  k  ", TYPESAFE_MODEL: "   " });
   assert.equal(config.apiKey, "k");
-  assert.equal(config.model, "jev-latest");
+  assert.equal(config.model, "jev-1.13.0");
   assert.throws(
     () => resolveConfig({ TYPESAFE_BASE_URL: "ftp://example.test", ...NO_KEY_ENV }),
     /http/i,
@@ -206,7 +206,7 @@ test("names the config paths it checked when no key is found", async () => {
 
 test("renders unusable answers instead of NaN", () => {
   const text = formatAnswers({
-    model: "jev-latest",
+    model: "jev-1.13.0",
     answers: {
       missing: { type: "noul" },
       nameless: { type: "choice", confidence: 0.5 },
@@ -221,7 +221,7 @@ test("renders unusable answers instead of NaN", () => {
 
 test("accepts numeric answers delivered as strings", () => {
   const text = formatAnswers({
-    model: "jev-latest",
+    model: "jev-1.13.0",
     answers: {
       urgent: { type: "noul", noul: "0.92" },
       risk: { type: "score", score: "1.6", confidence: "0.8" },
@@ -233,7 +233,7 @@ test("accepts numeric answers delivered as strings", () => {
 
 test("omits the probability line when there is no distribution", () => {
   const text = formatAnswers({
-    model: "jev-latest",
+    model: "jev-1.13.0",
     answers: { bare: { type: "choice", choice: "billing" } },
   });
   assert.match(text, /bare: choice "billing"/);
@@ -423,7 +423,7 @@ test("askSystemOne refuses an oversized state without calling the provider", asy
 test("askSystemOne posts state and questions verbatim and returns answers", async () => {
   const { fetchImpl, calls } = capturingFetch(() =>
     jsonResponse({
-      model: "jev-latest",
+      model: "jev-1.13.0",
       answers: { urgent: { type: "noul", noul: 0.92 } },
       usage: { input_tokens: 12, output_tokens: 2 },
     }),
@@ -440,9 +440,9 @@ test("askSystemOne posts state and questions verbatim and returns answers", asyn
   assert.equal(calls[0].init.headers["content-type"], "application/json");
   assert.equal(calls[0].init.headers["TypeSafe-Danger-Zone-Images"], "true");
   assert.equal(calls[0].init.redirect, "error");
-  assert.deepEqual(calls[0].body, { model: "jev-latest", state, questions });
+  assert.deepEqual(calls[0].body, { model: "jev-1.13.0", state, questions });
   assert.deepEqual(result, {
-    model: "jev-latest",
+    model: "jev-1.13.0",
     answers: { urgent: { type: "noul", noul: 0.92 } },
     usage: { input_tokens: 12, output_tokens: 2 },
     redactions: 0,
@@ -452,12 +452,12 @@ test("askSystemOne posts state and questions verbatim and returns answers", asyn
 test("a redaction is reported where the answers are, and silence means none", () => {
   const answers = { urgent: { type: "noul", noul: 0.92 } };
   const usage = { input_tokens: 12, output_tokens: 2 };
-  assert.match(formatAnswers({ model: "jev-latest", usage, answers, redactions: 3 }), /3 redacted/);
+  assert.match(formatAnswers({ model: "jev-1.13.0", usage, answers, redactions: 3 }), /3 redacted/);
   assert.doesNotMatch(
-    formatAnswers({ model: "jev-latest", usage, answers, redactions: 0 }),
+    formatAnswers({ model: "jev-1.13.0", usage, answers, redactions: 0 }),
     /redact/,
   );
-  assert.doesNotMatch(formatAnswers({ model: "jev-latest", usage, answers }), /redact/);
+  assert.doesNotMatch(formatAnswers({ model: "jev-1.13.0", usage, answers }), /redact/);
 });
 
 test("askSystemOne honors a per-call model override", async () => {
@@ -465,11 +465,11 @@ test("askSystemOne honors a per-call model override", async () => {
   await askSystemOne({
     state: "s",
     questions: { a: { type: "noul", instructions: "?" } },
-    model: "jev-1.13",
+    model: "jev-1.14.0",
     env: ENV,
     fetchImpl,
   });
-  assert.equal(calls[0].body.model, "jev-1.13");
+  assert.equal(calls[0].body.model, "jev-1.14.0");
 });
 
 test("askSystemOne fails fast on a missing key without calling the provider", async () => {
@@ -603,7 +603,7 @@ test("askSystemOne forwards an external abort signal", async () => {
 
 test("formatAnswers renders each primitive with its distribution", () => {
   const text = formatAnswers({
-    model: "jev-latest",
+    model: "jev-1.13.0",
     usage: { input_tokens: 100, output_tokens: 9 },
     answers: {
       urgent: { type: "noul", noul: 0.92 },
@@ -622,7 +622,7 @@ test("formatAnswers renders each primitive with its distribution", () => {
       },
     },
   });
-  assert.match(text, /jev-latest/);
+  assert.match(text, /jev-1.13.0/);
   assert.match(text, /input_tokens=100/);
   assert.match(text, /urgent: noul 0\.92/);
   assert.match(text, /team: choice "technical" \(confidence 0\.82\)/);
