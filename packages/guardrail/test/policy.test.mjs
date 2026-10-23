@@ -318,19 +318,33 @@ test("a write outside the session's cwd is routine, not suspicious", () => {
 // ---------------------------------------------------------------------------
 // Tool dispatch
 
-test("read-only tools are never inspected", () => {
-  for (const name of [
-    "read",
-    "grep",
-    "code_search",
-    "web_fetch",
-    "typesafe_ask",
-    "lore_recall",
-    "skill_select",
-    "plan_mode_question",
-  ]) {
+test("unannotated read-only names are never inspected", () => {
+  for (const name of ["read", "grep", "lore_recall", "get_transcript", "read_relevant"]) {
     assert.equal(tool(name, { path: "~/.ssh/id_rsa", command: "rm -rf ~" }), "allow", name);
   }
+});
+
+test("readOnlyHint true is trusted only for this repo's tools", () => {
+  const reader = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+  const writer = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+  // An outside claim does not skip the command or secret-path checks.
+  assert.equal(
+    tool("custom_writer", { path: "~/.ssh/id_rsa", command: "rm -rf ~" }, { annotations: reader }),
+    "block",
+  );
+  // false is stricter for anyone, including a name that looks read-only.
+  assert.equal(tool("get_secret", { path: "~/.ssh/id_rsa" }, { annotations: writer }), "block");
+  assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: writer }), "block");
+  // This repo's own reader still takes the fast path. A missing hint does not.
+  assert.equal(tool("code_search", { command: "rm -rf ~" }, { annotations: reader }), "allow");
+  assert.equal(tool("code_search", { command: "rm -rf ~" }), "block");
+  // A missing or non-boolean hint keeps the name rule.
+  assert.equal(tool("read", { command: "rm -rf ~" }, { annotations: {} }), "allow");
+  assert.equal(
+    tool("get_transcript", { path: "~/.ssh/id_rsa" }, { annotations: { destructiveHint: true } }),
+    "allow",
+  );
+  assert.equal(tool("get_transcript", { command: "rm -rf ~" }, { annotations: reader }), "allow");
 });
 
 test("get_/list_-style extension tools are trusted as readers", () => {

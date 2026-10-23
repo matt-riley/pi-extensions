@@ -35,6 +35,7 @@ import {
   stripHeredocs,
   tokenize,
 } from "../../shared/shell-parse.mjs";
+import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
 
 const VERDICT_RANK = { allow: 0, judge: 1, confirm: 2, block: 3 };
 
@@ -884,9 +885,12 @@ function evaluateFileTool(toolName, input, { cwd } = {}) {
   return { verdict, reason, evidence };
 }
 
-// Tools that only ever read. Anything not listed here and not a known writer
-// is inspected for command- or path-shaped arguments instead of being trusted.
-const READ_ONLY_TOOLS = new Set([
+// Fallback for tools that do not declare a trusted hint — pi's built-ins and
+// other packages. An outside readOnlyHint: true is not trusted (Pi copies MCP
+// hints unverified). A missing hint, or an untrusted true, keeps this name
+// rule. Tools in this repo are not listed here; without their own hint they
+// are inspected unless the name itself matches.
+const UNANNOTATED_READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
   "ls",
@@ -894,18 +898,6 @@ const READ_ONLY_TOOLS = new Set([
   "glob",
   "read_file",
   "list_dir",
-  "code_search",
-  "file_outline",
-  "find_definition",
-  "repo_map",
-  "web_fetch",
-  "batch_web_fetch",
-  "web_search",
-  "plan_fetch_url",
-  "typesafe_ask",
-  "skill_select",
-  "plan_mode_question",
-  "plan_mode_complete",
   "todo_read",
   "task_list",
 ]);
@@ -913,7 +905,7 @@ const READ_ONLY_TOOLS = new Set([
 function isReadOnlyToolName(name) {
   const n = String(name ?? "").toLowerCase();
   return (
-    READ_ONLY_TOOLS.has(n) ||
+    UNANNOTATED_READ_ONLY_TOOLS.has(n) ||
     /^(get|list|search|read|fetch|query|describe|show|recall)_/.test(n) ||
     n.startsWith("lore_")
   );
@@ -923,12 +915,22 @@ function isReadOnlyToolName(name) {
  * The single entry point: classify one tool call before it runs.
  * Returns { verdict, reason, evidence }.
  */
-export function evaluateToolCall({ toolName, input, cwd, scriptTexts, unresolvedScripts } = {}) {
+export function evaluateToolCall({
+  toolName,
+  input,
+  cwd,
+  scriptTexts,
+  unresolvedScripts,
+  annotations,
+} = {}) {
   const name = String(toolName ?? "");
   const lower = name.toLowerCase();
+  // false from anyone is inspected. true is the fast path only for this
+  // repo's tools. Anything else keeps the name rule above.
+  const hinted = trustedReadOnlyHint(lower, annotations);
+  const readOnly = hinted === null ? isReadOnlyToolName(lower) : hinted;
 
-  if (isReadOnlyToolName(lower))
-    return { verdict: "allow", reason: null, evidence: { shapes: [] } };
+  if (readOnly) return { verdict: "allow", reason: null, evidence: { shapes: [] } };
 
   // Command-shaped arguments run the shell rules, whatever the tool is called.
   // That covers bash, and any future extension tool that shells out — a

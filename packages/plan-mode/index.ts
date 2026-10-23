@@ -38,8 +38,8 @@ import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
-import { CODE_SEARCH_TOOLS } from "../code-search/tools.mjs";
-import { SKILL_SELECT_TOOLS } from "../skill-select/tools.mjs";
+import { OPEN_DESTRUCTIVE, OPEN_READ } from "../../shared/tool-annotations.mjs";
+import { planToolVerdict, selectPlanTools } from "./tool-policy.mjs";
 import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
 const QUESTION_TOOL = "plan_mode_question";
@@ -58,36 +58,9 @@ function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
-const SEARCH_TOOL = "web_search";
-// lore_recall (from the lore extension) is read-only memory recall: it lets
-// the planner surface prior decisions, preferences, and rejected approaches
-// before grilling the user — exactly the "never ask what the store already
-// knows" discipline Phase 1 needs. lore registers it, not this repo, so it is
-// optional: if lore is not loaded the name matches nothing and the model is
-// simply never offered the tool.
-const RECALL_TOOL = "lore_recall";
-// grep/find/ls are read-only built-ins, included like the reference plan-mode
-// example's toolset. plan_fetch_url and web_search (from pi-web-fetch) are the
-// sanctioned web paths — bash network tools stay blocked by the fail-closed
-// policy. web_search resolves from the pi-web-fetch extension, which ships in
-// the same repo. CODE_SEARCH_TOOLS (repo_map, code_search, file_outline,
-// find_definition from pi-code-search) and SKILL_SELECT_TOOLS (skill_select
-// from pi-skill-select) are read-only discovery tools — the core activity of
-// plan mode; skill_select only reads the local skill library.
-const PLAN_TOOLS = [
-  "read",
-  "bash",
-  "grep",
-  "find",
-  "ls",
-  ...CODE_SEARCH_TOOLS,
-  ...SKILL_SELECT_TOOLS,
-  RECALL_TOOL,
-  QUESTION_TOOL,
-  COMPLETE_TOOL,
-  FETCH_TOOL,
-  SEARCH_TOOL,
-];
+// Tool membership is decided in tool-policy.mjs from annotations. lore_recall
+// is not registered here; it stays allowed only as an unannotated external
+// reader. web_search is the sanctioned open-world search path.
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 // .pi/ rather than repo root: a root PLAN.md collides with projects' own
 // PLAN.md files and would force a per-project gitignore entry.
@@ -206,6 +179,19 @@ export default function planMode(pi: ExtensionAPI) {
     }
   }
 
+  function registeredTools() {
+    try {
+      const tools = pi.getAllTools();
+      return Array.isArray(tools) ? tools : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function activatePlanTools() {
+    pi.setActiveTools(selectPlanTools(registeredTools()));
+  }
+
   function enterPlanMode(ctx: UiCtx) {
     if (state.enabled) return;
     try {
@@ -214,7 +200,7 @@ export default function planMode(pi: ExtensionAPI) {
       state.previousTools = null;
     }
     state.enabled = true;
-    pi.setActiveTools(PLAN_TOOLS);
+    activatePlanTools();
     setReadOnlyMode(true);
     updateStatus(ctx);
     notify(ctx, "Plan mode active — read-only. /plan exit to leave.");
@@ -322,12 +308,12 @@ export default function planMode(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const arg = (args ?? "").trim();
       if (arg === "status" || arg === "") {
-        notify(
-          ctx,
-          state.enabled
-            ? `Plan mode: active — read-only (tools: ${PLAN_TOOLS.join(", ")}).${state.planPath ? `\nPlan file: ${state.planPath}` : ""}`
-            : `Plan mode: off.${state.planPath ? `\nPlan file: ${state.planPath} (edit it, then /plan approve to implement)` : ""}\nusage: /plan <prompt> | approve | status | edit | exit`,
-        );
+        const planLine = state.planPath ? `\nPlan file: ${state.planPath}` : "";
+        const names = selectPlanTools(registeredTools()).join(", ");
+        const active = `Plan mode: active — read-only (tools: ${names}).${planLine}`;
+        const idlePlan = planLine ? `${planLine} (edit it, then /plan approve to implement)` : "";
+        const usage = "\nusage: /plan <prompt> | approve | status | edit | exit";
+        notify(ctx, state.enabled ? active : `Plan mode: off.${idlePlan}${usage}`);
         return;
       }
       if (arg === "start") {
@@ -413,7 +399,7 @@ export default function planMode(pi: ExtensionAPI) {
   // Applies to custom-message runs too: plan mode restricts every run.
   pi.on("before_agent_start", (event) => {
     if (!state.enabled) return;
-    pi.setActiveTools(PLAN_TOOLS);
+    activatePlanTools();
     event.systemPromptOptions.sections.plan_mode = PLAN_MODE_PROMPT;
   });
 
@@ -421,13 +407,19 @@ export default function planMode(pi: ExtensionAPI) {
 
   pi.on("tool_call", (event) => {
     if (!state.enabled) return;
-    // Strict allowlist: plan mode permits only the plan toolset, so a stale or
-    // out-of-band tool call (grep/find/ls built-ins, other extensions' tools,
-    // edit/write/update_plan) never executes.
-    if (!PLAN_TOOLS.includes(event.toolName)) {
+    // readOnlyHint: true is trusted only for tools this repo registers.
+    // Unannotated tools from other packages keep the previous external
+    // allowlist. Writers stay blocked, except plan_mode_complete, which
+    // only writes the plan file.
+    const tools = registeredTools();
+    const info = tools?.find((tool) => tool.name === event.toolName);
+    const verdict = planToolVerdict(event.toolName, info, {
+      registryUnavailable: tools === null,
+    });
+    if (verdict === "block") {
       return { block: true, reason: `Plan mode blocks ${event.toolName} — read-only planning.` };
     }
-    if (event.toolName === "bash") {
+    if (verdict === "bash") {
       const command = typeof event.input?.command === "string" ? event.input.command : "";
       const blocked = blockedBashCommand(command);
       if (blocked) {
@@ -444,6 +436,8 @@ export default function planMode(pi: ExtensionAPI) {
   pi.registerTool({
     name: QUESTION_TOOL,
     label: "Plan Mode Question",
+    exposure: "deferred",
+    annotations: OPEN_READ,
     description:
       "Ask the user a decision question with 2-4 meaningful options before finalizing the plan. " +
       "Include a recommended answer when you have a sensible default. " +
@@ -558,6 +552,8 @@ export default function planMode(pi: ExtensionAPI) {
   pi.registerTool({
     name: COMPLETE_TOOL,
     label: "Plan Mode Complete",
+    exposure: "deferred",
+    annotations: OPEN_DESTRUCTIVE,
     description:
       "Submit the complete, decision-final implementation plan as Markdown. Call this alone as your final action — " +
       "the plan is written to a file for the user to review and edit before implementation.",
@@ -624,6 +620,8 @@ export default function planMode(pi: ExtensionAPI) {
   pi.registerTool({
     name: FETCH_TOOL,
     label: "Fetch URL (read-only web access)",
+    exposure: "deferred",
+    annotations: OPEN_READ,
     description:
       "Fetch an http(s) URL and return readable content for planning research — " +
       "the sanctioned network path (curl/wget are blocked in plan mode). " +

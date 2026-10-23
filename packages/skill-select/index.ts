@@ -8,6 +8,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { homedir } from "node:os";
 
 import {
@@ -26,6 +27,7 @@ export default function piSkillSelectExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: SELECT_TOOL,
     label: "skill_select",
+    annotations: LOCAL_READ,
     description:
       "Find a specialist skill by task. Searches the whole local skill library — including skills deliberately kept " +
       "out of the system prompt — and returns the closest matches with the path to each SKILL.md. Call it before " +

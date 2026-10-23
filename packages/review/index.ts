@@ -14,6 +14,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 
 import { formatVerified, verifyFindings } from "./findings.mjs";
 import { MAX_DIFF_CHARS, formatFindings, lintChange } from "./lint.mjs";
@@ -63,6 +64,7 @@ export default function piReviewExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",
+    annotations: OPEN_READ,
     description:
       "Judge a staged or working-tree change against the repository's stated preferences — the ones a linter " +
       "cannot decide: more machinery than the problem needs, an abstraction nothing calls for, speculative " +
@@ -146,6 +148,7 @@ export default function piReviewExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "verify_findings",
     label: "verify_findings",
+    annotations: OPEN_READ,
     description:
       "Check review findings against the diff they claim to be about. A finding that quotes code absent from the " +
       "diff is dropped without a judgment — a string comparison — and the rest are asked whether the diff shows " +

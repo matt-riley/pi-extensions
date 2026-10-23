@@ -25,17 +25,28 @@ ctrl+alt+e          edit the plan file (same as /plan edit)
 pi --plan           start pi already in plan mode
 ```
 
-While plan mode is active:
+While plan mode is active, tool membership comes from annotations
+(`packages/plan-mode/tool-policy.mjs`), not a name list:
 
-- **Tools are restricted** to `read`, `bash`, `grep`, `find`, `ls`,
-  `repo_map`, `code_search`, `file_outline`, `find_definition` (from
-  `pi-code-search`), `lore_recall` (from the `lore` extension — read-only
-  memory recall so the planner surfaces past decisions, preferences, and
-  rejected approaches before grilling you; like `web_search`, it resolves
-  from a sibling extension, so if lore is unloaded drop it from `PLAN_TOOLS`),
-  `plan_mode_question`, `plan_mode_complete`, `plan_fetch_url`, and
-  `web_search`; **any other tool call is blocked**, and your previous tool
-  set is restored on exit.
+- **Local readers this repo registers** (`readOnlyHint` and not
+  `openWorldHint`): the code-search tools, `skill_select`, and `view_context`.
+  `readOnlyHint: true` from any other tool is ignored. `readOnlyHint: false`
+  blocks, including a built-in that claims it.
+- **Plan mode's own tools**, activated even though they are deferred:
+  `plan_mode_question`, `plan_fetch_url`, and `plan_mode_complete` (the last
+  one writes only the plan file).
+- **`web_search`**, the open-world search tool the mode already used. Other
+  open-world readers (`web_fetch`, `typesafe_ask`, `read_relevant`) stay out,
+  so planning does not grow a second fetch path or a paid judgment call.
+- **Unannotated tools from other packages** that were already allowed:
+  `read`, `bash`, `grep`, `find`, `ls`, and `lore_recall` (lore's read-only
+  memory recall; if lore is unloaded the name matches nothing).
+- **Tools whose exposure is not `direct`** stay inactive, except the plan-mode
+  trio. That covers deferred, model-only, codemode, and hidden, so the
+  influencer tools are not pulled into the planning prompt. Any other tool
+  call is blocked, and the previous tool set is restored on exit.
+  `view_context` is the one local reader newly available in the mode; it only
+  reports context usage.
 - **Mutating tools are blocked** (`edit`, `write`, `update_plan` and anything
   outside the plan toolset), and `bash` runs under a **fail-closed read-only
   allowlist** (see `shared/bash-policy.mjs`, modeled on the reference plan-mode
@@ -58,8 +69,8 @@ While plan mode is active:
   web-fetch's 15s default). These are the sanctioned network paths:
   `curl`/`wget` stay blocked by the bash allowlist, so web research can't
   double as a mutation or exfiltration vector. `web_search` resolves from the
-  pi-web-fetch extension — if that extension is unloaded, drop it from
-  `PLAN_TOOLS` in `index.ts`.
+  pi-web-fetch extension — if that extension is unloaded, the name matches
+  nothing and the model is simply never offered the tool.
 - A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
   path) keep the state visible while active; both clear on exit.
 - The agent explores read-only, then **grills you for the full scope**: it

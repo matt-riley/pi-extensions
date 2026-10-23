@@ -145,6 +145,38 @@ declare module "@earendil-works/pi-coding-agent" {
     ): ModelRoute<TState> | Promise<ModelRoute<TState>>;
   }
 
+  /** Where a registered tool, command, or extension was loaded from. Pi sets this; tools do not. */
+  export interface SourceInfo {
+    path: string;
+    source: string;
+    scope: "user" | "project" | "temporary";
+    origin: "package" | "top-level";
+    baseDir?: string;
+  }
+
+  /** MCP-shaped hints. Author-declared and not verified by pi. */
+  export interface ToolAnnotations {
+    /** The tool does not modify its environment. */
+    readOnlyHint?: boolean;
+    /** The tool may delete or overwrite data. Meaningful when not read-only. */
+    destructiveHint?: boolean;
+    /** Repeating a call with the same arguments has no further effect. */
+    idempotentHint?: boolean;
+    /** The tool reaches external entities, such as the web. */
+    openWorldHint?: boolean;
+  }
+
+  export interface ToolInfo {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+    promptGuidelines?: string[];
+    exposure: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+    annotations?: ToolAnnotations;
+    sourceInfo: SourceInfo;
+    [key: string]: unknown;
+  }
+
   export interface ToolDefinition<TParams = unknown, TDetails = unknown> {
     name: string;
     label?: string;
@@ -153,6 +185,13 @@ declare module "@earendil-works/pi-coding-agent" {
     promptGuidelines?: string[];
     /** How the model reaches the tool; `deferred` keeps it out of the prompt until loaded. */
     exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
+    /** Hints for permission checks. See Pi 1.4.0 ToolAnnotations. */
+    annotations?: ToolAnnotations;
+    /**
+     * Whether registering a direct or model-only tool activates it. Deferred
+     * and other non-direct exposures are never activated on registration.
+     */
+    defaultActive?: boolean;
     parameters: TParams;
     execute(
       toolCallId: string,
@@ -205,6 +244,8 @@ declare module "@earendil-works/pi-coding-agent" {
     unregisterVirtualModel(provider: string, id: string): void;
     exec(cmd: string, args: string[], opts?: { timeout?: number }): Promise<ExecResult>;
     getActiveTools(): string[];
+    /** Every registered tool, including exposure and annotations. */
+    getAllTools(): ToolInfo[];
     setActiveTools(tools: string[]): void;
     /** Switch the session model; false means no authentication for it. */
     setModel(model: unknown): Promise<boolean> | boolean;

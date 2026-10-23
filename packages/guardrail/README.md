@@ -127,10 +127,13 @@ binary or an obfuscated payload does.
   source second, `$(…)` bodies are evaluated as commands, and a referenced
   script is read (bounded to 64KB) and classified. A payload that decodes or
   fetches its real work at runtime is out of scope.
-- Unknown tools from other extensions are judged by their arguments: a
-  command-shaped argument runs the shell rules, and secret or system paths are
-  refused. Tool names that look read-only (`get_*`, `list_*`, `lore_*`, and pi's
-  own discovery tools) are trusted and never inspected.
+- `readOnlyHint: false` from any tool is inspected, even when the name looks
+  read-only. `readOnlyHint: true` is trusted only for tools this repo
+  registers (`OWNED_TOOL_NAMES` in `shared/tool-annotations.mjs`). Pi copies
+  MCP servers' own hints and does not verify them, so an outside read-only
+  claim keeps the previous rule: a command-shaped argument runs the shell
+  rules, secret or system paths are refused, and names that look read-only
+  (`get_*`, `list_*`, `lore_*`, and pi's own discovery tools) are trusted.
 - **Subagents are covered.** `pi-subagents` builds children with
   `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
   `agentDir` is what makes pi load global extensions — so a child gets this
@@ -170,15 +173,15 @@ binary or an obfuscated payload does.
 
 ## Tests
 
-`node --test packages/guardrail/test/*.test.mjs` — 63 cases:
+`node --test packages/guardrail/test/*.test.mjs` — 74 cases:
 
 - `policy.test.mjs` — shapes, target classes, quoting, heredocs, chaining,
-  indirection, file tools, unknown tools.
+  indirection, file tools, unknown tools, annotation hints.
 - `judge.test.mjs` — question shape, state, thresholds and their boundaries,
   recommendations, and the failure paths (a `null` from the judge must never
   read as a confident zero).
 - `extension.test.mjs` — the whole path with a fake pi and a fake UI: approve,
   deny, suggest, cancelled dialog, no UI, kill switch, script reading, secret
-  writes.
+  writes, annotation hints from `getAllTools`.
 - `shell-parse.test.mjs` — the shared parser, including the two real bugs its
   callers hit: heredoc bodies parsed as shell, and quote desync inside `$( )`.

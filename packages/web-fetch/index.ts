@@ -13,6 +13,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 import { resolveConfig } from "../../shared/systemone.mjs";
 import { answerFromPage, formatAnswer } from "./answer.mjs";
 import { allocateItemBudget, chargeBudget } from "./batch.mjs";
@@ -107,6 +108,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_fetch",
     label: "web_fetch",
+    annotations: OPEN_READ,
     description: WEB_FETCH_DESCRIPTION,
     promptSnippet:
       "web_fetch(url, format?, maxChars?, timeoutMs?, headers?, includeImages?, followAlternates?): fetch a web page and get clean readable content (markdown by default) plus title/author/date metadata; GitHub URLs use the gh CLI; no JavaScript execution",
@@ -204,6 +206,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_answer",
     label: "web_answer",
+    annotations: OPEN_READ,
     description: ANSWER_DESCRIPTION,
     promptSnippet:
       "web_answer(url, question, max_spans?): fetch a page and return only the passages that answer the question, judged by TypeSafe System One; the passages are the page's own text",
@@ -307,6 +310,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "batch_web_fetch",
     label: "batch_web_fetch",
+    annotations: OPEN_READ,
     description: BATCH_DESCRIPTION,
     promptSnippet:
       "batch_web_fetch(requests, concurrency?, totalMaxChars?): fetch multiple URLs concurrently, one result block per URL with per-item failures",
@@ -437,6 +441,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_search",
     label: "web_search",
+    annotations: OPEN_READ,
     description: SEARCH_DESCRIPTION,
     promptSnippet: SEARCH_SNIPPET,
     promptGuidelines: [

@@ -34,7 +34,13 @@ beforeEach(() => {
   delete process.env.PI_GUARDRAIL;
 });
 
-function harness({ hasUI = true, cwd = process.cwd(), choices = [], inputs = [] } = {}) {
+function harness({
+  hasUI = true,
+  cwd = process.cwd(),
+  choices = [],
+  inputs = [],
+  tools = [],
+} = {}) {
   const handlers = {};
   const commands = {};
   const dialogs = [];
@@ -46,6 +52,7 @@ function harness({ hasUI = true, cwd = process.cwd(), choices = [], inputs = [] 
     registerCommand: (name, def) => {
       commands[name] = def;
     },
+    getAllTools: () => tools,
   };
   const ui = {
     select: async (title, options) => {
@@ -76,6 +83,49 @@ function harness({ hasUI = true, cwd = process.cwd(), choices = [], inputs = [] 
 }
 
 // ---------------------------------------------------------------------------
+
+test("an outside read-only claim is still inspected", async () => {
+  const h = harness({
+    tools: [
+      {
+        name: "custom_reader",
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+    ],
+  });
+  const result = await h.run("custom_reader", { command: "rm -rf ~" });
+  assert.equal(result.block, true);
+  assert.match(result.reason, /refusing to delete/);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("this repo's own reader is not inspected", async () => {
+  const h = harness({
+    tools: [
+      {
+        name: "code_search",
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+    ],
+  });
+  assert.equal(await h.run("code_search", { command: "rm -rf ~" }), undefined);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("a declared writer is inspected even when the name looks read-only", async () => {
+  const h = harness({
+    tools: [
+      {
+        name: "get_secret",
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+    ],
+  });
+  const result = await h.run("get_secret", { path: "~/.ssh/id_rsa" });
+  assert.equal(result.block, true);
+  assert.match(result.reason, /credential or VCS internals/);
+  assert.equal(h.dialogs.length, 0);
+});
 
 test("a routine command passes through in silence", async () => {
   const h = harness();
