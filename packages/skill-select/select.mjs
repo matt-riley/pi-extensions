@@ -6,7 +6,8 @@
 // error or an unusable answer all leave the lexical order untouched.
 
 import { flagOff } from "../../shared/env-flag.mjs";
-import { askSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { DEFAULT_LIMIT, rankSkills } from "./library.mjs";
 
 export const TIEBREAK_ENV = "PI_SKILL_SELECT_TIEBREAK";

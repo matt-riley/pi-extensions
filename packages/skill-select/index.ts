@@ -8,7 +8,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { bindSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { homedir } from "node:os";
 

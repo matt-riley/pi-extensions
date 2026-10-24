@@ -19,7 +19,8 @@ import { parseArgs } from "node:util";
 
 import { memoizeAsk } from "../packages/safe-compact/plan.mjs";
 import { mapPool, yes } from "../shared/spans.mjs";
-import { askSystemOne, validateRequest } from "../shared/systemone.mjs";
+import { askSystemOne } from "../shared/systemone.mjs";
+import { validateRequest } from "../shared/systemone-request.mjs";
 
 // The handoff rides in the state beside the fact being checked, and a state past
 // Jev's 60000-character limit fails whole. Measured handoffs run 10-58k

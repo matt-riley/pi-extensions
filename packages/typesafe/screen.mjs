@@ -2,7 +2,8 @@
 // or treating a classifier verdict as authority to execute instructions.
 import { flagOff } from "../../shared/env-flag.mjs";
 import { excerpt } from "../../shared/spans.mjs";
-import { askSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { resolveApiKey } from "../../shared/systemone-config.mjs";
 
 const REMOTE_TOOLS = new Set([
   "web_fetch",

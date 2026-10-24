@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { findCode } from "../semantic.mjs";
-import { validateRequest } from "../../../shared/systemone.mjs";
+import { validateRequest } from "../../../shared/systemone-request.mjs";
 
 const noGit = async () => ({ code: 1, stdout: "" });
 const answer = (noul) => ({ answers: { implements: { type: "noul", noul } } });

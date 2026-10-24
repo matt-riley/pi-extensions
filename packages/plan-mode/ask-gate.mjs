@@ -15,7 +15,9 @@
 // the wrong question: one line of request is not context. Reading the
 // recommendation needs no more than the tool already has.
 
-import { askSystemOne, usableNumber, validateRequest } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
+import { validateRequest } from "../../shared/systemone-request.mjs";
 
 /** The escape hatch. Without it, a model that must choose invents. */
 export const ASK_USER = "ask_user";

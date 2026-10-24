@@ -4,7 +4,8 @@
 // answers them, and this file applies the only thing code is good at — a
 // threshold, a sort, and a line a person can act on.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 import { DEFAULT_THRESHOLD, RULES_BY_ID, buildQuestionSet } from "./rules.mjs";
 
 /**

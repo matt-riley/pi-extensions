@@ -20,7 +20,8 @@ import { homedir } from "node:os";
 import { discoverSkills, rankSkills, resolveRoots } from "../packages/skill-select/library.mjs";
 import { verifyRegistration } from "./registration.mjs";
 import path from "node:path";
-import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
+import { askSystemOne } from "../shared/systemone.mjs";
+import { formatAnswers } from "../shared/systemone.mjs";
 
 const SAMPLE_QUERIES = [
   ["review staged diff", "implementation-review"],

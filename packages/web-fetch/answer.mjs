@@ -8,7 +8,8 @@
 //
 // One request: every passage is in the state and gets its own Noul question.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 
 const DEFAULT_MAX_SPANS = 3;
 const DEFAULT_MAX_PASSAGES = 12;

@@ -6,15 +6,15 @@ import { join } from "node:path";
 
 import { judgeFailure, triageText } from "../../diagnosis-nudge/triage.mjs";
 
+import { askSystemOne } from "../../../shared/systemone.mjs";
+import { formatAnswers } from "../../../shared/systemone.mjs";
+import { resolveConfig } from "../../../shared/systemone-config.mjs";
 import {
-  askSystemOne,
-  formatAnswers,
-  resolveConfig,
   validateQuestions,
   validateReferences,
   validateRequest,
   validateState,
-} from "../../../shared/systemone.mjs";
+} from "../../../shared/systemone-request.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
 

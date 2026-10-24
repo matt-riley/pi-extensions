@@ -9,7 +9,8 @@
 // It never blocks a plan: a missing key, a timeout or an unusable answer means
 // no appendix, and the plan is written as it was.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 
 const MAX_STEPS = 10;
 const MAX_STEP_CHARS = 800;

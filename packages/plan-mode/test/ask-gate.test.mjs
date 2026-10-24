@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { validateRequest } from "../../../shared/systemone.mjs";
+import { validateRequest } from "../../../shared/systemone-request.mjs";
 import {
   ASK_USER,
   alwaysAsk,

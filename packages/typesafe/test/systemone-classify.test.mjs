@@ -11,7 +11,9 @@ import assert from "node:assert/strict";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { askSystemOne, bindSystemOne, formatAnswers } from "../../../shared/systemone.mjs";
+import { askSystemOne } from "../../../shared/systemone.mjs";
+import { bindSystemOne } from "../../../shared/systemone-session.mjs";
+import { formatAnswers } from "../../../shared/systemone.mjs";
 import { judgeToolCall } from "../../guardrail/judge.mjs";
 import { claimLine, judgeDoneClaim } from "../../done-gate/claim.mjs";
 import { rankSkills } from "../../skill-select/library.mjs";

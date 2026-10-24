@@ -14,7 +14,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
-import { bindSystemOne, resolveConfig } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
+import { resolveConfig } from "../../shared/systemone-config.mjs";
 import { answerFromPage, formatAnswer } from "./answer.mjs";
 import { allocateItemBudget, chargeBudget } from "./batch.mjs";
 import { fetchPage, fetchSmart } from "./fetch.mjs";

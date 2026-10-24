@@ -20,7 +20,7 @@ import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "n
 import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
-import { bindSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
 import {
   DEFAULT_TIMEOUT_MS,

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateRequest } from "../shared/systemone.mjs";
+import { validateRequest } from "../shared/systemone-request.mjs";
 import {
   claimsFrom,
   constraintsFrom,

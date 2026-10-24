@@ -20,7 +20,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { installCheckpoint } from "./checkpoint.mjs";
 import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
-import { bindSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
+import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { appendNudge, createNudgeState, observeToolResult, resetNudgeState } from "./nudge.mjs";
 import { judgeFailure, memoKeyFor, shouldTriage, triageText } from "./triage.mjs";
 

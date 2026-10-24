@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createInjectionScreen } from "../screen.mjs";
-import { validateRequest } from "../../../shared/systemone.mjs";
+import { validateRequest } from "../../../shared/systemone-request.mjs";
 
 const env = { TYPESAFE_API_KEY: "fixture" };
 const text = (value) => ({ type: "text", text: value });

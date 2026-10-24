@@ -7,7 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { judgeToolCall } from "../../guardrail/judge.mjs";
-import { askSystemOne, bindSystemOne } from "../../../shared/systemone.mjs";
+import { askSystemOne } from "../../../shared/systemone.mjs";
+import { bindSystemOne } from "../../../shared/systemone-session.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
 

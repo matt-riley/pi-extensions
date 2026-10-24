@@ -9,7 +9,8 @@
 // Code keeps the cheap half. That is the same split as the guardrail: decide
 // what shape decides, judge the rest.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 import { MAX_DIFF_CHARS, capDiff } from "./lint.mjs";
 
 const MAX_FINDINGS = 10;

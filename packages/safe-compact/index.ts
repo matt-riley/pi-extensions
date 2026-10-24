@@ -15,7 +15,8 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { askSystemOne, bindSystemOne, compactionUsage } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne, compactionUsage } from "../../shared/systemone-session.mjs";
 import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { judgeMoment } from "./judge.mjs";
 import {

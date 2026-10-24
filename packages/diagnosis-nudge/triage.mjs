@@ -7,7 +7,9 @@
 //
 // Plain .mjs so node --test covers the mapping without a TS loader.
 
-import { askSystemOne, usableNumber, validateRequest } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
+import { validateRequest } from "../../shared/systemone-request.mjs";
 
 /** What the question sees. The published protocol ships the first 2000. */
 const OUTPUT_CHARS = 2000;

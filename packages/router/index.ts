@@ -33,7 +33,8 @@ import type {
   ModelRouteRequest,
 } from "@earendil-works/pi-coding-agent";
 
-import { askSystemOne, bindSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import {
   ensureRouterConfig,
   readRouterConfig,

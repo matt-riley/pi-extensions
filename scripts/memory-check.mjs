@@ -21,7 +21,8 @@ import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-import { askSystemOne, usableNumber } from "../shared/systemone.mjs";
+import { askSystemOne } from "../shared/systemone.mjs";
+import { usableNumber } from "../shared/systemone.mjs";
 
 export const DEFAULT_BIN = process.env.LORE_BIN ?? "lore";
 const MAX_CANDIDATES = 5;

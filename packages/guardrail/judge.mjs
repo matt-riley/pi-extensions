@@ -11,7 +11,8 @@
 // the question becomes "would this be surprising to someone who asked for
 // exactly what the action says it does?".
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 import { TUNED_MODEL } from "../../shared/jev-ledger.mjs";
 
 /** Short on purpose: this sits between a tool call and its execution. */

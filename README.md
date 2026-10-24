@@ -43,9 +43,12 @@ renaming one can break another:
   **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`**,
   **`pi-prompt-coach`**, **`pi-subagents`** and the `scripts/` classifiers all
   import from the shared `shared/systemone.mjs` — `askSystemOne` for the
-  request, `validateRequest` for the state/question contract, `usableNumber`
-  for reading answers — so they share one request validation, timeout and
-  error handling instead of duplicating transport. Inside Pi, that request
+  request, `usableNumber` for reading answers — and from its siblings
+  `systemone-config.mjs` (endpoint and key), `systemone-request.mjs`
+  (`validateRequest`, the state/question contract), `systemone-transport.mjs`
+  (deadline and transports) and `systemone-session.mjs` (the store that carries
+  Pi's context and token usage). One implementation of each, split by job, so a
+  file stays readable instead of duplicating transport. Inside Pi, that request
   goes through `classify()` when a TypeSafe System One model is registered,
   and stays on the direct HTTP transport otherwise. The `scripts/` classifiers
   have no Pi model registry, so they stay on HTTP. Each call also appends a

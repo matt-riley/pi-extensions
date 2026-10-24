@@ -14,7 +14,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { bindSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 
 import { formatVerified, verifyFindings } from "./findings.mjs";

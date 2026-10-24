@@ -19,7 +19,8 @@
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { askSystemOne, usableNumber } from "../shared/systemone.mjs";
+import { askSystemOne } from "../shared/systemone.mjs";
+import { usableNumber } from "../shared/systemone.mjs";
 
 export const MAX_CORRECTIONS = 12;
 const MAX_CORRECTION_CHARS = 500;

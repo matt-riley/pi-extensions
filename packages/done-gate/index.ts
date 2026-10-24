@@ -30,7 +30,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { installMeasurement } from "./measurement.mjs";
 import { messageText } from "../../shared/message-text.mjs";
-import { bindSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { revisionSnapshot } from "../subagents/evidence.mjs";
 // Namespace import too: /reload can serve a cached gate.mjs, and a binding added
 // since the process started has to be read as a property, where a named import

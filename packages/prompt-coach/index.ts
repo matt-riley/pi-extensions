@@ -7,7 +7,8 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { askSystemOne, bindSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { buildQuestions } from "./battery.mjs";
 import { extractLastUserPrompt, usableNoul, validateCandidate } from "./lib.mjs";
 import { collectProbe } from "./probe.mjs";

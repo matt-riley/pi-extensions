@@ -15,7 +15,8 @@
 // no line at all, because a missing sentence is a smaller problem than a run
 // that cannot finish.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne } from "../../shared/systemone.mjs";
+import { usableNumber } from "../../shared/systemone.mjs";
 
 /** Short on purpose: the run has finished and the person is waiting for it. */
 export const DEFAULT_TIMEOUT_MS = 4000;
