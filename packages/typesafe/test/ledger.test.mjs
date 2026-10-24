@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { judgeToolCall } from "../../guardrail/judge.mjs";
 import { askSystemOne, bindSystemOne } from "../../../shared/systemone.mjs";
 
 const ENV = { TYPESAFE_API_KEY: "ts-secret-key" };
@@ -450,4 +451,43 @@ test("tool, command, and virtual-model handlers record the Jev call", async () =
   });
   await models.jev.route({}, {});
   assert.equal(entries.length, 3, "virtual model route recorded the call");
+});
+
+test("askSystemOne names the calling package when no feature is passed", async () => {
+  const pi = sessionPi();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: {
+        destructive: { type: "noul", noul: 0.1 },
+        intent_mismatch: { type: "noul", noul: 0.1 },
+        credentials: { type: "noul", noul: 0.1 },
+        blast_radius: { type: "score", score: 0 },
+      },
+      usage: {},
+    });
+  try {
+    pi.on("tool_call", () =>
+      judgeToolCall({
+        action: "rm notes.txt",
+        toolName: "bash",
+        cwd: "/workspace",
+        userRequest: "remove the notes file",
+        env: ENV,
+      }),
+    );
+    await pi.handlers[0].handler({}, {});
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(pi.entries[0].data.feature, "guardrail");
+  assert.equal(JSON.stringify(pi.entries[0]).includes("rm notes.txt"), false);
+  const { callingFeature } = await import("../../../shared/jev-ledger.mjs");
+  assert.equal(
+    callingFeature(
+      ["Error", "    at classifyCi (file:///workspace/scripts/ci-triage.mjs:10:1)"].join("\n"),
+    ),
+    "ci-triage",
+  );
 });
