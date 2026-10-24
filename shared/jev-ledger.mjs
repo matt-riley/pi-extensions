@@ -7,6 +7,45 @@
 
 import { redactSecrets } from "./redact.mjs";
 
+/** The Jev the guardrail and judge-thresholds lines were measured on. */
+export const TUNED_MODEL = "jev-1.13.0";
+
+const driftWarned = new WeakMap();
+let driftWarnedDetached = false;
+
+/**
+ * One short warning per session when TypeSafe reports a model other than
+ * TUNED_MODEL. The thresholds stay where they were measured; this only says
+ * they may need another judge-thresholds run.
+ */
+export function warnModelDrift({ reported, ctx } = {}) {
+  if (typeof reported !== "string" || reported.trim() !== reported || reported === TUNED_MODEL) {
+    return false;
+  }
+  if (!reported) return false;
+  const key = ctx?.sessionManager ?? ctx;
+  if (key && (typeof key === "object" || typeof key === "function")) {
+    if (driftWarned.get(key)) return false;
+    driftWarned.set(key, true);
+  } else if (driftWarnedDetached) {
+    return false;
+  } else {
+    driftWarnedDetached = true;
+  }
+  const title =
+    `Jev reported ${reported}; thresholds were tuned on ${TUNED_MODEL} and may need re-tuning. ` +
+    "Re-run: node scripts/replay-corpus.mjs --judge 150 --judge-json sample.json && node scripts/judge-thresholds.mjs sample.json";
+  const notify = ctx?.ui?.notify;
+  if (typeof notify === "function") {
+    try {
+      notify(title, "warning");
+    } catch {
+      // The warning is advisory. The gate still gets its answer.
+    }
+  }
+  return true;
+}
+
 function finiteNumber(value) {
   if (value === null || value === undefined) return null;
   if (typeof value === "string" && !value.trim()) return null;
@@ -107,6 +146,8 @@ export function buildLedgerEntry({
   errorClass,
   literals,
   status,
+  modelDrift,
+  tunedModel,
 } = {}) {
   let safeAnswers = null;
   if (answers && typeof answers === "object") {
@@ -133,6 +174,7 @@ export function buildLedgerEntry({
     redactions,
     privacyRedactions,
     outcome,
+    ...(modelDrift === true ? { modelDrift: true, tunedModel } : {}),
     ...(typeof errorClass === "string" ? { errorClass } : {}),
     ...(Number.isInteger(status) ? { status } : {}),
   };

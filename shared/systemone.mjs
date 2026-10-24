@@ -23,6 +23,8 @@ import {
   buildLedgerEntry,
   ledgerErrorClass,
   ledgerHttpStatus,
+  TUNED_MODEL,
+  warnModelDrift,
 } from "./jev-ledger.mjs";
 import { redactSecrets } from "./redact.mjs";
 
@@ -855,6 +857,7 @@ export async function askSystemOne({
     if (!classifier && typeof fetchImpl !== "function") {
       throw new Error("A fetch implementation is required to call TypeSafe.");
     }
+    const sessionCtx = ctx ?? systemOneAls.getStore()?.ctx;
     const result = classifier
       ? await askViaClassify({
           registry,
@@ -881,6 +884,8 @@ export async function askSystemOne({
           signal,
           retryDelayMs,
         });
+    const modelDrift = typeof result.model === "string" && result.model !== TUNED_MODEL;
+    if (modelDrift) warnModelDrift({ reported: result.model, ctx: sessionCtx });
     appendLedgerEntry(
       sessionPi,
       buildLedgerEntry({
@@ -895,6 +900,8 @@ export async function askSystemOne({
         privacyRedactions: privacyCount,
         outcome: "ok",
         literals,
+        modelDrift,
+        tunedModel: TUNED_MODEL,
       }),
     );
     return result;
