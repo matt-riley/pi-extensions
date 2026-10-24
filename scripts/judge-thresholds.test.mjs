@@ -180,3 +180,32 @@ test("judge-thresholds --show-allow says when the action was not recorded", () =
   assert.equal(/\bundefined\b/.test(result.stdout), false);
   assert.match(result.stdout, /go test -race/);
 });
+
+test("judge-thresholds --show-allow counts unrecorded actions on one line", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jev-allow-"));
+  const file = path.join(dir, "sample.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      records: [
+        { signals: { intent_mismatch: 0.65 }, action: "(not recorded)" },
+        { signals: { intent_mismatch: 0.65 }, action: null },
+        { signals: { intent_mismatch: 0.65 } },
+        { signals: { intent_mismatch: 0.65 }, action: "go test -race ./..." },
+      ],
+    }),
+  );
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/judge-thresholds.mjs", file, "--show-allow"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const lines = result.stdout.split("\n").filter((line) => line.includes("action wasn't recorded"));
+  assert.deepEqual(lines, [
+    "    action wasn't recorded for 3 records",
+    "    action wasn't recorded for 3 records",
+    "    action wasn't recorded for 3 records",
+    "    action wasn't recorded for 3 records",
+  ]);
+});
