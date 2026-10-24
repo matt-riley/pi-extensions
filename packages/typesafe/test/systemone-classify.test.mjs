@@ -403,7 +403,10 @@ test("retries: the fetch wrapper retries 429 then 529 and classify sets maxRetri
       method: "POST",
     });
     if (!response.ok) {
-      return { stopReason: "error", errorMessage: `System One API error (${response.status}): busy` };
+      return {
+        stopReason: "error",
+        errorMessage: `System One API error (${response.status}): busy`,
+      };
     }
     const body = await response.json();
     return stopResult(body.answers);
