@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+import { buildLedgerEntry } from "./jev-ledger.mjs";
 import { redactSecrets } from "./redact.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
@@ -511,10 +512,10 @@ function withSessionUsage(result, priorUsage) {
  * returned tool result; compaction drafts use `compactionUsage` instead,
  * because that usage belongs on the entry Pi actually records.
  */
-function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage } = {}) {
+function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage, pi } = {}) {
   const parent = systemOneAls.getStore();
   const usage = parent?.usage ?? [];
-  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, usage }, async () => {
+  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, pi: pi ?? parent?.pi, usage }, async () => {
     const result = await fn();
     if (!attachUsage || parent?.usage) return result;
     return withSessionUsage(result, priorUsage);
@@ -547,6 +548,7 @@ export function bindSystemOne(pi) {
         runWithSystemOneContext(ctx, () => handler(payload, ctx), {
           attachUsage: event === "tool_result",
           priorUsage: event === "tool_result" ? payload?.usage : undefined,
+          pi,
         }),
       );
   }
@@ -785,7 +787,7 @@ async function askOverHttp({
  * Uses Pi's classifier when `ctx` (or the context bound by `bindSystemOne`)
  * has a TypeSafe System One model. Otherwise posts to `/systemone` directly.
  *
- * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object }} opts
+ * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object, feature?: string }} opts
  * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number, privacyRedactions?: number }>}
  */
 export async function askSystemOne({
@@ -797,7 +799,10 @@ export async function askSystemOne({
   signal,
   retryDelayMs = RETRY_BASE_MS,
   ctx,
+  feature,
 } = {}) {
+  const started = Date.now();
+  const sessionPi = systemOneAls.getStore()?.pi;
   const config = resolveConfig(env);
   const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
   const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
@@ -826,36 +831,62 @@ export async function askSystemOne({
   // Nothing is sent without a local key. Pi's stored login is not a substitute;
   // that can be an opt-in later. The HTTP path already refused here.
   if (!config.apiKey) throw missingKeyError(env);
+  const record = (result, transport) => {
+    if (sessionPi) {
+      sessionPi.appendEntry(
+        "jev-decision",
+        buildLedgerEntry({
+          feature: typeof feature === "string" && feature.trim() ? feature.trim() : "unknown",
+          model: result.model,
+          requestedModel,
+          questions,
+          answers: result.answers,
+          latencyMs: Date.now() - started,
+          transport,
+          redactions,
+          privacyRedactions: privacyCount,
+          outcome: "ok",
+        }),
+      );
+    }
+    return result;
+  };
   if (classifier) {
-    return askViaClassify({
-      registry,
-      classifier,
-      safeState,
-      questions,
-      redactions,
-      privacyCount,
-      requestedModel,
-      config,
-      env,
-      fetchImpl,
-      signal,
-      retryDelayMs,
-    });
+    return record(
+      await askViaClassify({
+        registry,
+        classifier,
+        safeState,
+        questions,
+        redactions,
+        privacyCount,
+        requestedModel,
+        config,
+        env,
+        fetchImpl,
+        signal,
+        retryDelayMs,
+      }),
+      "classify",
+    );
   }
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required to call TypeSafe.");
   }
-  return askOverHttp({
-    config,
-    requestedModel,
-    safeState,
-    questions,
-    redactions,
-    privacyCount,
-    fetchImpl,
-    signal,
-    retryDelayMs,
-  });
+  return record(
+    await askOverHttp({
+      config,
+      requestedModel,
+      safeState,
+      questions,
+      redactions,
+      privacyCount,
+      fetchImpl,
+      signal,
+      retryDelayMs,
+    }),
+    "http",
+  );
 }
 
 function formatProbabilities(probabilities, legend) {
