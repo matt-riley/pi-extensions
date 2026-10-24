@@ -923,10 +923,13 @@ export async function askSystemOne({
     }
     return result;
   } catch (error) {
-    const errorClass = ledgerErrorClass(error);
-    const policy =
-      failurePolicy === "fail-open" || failurePolicy === "fail-closed" ? failurePolicy : null;
     try {
+      // Classifying the error reads it as a string. A thrown value with no
+      // prototype cannot be stringified, and that TypeError must not replace
+      // the value the transport threw.
+      const errorClass = ledgerErrorClass(error);
+      const policy =
+        failurePolicy === "fail-open" || failurePolicy === "fail-closed" ? failurePolicy : null;
       appendLedgerEntry(
         sessionPi,
         buildLedgerEntry({
@@ -946,7 +949,7 @@ export async function askSystemOne({
         }),
       );
     } catch {
-      // A throwing builder must not replace the Jev error the gate is handling.
+      // Classifying or building the entry must not replace the Jev error.
     }
     throw error;
   }
