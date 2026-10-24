@@ -386,3 +386,68 @@ test("a drifted reported model warns once per session and does not re-tune", asy
   await pi.handlers[0].handler({}, ctxFor({}));
   assert.equal(notices.length, 2, "a new session warns again");
 });
+
+test("tool, command, and virtual-model handlers record the Jev call", async () => {
+  const entries = [];
+  const tools = {};
+  const commands = {};
+  const models = {};
+  const pi = {
+    appendEntry(customType, data) {
+      entries.push({ customType, data });
+    },
+    registerTool(def) {
+      tools[def.name] = def;
+    },
+    registerCommand(name, def) {
+      commands[name] = def;
+    },
+    registerVirtualModel(def) {
+      models[def.id] = def;
+    },
+  };
+  bindSystemOne(pi);
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: { pick: { type: "noul", noul: 0.3 } },
+      usage: {},
+    }),
+  );
+  const ask = () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      feature: "typesafe",
+      env: ENV,
+      fetchImpl,
+    });
+
+  pi.registerTool({
+    name: "ask",
+    async execute() {
+      await ask();
+      return { content: [] };
+    },
+  });
+  await tools.ask.execute();
+  assert.equal(entries.length, 1, "tool execute recorded the call");
+
+  pi.registerCommand("ask", {
+    async handler() {
+      await ask();
+    },
+  });
+  await commands.ask.handler();
+  assert.equal(entries.length, 2, "command handler recorded the call");
+
+  pi.registerVirtualModel({
+    id: "jev",
+    async route() {
+      await ask();
+      return {};
+    },
+  });
+  await models.jev.route({}, {});
+  assert.equal(entries.length, 3, "virtual model route recorded the call");
+});
