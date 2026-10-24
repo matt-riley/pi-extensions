@@ -1,0 +1,7 @@
+{
+  "name": "pi-watch-pr",
+  "version": "0.1.0",
+  "description": "watch_pr for pi: one read of a pull request's checks on its head commit, merge state and unresolved review threads, with a verdict. Read-only; zero runtime dependencies.",
+  "license": "MIT",
+  "type": "module"
+}

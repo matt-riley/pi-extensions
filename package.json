@@ -49,6 +49,7 @@
       "./packages/footer/index.ts",
       "./packages/safe-compact/index.ts",
       "./packages/review/index.ts",
+      "./packages/watch-pr/index.ts",
       "./packages/workbench/index.ts"
     ],
     "skills": [

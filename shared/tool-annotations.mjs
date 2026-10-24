@@ -34,6 +34,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "lint_change",
   "verify_findings",
   "blast_radius",
+  "watch_pr",
   "find_code",
   "diagnosis_checkpoint",
   "measure_command",
