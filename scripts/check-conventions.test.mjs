@@ -129,6 +129,37 @@ test("conventions catch missing/duplicate registration, metadata, dependencies a
     assert.ok(errors.includes(expected), expected);
 });
 
+test("only the workbench entrypoint may import the approved host TUI widgets", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "pi-tui-conventions-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const base = path.join(root, "packages/workbench");
+  mkdirSync(base, { recursive: true });
+  writeFileSync(
+    path.join(root, "package.json"),
+    JSON.stringify({ pi: { extensions: ["./packages/workbench/index.ts"] } }),
+  );
+  writeFileSync(
+    path.join(base, "package.json"),
+    JSON.stringify({ name: "workbench", description: "fixture" }),
+  );
+  writeFileSync(path.join(base, "README.md"), "fixture");
+  writeFileSync(
+    path.join(base, "index.ts"),
+    'import {Input, SelectList, ScrollView, matchesKey, truncateToWidth} from "@earendil-works/pi-tui";',
+  );
+  assert.deepEqual(checkConventions(root), []);
+  writeFileSync(path.join(base, "other.mjs"), 'import {Input} from "@earendil-works/pi-tui";');
+  assert.match(checkConventions(root).join("\n"), /other.mjs: unapproved runtime import/);
+  rmSync(path.join(base, "other.mjs"));
+  for (const source of [
+    'import {Editor} from "@earendil-works/pi-tui";',
+    'import("@earendil-works/pi-tui");',
+  ]) {
+    writeFileSync(path.join(base, "index.ts"), source);
+    assert.match(checkConventions(root).join("\n"), /index.ts: unapproved runtime import/);
+  }
+});
+
 test("prompt skill references resolve only to valid repository-owned skills", (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "pi-skill-refs-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

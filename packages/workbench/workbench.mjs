@@ -1,38 +1,9 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { stripVTControlCharacters } from "node:util";
+import { pick, preview, safe } from "./screens.mjs";
 import { commandCatalog, referenceText, searchItems } from "./catalog.mjs";
 import { projectFiles, changedFiles, previewChange } from "./repository.mjs";
-
-const SEARCH = "Search…";
-const safe = (text) => stripVTControlCharacters(String(text)).replace(/\p{Cc}/gu, "");
-const label = (item) => safe(item.label + (item.description ? " — " + item.description : ""));
-
-/** Native dialogs share keyboard/focus/IME handling; no second terminal renderer. */
-async function pick(ctx, title, items, query = "") {
-  for (;;) {
-    const matches = searchItems(items, query);
-    const shown = matches.slice(0, 200);
-    const labels = shown.map(label);
-    const selected = await ctx.ui.select(
-      title +
-        (query ? " — " + safe(query) : "") +
-        (matches.length > 200
-          ? " (first 200; Search… to narrow)"
-          : matches.length
-            ? ""
-            : " (no matches; Search… to retry)"),
-      [...labels, SEARCH],
-    );
-    if (selected === undefined) return undefined;
-    if (selected !== SEARCH) return shown[labels.indexOf(selected)];
-    const next = await ctx.ui.input("Search " + title + " (all words must match)", query);
-    if (next === undefined) return undefined;
-    query = next;
-    if (!searchItems(items, query).length)
-      ctx.ui.notify("No matches — change the search or Escape to cancel.", "info");
-  }
-}
+import { commandTypos } from "./typos.mjs";
 
 async function openInNeovim(ctx, root, file) {
   let result;
@@ -56,7 +27,7 @@ async function openInNeovim(ctx, root, file) {
   if (result.status !== 0) throw new Error("Neovim exited with status " + result.status);
 }
 
-export function installWorkbench(pi) {
+export function installWorkbench(pi, widgets) {
   let savedDraft = "";
   let active = false;
   const notify = (ctx, message, level = "info") => ctx.ui?.notify?.(safe(message), level);
@@ -112,13 +83,14 @@ export function installWorkbench(pi) {
     const inventory = await projectFiles(ctx.cwd, pi.exec);
     if (inventory.truncated) notify(ctx, "File inventory limited to 50,000 paths.", "warning");
     const items = [...new Set(inventory.files)].sort().map((file) => ({
+      id: file,
       file,
       label: JSON.stringify(file),
       description: "",
       aliases: file,
     }));
     if (!items.length) return notify(ctx, "No project files found.");
-    const item = await pick(ctx, "Project files — insert reference", items, query);
+    const item = await pick(ctx, "Project files — insert reference", items, { query }, widgets);
     if (!item) return;
     const draft = ctx.ui.getEditorText();
     ctx.ui.setEditorText(
@@ -130,40 +102,46 @@ export function installWorkbench(pi) {
 
   const changes = guarded(async (query, ctx) => {
     const { root } = await projectFiles(ctx.cwd, pi.exec);
+    const state = { query };
+    const positions = new Map();
     for (;;) {
       const changed = await changedFiles(root, pi.exec);
       if (!changed.length) return notify(ctx, "Working tree clean.");
       const items = changed.map((item) => ({
         ...item,
+        id: item.scope + ":" + item.file,
         label: "[" + item.scope + "] " + JSON.stringify(item.file),
         description: item.original ? "from " + JSON.stringify(item.original) : "",
       }));
-      const item = await pick(ctx, "Changes — read-only", items, query);
+      const item = await pick(ctx, "Changes — read-only", items, state, widgets);
       if (!item) return;
-      const action = await ctx.ui.select(label(item), [
-        "Preview diff",
-        "Open in Neovim (read-only)",
-        "Insert reference",
-      ]);
-      if (action === "Preview diff") {
-        const diff = await previewChange(root, item, pi.exec);
-        // The native editor is a disposable scratch view: returned edits are
-        // deliberately ignored, and no worktree or index operation follows.
-        const preview = diff.replace(/\p{Cc}/gu, (char) =>
-          char === "\n" || char === "\t" ? char : JSON.stringify(char).slice(1, -1),
+      const matches = searchItems(items, state.query);
+      let index = matches.indexOf(item);
+      for (;;) {
+        const current = matches[index];
+        state.selected = current.id;
+        if (!positions.has(current.id)) positions.set(current.id, { offset: 0 });
+        const action = await preview(
+          ctx,
+          current,
+          await previewChange(root, current, pi.exec),
+          positions.get(current.id),
+          widgets,
         );
-        await ctx.ui.editor(item.scope + " diff — scratch preview; edits discarded", preview);
-      } else if (action === "Open in Neovim (read-only)") {
-        await openInNeovim(ctx, root, item.file);
-      } else if (action === "Insert reference") {
-        const draft = ctx.ui.getEditorText();
-        ctx.ui.setEditorText(
-          draft +
-            (draft && !/\s$/.test(draft) ? " " : "") +
-            referenceText(root, item.file, ctx.cwd),
-        );
-        return;
-      } else return;
+        if (action === "next" || action === "previous") {
+          index = (index + (action === "next" ? 1 : matches.length - 1)) % matches.length;
+        } else if (action === "neovim") {
+          await openInNeovim(ctx, root, current.file);
+        } else if (action === "reference") {
+          const draft = ctx.ui.getEditorText();
+          ctx.ui.setEditorText(
+            draft +
+              (draft && !/\s$/.test(draft) ? " " : "") +
+              referenceText(root, current.file, ctx.cwd),
+          );
+          return;
+        } else break;
+      }
     }
   });
 
@@ -177,21 +155,13 @@ export function installWorkbench(pi) {
         label: "Restore saved draft",
         description: "Swap with the current editor text",
       });
-    let candidates = items;
-    if (!query) {
-      const group = await ctx.ui.select("Command centre — choose a group or Search", [
-        SEARCH,
-        ...new Set(items.map((item) => item.group)),
-      ]);
-      if (group === undefined) return;
-      if (group === SEARCH) {
-        query = await ctx.ui.input("Search commands by name or intent");
-        if (query === undefined) return;
-      } else candidates = items.filter((item) => item.group === group);
-    }
-    if (!searchItems(candidates, query).length)
-      return notify(ctx, "No matches. Try /ui with different search words.");
-    const item = await pick(ctx, "Commands — Enter prepares, Escape cancels", candidates, query);
+    const item = await pick(
+      ctx,
+      "Command centre — Enter prepares, Escape cancels",
+      items,
+      { query },
+      widgets,
+    );
     if (!item) return;
     if (item.id === "restore") return restore(ctx);
     if (item.id === "files" || item.id === "changes") {
@@ -211,6 +181,22 @@ export function installWorkbench(pi) {
     }
     if (ctx.mode === "tui") status(ctx);
   }
+  pi.on("input", (event, ctx) => {
+    if (ctx.mode !== "tui" || event.source !== "interactive" || event.images?.length)
+      return { action: "continue" };
+    const suggestions = commandTypos(event.text, pi.getCommands());
+    if (!suggestions.length) return { action: "continue" };
+    const current = ctx.ui.getEditorText();
+    ctx.ui.setEditorText(event.text + (current ? "\n" + current : ""));
+    notify(
+      ctx,
+      "Did you mean " +
+        suggestions.map((name) => "/" + name).join(" or ") +
+        "? Nothing ran. Edit the restored command; to send it literally, prefix it with text.",
+      "warning",
+    );
+    return { action: "handled" };
+  });
   pi.on("session_start", restoreBranch);
   pi.on("session_tree", restoreBranch);
   for (const [name, handler, description] of [

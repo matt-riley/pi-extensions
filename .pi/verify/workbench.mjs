@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { stripVTControlCharacters } from "node:util";
 import path from "node:path";
 
-const root = path.resolve(import.meta.dirname, "..");
+const root = path.resolve(import.meta.dirname, "../..");
 const fixture = await mkdtemp(path.join(tmpdir(), "pi-workbench-ui-"));
 const cwd = path.join(fixture, "workspace");
 const agent = path.join(fixture, "agent");
@@ -18,9 +18,12 @@ let footerPath = path.join(root, "packages/footer/index.ts");
 const upgrade = process.argv.includes("--upgrade");
 let requests = 0;
 const server = createServer(async (req, res) => {
-  for await (const _chunk of req) {
-    /* Drain the request; never log prompts. */
-  }
+  /* Drain the request; never log prompts. */
+  await new Promise((resolve) => {
+    req.resume();
+    req.once("end", resolve);
+    req.once("error", resolve);
+  });
   requests++;
   await new Promise((resolve) => setTimeout(resolve, 1200));
   res.writeHead(200, { "content-type": "text/event-stream" });
@@ -50,10 +53,10 @@ const screen = () => tmux("capture-pane", "-p", "-t", "ui");
 const send = (text) => tmux("send-keys", "-t", "ui", "-l", text);
 const key = (...keys) => tmux("send-keys", "-t", "ui", ...keys);
 const shortcut = (letter) => send(String.fromCharCode(27) + "[" + letter.charCodeAt(0) + ";7u");
-async function waitFor(pattern) {
+async function waitFor(pattern, absent = false) {
   for (let i = 0; i < 150; i++) {
     const text = screen();
-    if (pattern.test(text)) return text;
+    if (pattern.test(text) !== absent) return text;
     await delay();
   }
   throw new Error(
@@ -92,9 +95,10 @@ try {
     "-qm",
     "test: seed UI fixture",
   );
-  await writeFile(path.join(cwd, "tracked name.txt"), "index-version\n");
+  const tail = Array.from({length:80}, (_,index) => "review-line-" + index).join("\n") + "\n";
+  await writeFile(path.join(cwd, "tracked name.txt"), "index-version\n" + tail);
   git("add", ".");
-  await writeFile(path.join(cwd, "tracked name.txt"), "worktree-version\n");
+  await writeFile(path.join(cwd, "tracked name.txt"), "worktree-version\n" + tail);
   await writeFile(path.join(cwd, "工作.txt"), "unicode\n");
   await writeFile(path.join(cwd, "ignored.txt"), "not for the picker\n");
   const originalIndex = await readFile(path.join(cwd, ".git", "index"));
@@ -138,13 +142,14 @@ try {
       cwd: root,
       encoding: "utf8",
     });
-    for (const file of prior
+    const priorFiles = prior
       .trim()
       .split("\n")
-      .filter((file) => /\.(ts|mjs)$/.test(file))) {
+      .filter((entry) => /\.(ts|mjs)$/.test(entry));
+    for (const entry of priorFiles) {
       await writeFile(
-        path.join(target, path.basename(file)),
-        execFileSync("git", ["show", "HEAD:" + file], { cwd: root }),
+        path.join(target, path.basename(entry)),
+        execFileSync("git", ["show", "HEAD:" + entry], { cwd: root }),
       );
     }
     footerPath = path.join(target, "index.ts");
@@ -191,6 +196,8 @@ try {
     path.join(root, "packages/workbench/index.ts"),
     "-e",
     footerPath,
+    "-e",
+    path.join(root, "packages/exit/index.ts"),
   );
   if (upgrade) {
     tmux("pipe-pane", "-t", "ui", "-o", "cat > '" + path.join(fixture, "terminal.log") + "'");
@@ -210,13 +217,11 @@ try {
   shortcut("k");
   await waitFor(/Command centre/);
   key("Escape");
-  await waitFor(/draft KEEP_ME/);
+  await waitFor(/Command centre/, true);
+  assert.match(screen(), /draft KEEP_ME/);
   shortcut("k");
   await waitFor(/Command centre/);
-  key("Enter"); // Search is the first group entry.
-  await waitFor(/Search commands by name or intent/);
   send("previous conversation");
-  key("Enter");
   await waitFor(/Resume a session/);
   key("Enter");
   await waitFor(/Prepared \/resume/);
@@ -229,49 +234,73 @@ try {
   await command("/ui restore");
   await waitFor(/draft KEEP_ME/);
   console.log(
-    "ok: command groups, intent search, cancellation, built-in preparation and draft recovery",
+    "ok: live command intent filtering, cancellation, built-in preparation and draft recovery",
   );
 
   shortcut("f");
   const filesScreen = await waitFor(/Project files/);
   assert.doesNotMatch(filesScreen, /ignored.txt/);
-  key("Down", "Enter"); // Sorted inventory: .gitignore, tracked name.txt, 工作.txt.
+  send("tracked");
+  await waitFor(/1 matches/);
+  key("Enter");
   await waitFor(/draft KEEP_ME "tracked name.txt"/);
   console.log("ok: native file picker preserves draft and inserts a reference, not contents");
 
-  await command("/changes tracked");
+  await command("/changes");
+  await waitFor(/Changes — read-only/);
+  send("tracked");
   await waitFor(/\[staged\]/);
-  key("Enter");
-  await waitFor(/Preview diff/);
   key("Enter");
   const staged = await waitFor(/\+index-version/);
   assert.doesNotMatch(staged, /\+worktree-version/);
-  key("Escape");
-  await waitFor(/Changes — read-only/);
-  key("Down", "Enter");
-  await waitFor(/Preview diff/);
-  key("Enter");
+  key("PageDown");
+  await waitFor(/Line 25\//);
+  tmux("resize-window", "-t", "ui", "-x", "36", "-y", "24");
+  await waitFor(/Line 25\//);
+  tmux("resize-window", "-t", "ui", "-x", "100", "-y", "38");
+  await waitFor(/Line 25\//);
+  send("xyz123");
+  await delay();
+  assert.match(screen(), /Line 25\//);
+  key("Right");
   await waitFor(/\+worktree-version/);
+  assert.match(screen(), /\[unstaged\]/);
+  key("Left");
+  await waitFor(/Line 25\//);
   key("Escape");
-  await waitFor(/Changes — read-only/);
+  const returned = await waitFor(/Changes — read-only/);
+  assert.match(returned, /> tracked/);
   key("Enter");
-  await waitFor(/Open in Neovim/);
-  key("Down", "Enter");
+  await waitFor(/Line 25\//);
+  send("e");
   await waitFor(/readonly|\[RO\]/i);
   send(":q!");
   key("Enter");
+  await waitFor(/Line 25\//);
+  key("Escape");
   await waitFor(/Changes — read-only/);
   key("Escape");
   assert.deepEqual(await readFile(path.join(cwd, ".git", "index")), originalIndex);
-  assert.equal(await readFile(path.join(cwd, "tracked name.txt"), "utf8"), "worktree-version\n");
+  assert.equal(await readFile(path.join(cwd, "tracked name.txt"), "utf8"), "worktree-version\n" + tail);
   assert.equal(requests, 0, "Workbench navigation must not send prompts to a model");
   console.log(
-    "ok: staged/unstaged scratch diffs, actual read-only Neovim handoff and TUI restoration; no file/index/model changes",
+    "ok: non-editable staged/unstaged diffs, next/previous files, retained query/selection/scroll and Neovim return; no file/index/model changes",
   );
 
+  await command("/eixt");
+  await waitFor(/Did you mean \/exit/);
+  assert.match(screen(), /\/eixt/);
+  assert.equal(requests, 0, "A mistyped command must not reach a model or execute /exit");
+  await command("/ui previous conversation");
+  await waitFor(/Resume a session/);
+  key("Escape");
+  console.log("ok: /eixt restored with /exit suggestion; no execution or model request; valid commands still dispatch");
+
+  await command("/files");
+  await waitFor(/Project files/);
   tmux("resize-window", "-t", "ui", "-x", "36", "-y", "24");
-  await waitFor(/ready/);
-  await command("/files 工作");
+  send("工作");
+  await waitFor(/1 matches/);
   await waitFor(/工作/);
   key("Enter");
   await waitFor(/"工作.txt"/);
@@ -295,15 +324,21 @@ try {
   );
 } catch (error) {
   if (upgrade) {
-    console.error(
-      "Terminal process: " +
-        tmux("display-message", "-p", "-t", "ui", "#{pane_current_command} #{pane_pid}"),
-    );
-    console.error(
-      stripVTControlCharacters(
-        await readFile(path.join(fixture, "terminal.log"), "utf8").catch(() => ""),
-      ),
-    );
+    // The terminal often dies with the failure, so a diagnostic must never
+    // replace the error it is meant to explain.
+    try {
+      console.error(
+        "Terminal process: " +
+          tmux("display-message", "-p", "-t", "ui", "#{pane_current_command} #{pane_pid}"),
+      );
+      console.error(
+        stripVTControlCharacters(
+          await readFile(path.join(fixture, "terminal.log"), "utf8").catch(() => ""),
+        ),
+      );
+    } catch {
+      /* Server already gone: print the original error below. */
+    }
   }
   throw error;
 } finally {

@@ -9,7 +9,7 @@
   // this repo deliberately does not depend on the SDK package (see AGENTS.md).
   // typebox is the same story — pi's built-in, imported by extensions, so it is
   // a devDependency here rather than a runtime dependency.
-  "ignoreDependencies": ["@earendil-works/pi-coding-agent", "typebox"],
+  "ignoreDependencies": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"],
   "rules": {
     "unused-files": "error",
     "unused-exports": "error",

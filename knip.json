@@ -8,5 +8,5 @@
   ],
   "project": ["packages/**/*.{ts,mjs}", "shared/**/*.mjs", "scripts/**/*.mjs", "types/**/*.d.ts"],
   "ignoreBinaries": ["nvim"],
-  "ignoreDependencies": ["@earendil-works/pi-coding-agent"]
+  "ignoreDependencies": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]
 }

@@ -18,15 +18,25 @@ if (typeof ts?.createSourceFile !== "function" || ts.ScriptTarget === undefined)
   );
 }
 
-const SDK = "@earendil-works/pi-coding-agent";
-const SDK_EXPORTS = {
-  "packages/subagents/index.ts": ["getAgentDir", "parseFrontmatter"],
-  "packages/subagents/spawn.mjs": [
-    "createAgentSession",
-    "DefaultResourceLoader",
-    "SessionManager",
-    "getAgentDir",
-  ],
+const HOST_EXPORTS = {
+  "@earendil-works/pi-coding-agent": {
+    "packages/subagents/index.ts": ["getAgentDir", "parseFrontmatter"],
+    "packages/subagents/spawn.mjs": [
+      "createAgentSession",
+      "DefaultResourceLoader",
+      "SessionManager",
+      "getAgentDir",
+    ],
+  },
+  "@earendil-works/pi-tui": {
+    "packages/workbench/index.ts": [
+      "Input",
+      "SelectList",
+      "ScrollView",
+      "matchesKey",
+      "truncateToWidth",
+    ],
+  },
 };
 
 export function runtimeImports(source, filename) {
@@ -132,13 +142,8 @@ export function checkConventions(root) {
           specifier === "typebox"
         )
           continue;
-        const allowed = SDK_EXPORTS[relative];
-        if (
-          specifier === SDK &&
-          entry.names?.length &&
-          allowed &&
-          entry.names.every((name) => allowed.includes(name))
-        )
+        const allowed = HOST_EXPORTS[specifier]?.[relative];
+        if (entry.names?.length && allowed && entry.names.every((name) => allowed.includes(name)))
           continue;
         errors.push(`${relative}: unapproved runtime import ${specifier ?? "<computed>"}`);
       }

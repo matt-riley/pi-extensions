@@ -5,6 +5,12 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 // The SDK is injected by pi. Offline loading must never start a child session.
+const TUI_STUB = `data:text/javascript,${encodeURIComponent(`
+const unavailable = () => { throw new Error("TUI execution is unavailable in the registration stub"); };
+export const Input = unavailable, SelectList = unavailable, ScrollView = unavailable,
+  matchesKey = unavailable, truncateToWidth = unavailable;
+`)}`;
+
 const SDK_STUB = `data:text/javascript,${encodeURIComponent(`
 const unavailable = () => { throw new Error("SDK execution is unavailable in the registration stub"); };
 export const getAgentDir = unavailable, parseFrontmatter = unavailable,
@@ -21,6 +27,7 @@ export async function loadRegistrations(root) {
   const tools = [];
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
+      if (specifier === "@earendil-works/pi-tui") return { url: TUI_STUB, shortCircuit: true };
       return specifier === "@earendil-works/pi-coding-agent"
         ? { url: SDK_STUB, shortCircuit: true }
         : nextResolve(specifier, context);
