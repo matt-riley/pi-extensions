@@ -176,6 +176,57 @@ test("a throwing appendEntry still returns the Jev answer", async () => {
   assert.equal(result.answers.destructive.noul, 0.2);
 });
 
+test("askSystemOne records classify as the transport when Pi answers", async () => {
+  const pi = sessionPi();
+  const ctx = {
+    modelRegistry: {
+      findOfType() {
+        return {
+          id: "jev-1.13.0",
+          type: "classifier",
+          provider: "typesafe",
+          api: "typesafe-system-one",
+          baseUrl: "https://api.typesafe.ai/v1",
+        };
+      },
+      async classify() {
+        return {
+          stopReason: "stop",
+          model: "jev-1.14.0",
+          answers: { pick: { type: "noul", noul: 0.4 } },
+          usage: {
+            input: 2,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 3,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      },
+    },
+  };
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      ctx,
+      fetchImpl: async () => {
+        throw new Error("http fallback should not run");
+      },
+    }),
+  );
+
+  const result = await pi.handlers[0].handler({}, {});
+  assert.equal(pi.entries.length, 1);
+  assert.equal(pi.entries[0].data.transport, "classify");
+  assert.equal(pi.entries[0].data.model, "jev-1.14.0");
+  assert.equal(pi.entries[0].data.requestedModel, "jev-1.13.0");
+  assert.equal(result.answers.pick.noul, 0.4);
+  assert.equal(result.model, "jev-1.14.0");
+});
+
 test("a ledger entry never contains state contents, question text, or the api key", async () => {
   const stateSentinel = "STATE-SENTINEL-9f3a-not-a-secret";
   const questionSentinel = "QUESTION-SENTINEL-user-typed-this";
