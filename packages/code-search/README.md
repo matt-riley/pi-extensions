@@ -32,8 +32,10 @@ Zero runtime dependencies: node built-ins + pi's `typebox` only.
   brace-scope tracking. Extracts functions, classes, methods, getters/setters,
   private fields, interfaces, type aliases, enums, const/let/var (incl.
   arrows and destructuring), imports, and re-exports. Known approximations are
-  documented in `ts-parser.mjs` (regex-literal heuristic, JSX as token soup,
-  ASI ignored).
+  documented in `ts-tokenizer.mjs` (regex-literal heuristic) and
+  `ts-parser.mjs` (JSX as token soup, ASI ignored); the walker is split by
+  question — `ts-scanner.mjs`, `ts-declarations.mjs`, `ts-members.mjs` — over
+  one shared state object.
 - **Other languages**: line-based heuristics for Python, Go, Rust, Ruby, Java,
   Kotlin, C/C++, and Markdown; a generic fallback catches `name(` patterns.
 - **Exclusions**: `node_modules`, `.git`, and `.pi/cache` are always excluded;
