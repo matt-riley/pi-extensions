@@ -405,11 +405,25 @@ test("remote annotations override reader-like names and require approval without
 });
 
 test("symlink aliases of control files are protected", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "guardrail-link-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  symlinkSync(join(process.env.HOME, ".pi/agent/settings.json"), join(dir, "alias"));
-  const h = harness({ cwd: dir, hasUI: false });
+  const root = mkdtempSync(join(tmpdir(), "guardrail-link-"));
+  const agent = join(root, "agent");
+  const previousAgent = process.env.PI_CODING_AGENT_DIR;
+  mkdirSync(agent);
+  process.env.PI_CODING_AGENT_DIR = agent;
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+    if (previousAgent === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgent;
+  });
+
+  writeFileSync(join(agent, "settings.json"), "{}");
+  symlinkSync(join(agent, "settings.json"), join(root, "alias"));
+  symlinkSync(join(agent, "models.json"), join(root, "dangling"));
+  const h = harness({ cwd: root, hasUI: false });
   assert.equal((await h.run("write", { path: "alias", content: "{}" })).block, true);
+  // A dangling link still names a control file; writing through it must not
+  // create that file without approval.
+  assert.equal((await h.run("write", { path: "dangling", content: "{}" })).block, true);
 });
 
 test.after?.(() => {

@@ -225,7 +225,9 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd, resolvePath) {
   const home = homedir();
   const base = tildeish ? home : cwd;
   const resolved =
-    !opaque && base && typeof base === "string" && base.trim() ? path.resolve(base, token) : null;
+    !opaque && base && typeof base === "string" && base.trim()
+      ? (resolvePath ?? ((value) => value))(path.resolve(base, token))
+      : null;
   const roots = workspaceRoots(rootCwd, cwd);
   const inNestedWorkspace =
     resolved !== null &&

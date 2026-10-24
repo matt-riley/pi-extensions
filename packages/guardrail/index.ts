@@ -16,7 +16,7 @@
 // for the session, and PI_GUARDRAIL=off for a whole process.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readFileSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "node:fs";
 import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
@@ -87,13 +87,27 @@ function readScriptRefs(refs, cwd) {
 }
 
 // Resolve the nearest existing ancestor too: a new file can be written through
-// a symlinked parent. This is identity for approval scope, not a filesystem lock.
-function canonicalPath(path: string): string {
+// a symlinked parent. A dangling symlink still names its target, so follow it
+// rather than letting a write through the link escape the control-plane check.
+// This is identity for approval scope, not a filesystem lock.
+function canonicalPath(path: string, seen = new Set<string>()): string {
+  if (seen.has(path)) return path;
+  seen.add(path);
   try {
     return realpathSync(path);
   } catch {
     const parent = dirname(path);
-    return parent === path ? path : join(canonicalPath(parent), basename(path));
+    if (parent === path) return path;
+    const resolvedParent = canonicalPath(parent, seen);
+    try {
+      if (lstatSync(path).isSymbolicLink()) {
+        const target = readlinkSync(path);
+        return canonicalPath(isAbsolute(target) ? target : join(resolvedParent, target), seen);
+      }
+    } catch {
+      // Not there yet: a new file, not a link.
+    }
+    return join(resolvedParent, basename(path));
   }
 }
 
