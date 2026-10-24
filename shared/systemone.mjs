@@ -673,9 +673,15 @@ async function askViaClassify({
     if (signal?.aborted || result?.stopReason === "aborted") {
       throw new Error("TypeSafe request aborted");
     }
-    if (result?.stopReason !== "stop") throw classifyFailure(result, config, env);
-    recordSessionUsage(result?.usage);
     const payload = captured.payload;
+    // Pi rejects a 200 that omits one question (`did not return an answer`).
+    // The HTTP transport returns that body, and the request was already billed.
+    const partial =
+      result?.stopReason !== "stop" &&
+      /did not return an answer/i.test(result?.errorMessage ?? "") &&
+      isPlainObject(payload?.answers);
+    if (result?.stopReason !== "stop" && !partial) throw classifyFailure(result, config, env);
+    recordSessionUsage(result?.usage);
     return {
       model: reportedModel(payload, result, requestedModel),
       answers: isPlainObject(payload?.answers) ? payload.answers : mapPiAnswers(result?.answers),
