@@ -507,6 +507,27 @@ test("validation: a one-option choice is refused before classify or HTTP", async
   assert.equal(http.length, 0);
 });
 
+test("auth: a local key is required before classify, even when Pi has a stored TypeSafe login", async () => {
+  const { ctx, calls } = classifierCtx(async () =>
+    stopResult({ pick: { type: "bool", probability: 0.5 } }),
+  );
+  ctx.modelRegistry.getApiKeyForProvider = async () => "ts-stored-pi-key";
+  let caught;
+  try {
+    await askSystemOne({
+      state: { note: "hello" },
+      questions: NOUL,
+      env: NO_KEY_ENV,
+      ctx,
+      fetchImpl: boomFetch(),
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(calls.length, 0, "classify ran without a local key");
+  assert.match(caught?.message ?? "", /TYPESAFE_API_KEY is not set/);
+});
+
 test("auth: with no local key, classify runs and apiKey is omitted", async () => {
   const { ctx, calls } = classifierCtx(async () =>
     stopResult({ pick: { type: "bool", probability: 0.5 } }),
