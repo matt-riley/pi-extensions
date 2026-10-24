@@ -267,7 +267,7 @@ export function toReplayCorpus(entries) {
   if (!Array.isArray(entries)) return { sampled: 0, records };
   for (const entry of entries) {
     const data = ledgerData(entry);
-    if (!data || data.outcome !== "ok") continue;
+    if (!data || data.feature !== "guardrail" || data.outcome !== "ok") continue;
     const signals = guardrailSignals(data.answers);
     if (!signals) continue;
     records.push({

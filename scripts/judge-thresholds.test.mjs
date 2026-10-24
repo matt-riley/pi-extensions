@@ -80,11 +80,38 @@ test("guardrail ledger entries export as replay-corpus records without the actio
   assert.equal(scored.counts.confirm, 1);
 });
 
+test("replay export excludes unrelated and unattributed judgments with colliding question ids", () => {
+  const guardrail = {
+    feature: "guardrail",
+    outcome: "ok",
+    answers: { credentials: { type: "noul", noul: 0.1 } },
+  };
+  const entries = [guardrail];
+  for (const feature of ["typesafe", "skill-select", "unknown", undefined]) {
+    const data = {
+      feature,
+      outcome: "ok",
+      answers: { credentials: { type: "noul", noul: 0.9 } },
+    };
+    entries.push(data, { type: "custom", customType: "jev-decision", data });
+  }
+  entries.push({ ...guardrail, outcome: "error" });
+  const corpus = ledger.toReplayCorpus(entries);
+  assert.equal(corpus.sampled, 1);
+  assert.equal(corpus.records.length, 1);
+  assert.deepEqual(corpus.records[0].signals, { credentials: 0.1 });
+});
+
 test("an exported replay record names the ledger as its source", () => {
   const corpus = ledger.toReplayCorpus([
     {
-      outcome: "ok",
-      answers: { destructive: { type: "noul", noul: 0.2 } },
+      type: "custom",
+      customType: "jev-decision",
+      data: {
+        feature: "guardrail",
+        outcome: "ok",
+        answers: { destructive: { type: "noul", noul: 0.2 } },
+      },
     },
   ]);
   assert.equal(corpus.records.length, 1);
