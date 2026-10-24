@@ -267,3 +267,30 @@ test("a ledger entry never contains state contents, question text, or the api ke
   assert.ok(entry.data.redactions >= 1);
   assert.equal(entry.data.answers.destructive.noul, 0.1);
 });
+
+test("a failed Jev call records an error class and still throws", async () => {
+  const bodySentinel = "BODY-SENTINEL-do-not-record";
+  const { fetchImpl } = capturingFetch(() => jsonResponse({ error: bodySentinel }, { status: 500 }));
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      feature: "guardrail",
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  await assert.rejects(() => pi.handlers[0].handler({}, {}), /status 500/);
+  assert.equal(pi.entries.length, 1);
+  const data = pi.entries[0].data;
+  assert.equal(data.outcome, "http");
+  assert.equal(data.status, 500);
+  assert.equal(data.model, null);
+  assert.equal(data.requestedModel, "jev-1.13.0");
+  assert.equal(data.transport, "http");
+  assert.equal(data.feature, "guardrail");
+  assert.equal(data.answers, null);
+  assert.equal(JSON.stringify(data).includes(bodySentinel), false, "error body reached the entry");
+});
