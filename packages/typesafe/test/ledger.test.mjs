@@ -585,3 +585,32 @@ test("a ctx whose sessionManager getter throws still returns the Jev answer", as
     "ledger work must not record a successful call as a failure",
   );
 });
+
+test("a throwing entry builder on a failed call rethrows the original error", async () => {
+  // Validation and the request body enumerate questions four times. The fifth
+  // pass is the ledger, which must not replace the HTTP error.
+  let enumerations = 0;
+  const raw = { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } };
+  const questions = new Proxy(raw, {
+    ownKeys() {
+      enumerations += 1;
+      if (enumerations >= 5) throw new Error("entry builder exploded");
+      return Reflect.ownKeys(raw);
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      return Reflect.getOwnPropertyDescriptor(raw, prop);
+    },
+  });
+  const { fetchImpl } = capturingFetch(() => jsonResponse({ error: "busy" }, { status: 500 }));
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions,
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  await assert.rejects(() => pi.handlers[0].handler({}, {}), /status 500/);
+});
