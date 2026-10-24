@@ -159,7 +159,7 @@ export function resolveSpecifier(spec, fromRel, { fileSet, tsconfig, workspaceMa
       let rel = null;
       if (pattern.endsWith("*") && raw.startsWith(pattern.slice(0, -1))) {
         const star = raw.slice(pattern.length - 1);
-        rel = `${baseUrl}${target.replace("*", star)}`.replace(/\/+/g, "/");
+        rel = `${baseUrl}${target.replace("*", () => star)}`.replace(/\/+/g, "/");
       } else if (pattern === raw) {
         rel = `${baseUrl}${target}`.replace(/\/+/g, "/");
       }

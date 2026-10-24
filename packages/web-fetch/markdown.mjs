@@ -35,7 +35,7 @@ function renderInline(node, ctx) {
       const label = childrenInline(node, ctx).trim();
       if (!href || /^javascript:/i.test(href)) return label;
       if (href === label) return label;
-      const title = attrs.title ? ` "${attrs.title.replace(/"/g, '\\"')}"` : "";
+      const title = attrs.title ? ` "${attrs.title.replace(/["\\]/g, "\\$&")}"` : "";
       return `[${label || href}](${href}${title})`;
     }
     case "img":
@@ -103,7 +103,7 @@ function renderImage(node, ctx) {
   const src = cleanHref(node.attrs.src ?? "");
   if (!src || /^data:/i.test(src)) return "";
   const alt = (node.attrs.alt ?? "").trim();
-  const title = node.attrs.title ? ` "${node.attrs.title.replace(/"/g, '\\"')}"` : "";
+  const title = node.attrs.title ? ` "${node.attrs.title.replace(/["\\]/g, "\\$&")}"` : "";
   return `![${alt || src}](${src}${title})`;
 }
 
@@ -261,7 +261,7 @@ function tableBlocks(node) {
       .map((c) =>
         childrenInline(c, { includeImages: false })
           .trim()
-          .replace(/\|/g, "\\|")
+          .replace(/[\\|]/g, "\\$&")
           .replace(/\n/g, " "),
       );
 
