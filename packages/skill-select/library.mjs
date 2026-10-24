@@ -7,6 +7,7 @@
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const DEFAULT_LIMIT = 5;
 export const MAX_LIMIT = 20;
@@ -153,7 +154,8 @@ export function parseFrontmatter(text) {
 /**
  * Candidate skill directories, highest priority first. PI_SKILL_LIBRARY is the
  * escape hatch: skills kept there are never listed by pi's skill discovery, so
- * they cost no context until skill_select finds them.
+ * they cost no context until skill_select finds them. Other harness roots must
+ * be opted into explicitly; owned workflows ship with this module.
  */
 export function resolveRoots({
   cwd = process.cwd(),
@@ -169,8 +171,7 @@ export function resolveRoots({
     home ? join(home, ".pi", "agent", "skill-library") : "",
     home ? join(home, ".pi", "agent", "skills") : "",
     home ? join(home, ".agents", "skills") : "",
-    home ? join(home, ".claude", "skills") : "",
-    home ? join(home, ".codex", "skills") : "",
+    fileURLToPath(new URL("../../.agents/skills", import.meta.url)),
     cwd ? join(cwd, ".pi", "skills") : "",
     cwd ? join(cwd, ".agents", "skills") : "",
   ].filter(Boolean);

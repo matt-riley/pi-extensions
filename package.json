@@ -49,6 +49,9 @@
       "./packages/safe-compact/index.ts",
       "./packages/review/index.ts"
     ],
+    "skills": [
+      "./.agents/skills"
+    ],
     "prompts": [
       "./prompts"
     ]

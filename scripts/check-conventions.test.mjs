@@ -128,30 +128,57 @@ test("conventions catch missing/duplicate registration, metadata, dependencies a
     assert.ok(errors.includes(expected), expected);
 });
 
-test("prompt skill references must resolve to this repo or the curated library", (t) => {
+test("prompt skill references resolve only to valid repository-owned skills", (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "pi-skill-refs-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const library = path.join(root, "library");
+  assert.deepEqual(checkSkillReferences(root), [], "no prompts needs no skills");
+  const skills = path.join(root, ".agents", "skills");
   mkdirSync(path.join(root, "prompts"), { recursive: true });
-  mkdirSync(path.join(library, "owned-review"), { recursive: true });
-  mkdirSync(path.join(root, "packages", "x", "local-skill"), { recursive: true });
+  mkdirSync(path.join(skills, "owned-review"), { recursive: true });
   writeFileSync(
-    path.join(library, "owned-review", "SKILL.md"),
-    "---\nname: owned-review\ndescription: d\n---\n",
+    path.join(skills, "owned-review", "SKILL.md"),
+    "---\nname: owned-review\ndescription: Review a change.\n---\n",
   );
-  writeFileSync(path.join(root, "packages", "x", "local-skill", "SKILL.md"), "no frontmatter");
+  writeFileSync(path.join(root, "prompts", "ok.md"), "Use the `owned-review` skill.");
+  assert.deepEqual(checkSkillReferences(root), [], "no personal library required");
+
+  writeFileSync(path.join(root, "prompts", "bad.md"), "Use the missing-review skill.");
+  const errors = checkSkillReferences(root);
+  assert.equal(errors.length, 1, "missing skills fail even without a personal library");
+  assert.match(errors[0], /prompts\/bad\.md: references the "missing-review" skill/);
+
+  mkdirSync(path.join(root, "library", "missing-review"), { recursive: true });
   writeFileSync(
-    path.join(root, "prompts", "ok.md"),
-    "Use the `owned-review` skill, then the local-skill skill. The right skill is fine.",
+    path.join(root, "library", "missing-review", "SKILL.md"),
+    "---\nname: missing-review\ndescription: Not owned.\n---\n",
   );
-  assert.deepEqual(checkSkillReferences(root, { library }), { errors: [], skipped: null });
+  assert.equal(
+    checkSkillReferences(root).length,
+    1,
+    "unregistered libraries cannot satisfy dependencies",
+  );
 
-  writeFileSync(path.join(root, "prompts", "bad.md"), "Use the review-agent skill to review.");
-  const { errors } = checkSkillReferences(root, { library });
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /prompts\/bad\.md: references the "review-agent" skill/);
-
-  const missing = checkSkillReferences(root, { library: path.join(root, "nope") });
-  assert.deepEqual(missing.errors, []);
-  assert.match(missing.skipped, /not found/);
+  mkdirSync(path.join(skills, "archived", "missing-review"), { recursive: true });
+  writeFileSync(
+    path.join(skills, "archived", "missing-review", "SKILL.md"),
+    "---\nname: missing-review\ndescription: Retired.\n---\n",
+  );
+  assert.equal(checkSkillReferences(root).length, 1, "retired skills are not selectable");
+  mkdirSync(path.join(skills, "missing-review"), { recursive: true });
+  writeFileSync(path.join(skills, "missing-review", "SKILL.md"), "no frontmatter");
+  assert.equal(
+    checkSkillReferences(root).length,
+    1,
+    "a directory name alone is not a native skill",
+  );
+  writeFileSync(
+    path.join(skills, "missing-review", "SKILL.md"),
+    "---\nname: missing-review\n---\n",
+  );
+  assert.equal(checkSkillReferences(root).length, 1, "missing descriptions are not discoverable");
+  writeFileSync(
+    path.join(skills, "missing-review", "SKILL.md"),
+    "---\nname: missing-review\ndescription: Now owned.\n---\n",
+  );
+  assert.deepEqual(checkSkillReferences(root), []);
 });

@@ -22,7 +22,11 @@ import { verifyRegistration } from "./registration.mjs";
 import path from "node:path";
 import { askSystemOne, formatAnswers } from "../shared/systemone.mjs";
 
-const SAMPLE_QUERIES = ["typescript any eliminator", "acquire codebase knowledge"];
+const SAMPLE_QUERIES = [
+  ["review staged diff", "implementation-review"],
+  ["write regression tests", "test-driven-development"],
+  ["design module interface", "interface-design"],
+];
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -41,9 +45,9 @@ try {
     roots: resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env }),
   });
   check("skill library discovered", skills.length > 0, `${skills.length} skills`);
-  for (const query of SAMPLE_QUERIES) {
+  for (const [query, expected] of SAMPLE_QUERIES) {
     const top = rankSkills(skills, query, { limit: 1 })[0];
-    check(`skill_select ranks "${query}"`, Boolean(top), top ? top.name : "no match");
+    check(`skill_select ranks "${query}"`, top?.name === expected, top ? top.name : "no match");
   }
 } catch (error) {
   check("skill library discovered", false, error instanceof Error ? error.message : String(error));

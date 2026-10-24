@@ -313,6 +313,11 @@ test("shipped builtins resolve with the expected fleet and policy", () => {
 
   assert.equal(isWriteCapable(worker), true);
   assert.equal(usesAllowlistedBash(worker), false);
+  assert.match(worker.systemPrompt, /choose routine names and implementation details/);
+  assert.match(
+    worker.systemPrompt,
+    /new dependency, public API\/compatibility change, destructive action/,
+  );
   assert.equal(isWriteCapable(verifier), true);
   assert.equal(usesAllowlistedBash(verifier), false);
   assert.equal(isWriteCapable(researcher), false);

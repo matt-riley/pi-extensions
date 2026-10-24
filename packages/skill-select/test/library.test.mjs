@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   discoverSkills,
@@ -60,11 +61,34 @@ test("resolveRoots puts the explicit library first and dedupes", () => {
     "/home/u/.pi/agent/skill-library",
     "/home/u/.pi/agent/skills",
     "/home/u/.agents/skills",
-    "/home/u/.claude/skills",
-    "/home/u/.codex/skills",
+    fileURLToPath(new URL("../../../.agents/skills", import.meta.url)),
     "/work/project/.pi/skills",
     "/work/project/.agents/skills",
   ]);
+});
+
+test("foreign harness skills require explicit opt-in, while owned workflows work outside this repo", async (t) => {
+  const { dir, cleanup } = await tmpTree();
+  t.after(cleanup);
+  const foreignRoots = [join(dir, ".claude", "skills"), join(dir, ".codex", "skills")];
+  await writeSkill(foreignRoots[0], "foreign-claude");
+  await writeSkill(foreignRoots[1], "foreign-codex");
+  const defaults = resolveRoots({ cwd: join(dir, "project"), home: dir, env: {} });
+  for (const root of foreignRoots) assert.ok(!defaults.includes(root));
+  const skills = await discoverSkills({ roots: defaults });
+  assert.deepEqual(skills.map((s) => s.name).sort(), [
+    "implementation-review",
+    "interface-design",
+    "test-driven-development",
+  ]);
+  const optedIn = await discoverSkills({
+    roots: resolveRoots({ cwd: "", home: dir, env: { PI_SKILL_LIBRARY: foreignRoots.join(",") } }),
+  });
+  for (const name of ["foreign-claude", "foreign-codex"])
+    assert.ok(
+      optedIn.some((s) => s.name === name),
+      name,
+    );
 });
 
 test("discoverSkills finds nested skills, falls back to the directory name and skips node_modules", async () => {

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Repository invariants, checked from syntax rather than matching import text.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -229,12 +228,9 @@ export function sharedHelperErrors(root) {
   return errors;
 }
 
-// A prompt that names "the `x` skill" must name one this repo or the curated
-// library owns. A skill that only exists under a harness's own root (e.g.
-// ~/.codex/skills/.system) can vanish on that harness's next update, which is
-// how /review once depended on Codex's review-agent.
+// Essential prompt dependencies belong to this checkout, not a personal
+// library that may be empty locally or absent on a clean runner.
 const SKILL_REFERENCE = /\bthe (?:`([a-z0-9][a-z0-9-]*)`|([a-z0-9]+(?:-[a-z0-9]+)+)) skill\b/gi;
-const DEFAULT_SKILL_LIBRARY = path.join(os.homedir(), ".pi", "agent", "skill-library");
 
 function ownedSkillNames(dirs) {
   const names = new Set();
@@ -249,13 +245,14 @@ function ownedSkillNames(dirs) {
     if (visited.has(real)) return;
     visited.add(real);
     for (const entry of fs.readdirSync(real, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      if (["node_modules", ".git", "archived", "fixtures"].includes(entry.name.toLowerCase()))
+        continue;
       const full = path.join(real, entry.name);
       if (entry.isDirectory() || entry.isSymbolicLink()) {
         if (fs.statSync(full, { throwIfNoEntry: false })?.isDirectory()) walk(full);
       } else if (/^skill\.md$/i.test(entry.name)) {
-        const { name } = parseFrontmatter(fs.readFileSync(full, "utf8"));
-        names.add(name || path.basename(real));
+        const { name, description } = parseFrontmatter(fs.readFileSync(full, "utf8"));
+        if (name && description) names.add(name);
       }
     }
   };
@@ -263,16 +260,11 @@ function ownedSkillNames(dirs) {
   return names;
 }
 
-/** @returns {{ errors: string[], skipped: string | null }} */
-export function checkSkillReferences(root, { library = DEFAULT_SKILL_LIBRARY } = {}) {
-  if (!fs.existsSync(library))
-    return {
-      errors: [],
-      skipped: `skill library ${library} not found; skill references unchecked`,
-    };
+/** @returns {string[]} */
+export function checkSkillReferences(root) {
   const promptDir = path.join(root, "prompts");
-  if (!fs.existsSync(promptDir)) return { errors: [], skipped: null };
-  const owned = ownedSkillNames([root, library]);
+  if (!fs.existsSync(promptDir)) return [];
+  const owned = ownedSkillNames([path.join(root, ".agents", "skills")]);
   const errors = [];
   for (const file of fs
     .readdirSync(promptDir)
@@ -283,22 +275,20 @@ export function checkSkillReferences(root, { library = DEFAULT_SKILL_LIBRARY } =
       const name = match[1] ?? match[2];
       if (!owned.has(name))
         errors.push(
-          `prompts/${file}: references the "${name}" skill, which is not in this repo or ${library}`,
+          `prompts/${file}: references the "${name}" skill, which is not valid in .agents/skills`,
         );
     }
   }
-  return { errors, skipped: null };
+  return errors;
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const root = path.resolve(import.meta.dirname, "..");
-  const references = checkSkillReferences(root);
-  if (references.skipped) console.log(`Skipped: ${references.skipped}`);
   const errors = [
     ...checkConventions(root),
     ...controlByteErrors(root),
     ...sharedHelperErrors(root),
-    ...references.errors,
+    ...checkSkillReferences(root),
   ];
   for (const error of errors) console.error(error);
   if (!errors.length) console.log("Repository conventions pass");

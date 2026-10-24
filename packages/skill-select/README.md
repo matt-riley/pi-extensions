@@ -28,22 +28,20 @@ Searched roots, in priority order:
 2. `~/.pi/agent/skill-library`  ← the recommended home for non-listed skills
 3. `~/.pi/agent/skills`
 4. `~/.agents/skills`
-5. `~/.claude/skills`
-6. `~/.codex/skills`
-7. `<cwd>/.pi/skills`
-8. `<cwd>/.agents/skills`
+5. This repository's bundled `.agents/skills` (resolved relative to the module, not the cwd)
+6. `<cwd>/.pi/skills`
+7. `<cwd>/.agents/skills`
 
-Earlier roots win when two skills share a name. The discovery roots 3–6 are the
-ones pi already lists, so the tool also searches skills you do keep listed —
-useful as a fuzzy index even then.
+Earlier roots win when two skills share a name. Other applications' private or
+system skill roots are not searched automatically. Opt into a deliberately
+reviewed portable collection with `PI_SKILL_LIBRARY` (or the CLI's `--root`).
+Roots 3–4 and 6–7 overlap native Pi discovery; bundled workflows are also
+available through `skill_select` when running outside this repository. Native
+Pi package skills in other locations need explicit inclusion to be searched.
 
 Skill directories may be symlinks: the walker resolves them (and skips trees it
-has already visited, so cycles terminate). A library root can therefore link
-straight at a skills repository instead of copying it:
-
-```sh
-ln -s ~/code/agent-skills/skills ~/.pi/agent/skill-library/agent-skills
-```
+has already visited, so cycles terminate). Only link collections you deliberately
+want this agent to follow; a symlink is not a portability or trust boundary.
 
 Directories named `archived` (at any depth, case-insensitive), `node_modules`
 and `.git` are skipped. Retired skills must not be selectable: an agent would
@@ -119,4 +117,7 @@ Deterministic, no model, no network:
 `node --test packages/skill-select/test/library.test.mjs` — frontmatter parsing
 (plain, folded, literal, quoted, BOM/CRLF), root resolution, nested discovery
 with name fallback, symlinked directories including a cycle, dedupe, ranking,
-and formatting.
+and formatting. Regression fixtures check that foreign roots require explicit
+opt-in and bundled workflows resolve outside this repo. `scripts/workflow-skills.test.mjs`
+checks portable metadata, manifest registration and realistic offline routing.
+Those are wiring checks, not a benchmark of model behavior.
