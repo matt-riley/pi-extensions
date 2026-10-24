@@ -12,10 +12,10 @@ plain TypeScript loaded directly by pi.
 | [`pi-plan-mode`](./packages/plan-mode) | Codex-like read-only `/plan` mode that writes a Markdown plan you edit before implementation. |
 | [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. `web_answer` returns only the passages that answer a question. |
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
-| [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed choice/noul/score questions over state and returns probabilities instead of prose. Environment-only config (`TYPESAFE_API_KEY`). |
+| [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed questions; `read_relevant` selects exact source ranges; deferred `find_code` finds implementations by behavior. Advisory web/MCP injection warnings preserve structured results. Environment-only config (`TYPESAFE_API_KEY`). |
 | [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
-| [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Attaches one line to failed tool results: name the root cause, then check the evidence with `typesafe_ask`. Text only, never blocks a call. |
-| [`pi-done-gate`](./packages/done-gate) | Quietly gives the agent one more turn when a run ends with unverified code edits inside the repo, and lists leftover `[DEBUG-` tags. Text only, never blocks a call. |
+| [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Nudges on tool failures; after two failed revised checks, blocks mutations until a revision-bound diagnostic observation runs. |
+| [`pi-done-gate`](./packages/done-gate) | Quietly nudges on unverified edits and leftover `[DEBUG-` tags; `measure_command` validates repeated, revision-bound benchmark/evaluation observations. |
 | [`pi-until`](./packages/until) | `/until <cmd>`: keeps the agent working until a shell predicate exits 0, re-checking at every settle, capped, with a TSV decision log per iteration. |
 | [`pi-guardrail`](./packages/guardrail) | Stops destructive tool use before it runs: deterministic rules for the 97% that are obviously fine, a TypeSafe judgment for the ambiguous middle, and an Approve / Deny / Suggest-an-alternative dialog for the rest. Refuses the catastrophic set outright. |
 | [`pi-router`](./packages/router) | Rates how hard the current task is and escalates to a frontier model when it clears a threshold — once per task, never mid-task, and never downgrading a model you chose. Judged, because the rules measured 7% precision on this repo's own history. |
@@ -31,6 +31,8 @@ These packages are published as separate directories but are not fully
 independent — some import modules from their siblings, so deleting or
 renaming one can break another:
 
+- **`pi-diagnosis-nudge`** reuses verification detection from **`pi-done-gate`**;
+  both import revision fingerprints from **`pi-subagents`**.
 - **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /
   `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
   (used to implement `plan_fetch_url`). Which other tools it allows is decided
@@ -86,23 +88,39 @@ npm run verify                 # offline
 npm run verify -- --live       # also makes one real TypeSafe call
 ```
 
-### Prompt templates
+### Prompt templates and workflow skills
 
-pi auto-discovers **extensions** from the `pi.extensions` key in `package.json`,
-but it does **not** read `pi.prompts` from auto-discovered extension
-directories — prompt templates only load from installed packages or the
-settings `prompts` array. Register the repo's `prompts/` directory in
+pi auto-discovers **extensions** from `pi.extensions`, but does **not** load
+`pi.prompts` or `pi.skills` from auto-discovered extension directories. Those
+resources load from installed packages or explicit settings. Register both in
 `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "prompts": ["~/.pi/agent/extensions/pi-extensions/prompts"]
+  "prompts": ["~/.pi/agent/extensions/pi-extensions/prompts"],
+  "skills": ["~/.pi/agent/extensions/pi-extensions/.agents/skills"]
 }
 ```
 
 Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
 `/review`, `/debug`, `/verify-setup`, `/mine`, `/triage`, `/garden`, `/upgrade`, `/migrate`, `/retro`, …) are
-silently unavailable.
+silently unavailable. Installed Pi packages load the same resources through
+the root manifest instead.
+
+Three owned, portable workflows live in [`.agents/skills/`](./.agents/skills):
+
+| Skill | Entry points | Purpose |
+| --- | --- | --- |
+| `implementation-review` | `/review`, `/pr` | Read-only, defect-first review with grounded findings and test-quality checks |
+| `test-driven-development` | `/test`, feature/bug work | Behavior-focused tests, independent expectations and tested vertical slices |
+| `interface-design` | `/design`, `/refactor` | Small interfaces that hide complexity; `/design` proposes without editing |
+
+`skill_select` and `scripts/skill-search.mjs` also search these bundled skills
+from any working directory. Other applications' skill roots are **not** searched
+unless explicitly included with `PI_SKILL_LIBRARY` or `--root`. Keep project-specific
+skills under that project's `.agents/skills/`; do not import another harness's
+system collection as an implicit dependency. Prompt skill references are validated
+against this checkout on every `npm run check`, with no home-directory dependency.
 
 ## Requirements
 
@@ -124,6 +142,7 @@ Dev tooling only — none of it ships with an extension:
 | `npm run format` | [oxfmt](https://oxc.rs) | code and JSON at 100 columns |
 | `npm run knip` | [knip](https://knip.dev) | unused files, exports and dependencies |
 | `npm run fallow` | [fallow](https://docs.fallow.tools) | dead code, cycles, dependency hygiene; `fallow:report` adds duplication and complexity |
+| `npm run coverage` | Node test runner | executable line/function/branch coverage and `coverage/lcov.info`, without an added dependency |
 
 `npm run check` runs all four plus `tsc --noEmit` and the test suite. Every rule
 exception is written down in the config next to the rule it disables, so the gate

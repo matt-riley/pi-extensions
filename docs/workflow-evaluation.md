@@ -31,6 +31,17 @@ Inspect failure transcripts before changing prompts; reserve a fresh held-out
 set for any subsequent optimization. Retain useful checks, delete ineffective
 instructions, and do not claim improvement from this integration smoke alone.
 
+## Lightweight outcome record
+
+For an explicitly chosen workflow experiment, append one manual row per real
+task to its existing artifact or notes: task/revision, workflow variant,
+acceptance commands and results, accepted/rejected/unknown outcome, observed
+human corrections, observed rework, elapsed time and available token/cost data.
+Use `null` for observations not collected; do not turn unknown corrections or
+cost into zero. Keep comparable scope and inspect failure transcripts before
+changing a rule. No background telemetry or mandatory pilot for ordinary tasks.
+A green integration test demonstrates wiring, not improved productivity.
+
 ## Recorded pilot: 2026-10-07
 
 Executed eight real `deepseek/deepseek-flash` sessions, thinking off. Frozen
