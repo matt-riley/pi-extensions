@@ -201,6 +201,7 @@ export function buildLedgerEntry({
     }).value;
   }
   return {
+    v: 1,
     feature,
     model,
     requestedModel,
