@@ -11,6 +11,14 @@ const { routeVerdict } = judge;
 const noul = (value) => ({ type: "noul", noul: value });
 const score = (value) => ({ type: "score", score: value });
 
+test("the measured thresholds cannot be re-tuned at runtime", () => {
+  assert.equal(Object.isFrozen(judge.THRESHOLDS), true);
+  assert.throws(() => {
+    judge.THRESHOLDS.destructive = 0.1;
+  });
+  assert.equal(judge.THRESHOLDS.destructive, 0.5);
+});
+
 test("the measured thresholds record the Jev they were tuned on", () => {
   assert.equal(TUNED_MODEL, "jev-1.13.0");
   assert.equal(judge.THRESHOLDS?.tunedModel, TUNED_MODEL);
