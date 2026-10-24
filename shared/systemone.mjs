@@ -478,13 +478,31 @@ function takeSessionUsage() {
   return total;
 }
 
-function withSessionUsage(result) {
-  const usage = takeSessionUsage();
-  if (!usage || result == null || typeof result !== "object" || Array.isArray(result)) {
-    return result;
+function combineUsage(left, right) {
+  if (!isPlainObject(left)) return right;
+  if (!isPlainObject(right)) return left;
+  const total = emptySessionUsage();
+  addSessionUsage(total, left);
+  addSessionUsage(total, right);
+  return total;
+}
+
+/**
+ * Pi's tool_result handler replaces `event.usage` with whatever the handler
+ * returns. Jev's tokens have to be added to the tool's own usage, including
+ * when the handler returns nothing — otherwise a nudge drops the failed
+ * call's cost. Tool execute has the same trap when `result.usage` is already
+ * set.
+ */
+function withSessionUsage(result, priorUsage) {
+  const jev = takeSessionUsage();
+  if (!jev) return result;
+  const combined = combineUsage(priorUsage, jev);
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    return { usage: combined };
   }
-  if (result.usage) return result;
-  return { ...result, usage };
+  const own = isPlainObject(result.usage) && result.usage !== priorUsage ? result.usage : undefined;
+  return { ...result, usage: own ? combineUsage(combined, own) : combined };
 }
 
 /**
@@ -493,13 +511,13 @@ function withSessionUsage(result) {
  * returned tool result; compaction drafts use `compactionUsage` instead,
  * because that usage belongs on the entry Pi actually records.
  */
-function runWithSystemOneContext(ctx, fn, { attachUsage = false } = {}) {
+function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage } = {}) {
   const parent = systemOneAls.getStore();
   const usage = parent?.usage ?? [];
   return systemOneAls.run({ ctx: ctx ?? parent?.ctx, usage }, async () => {
     const result = await fn();
     if (!attachUsage || parent?.usage) return result;
-    return withSessionUsage(result);
+    return withSessionUsage(result, priorUsage);
   });
 }
 
@@ -528,6 +546,7 @@ export function bindSystemOne(pi) {
       originalOn(event, (payload, ctx) =>
         runWithSystemOneContext(ctx, () => handler(payload, ctx), {
           attachUsage: event === "tool_result",
+          priorUsage: event === "tool_result" ? payload?.usage : undefined,
         }),
       );
   }
