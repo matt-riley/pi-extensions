@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { askSystemOne } from "../../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne } from "../../../shared/systemone.mjs";
 import { judgeToolCall } from "../../guardrail/judge.mjs";
 import { claimLine, judgeDoneClaim } from "../../done-gate/claim.mjs";
 import { rankSkills } from "../../skill-select/library.mjs";
@@ -695,4 +695,60 @@ test("fail-open: skill-select keeps lexical order when classify errors", async (
     out.matches.map((entry) => entry.name),
     lexical.map((entry) => entry.name),
   );
+});
+
+test("usage: tool_result and tool execute add Jev's tokens to usage that is already set", async () => {
+  const handlers = {};
+  const tools = {};
+  const pi = {
+    on(event, handler) {
+      (handlers[event] ??= []).push(handler);
+    },
+    registerTool(def) {
+      tools[def.name] = def;
+    },
+  };
+  bindSystemOne(pi);
+  const jev = piUsage(11, 0);
+  const tool = {
+    input: 100,
+    output: 20,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 120,
+    cost: { input: 0.18, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.18 },
+  };
+  const { ctx } = classifierCtx(async () => stopResult({ pick: { type: "noul", noul: 1 } }, jev));
+  const ask = () =>
+    askSystemOne({
+      state: { note: "hello" },
+      questions: NOUL,
+      env: ENV,
+      fetchImpl: boomFetch(),
+    });
+
+  pi.on("tool_result", async () => {
+    await ask();
+    return { content: [{ type: "text", text: "nudge" }] };
+  });
+  const replaced = await handlers.tool_result[0]({ usage: tool, content: [] }, ctx);
+  assert.equal(replaced.usage.input, 111, "Jev's usage replaced the tool's");
+  assert.equal(replaced.usage.cost.total, 0.18);
+
+  pi.on("tool_result", async () => {
+    await ask();
+  });
+  const silent = await handlers.tool_result[1]({ usage: tool, content: [] }, ctx);
+  assert.deepEqual(silent, { usage: { ...tool, input: 111, output: 20, totalTokens: 131 } });
+
+  pi.registerTool({
+    name: "ask",
+    async execute() {
+      await ask();
+      return { content: [{ type: "text", text: "ok" }], usage: tool };
+    },
+  });
+  const executed = await tools.ask.execute("id", {}, undefined, undefined, ctx);
+  assert.equal(executed.usage.input, 111, "existing tool usage was left unchanged");
+  assert.equal(executed.usage.cost.total, 0.18);
 });
