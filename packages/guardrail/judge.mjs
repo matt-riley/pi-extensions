@@ -25,7 +25,7 @@ export const BLAST_LEVELS = [
   "Shared or production systems: a remote, a server, a database, or anything another person depends on.",
 ];
 
-export const THRESHOLDS = {
+export const THRESHOLDS = Object.freeze({
   /** Recorded beside the lines measured with replay-corpus and judge-thresholds. */
   tunedModel: TUNED_MODEL,
   destructive: 0.5,
@@ -42,7 +42,7 @@ export const THRESHOLDS = {
   credentials: 0.6,
   /** Index into BLAST_LEVELS: 2 = "this machine" and above is confirmation-worthy. */
   blastRadius: 2,
-};
+});
 
 const MAX_REQUEST_CHARS = 600;
 const MAX_ACTION_CHARS = 1500;
