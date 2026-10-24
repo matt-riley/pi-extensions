@@ -44,6 +44,12 @@ function answerRecord(answer) {
   return record;
 }
 
+/** Pi 1.4: appendEntry(customType, data?) — absent on stubs, and not the model context. */
+export function appendLedgerEntry(pi, entry) {
+  if (typeof pi?.appendEntry !== "function") return;
+  pi.appendEntry("jev-decision", entry);
+}
+
 /** The data object stored on a jev-decision entry. No state, no request body. */
 export function buildLedgerEntry({
   feature,

@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-import { buildLedgerEntry } from "./jev-ledger.mjs";
+import { appendLedgerEntry, buildLedgerEntry } from "./jev-ledger.mjs";
 import { redactSecrets } from "./redact.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
@@ -832,23 +832,21 @@ export async function askSystemOne({
   // that can be an opt-in later. The HTTP path already refused here.
   if (!config.apiKey) throw missingKeyError(env);
   const record = (result, transport) => {
-    if (sessionPi) {
-      sessionPi.appendEntry(
-        "jev-decision",
-        buildLedgerEntry({
-          feature: typeof feature === "string" && feature.trim() ? feature.trim() : "unknown",
-          model: result.model,
-          requestedModel,
-          questions,
-          answers: result.answers,
-          latencyMs: Date.now() - started,
-          transport,
-          redactions,
-          privacyRedactions: privacyCount,
-          outcome: "ok",
-        }),
-      );
-    }
+    appendLedgerEntry(
+      sessionPi,
+      buildLedgerEntry({
+        feature: typeof feature === "string" && feature.trim() ? feature.trim() : "unknown",
+        model: result.model,
+        requestedModel,
+        questions,
+        answers: result.answers,
+        latencyMs: Date.now() - started,
+        transport,
+        redactions,
+        privacyRedactions: privacyCount,
+        outcome: "ok",
+      }),
+    );
     return result;
   };
   if (classifier) {
