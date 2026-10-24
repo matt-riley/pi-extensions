@@ -7,18 +7,39 @@ Diagnosis check: name the root cause in one line, then ask `typesafe_ask` whethe
 evidence you are about to cite actually supports it. Plausible is not the same as supported.
 ```
 
-That is the whole extension. No tools, no config, no dependencies.
+Ordinary tool failures remain advisory. A separate, deterministic checkpoint
+now blocks further mutations after **two failed revised checks of the same
+exact command**. No config or new dependencies.
 
-## Why a nudge and not a gate
+## Failed-fix checkpoint
 
-`tool_result` handlers can patch the result the model is about to read, but they
-cannot inject a message — and a `before_agent_start` reminder would arrive one
-turn too late, after the fix is already written. Patching the failure itself is
-the only moment that can still change the next action.
+The checkpoint observes standalone verification commands recognized by
+[done-gate](../done-gate/README.md), not arbitrary non-zero exits. Git fingerprints
+include HEAD, staged/unstaged changes and nonignored untracked files.
 
-It deliberately does **not** block anything. A gate on "failure then edit" would
-misfire on ordinary non-zero exits — `grep` finding nothing, `test -f` returning
-false — and a tool that blocks real work gets uninstalled.
+- A failure counts only when the checked tree differs from the previous checked
+  revision (or session-start baseline). Repeating a failing check on the same
+  tree does not count twice. Unknown or tree-changing checks do not count.
+- After two failed revised trees, native writes/edits, mutating shell commands
+  and unknown tools are blocked, including nested codemode calls. Readers and
+  exact previously observed checks remain available. A passing exact check
+  resets its own failed attempts; unrelated successes and new input do not.
+- `diagnosis_checkpoint({premise, command, expected_observation})` executes a
+  read-only bash observation through normal tool hooks. A known unchanged
+  revision, explicit successful exit and nonempty, untruncated output are
+  required to release the gate. A failed/blocked/cancelled/stale observation
+  leaves it pending. The tool returns the observation and revision as structured
+  evidence in its result, not a model-authored claim of execution.
+- State is stored as branch-local session entries and restored on resume,
+  reload, switch and tree navigation. `/diagnosis` shows status;
+  `/diagnosis reset` is an explicit human override, not a model-callable tool.
+
+This enforces an executed checkpoint, **not** premise relevance or correctness.
+A baseline without Git/HEAD or unsupported check syntax is outside its counting
+contract. The existing read-only shell policy and tool annotations are
+guardrails, not a sandbox; verification scripts and annotated readers remain
+trusted. Already-running operations cannot be revoked. Approval and trust
+policies still apply independently.
 
 ## Behaviour
 

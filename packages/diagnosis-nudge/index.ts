@@ -5,8 +5,8 @@
 // the result the model is about to read, so the reminder rides along with the
 // failure itself — the only moment it can still change the next action.
 //
-// Text only: it never blocks a tool call (a non-zero exit from grep would make
-// a gate misfire), adds no dependency, and is re-armed by the next failure.
+// Ordinary failures still only nudge. checkpoint.mjs separately gates mutations
+// after two failed checks on revised trees; grep's non-zero exit cannot arm it.
 //
 // When a TypeSafe key is reachable, the failure is also classified: a code bug
 // reported as "retry after the flake" is the expensive version of this mistake,
@@ -17,6 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { installCheckpoint } from "./checkpoint.mjs";
 import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
@@ -57,6 +58,7 @@ function actionOf(input) {
 
 export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
+  installCheckpoint(pi);
   const state = createNudgeState();
 
   pi.on("session_start", async () => {
