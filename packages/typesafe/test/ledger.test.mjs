@@ -317,3 +317,72 @@ test("a failed call records fail-open or fail-closed and keeps the error class",
   assert.equal(pi.entries[1].data.outcome, "fail-closed");
   assert.equal(pi.entries[1].data.errorClass, "http");
 });
+
+test("a drifted reported model warns once per session and does not re-tune", async () => {
+  const notices = [];
+  const reported = { model: "jev-1.13.0" };
+  const ctxFor = (sessionManager) => ({
+    sessionManager,
+    ui: {
+      notify(title, level) {
+        notices.push({ title, level });
+      },
+    },
+    modelRegistry: {
+      findOfType() {
+        return {
+          id: "jev-1.13.0",
+          type: "classifier",
+          provider: "typesafe",
+          api: "typesafe-system-one",
+          baseUrl: "https://api.typesafe.ai/v1",
+        };
+      },
+      async classify() {
+        return {
+          stopReason: "stop",
+          model: reported.model,
+          answers: { pick: { type: "noul", noul: 0.2 } },
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      },
+    },
+  });
+  const pi = sessionPi();
+  pi.on("tool_call", (_event, ctx) =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      ctx,
+      fetchImpl: async () => {
+        throw new Error("http fallback should not run");
+      },
+    }),
+  );
+  const session = {};
+  await pi.handlers[0].handler({}, ctxFor(session));
+  assert.equal(notices.length, 0, "the tuned model does not warn");
+
+  reported.model = "jev-1.14.0";
+  await pi.handlers[0].handler({}, ctxFor(session));
+  await pi.handlers[0].handler({}, ctxFor(session));
+  assert.equal(notices.length, 1, "a drifted model warns once");
+  assert.equal(notices[0].level, "warning");
+  assert.match(notices[0].title, /jev-1\.14\.0/);
+  assert.match(notices[0].title, /jev-1\.13\.0/);
+  assert.match(notices[0].title, /re-tun/i);
+  assert.match(notices[0].title, /judge-thresholds/);
+  assert.equal(pi.entries.at(-1).data.modelDrift, true);
+  assert.equal(pi.entries.at(-1).data.tunedModel, "jev-1.13.0");
+
+  await pi.handlers[0].handler({}, ctxFor({}));
+  assert.equal(notices.length, 2, "a new session warns again");
+});
