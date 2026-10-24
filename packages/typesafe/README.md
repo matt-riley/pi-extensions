@@ -59,6 +59,7 @@ Environment only — no config file:
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. Falls back to `LORE_TYPESAFE_API_KEY`, then to `typesafe.apiKey` in the lore config — the same locations lore itself checks: `LORE_CONFIG`, then `lore.json` under `LORE_HOME`, `XDG_CONFIG_HOME` or `~/.config`, with the legacy `~/.copilot/lore.json` fallback. One file therefore covers pi and lore on machines where shell exports never reach a GUI-launched agent. |
 | `TYPESAFE_MODEL` | `jev-1.13.0` | Default model. Pinned because the repo's thresholds were measured on it; re-tune them before moving to a newer Jev. |
+| `PI_MASK_EMAILS` | off | Set to `1` to mask common email addresses in request-state string values. Leave off for identity/permission judgments. |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai/v1` | Override for a proxy or a test double. |
 | `TYPESAFE_TIMEOUT_MS` | `30000` | Request timeout. |
 
@@ -107,9 +108,18 @@ send less rather than left to discover it as a truncated prompt.
 
 Every request is built from a redacted copy of the state
 (`shared/redact.mjs`): PEM private keys, JWTs, AWS, GitHub, OpenAI and Slack
-tokens, bearer headers, and 16-character-plus `key = value` assignments become
+tokens, bearer headers, URL userinfo (including short passwords), and 16-character-plus `key = value` assignments become
 `<REDACTED:kind>`, and the caller's own API key is replaced wherever it appears.
-The count comes back on the result and is printed next to the answers, so a
+The local home-directory prefix is also masked by default: `/Users/alice/project/app.ts`
+becomes `<REDACTED:home>/project/app.ts`, preserving the useful path suffix. Common
+email addresses are masked only with `PI_MASK_EMAILS=1`; default-off preserves
+identities for permission judgments. This is best-effort masking of state string
+values sent through the shared TypeSafe client, not object keys, question text,
+or traffic to the main chat model. No global pi settings are changed.
+
+`redactions` counts credentials; optional `privacyRedactions` counts personal identifiers,
+so privacy masking is never mistaken for evidence of a credential leak. The combined
+count is printed next to the answers, so a
 redaction is never silent. Secrets are replaced rather than dropped, because a
 question about *why* a command touches a credential still needs a sentence to
 reason about.

@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { judgeFailure, triageText } from "../../diagnosis-nudge/triage.mjs";
 
 import {
   askSystemOne,
@@ -447,6 +449,81 @@ test("askSystemOne posts state and questions verbatim and returns answers", asyn
     usage: { input_tokens: 12, output_tokens: 2 },
     redactions: 0,
   });
+});
+
+test("the local home is masked at the request boundary while email identities stay intact", async () => {
+  const { fetchImpl, calls } = capturingFetch(() => jsonResponse({ answers: {} }));
+  const state = { file: join(homedir(), "project", "app.ts"), identity: "alice@example.invalid" };
+  const result = await askSystemOne({
+    state,
+    questions: { q: { type: "noul", instructions: "Does this name a source file?" } },
+    env: ENV,
+    fetchImpl,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.state.file, "<REDACTED:home>" + state.file.slice(homedir().length));
+  assert.equal(calls[0].body.state.identity, state.identity);
+  assert.equal(result.redactions, 0, "a home path is not evidence of a credential leak");
+  assert.equal(result.privacyRedactions, 1);
+  assert.match(formatAnswers(result), /1 redacted/);
+  assert.equal(state.file, join(homedir(), "project", "app.ts"));
+});
+
+test("privacy masking does not become a credential warning in failure triage", async () => {
+  for (const withSecret of [false, true]) {
+    const { fetchImpl, calls } = capturingFetch(() =>
+      jsonResponse({ answers: { leaks_secret: { type: "noul", noul: 0 } } }),
+    );
+    const judged = await judgeFailure({
+      toolName: "bash",
+      cwd: join(homedir(), "project"),
+      output: withSecret ? A_GITHUB_TOKEN : "alice@example.invalid",
+      env: { ...ENV, PI_MASK_EMAILS: "1" },
+      ask: (request) => askSystemOne({ ...request, fetchImpl }),
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(judged.unavailable, false);
+    assert.equal(judged.redacted, withSecret ? 1 : 0);
+    assert.equal(judged.leaksSecret, withSecret ? 1 : 0);
+    if (withSecret) assert.match(triageText(judged), /do not repeat the value/);
+    else assert.equal(triageText(judged), null);
+  }
+});
+
+test("email masking at the request boundary requires an explicit opt-in", async () => {
+  for (const setting of [undefined, "", "0", "false", "unexpected", "1"]) {
+    const { fetchImpl, calls } = capturingFetch(() => jsonResponse({ answers: {} }));
+    const state = { identity: "alice+work@example.invalid" };
+    const result = await askSystemOne({
+      state,
+      questions: { q: { type: "noul", instructions: "Is this an identity?" } },
+      env: { ...ENV, PI_MASK_EMAILS: setting },
+      fetchImpl,
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0].body.state.identity,
+      setting === "1" ? "<REDACTED:email>" : state.identity,
+    );
+    assert.equal(result.redactions, 0, "an email address is not a credential");
+    assert.equal(result.privacyRedactions ?? 0, setting === "1" ? 1 : 0);
+    assert.equal(state.identity, "alice+work@example.invalid");
+  }
+});
+
+test("URL credentials never enter the outgoing request body", async () => {
+  const { fetchImpl, calls } = capturingFetch(() => jsonResponse({ answers: {} }));
+  const state = { endpoint: "https://alice:short@example.invalid/api" };
+  const result = await askSystemOne({
+    state,
+    questions: { q: { type: "noul", instructions: "Is this an API endpoint?" } },
+    env: ENV,
+    fetchImpl,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.state.endpoint, "https://<REDACTED:url>@example.invalid/api");
+  assert.equal(result.redactions, 1);
+  assert.equal(state.endpoint, "https://alice:short@example.invalid/api");
 });
 
 test("a redaction is reported where the answers are, and silence means none", () => {

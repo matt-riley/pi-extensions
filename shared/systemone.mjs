@@ -338,7 +338,7 @@ function backoff(ms, signal) {
  * Ask TypeSafe's System One model one or more typed questions about `state`.
  *
  * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number }} opts
- * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
+ * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number, privacyRedactions?: number }>}
  */
 export async function askSystemOne({
   state,
@@ -352,8 +352,13 @@ export async function askSystemOne({
   const config = resolveConfig(env);
   // Redact before validating: the size and shape checks should describe what
   // would actually be sent, and a secret is not what makes a request too big.
-  const { value: safeState, count: redactions } = redactSecrets(state, {
+  const {
+    value: safeState,
+    count: redactions,
+    privacyCount = 0,
+  } = redactSecrets(state, {
     literals: [config.apiKey],
+    maskEmails: env?.PI_MASK_EMAILS === "1",
   });
   validateRequest({ state: safeState, questions });
   if (!config.apiKey) {
@@ -426,6 +431,7 @@ export async function askSystemOne({
       answers: isPlainObject(payload?.answers) ? payload.answers : {},
       usage: isPlainObject(payload?.usage) ? payload.usage : null,
       redactions,
+      ...(privacyCount > 0 ? { privacyRedactions: privacyCount } : {}),
     };
   } catch (error) {
     if (timedOut) {
@@ -480,14 +486,15 @@ export function usableNumber(value) {
 }
 
 /** Render answers as compact text for the model to read. */
-export function formatAnswers({ model, usage, answers, redactions } = {}) {
+export function formatAnswers({ model, usage, answers, redactions, privacyRedactions } = {}) {
   const lines = [];
   const tokens = usage
     ? `input_tokens=${usage.input_tokens ?? "?"} output_tokens=${usage.output_tokens ?? "?"}`
     : "usage unavailable";
   // A redaction changes what the model was shown, so it belongs next to the
   // answer it shaped rather than in a log nobody reads.
-  const redacted = redactions > 0 ? ` · ${redactions} redacted` : "";
+  const totalRedactions = (redactions ?? 0) + (privacyRedactions ?? 0);
+  const redacted = totalRedactions > 0 ? ` · ${totalRedactions} redacted` : "";
   lines.push(`${model ?? DEFAULT_MODEL} (${tokens})${redacted}`);
   const entries = Object.entries(answers ?? {});
   if (entries.length === 0) {
