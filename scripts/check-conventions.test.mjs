@@ -7,6 +7,7 @@ import {
   checkConventions,
   checkSkillReferences,
   controlByteErrors,
+  fileSizeReport,
   runtimeImports,
   sharedHelperErrors,
 } from "./check-conventions.mjs";
@@ -181,4 +182,41 @@ test("prompt skill references resolve only to valid repository-owned skills", (t
     "---\nname: missing-review\ndescription: Now owned.\n---\n",
   );
   assert.deepEqual(checkSkillReferences(root), []);
+});
+
+test("a file past the size limit fails unless it is in the baseline", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "file-size-"));
+  try {
+    mkdirSync(path.join(root, "packages", "big"), { recursive: true });
+    mkdirSync(path.join(root, "packages", "big", "test"), { recursive: true });
+    const many = (lines) => "const x = 1;\n".repeat(lines);
+    writeFileSync(path.join(root, "packages", "big", "new.mjs"), many(1001));
+    writeFileSync(path.join(root, "packages", "big", "known.mjs"), many(1200));
+    writeFileSync(path.join(root, "packages", "big", "test", "big.test.mjs"), many(2000));
+    const baseline = new Set(["packages/big/known.mjs"]);
+    const { errors, watch } = fileSizeReport(root, baseline);
+    assert.equal(errors.length, 1, "only the file that is not in the baseline");
+    assert.match(errors[0], /packages\/big\/new\.mjs: 1001 lines is past the 1000-line limit/);
+    assert.deepEqual(
+      watch.map((entry) => entry.relative),
+      ["packages/big/known.mjs", "packages/big/new.mjs"],
+      "watch list is longest first and skips tests",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a baselined file that fits under the limit again must leave the baseline", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "file-size-shrunk-"));
+  try {
+    mkdirSync(path.join(root, "packages", "big"), { recursive: true });
+    writeFileSync(path.join(root, "packages", "big", "split.mjs"), "const x = 1;\n".repeat(900));
+    const { errors, watch } = fileSizeReport(root, new Set(["packages/big/split.mjs"]));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /now 900 lines, so remove it from FILE_SIZE_BASELINE/);
+    assert.equal(watch.length, 1, "900 lines is still worth watching");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

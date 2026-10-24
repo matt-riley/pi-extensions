@@ -228,6 +228,45 @@ export function sharedHelperErrors(root) {
   return errors;
 }
 
+// A file past 1000 lines stops being reviewable, and the two that already are
+// must not be joined by a third: the split is a chore, so the next one should
+// cost a decision rather than appear inside a feature diff. Everything past 800
+// is printed on every run, so growth is visible before it becomes that chore.
+const FILE_SIZE_LIMIT = 1000;
+const FILE_SIZE_WATCH = 800;
+// Recorded when the rule landed. An entry that fits under the limit again must
+// be removed, so the list can only shrink; it is empty because both files that
+// were over it have been split. Leaving it empty is the point: a new offender is
+// a decision, not a line added here to silence the gate.
+const FILE_SIZE_BASELINE = new Set();
+
+const lineCount = (text) => text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+
+/** Files too long to review, plus the watch list that makes growth visible. */
+export function fileSizeReport(root, baseline = FILE_SIZE_BASELINE) {
+  const errors = [];
+  const watch = [];
+  for (const dir of ["packages", "shared"]) {
+    if (!fs.existsSync(path.join(root, dir))) continue;
+    for (const file of fs.readdirSync(path.join(root, dir), { recursive: true })) {
+      if (!/\.(?:ts|mjs)$/.test(file) || file.endsWith(".d.ts")) continue;
+      const relative = `${dir}/${file.split(path.sep).join("/")}`;
+      // A test file accumulates cases by design; the rule is about reading code.
+      if (relative.split("/").includes("test")) continue;
+      const lines = lineCount(fs.readFileSync(path.join(root, relative), "utf8"));
+      if (lines > FILE_SIZE_LIMIT && !baseline.has(relative))
+        errors.push(
+          `${relative}: ${lines} lines is past the ${FILE_SIZE_LIMIT}-line limit — split it`,
+        );
+      if (lines <= FILE_SIZE_LIMIT && baseline.has(relative))
+        errors.push(`${relative}: now ${lines} lines, so remove it from FILE_SIZE_BASELINE`);
+      if (lines > FILE_SIZE_WATCH) watch.push({ relative, lines });
+    }
+  }
+  watch.sort((left, right) => right.lines - left.lines);
+  return { errors, watch };
+}
+
 // Essential prompt dependencies belong to this checkout, not a personal
 // library that may be empty locally or absent on a clean runner.
 const SKILL_REFERENCE = /\bthe (?:`([a-z0-9][a-z0-9-]*)`|([a-z0-9]+(?:-[a-z0-9]+)+)) skill\b/gi;
@@ -284,11 +323,15 @@ export function checkSkillReferences(root) {
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const root = path.resolve(import.meta.dirname, "..");
+  const sizes = fileSizeReport(root);
+  for (const { relative, lines } of sizes.watch)
+    console.log(`watch: ${relative} is ${lines} lines`);
   const errors = [
     ...checkConventions(root),
     ...controlByteErrors(root),
     ...sharedHelperErrors(root),
     ...checkSkillReferences(root),
+    ...sizes.errors,
   ];
   for (const error of errors) console.error(error);
   if (!errors.length) console.log("Repository conventions pass");
