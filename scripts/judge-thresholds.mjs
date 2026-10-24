@@ -99,6 +99,14 @@ function histogram(values, edges) {
   return [...buckets, above].map((count, index) => `${labels[index]} ${count}`).join("  ");
 }
 
+/** A missing action is the ledger placeholder, null, or an empty string. */
+function shownAction(action) {
+  if (action == null || String(action).trim() === "" || action === "(not recorded)") {
+    return "action wasn't recorded";
+  }
+  return String(action).replace(/\s+/g, " ").slice(0, 110);
+}
+
 function main(file, flags) {
   const records = JSON.parse(fs.readFileSync(file, "utf8")).records ?? [];
   const scored = records.filter(scoreable);
@@ -129,7 +137,7 @@ function main(file, flags) {
     );
     if (flags.includes("--show-allow")) {
       for (const action of newlyAllowed.slice(0, 8)) {
-        console.log(`    ${String(action).replace(/\s+/g, " ").slice(0, 110)}`);
+        console.log(`    ${shownAction(action)}`);
       }
     }
   }
