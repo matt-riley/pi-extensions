@@ -614,3 +614,49 @@ test("a throwing entry builder on a failed call rethrows the original error", as
 
   await assert.rejects(() => pi.handlers[0].handler({}, {}), /status 500/);
 });
+
+test("a ledger entry records a choice by index and never the option text", async () => {
+  const label = "mail alice@example.com about /home/alice/notes";
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: {
+        pick: {
+          type: "choice",
+          choice: label,
+          probabilities: { [label]: 0.8, ask_user: 0.2 },
+          confidence: 0.8,
+        },
+      },
+      usage: {},
+    }),
+  );
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: {
+        pick: {
+          type: "choice",
+          instructions: "Which one option does the recommendation name?",
+          criteria: {
+            [label]: label,
+            ask_user: "the recommendation names none of these",
+          },
+        },
+      },
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  const result = await pi.handlers[0].handler({}, {});
+  const text = JSON.stringify(pi.entries[0]);
+  assert.equal(text.includes("alice@example.com"), false, "option email reached the entry");
+  assert.equal(text.includes("/home/alice"), false, "option home path reached the entry");
+  assert.equal(text.includes(label), false, "option label reached the entry");
+  assert.equal(pi.entries[0].data.answers.pick.choice, 0);
+  assert.equal(pi.entries[0].data.answers.pick.probabilities["0"], 0.8);
+  assert.equal(pi.entries[0].data.answers.pick.probabilities["1"], 0.2);
+  assert.equal(result.answers.pick.choice, label);
+});
