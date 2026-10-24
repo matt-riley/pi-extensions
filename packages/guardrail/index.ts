@@ -20,6 +20,7 @@ import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
+import { bindSystemOne } from "../../shared/systemone.mjs";
 import { evaluateToolCall } from "./policy.mjs";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -86,6 +87,7 @@ function readScriptRefs(refs, cwd) {
 }
 
 export default function piGuardrailExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   const enqueueDialog = createDialogQueue();
   const state = {
     enabled: !disabledByEnv(),

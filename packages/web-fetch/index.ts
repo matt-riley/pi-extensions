@@ -14,7 +14,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
-import { resolveConfig } from "../../shared/systemone.mjs";
+import { bindSystemOne, resolveConfig } from "../../shared/systemone.mjs";
 import { answerFromPage, formatAnswer } from "./answer.mjs";
 import { allocateItemBudget, chargeBudget } from "./batch.mjs";
 import { fetchPage, fetchSmart } from "./fetch.mjs";
@@ -105,6 +105,7 @@ function buildFetchOptions(params, settings, { format, maxChars, timeoutMs }) {
 }
 
 export default function piWebFetchExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   pi.registerTool({
     name: "web_fetch",
     label: "web_fetch",

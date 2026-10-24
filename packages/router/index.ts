@@ -33,7 +33,7 @@ import type {
   ModelRouteRequest,
 } from "@earendil-works/pi-coding-agent";
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne } from "../../shared/systemone.mjs";
 import {
   ensureRouterConfig,
   readRouterConfig,
@@ -163,6 +163,7 @@ export default function piRouterExtension(
   pi: ExtensionAPI,
   deps: { ask?: typeof askSystemOne; configPath?: string } = {},
 ) {
+  bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
   const configPath = deps.configPath ?? routerConfigPath();
   // First run: leave a file with the built-in lists to open and edit.

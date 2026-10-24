@@ -40,6 +40,7 @@ function harness({
   choices = [],
   inputs = [],
   tools = [],
+  modelRegistry,
 } = {}) {
   const handlers = {};
   const commands = {};
@@ -70,6 +71,7 @@ function harness({
     cwd,
     ui,
     sessionManager: { getBranch: () => [{ message: { role: "user", content: "do the thing" } }] },
+    ...(modelRegistry ? { modelRegistry } : {}),
   };
 
   piGuardrailExtension(pi);
@@ -188,6 +190,52 @@ test("with no UI the flagged band is refused, never waved through", async () => 
   const result = await h.run("bash", { command: "rm -rf ~/Documents/notes" });
   assert.equal(result.block, true);
   assert.equal(h.dialogs.length, 0);
+});
+
+test("the ambiguous band uses Pi classify when a TypeSafe classifier is registered", async () => {
+  const calls = [];
+  const modelRegistry = {
+    findOfType() {
+      return undefined;
+    },
+    getModelsOfType() {
+      return [
+        {
+          id: "jev-latest",
+          type: "classifier",
+          provider: "typesafe",
+          api: "typesafe-system-one",
+          baseUrl: "https://api.typesafe.ai/v1",
+        },
+      ];
+    },
+    async classify(_model, context) {
+      calls.push(context);
+      const answers = {};
+      for (const [id, question] of Object.entries(context.questions ?? {})) {
+        answers[id] =
+          question.type === "score"
+            ? { type: "score", score: 0 }
+            : { type: "bool", probability: 0.05 };
+      }
+      return {
+        stopReason: "stop",
+        answers,
+        usage: {
+          input: 3,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 4,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+    },
+  };
+  const h = harness({ hasUI: false, modelRegistry });
+  const result = await h.run("bash", { command: "rm src/app.ts" });
+  assert.equal(calls.length, 1, "the guardrail did not call classify");
+  assert.equal(result, undefined);
 });
 
 test("the judge is consulted for the ambiguous band and its absence fails closed", async () => {

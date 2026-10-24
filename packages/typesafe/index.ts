@@ -11,7 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 
-import { askSystemOne, formatAnswers } from "../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne, formatAnswers } from "../../shared/systemone.mjs";
 import {
   askFiles,
   formatFileResults,
@@ -71,6 +71,7 @@ const QUESTION_SCHEMA = Type.Object(
 );
 
 export default function piTypesafeExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   pi.registerTool({
     name: ASK_TOOL,
     label: "typesafe_ask",

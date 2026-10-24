@@ -109,7 +109,7 @@ touching thresholds, question wording, or the shape tables.
 | --- | --- | --- |
 | `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
 | `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
-| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone.mjs` |
+| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
 
 In-session: `/guardrail` for status and counters, `/guardrail off` and
 `/guardrail on` to disarm and re-arm.

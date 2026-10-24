@@ -7,7 +7,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne } from "../../shared/systemone.mjs";
 import { buildQuestions } from "./battery.mjs";
 import { extractLastUserPrompt, usableNoul, validateCandidate } from "./lib.mjs";
 import { collectProbe } from "./probe.mjs";
@@ -60,6 +60,7 @@ export default function piPromptCoachExtension(
   pi: ExtensionAPI,
   deps: { ask?: typeof askSystemOne; exec?: CoachExec; fetchImpl?: CoachFetch } = {},
 ) {
+  bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
   const run: CoachExec = deps.exec ?? ((cmd, args, opts) => pi.exec(cmd, args, opts));
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;

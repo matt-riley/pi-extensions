@@ -19,7 +19,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
-import { resolveApiKey } from "../../shared/systemone.mjs";
+import { bindSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
 import { appendNudge, createNudgeState, observeToolResult, resetNudgeState } from "./nudge.mjs";
 import { judgeFailure, memoKeyFor, shouldTriage, triageText } from "./triage.mjs";
 
@@ -56,6 +56,7 @@ function actionOf(input) {
 }
 
 export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   const state = createNudgeState();
 
   pi.on("session_start", async () => {

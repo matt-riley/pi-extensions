@@ -130,7 +130,9 @@ clears the reading.
   changed nothing earns the remote check above. Each is a single request with a
   4-second timeout, and
   credentials resolve exactly as they do for the guardrail
-  (`shared/systemone.mjs`). Every failure degrades to no extra line.
+  (`shared/systemone.mjs`). Inside Pi the request uses `classify()` when a
+  TypeSafe classifier is registered, and the direct HTTP transport otherwise.
+  Every failure degrades to no extra line.
 - **Debug tags.** At nudge time, added lines in `git diff -U0 HEAD` and untracked
   files (up to 200, 1 MB each) are scanned for `[DEBUG-` and listed as
   `path:line`. Tags already committed are not reported. Outside a git repo the

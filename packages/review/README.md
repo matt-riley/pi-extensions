@@ -50,7 +50,8 @@ quotation was found. Dropped findings are listed separately with the reason.
 
 Shared with `pi-typesafe`: `TYPESAFE_API_KEY` (or `LORE_TYPESAFE_API_KEY`, or
 `typesafe.apiKey` in the lore config), `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`,
-`TYPESAFE_TIMEOUT_MS`. See `shared/systemone.mjs`.
+`TYPESAFE_TIMEOUT_MS`. See `shared/systemone.mjs`. Inside Pi the request uses
+`classify()` when a TypeSafe classifier is registered.
 
 ## Tests
 

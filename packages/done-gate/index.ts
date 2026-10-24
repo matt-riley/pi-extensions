@@ -29,6 +29,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { messageText } from "../../shared/message-text.mjs";
+import { bindSystemOne } from "../../shared/systemone.mjs";
 // Namespace import too: /reload can serve a cached gate.mjs, and a binding added
 // since the process started has to be read as a property, where a named import
 // fails. See the livePaths call below.
@@ -51,6 +52,7 @@ const MAX_UNTRACKED_FILES = 200;
 const MAX_UNTRACKED_BYTES = 1_000_000;
 
 export default function piDoneGateExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   const state = createGateState();
   let lastClaim: string | undefined;
 

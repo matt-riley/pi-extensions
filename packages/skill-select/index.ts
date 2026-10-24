@@ -8,6 +8,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { bindSystemOne } from "../../shared/systemone.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { homedir } from "node:os";
 
@@ -24,6 +25,7 @@ import { SKILL_SELECT_TOOLS } from "./tools.mjs";
 const SELECT_TOOL = SKILL_SELECT_TOOLS[0];
 
 export default function piSkillSelectExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   pi.registerTool({
     name: SELECT_TOOL,
     label: "skill_select",
