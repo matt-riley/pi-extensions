@@ -175,3 +175,44 @@ test("a throwing appendEntry still returns the Jev answer", async () => {
   const result = await pi.handlers[0].handler({}, {});
   assert.equal(result.answers.destructive.noul, 0.2);
 });
+
+test("a ledger entry never contains state contents, question text, or the api key", async () => {
+  const stateSentinel = "STATE-SENTINEL-9f3a-not-a-secret";
+  const questionSentinel = "QUESTION-SENTINEL-user-typed-this";
+  const apiKey = "ts-secret-key";
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: {
+        destructive: { type: "noul", noul: 0.1 },
+        echoed: { type: "choice", choice: apiKey, confidence: 0.4 },
+      },
+      usage: {},
+    }),
+  );
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: stateSentinel, authorization: apiKey },
+      questions: {
+        destructive: {
+          type: "noul",
+          instructions: `Looking at \`note\`: ${questionSentinel}`,
+          criteria: { true: questionSentinel, false: "no" },
+        },
+      },
+      env: { TYPESAFE_API_KEY: apiKey },
+      fetchImpl,
+    }),
+  );
+
+  await pi.handlers[0].handler({}, {});
+  const entry = pi.entries[0];
+  const text = JSON.stringify(entry);
+  assert.equal(text.includes(questionSentinel), false, "question text reached the entry");
+  assert.equal(text.includes(stateSentinel), false, "state contents reached the entry");
+  assert.equal(text.includes(apiKey), false, "api key reached the entry");
+  assert.equal(entry.data.state, undefined);
+  assert.ok(entry.data.redactions >= 1);
+  assert.equal(entry.data.answers.destructive.noul, 0.1);
+});
