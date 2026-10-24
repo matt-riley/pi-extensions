@@ -926,24 +926,28 @@ export async function askSystemOne({
     const errorClass = ledgerErrorClass(error);
     const policy =
       failurePolicy === "fail-open" || failurePolicy === "fail-closed" ? failurePolicy : null;
-    appendLedgerEntry(
-      sessionPi,
-      buildLedgerEntry({
-        feature: bag.feature,
-        model: null,
-        requestedModel: bag.requestedModel,
-        questions,
-        answers: null,
-        latencyMs: Date.now() - started,
-        transport: bag.transport,
-        redactions: bag.redactions,
-        privacyRedactions: bag.privacyRedactions,
-        outcome: policy ?? errorClass,
-        errorClass: policy ? errorClass : undefined,
-        literals: bag.literals,
-        status: errorClass === "http" ? ledgerHttpStatus(error) : undefined,
-      }),
-    );
+    try {
+      appendLedgerEntry(
+        sessionPi,
+        buildLedgerEntry({
+          feature: bag.feature,
+          model: null,
+          requestedModel: bag.requestedModel,
+          questions,
+          answers: null,
+          latencyMs: Date.now() - started,
+          transport: bag.transport,
+          redactions: bag.redactions,
+          privacyRedactions: bag.privacyRedactions,
+          outcome: policy ?? errorClass,
+          errorClass: policy ? errorClass : undefined,
+          literals: bag.literals,
+          status: errorClass === "http" ? ledgerHttpStatus(error) : undefined,
+        }),
+      );
+    } catch {
+      // A throwing builder must not replace the Jev error the gate is handling.
+    }
     throw error;
   }
 }
