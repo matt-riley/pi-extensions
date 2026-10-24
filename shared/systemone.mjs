@@ -8,6 +8,7 @@
 // fallback when that registry is missing — every scripts/ entry point, and any
 // host that has not registered the provider. bindSystemOne threads the Pi
 // context through the extension handlers so the .mjs callers stay unchanged.
+// The same hook appends a jev-decision session entry. The entry is local.
 //
 // Plain .mjs so node --test can cover it without a TS loader (see AGENTS.md).
 // The extension entrypoint owns tool registration; everything here is pure

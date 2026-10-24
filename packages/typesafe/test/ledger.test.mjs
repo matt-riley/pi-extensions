@@ -271,7 +271,9 @@ test("a ledger entry never contains state contents, question text, or the api ke
 
 test("a failed Jev call records an error class and still throws", async () => {
   const bodySentinel = "BODY-SENTINEL-do-not-record";
-  const { fetchImpl } = capturingFetch(() => jsonResponse({ error: bodySentinel }, { status: 500 }));
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({ error: bodySentinel }, { status: 500 }),
+  );
   const pi = sessionPi();
   pi.on("tool_call", () =>
     askSystemOne({

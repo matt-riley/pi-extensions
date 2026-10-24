@@ -8,6 +8,10 @@
 // threshold sets you want to compare. A candidate only earns a change when the
 // labeled cases in scripts/validate-judge.mjs stay quiet too.
 //
+// CURRENT.tunedModel is the Jev those lines were measured on (jev-1.13.0).
+// A ledger export (`replay-corpus.mjs --from-ledger`) is the same file shape,
+// with action "(not recorded)" because the session entry never stored the command.
+//
 // Read-only: it reads a JSON file and prints.
 
 import fs from "node:fs";

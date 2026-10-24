@@ -33,7 +33,14 @@ const CONFIG_KEYS = new Set(["command", "cmd", "script", "shell"]);
 const PATH_KEYS = new Set(["path", "file_path", "filePath", "target", "filename", "destination"]);
 
 function parseArgs(argv) {
-  const opts = { samples: 0, list: null, max: Infinity, judge: 0, judgeJson: null, fromLedger: null };
+  const opts = {
+    samples: 0,
+    list: null,
+    max: Infinity,
+    judge: 0,
+    judgeJson: null,
+    fromLedger: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--samples") opts.samples = Number(argv[++i]) || 0;

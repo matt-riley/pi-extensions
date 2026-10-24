@@ -181,7 +181,9 @@ export function buildLedgerEntry({
     feature,
     model,
     requestedModel,
-    questions: Object.entries(questions ?? {}).map(([id, question]) => questionRecord(id, question)),
+    questions: Object.entries(questions ?? {}).map(([id, question]) =>
+      questionRecord(id, question),
+    ),
     answers: safeAnswers,
     latencyMs,
     transport,

@@ -147,12 +147,57 @@ redaction is never silent. Secrets are replaced rather than dropped, because a
 question about *why* a command touches a credential still needs a sentence to
 reason about.
 
+## Decision ledger
+
+Every call through `askSystemOne` appends one local session entry:
+
+```js
+pi.appendEntry("jev-decision", data);
+```
+
+That is Pi 1.4's `appendEntry(customType: string, data?: unknown): void`. The
+custom entry stays in the session and does not enter the model context. The
+ledger makes no network request of its own.
+
+`data` holds the calling package or script, the model TypeSafe reported and the
+model that was requested, question ids and kinds, the answers (including
+probabilities or scores), latency, the transport (`classify` or `http`),
+redaction counts, and an outcome. The outcome is `ok`, an error class
+(`missing-key`, `validation`, `timeout`, `aborted`, `http`, `invalid-json`,
+`network`, `classify`), or `fail-open` / `fail-closed` when the caller passes
+`failurePolicy`. A policy outcome also keeps `errorClass`. The HTTP class
+keeps the status code, not the response body.
+
+State, secrets, and question text are not stored. Question instructions can
+carry user data on `typesafe_ask`, so the entry keeps the id and the kind. If
+an answer echoes the API key, that string is redacted before the entry is
+written. A missing or throwing `appendEntry` is ignored: the judgment still
+returns, or still throws, exactly as it would have.
+
+The guardrail thresholds were measured on `jev-1.13.0`. That id is
+`THRESHOLDS.tunedModel` in `packages/guardrail/judge.mjs` and `CURRENT.tunedModel`
+in `scripts/judge-thresholds.mjs`. When the reported model differs,
+`ctx.ui.notify(title, "warning")` runs once per session. The title says the
+thresholds may need re-tuning and how to re-run `scripts/replay-corpus.mjs` and
+`scripts/judge-thresholds.mjs`. Nothing is re-tuned automatically.
+
+Guardrail entries export into the replay-corpus sample shape. Other features
+ask different questions, so they are left out, and the ledger never kept the
+command, so the exported action is `(not recorded)`. `judge-thresholds` can
+still score the signals.
+
+```sh
+node scripts/replay-corpus.mjs --from-ledger session.jsonl --judge-json sample.json
+node scripts/judge-thresholds.mjs sample.json
+```
+
 ## Tests
 
 `npm test` — `systemone.test.mjs` covers the direct HTTP transport, validation,
 timeout/abort and formatting; `systemone-classify.test.mjs` covers the Pi
 classify path, the `jev-1.13.0` pin, 429/529, redaction, and the fail-open /
-fail-closed gates; `files.test.mjs`, `relevant.test.mjs` and
-`spans.test.mjs` cover path resolution, the secret and symlink guards, the
-command gate, fan-out, ranking and range selection; `extension.test.mjs` covers
-the tool wiring. All with the network stubbed out.
+fail-closed gates; `ledger.test.mjs` covers the session entry, what it refuses
+to store, the drift warning, and a throwing `appendEntry`; `files.test.mjs`,
+`relevant.test.mjs` and `spans.test.mjs` cover path resolution, the secret and
+symlink guards, the command gate, fan-out, ranking and range selection;
+`extension.test.mjs` covers the tool wiring. All with the network stubbed out.

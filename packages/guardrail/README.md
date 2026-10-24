@@ -100,6 +100,22 @@ caught, 4 deferred to the judge.
 sets against a saved shadow sample, for free: same judgments, any number of
 lines. `--show-allow` lists what each candidate would newly clear.
 
+Those lines were measured on `jev-1.13.0`, recorded as `THRESHOLDS.tunedModel`
+next to the numbers in `judge.mjs` (and as `CURRENT.tunedModel` in
+`scripts/judge-thresholds.mjs`). Every Jev call also appends a local
+`jev-decision` session entry. If TypeSafe reports a different model, pi warns
+once per session that the lines may need another replay. The thresholds are
+not moved. The entry does not store the command. Guardrail entries can be
+scored again without the command text:
+
+```sh
+node scripts/replay-corpus.mjs --from-ledger session.jsonl --judge-json sample.json
+node scripts/judge-thresholds.mjs sample.json
+```
+
+The exported action is `(not recorded)`. Signals are the noul and score values
+the ledger kept.
+
 Both scripts are read-only and never execute what they read. Run them after
 touching thresholds, question wording, or the shape tables.
 
