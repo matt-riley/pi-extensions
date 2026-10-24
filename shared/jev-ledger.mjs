@@ -44,10 +44,18 @@ function answerRecord(answer) {
   return record;
 }
 
-/** Pi 1.4: appendEntry(customType, data?) — absent on stubs, and not the model context. */
+/**
+ * Pi 1.4: appendEntry(customType, data?) persists a custom entry that does not
+ * enter the model context. A missing or throwing hook is a host problem, not
+ * a reason to fail the judgment the gate is waiting on.
+ */
 export function appendLedgerEntry(pi, entry) {
   if (typeof pi?.appendEntry !== "function") return;
-  pi.appendEntry("jev-decision", entry);
+  try {
+    pi.appendEntry("jev-decision", entry);
+  } catch {
+    // The session could not take the entry. The call still stands.
+  }
 }
 
 /** The data object stored on a jev-decision entry. No state, no request body. */
