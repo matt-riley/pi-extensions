@@ -661,6 +661,59 @@ test("a ledger entry records a choice by index and never the option text", async
   assert.equal(result.answers.pick.choice, label);
 });
 
+test("choice probabilities follow the option index when the labels are digits", async () => {
+  const phone = "07700900123";
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: {
+        rank: {
+          type: "choice",
+          choice: "2",
+          probabilities: { 1: 0.1, 2: 0.7, 3: 0.2 },
+        },
+        contact: {
+          type: "choice",
+          choice: phone,
+          probabilities: { [phone]: 0.9, other: 0.1 },
+        },
+      },
+      usage: {},
+    }),
+  );
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: {
+        rank: {
+          type: "choice",
+          instructions: "Which option does `note` name?",
+          criteria: { 1: "one", 2: "two", 3: "three" },
+        },
+        contact: {
+          type: "choice",
+          instructions: "Which contact does `note` name?",
+          criteria: { [phone]: "that number", other: "someone else" },
+        },
+      },
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  await pi.handlers[0].handler({}, {});
+  const answers = pi.entries[0].data.answers;
+  assert.equal(answers.rank.choice, 1);
+  assert.equal(answers.rank.probabilities[String(answers.rank.choice)], 0.7);
+  assert.deepEqual(answers.rank.probabilities, { 0: 0.1, 1: 0.7, 2: 0.2 });
+  const text = JSON.stringify(pi.entries[0]);
+  assert.equal(text.includes(phone), false, "digit-only label reached the entry");
+  assert.equal(answers.contact.choice, 0);
+  assert.equal(answers.contact.probabilities["0"], 0.9);
+  assert.equal(answers.contact.probabilities["1"], 0.1);
+});
+
 test("every ledger entry carries schema version 1", async () => {
   const { fetchImpl } = capturingFetch((n) =>
     n === 1
