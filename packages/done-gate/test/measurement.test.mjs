@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import extension from "../index.ts";
+import { measurementDeadlineMs } from "../measurement.mjs";
 const bashResult = (output, overrides = {}) => ({
   isError: false,
   result: { structuredContent: { output, exit_code: 0, truncated: false, ...overrides } },
@@ -220,4 +221,22 @@ test("cancellation during execution releases the lock without reporting partial 
   await assert.rejects(h.run({}, controller.signal), /abort/i);
   h.ctx.executeTool = async () => bashResult('{"completed":2,"cached":0}');
   assert.equal((await h.run()).structuredContent.arms.candidate.samples.length, 3);
+});
+
+test("the measurement deadline covers every trial the schema allows", () => {
+  // Defaults: 3 runs of two arms at 30s each. A slow-but-honest command must not
+  // be aborted before its last trial.
+  assert.equal(
+    measurementDeadlineMs({ runs: 3, timeout: 30, baseline: "b" }),
+    3 * 2 * 30_000 + 30_000,
+  );
+  assert.equal(
+    measurementDeadlineMs({ runs: 10, timeout: 60, baseline: undefined }),
+    10 * 60_000 + 30_000,
+  );
+  assert.ok(
+    measurementDeadlineMs({ runs: 10, timeout: 60, baseline: "b" }) >
+      measurementDeadlineMs({ runs: 10, timeout: 60 }),
+    "a baseline arm doubles the work and the deadline",
+  );
 });

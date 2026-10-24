@@ -145,7 +145,7 @@ remote evidence clears the reading.
   changed nothing earns the remote check above. Each is a single request with a
   4-second timeout, and
   credentials resolve exactly as they do for the guardrail
-  (`shared/systemone.mjs`). Inside Pi the request uses `classify()` when a
+  (`shared/systemone-config.mjs`). Inside Pi the request uses `classify()` when a
   TypeSafe classifier is registered, and the direct HTTP transport otherwise.
   Every failure degrades to no extra line.
 - **Limit:** native `edit`/`write` calls arm the gate; shell-only edits do not
@@ -182,7 +182,9 @@ For an application metric rather than elapsed time, set `metric: "value"` and
 The tool executes 3–10 trials per arm through normal nested bash dispatch.
 Baseline/candidate order alternates; every trial needs explicit host success,
 untruncated output and the same known Git fingerprint before/after. Each command
-has a 1–60s timeout (30s default); the whole measurement has a 120s deadline.
+has a 1–60s timeout (30s default); the whole measurement's deadline is derived
+from the trials asked for (30s of slack plus every command's own timeout), so
+the defaults cannot expire before the last trial.
 Failures, cancellation and revision changes produce no successful report.
 
 The structured result retains raw samples, completed/cache counters, revision,

@@ -51,6 +51,16 @@ function measurementOptions(params) {
   return { command, baseline, expected, runs, metric, unit, timeout };
 }
 
+/**
+ * The whole run must fit one deadline, and the schema allows 10 runs of two arms
+ * at 60s each. Derive it from what was asked for instead of a fixed 120s, which
+ * could not finish the defaults (3 runs x 2 arms x 30s) on a slow command.
+ */
+export function measurementDeadlineMs({ runs, timeout, baseline }) {
+  const arms = baseline === undefined ? 1 : 2;
+  return runs * arms * timeout * 1000 + 30_000;
+}
+
 const sampleSchema = Type.Object({
   value: Type.Number(),
   elapsed_ms: Type.Number(),
@@ -115,7 +125,7 @@ export function installMeasurement(pi) {
       measuring = true;
       const boundedSignal = AbortSignal.any([
         ...(signal ? [signal] : []),
-        AbortSignal.timeout(120000),
+        AbortSignal.timeout(measurementDeadlineMs({ runs, timeout, baseline })),
       ]);
       try {
         boundedSignal.throwIfAborted();
