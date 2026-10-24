@@ -14,8 +14,15 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { routeVerdict } from "../packages/guardrail/judge.mjs";
+import { TUNED_MODEL } from "../shared/jev-ledger.mjs";
 
-export const CURRENT = { destructive: 0.5, intentMismatch: 0.6, credentials: 0.6, blastRadius: 2 };
+export const CURRENT = {
+  tunedModel: TUNED_MODEL,
+  destructive: 0.5,
+  intentMismatch: 0.6,
+  credentials: 0.6,
+  blastRadius: 2,
+};
 
 // The calibration published for this four-dimension split puts the lines
 // higher: destructive 0.9, exfiltration 0.7, beyond-scope 0.85, impact 2.5.
