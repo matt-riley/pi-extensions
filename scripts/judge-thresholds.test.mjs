@@ -1,3 +1,7 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -148,4 +152,31 @@ test("loosening a line can only move calls from confirm to allow", () => {
   assert.equal(b.counts.confirm, a.counts.confirm - 1);
   assert.equal(b.counts.block, a.counts.block, "blocking is not threshold-driven here");
   assert.deepEqual(b.newlyAllowed, ["go test -race ./..."]);
+});
+
+test("judge-thresholds --show-allow says when the action was not recorded", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jev-allow-"));
+  const file = path.join(dir, "sample.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      records: [
+        { signals: { intent_mismatch: 0.65 }, action: "(not recorded)" },
+        { signals: { intent_mismatch: 0.65 }, action: null },
+        { signals: { intent_mismatch: 0.65 } },
+        { signals: { intent_mismatch: 0.65 }, action: "go test -race ./..." },
+      ],
+    }),
+  );
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/judge-thresholds.mjs", file, "--show-allow"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /action wasn't recorded/);
+  assert.equal(result.stdout.includes("(not recorded)"), false);
+  assert.equal(/\bnull\b/.test(result.stdout), false);
+  assert.equal(/\bundefined\b/.test(result.stdout), false);
+  assert.match(result.stdout, /go test -race/);
 });
