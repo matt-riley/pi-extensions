@@ -101,9 +101,7 @@ function histogram(values, edges) {
 
 /** A missing action is the ledger placeholder, null, or an empty string. */
 function shownAction(action) {
-  if (action == null || String(action).trim() === "" || action === "(not recorded)") {
-    return "action wasn't recorded";
-  }
+  if (action == null || String(action).trim() === "" || action === "(not recorded)") return null;
   return String(action).replace(/\s+/g, " ").slice(0, 110);
 }
 
@@ -136,9 +134,15 @@ function main(file, flags) {
         `newly allowed ${newlyAllowed.length}`,
     );
     if (flags.includes("--show-allow")) {
-      for (const action of newlyAllowed.slice(0, 8)) {
-        console.log(`    ${shownAction(action)}`);
+      const recorded = [];
+      let missing = 0;
+      for (const action of newlyAllowed) {
+        const line = shownAction(action);
+        if (line === null) missing += 1;
+        else if (recorded.length < 8) recorded.push(line);
       }
+      for (const line of recorded) console.log(`    ${line}`);
+      if (missing > 0) console.log(`    action wasn't recorded for ${missing} records`);
     }
   }
 }
