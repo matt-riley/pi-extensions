@@ -104,6 +104,7 @@ export function buildLedgerEntry({
   redactions,
   privacyRedactions,
   outcome,
+  errorClass,
   literals,
   status,
 } = {}) {
@@ -132,6 +133,7 @@ export function buildLedgerEntry({
     redactions,
     privacyRedactions,
     outcome,
+    ...(typeof errorClass === "string" ? { errorClass } : {}),
     ...(Number.isInteger(status) ? { status } : {}),
   };
 }

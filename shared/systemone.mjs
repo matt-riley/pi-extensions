@@ -805,6 +805,7 @@ export async function askSystemOne({
   retryDelayMs = RETRY_BASE_MS,
   ctx,
   feature,
+  failurePolicy,
 } = {}) {
   const started = Date.now();
   const sessionPi = systemOneAls.getStore()?.pi;
@@ -899,6 +900,8 @@ export async function askSystemOne({
     return result;
   } catch (error) {
     const errorClass = ledgerErrorClass(error);
+    const policy =
+      failurePolicy === "fail-open" || failurePolicy === "fail-closed" ? failurePolicy : null;
     appendLedgerEntry(
       sessionPi,
       buildLedgerEntry({
@@ -911,7 +914,8 @@ export async function askSystemOne({
         transport: bag.transport,
         redactions: bag.redactions,
         privacyRedactions: bag.privacyRedactions,
-        outcome: errorClass,
+        outcome: policy ?? errorClass,
+        errorClass: policy ? errorClass : undefined,
         literals: bag.literals,
         status: errorClass === "http" ? ledgerHttpStatus(error) : undefined,
       }),
