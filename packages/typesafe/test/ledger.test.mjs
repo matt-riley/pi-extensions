@@ -615,6 +615,30 @@ test("a throwing entry builder on a failed call rethrows the original error", as
   await assert.rejects(() => pi.handlers[0].handler({}, {}), /status 500/);
 });
 
+test("a transport throw that cannot be stringified is rethrown unchanged", async () => {
+  const thrown = Object.create(null);
+  const { fetchImpl } = capturingFetch(() => {
+    throw thrown;
+  });
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  await assert.rejects(
+    () => pi.handlers[0].handler({}, {}),
+    (error) => {
+      assert.equal(error, thrown);
+      return true;
+    },
+  );
+});
+
 test("a ledger entry records a choice by index and never the option text", async () => {
   const label = "mail alice@example.com about /home/alice/notes";
   const { fetchImpl } = capturingFetch(() =>
