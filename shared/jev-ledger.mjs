@@ -81,17 +81,19 @@ function criteriaLabels(question) {
   return null;
 }
 
-function probabilityRecord(probabilities, labels) {
+function probabilityRecord(probabilities, labels, question) {
   if (!probabilities || typeof probabilities !== "object" || Array.isArray(probabilities)) {
     return undefined;
   }
+  // Score levels are already indexes ("0", "1", "2"). A choice key is the
+  // option label, and that label may be only digits, so every choice key is
+  // looked up in the criteria. Anything that is not a label is dropped.
+  const keepDigitKeys = question?.type === "score";
   const out = {};
   for (const [key, value] of Object.entries(probabilities)) {
     const numeric = finiteNumber(value);
     if (numeric === null) continue;
-    // Score answers already key levels by index ("0", "1", "2"). Those stay.
-    // A choice key is the option label; store its position and drop the text.
-    if (/^\d+$/.test(key)) {
+    if (keepDigitKeys && /^\d+$/.test(key)) {
       out[key] = numeric;
       continue;
     }
@@ -115,7 +117,7 @@ function answerRecord(answer, question) {
     const index = labels.indexOf(answer.choice);
     if (index !== -1) record.choice = index;
   }
-  const probabilities = probabilityRecord(answer.probabilities, labels);
+  const probabilities = probabilityRecord(answer.probabilities, labels, question);
   if (probabilities) record.probabilities = probabilities;
   return record;
 }
