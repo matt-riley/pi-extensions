@@ -567,7 +567,10 @@ export function bindSystemOne(pi) {
         execute:
           typeof def?.execute === "function"
             ? (...args) =>
-                runWithSystemOneContext(args[4], () => def.execute(...args), { attachUsage: true })
+                runWithSystemOneContext(args[4], () => def.execute(...args), {
+                  attachUsage: true,
+                  pi,
+                })
             : def?.execute,
       });
   }
@@ -579,7 +582,8 @@ export function bindSystemOne(pi) {
         def && typeof def.handler === "function"
           ? {
               ...def,
-              handler: (...args) => runWithSystemOneContext(args[1], () => def.handler(...args)),
+              handler: (...args) =>
+                runWithSystemOneContext(args[1], () => def.handler(...args), { pi }),
             }
           : def,
       );
@@ -591,7 +595,8 @@ export function bindSystemOne(pi) {
         def && typeof def.route === "function"
           ? {
               ...def,
-              route: (request, ctx) => runWithSystemOneContext(ctx, () => def.route(request, ctx)),
+              route: (request, ctx) =>
+                runWithSystemOneContext(ctx, () => def.route(request, ctx), { pi }),
             }
           : def,
       );
