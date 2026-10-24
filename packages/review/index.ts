@@ -7,16 +7,19 @@
 //   verify_findings  — check review findings against the diff they claim to
 //                      be about, dropping the ones that quote code that is
 //                      not there
+//   blast_radius     — list the callers outside a diff of every definition it
+//                      touches, and the ones no test mentions
 //
-// Both are advisory: they return text the agent reads, and neither blocks a
-// tool call. Both are on demand, because a Jev request on every edit would be
-// paid for on changes nobody asked about.
+// All are advisory: they return text the agent reads, and none blocks a tool
+// call. All are on demand, because a Jev request on every edit would be paid
+// for on changes nobody asked about.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
-import { OPEN_READ } from "../../shared/tool-annotations.mjs";
+import { LOCAL_READ, OPEN_READ } from "../../shared/tool-annotations.mjs";
 
+import { report as blastReport } from "./blast.mjs";
 import { formatVerified, verifyFindings } from "./findings.mjs";
 import { MAX_DIFF_CHARS, formatFindings, lintChange } from "./lint.mjs";
 
@@ -196,6 +199,61 @@ export default function piReviewExtension(pi: ExtensionAPI) {
       }
       const result = await verifyFindings({ findings, diff, signal });
       return { content: [{ type: "text", text: formatVerified(result) }] };
+    },
+  });
+
+  pi.registerTool({
+    name: "blast_radius",
+    label: "blast_radius",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "List what else a change could break. Finds every function, const or class the diff adds, removes or edits, " +
+      "greps the tracked tree for each name, and returns the caller files outside the diff plus any symbol no test " +
+      "file mentions. It finds callers; it does not prove them safe — run the one check that does. No model call.",
+    promptSnippet:
+      "blast_radius(scope?, ref?): callers outside a diff of the definitions it touches, and symbols no test mentions",
+    promptGuidelines: [
+      "Run blast_radius before editing or committing a change to a shared helper, then run one command that exercises an outside caller.",
+    ],
+    parameters: Type.Object({
+      scope: Type.Optional(
+        Type.Union([Type.Literal("staged"), Type.Literal("worktree"), Type.Literal("range")], {
+          description: SCOPE_DESC,
+        }),
+      ),
+      ref: Type.Optional(
+        Type.String({ description: "With scope=range: the base ref to diff from (e.g. main)." }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const cwd = ctx.cwd ?? process.cwd();
+      const base = selector(params?.scope ?? "staged", params?.ref);
+      if (!base) {
+        return {
+          content: [{ type: "text", text: "Rejected: scope=range needs a ref." }],
+          isError: true,
+        };
+      }
+      const diff = await git(pi, cwd, [
+        ...base,
+        "--no-color",
+        "-U0",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+      ]);
+      if (diff === null) {
+        return {
+          content: [{ type: "text", text: "blast_radius failed: git could not read the change." }],
+          isError: true,
+        };
+      }
+      if (!diff.trim()) return { content: [{ type: "text", text: "No change to inspect." }] };
+      const grep = async (name: string) => {
+        const hits = await git(pi, cwd, ["grep", "-l", "-w", "-F", "-e", name]);
+        return hits ? hits.split("\n").filter(Boolean) : []; // exit 1 means no match
+      };
+      return { content: [{ type: "text", text: await blastReport(diff, grep) }] };
     },
   });
 }

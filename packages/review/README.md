@@ -15,6 +15,7 @@ Judges the change against the preferences AGENTS.md states as prose, because
 | `speculative_scaffolding` | Code for a requirement that does not exist yet |
 | `unnecessary_dependency` | A package or helper for something stdlib, platform, or installed already covers |
 | `scope_creep` | Changes the task did not ask for (needs `task`) |
+| `narrating_comment` | An added comment that restates the next line or narrates the edit instead of recording a reason or constraint |
 | `weak_tests` | Added tests that would pass with the change reverted |
 | `message_matches_diff` | The subject describes something the diff does not do (needs `message`) |
 | `single_concern` | More than one logical change (needs `message`) |
@@ -32,6 +33,16 @@ confident "no".
 
 The diff is cut at 45,000 characters (the state limit is 60,000) and the output
 says when that happened, because a silent cut reads as a clean judgment.
+
+## `blast_radius`
+
+No model call. Finds every exported function, const or class the diff adds, removes
+or edits (a hunk's enclosing definition counts, so a body-only edit is caught),
+greps the tracked code for each name, and lists the caller files outside the diff.
+A symbol no test file mentions is called out. It names the callers; proving the
+change safe for them is still a run. Reads the diff with explicit `a/` `b/`
+prefixes because `diff.mnemonicPrefix` changes the headers it parses. Checks the
+first 25 definitions.
 
 ## `verify_findings`
 

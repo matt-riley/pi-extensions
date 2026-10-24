@@ -29,6 +29,7 @@ const score = (value) => ({ type: "score", score: value });
 
 test("a message, a task and test files each add only their own rules", () => {
   assert.deepEqual(Object.keys(buildQuestionSet({})).sort(), [
+    "narrating_comment",
     "overengineered",
     "speculative_scaffolding",
     "unnecessary_dependency",

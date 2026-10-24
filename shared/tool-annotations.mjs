@@ -33,6 +33,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "batch_web_fetch",
   "lint_change",
   "verify_findings",
+  "blast_radius",
   "find_code",
   "diagnosis_checkpoint",
   "measure_command",

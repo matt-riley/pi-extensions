@@ -33,6 +33,7 @@ const EXPECTED = new Map([
   ["batch_web_fetch", { annotations: OPEN_READ, deferred: false }],
   ["lint_change", { annotations: OPEN_READ, deferred: false }],
   ["verify_findings", { annotations: OPEN_READ, deferred: false }],
+  ["blast_radius", { annotations: LOCAL_READ, deferred: true }],
   ["find_code", { annotations: OPEN_READ, deferred: true }],
   ["diagnosis_checkpoint", { annotations: LOCAL_READ, deferred: true }],
   ["measure_command", { annotations: LOCAL_DESTRUCTIVE, deferred: true }],

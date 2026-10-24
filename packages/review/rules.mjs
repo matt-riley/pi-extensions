@@ -82,6 +82,19 @@ const PREFERENCES = [
     ),
   },
   {
+    id: "narrating_comment",
+    label: "a comment that restates the code or the change",
+    threshold: DEFAULT_THRESHOLD,
+    question: noul(
+      "Read `diff`. Do the comment lines it adds say what the next line already says, " +
+        'or narrate the edit itself ("now handles X", "changed to Y", "added for the Z ticket")? ' +
+        "A comment that records a reason, a constraint or a trap the code cannot show is not " +
+        "narration. Judge only comments the diff adds.",
+      "An added comment restates the code beside it or describes the change rather than the code.",
+      "Added comments explain why, or the diff adds none.",
+    ),
+  },
+  {
     id: "weak_tests",
     label: "tests that would pass without the change",
     threshold: DEFAULT_THRESHOLD,
