@@ -94,13 +94,14 @@ function emptyRegistry() {
   };
 }
 
-function jsonResponse(body, { status = 200 } = {}) {
+function jsonResponse(body, { status = 200, headers = {} } = {}) {
   const text = JSON.stringify(body);
   const response = {
     ok: status >= 200 && status < 300,
     status,
+    headers,
     clone() {
-      return jsonResponse(body, { status });
+      return jsonResponse(body, { status, headers });
     },
     json: async () => body,
     text: async () => text,
@@ -334,6 +335,49 @@ test("retries: a 429 from classify is not asked again and maxRetries is 2", asyn
       return true;
     },
   );
+});
+
+test("retries: the fetch wrapper retries 429 then 529 and classify sets maxRetries to 0", async () => {
+  const { fetchImpl, calls: httpCalls } = capturingFetch((n) =>
+    n === 1
+      ? jsonResponse({ error: "rate limited" }, { status: 429, headers: { "retry-after": "20" } })
+      : n === 2
+        ? jsonResponse({ error: "overloaded" }, { status: 529 })
+        : jsonResponse({
+            answers: { pick: { type: "noul", noul: 0.5 } },
+            usage: { input_tokens: 2, output_tokens: 1 },
+          }),
+  );
+  const { ctx, calls } = classifierCtx(async (_model, _context, options) => {
+    const response = await options.fetch("https://api.typesafe.ai/v1/systemone", {
+      method: "POST",
+    });
+    if (!response.ok) {
+      return { stopReason: "error", errorMessage: `System One API error (${response.status}): busy` };
+    }
+    const body = await response.json();
+    return stopResult(body.answers);
+  });
+  const started = Date.now();
+  let result;
+  try {
+    result = await askSystemOne({
+      state: { note: "hello" },
+      questions: NOUL,
+      env: ENV,
+      ctx,
+      fetchImpl,
+      retryDelayMs: 1,
+    });
+  } catch (error) {
+    assert.equal(httpCalls.length, 3, "429 and 529 were not retried in the fetch wrapper");
+    throw error;
+  }
+  assert.equal(httpCalls.length, 3, "429 and 529 were not retried in the fetch wrapper");
+  assert.equal(calls.length, 1, "classify itself was retried");
+  assert.equal(calls[0].options.maxRetries, 0);
+  assert.equal(result.answers.pick.noul, 0.5);
+  assert.ok(Date.now() - started < 1000, "retry-after was honored");
 });
 
 test("retries: a 529 from classify is not asked again", async () => {
