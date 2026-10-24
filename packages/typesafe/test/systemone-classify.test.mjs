@@ -8,10 +8,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { askSystemOne, bindSystemOne } from "../../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne, formatAnswers } from "../../../shared/systemone.mjs";
 import { judgeToolCall } from "../../guardrail/judge.mjs";
 import { claimLine, judgeDoneClaim } from "../../done-gate/claim.mjs";
 import { rankSkills } from "../../skill-select/library.mjs";
@@ -537,6 +537,42 @@ test("redaction: secrets are removed before classify sees the state", async () =
   assert.equal(sent.includes("ts-secret-key"), false);
   assert.match(sent, /<REDACTED:/);
   assert.ok(result.redactions >= 3);
+});
+
+test("redaction: personal identifiers are masked before classify sees the state", async () => {
+  const home = homedir();
+  const state = { file: join(home, "project", "app.ts"), identity: "alice@example.invalid" };
+  const questions = { q: { type: "noul", instructions: "Does this name a source file?" } };
+  const { ctx, calls } = classifierCtx(async () => stopResult({ q: { type: "noul", noul: 0.5 } }));
+  const result = await askSystemOne({
+    state,
+    questions,
+    env: ENV,
+    ctx,
+    fetchImpl: boomFetch(),
+  });
+  assert.equal(calls.length, 1, "classify was not used");
+  assert.equal(calls[0].context.state.file, "<REDACTED:home>" + state.file.slice(home.length));
+  assert.equal(calls[0].context.state.identity, state.identity);
+  assert.equal(result.redactions, 0, "a home path is not evidence of a credential leak");
+  assert.equal(result.privacyRedactions, 1);
+  assert.match(formatAnswers(result), /1 redacted/);
+  assert.equal(state.file, join(home, "project", "app.ts"));
+
+  const masked = classifierCtx(async () => stopResult({ q: { type: "noul", noul: 0.5 } }));
+  const emailState = { identity: "alice+work@example.invalid" };
+  const emailResult = await askSystemOne({
+    state: emailState,
+    questions,
+    env: { ...ENV, PI_MASK_EMAILS: "1" },
+    ctx: masked.ctx,
+    fetchImpl: boomFetch(),
+  });
+  assert.equal(masked.calls.length, 1, "classify was not used");
+  assert.equal(masked.calls[0].context.state.identity, "<REDACTED:email>");
+  assert.equal(emailResult.redactions, 0, "an email address is not a credential");
+  assert.equal(emailResult.privacyRedactions, 1);
+  assert.equal(emailState.identity, "alice+work@example.invalid");
 });
 
 test("validation: a one-option choice is refused before classify or HTTP", async () => {
