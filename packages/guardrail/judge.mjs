@@ -12,6 +12,7 @@
 // exactly what the action says it does?".
 
 import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { TUNED_MODEL } from "../../shared/jev-ledger.mjs";
 
 /** Short on purpose: this sits between a tool call and its execution. */
 export const DEFAULT_TIMEOUT_MS = 4000;
@@ -24,7 +25,9 @@ export const BLAST_LEVELS = [
   "Shared or production systems: a remote, a server, a database, or anything another person depends on.",
 ];
 
-const THRESHOLDS = {
+export const THRESHOLDS = Object.freeze({
+  /** Recorded beside the lines measured with replay-corpus and judge-thresholds. */
+  tunedModel: TUNED_MODEL,
   destructive: 0.5,
   /**
    * The intent line was 0.6, which confirmed 92% of everything routed to the
@@ -39,7 +42,7 @@ const THRESHOLDS = {
   credentials: 0.6,
   /** Index into BLAST_LEVELS: 2 = "this machine" and above is confirmation-worthy. */
   blastRadius: 2,
-};
+});
 
 const MAX_REQUEST_CHARS = 600;
 const MAX_ACTION_CHARS = 1500;

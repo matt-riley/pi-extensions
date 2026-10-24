@@ -48,7 +48,10 @@ renaming one can break another:
   error handling instead of duplicating transport. Inside Pi, that request
   goes through `classify()` when a TypeSafe System One model is registered,
   and stays on the direct HTTP transport otherwise. The `scripts/` classifiers
-  have no Pi model registry, so they stay on HTTP.
+  have no Pi model registry, so they stay on HTTP. Each call also appends a
+  local `jev-decision` session entry (model, question ids, answers, latency,
+  transport, outcome). State and question text stay out of that entry. See
+  `packages/typesafe/README.md`.
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root, and both
   `pi-plan-mode` and **`pi-guardrail`** import the FIFO dialog serializer from

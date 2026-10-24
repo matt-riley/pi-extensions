@@ -1,0 +1,282 @@
+// jev-ledger.mjs — local session record of one Jev call.
+//
+// The entry is what pi.appendEntry stores. It stays in the session and is not
+// sent anywhere. Question instructions and criteria can carry user text, so
+// the entry keeps the id and the kind only. A choice is the index of that
+// label in the question's criteria, and probability keys are those indexes
+// too — the label text itself is never stored. Answer strings that remain are
+// scrubbed with the same literals the request used, in case one echoes a key.
+
+import { redactSecrets } from "./redact.mjs";
+
+const FRAME_SKIP = /\/(?:shared\/(?:systemone|jev-ledger)\.mjs|node_modules\/|test\/)/;
+
+/** Package or script that called into the ledger, ignoring the ledger and tests. */
+export function callingFeature(stack = new Error().stack ?? "") {
+  for (const line of String(stack).split("\n")) {
+    if (FRAME_SKIP.test(line)) continue;
+    const pkg = line.match(/packages\/([^/]+)\//);
+    if (pkg) return pkg[1];
+    const script = line.match(/scripts\/([^/]+)\.mjs/);
+    if (script) return script[1].replace(/\.test$/, "");
+  }
+  return "unknown";
+}
+
+/** The Jev the guardrail and judge-thresholds lines were measured on. */
+export const TUNED_MODEL = "jev-1.13.0";
+
+const driftWarned = new WeakMap();
+let driftWarnedDetached = false;
+
+/**
+ * One short warning per session when TypeSafe reports a model other than
+ * TUNED_MODEL. The thresholds stay where they were measured; this only says
+ * they may need another judge-thresholds run.
+ */
+export function warnModelDrift({ reported, ctx } = {}) {
+  if (typeof reported !== "string" || reported.trim() !== reported || reported === TUNED_MODEL) {
+    return false;
+  }
+  if (!reported) return false;
+  const key = ctx?.sessionManager ?? ctx;
+  if (key && (typeof key === "object" || typeof key === "function")) {
+    if (driftWarned.get(key)) return false;
+    driftWarned.set(key, true);
+  } else if (driftWarnedDetached) {
+    return false;
+  } else {
+    driftWarnedDetached = true;
+  }
+  const title =
+    `Jev reported ${reported}; thresholds were tuned on ${TUNED_MODEL} and may need re-tuning. ` +
+    "Re-run: node scripts/replay-corpus.mjs --judge 150 --judge-json sample.json && node scripts/judge-thresholds.mjs sample.json";
+  const notify = ctx?.ui?.notify;
+  if (typeof notify === "function") {
+    try {
+      notify(title, "warning");
+    } catch {
+      // The warning is advisory. The gate still gets its answer.
+    }
+  }
+  return true;
+}
+
+function finiteNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function questionRecord(id, question) {
+  return { id, kind: typeof question?.type === "string" ? question.type : "unknown" };
+}
+
+/** Criteria labels in the order the question declared them. Null when there are none. */
+function criteriaLabels(question) {
+  const criteria = question?.criteria;
+  if (Array.isArray(criteria)) return criteria.map((item) => String(item));
+  if (criteria && typeof criteria === "object") return Object.keys(criteria);
+  return null;
+}
+
+function probabilityRecord(probabilities, labels, question) {
+  if (!probabilities || typeof probabilities !== "object" || Array.isArray(probabilities)) {
+    return undefined;
+  }
+  // Score levels are already indexes ("0", "1", "2"). A choice key is the
+  // option label, and that label may be only digits, so every choice key is
+  // looked up in the criteria. Anything that is not a label is dropped.
+  const keepDigitKeys = question?.type === "score";
+  const out = {};
+  for (const [key, value] of Object.entries(probabilities)) {
+    const numeric = finiteNumber(value);
+    if (numeric === null) continue;
+    if (keepDigitKeys && /^\d+$/.test(key)) {
+      out[key] = numeric;
+      continue;
+    }
+    const index = labels ? labels.indexOf(key) : -1;
+    if (index === -1) continue;
+    out[String(index)] = numeric;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function answerRecord(answer, question) {
+  if (!answer || typeof answer !== "object" || Array.isArray(answer)) return null;
+  const record = {};
+  if (typeof answer.type === "string") record.type = answer.type;
+  for (const key of ["noul", "score", "confidence"]) {
+    const numeric = finiteNumber(answer[key]);
+    if (numeric !== null) record[key] = numeric;
+  }
+  const labels = criteriaLabels(question);
+  if (typeof answer.choice === "string" && labels) {
+    const index = labels.indexOf(answer.choice);
+    if (index !== -1) record.choice = index;
+  }
+  const probabilities = probabilityRecord(answer.probabilities, labels, question);
+  if (probabilities) record.probabilities = probabilities;
+  return record;
+}
+
+/** A closed class for a thrown Jev call. The raw message can quote a response body. */
+export function ledgerErrorClass(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.startsWith("TYPESAFE_API_KEY is not set")) return "missing-key";
+  if (message.startsWith("TypeSafe request timed out")) return "timeout";
+  if (message.startsWith("TypeSafe request aborted")) return "aborted";
+  if (message.startsWith("TypeSafe request failed with status")) return "http";
+  if (message.startsWith("TypeSafe returned invalid JSON")) return "invalid-json";
+  if (message.startsWith("A fetch implementation is required")) return "network";
+  if (
+    message.startsWith("Provide at least one question") ||
+    message.includes("must be an object") ||
+    message.includes("unknown question type") ||
+    message.includes("needs instructions") ||
+    message.includes("needs criteria") ||
+    message.startsWith("TypeSafe state is") ||
+    message.includes("which JSON") ||
+    message.includes("refers to `") ||
+    message.startsWith("TYPESAFE_BASE_URL")
+  ) {
+    return "validation";
+  }
+  if (error instanceof TypeError) return "network";
+  return "classify";
+}
+
+/** Status digit from our own HTTP error, never the response body. */
+export function ledgerHttpStatus(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const match = message.match(/status (\d+)/);
+  return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * Pi 1.4: appendEntry(customType, data?) persists a custom entry that does not
+ * enter the model context. A missing or throwing hook is a host problem, not
+ * a reason to fail the judgment the gate is waiting on.
+ */
+export function appendLedgerEntry(pi, entry) {
+  if (typeof pi?.appendEntry !== "function") return;
+  try {
+    pi.appendEntry("jev-decision", entry);
+  } catch {
+    // The session could not take the entry. The call still stands.
+  }
+}
+
+/** The data object stored on a jev-decision entry. No state, no request body. */
+export function buildLedgerEntry({
+  feature,
+  model,
+  requestedModel,
+  questions,
+  answers,
+  latencyMs,
+  transport,
+  redactions,
+  privacyRedactions,
+  outcome,
+  errorClass,
+  literals,
+  status,
+  modelDrift,
+  tunedModel,
+} = {}) {
+  let safeAnswers = null;
+  if (answers && typeof answers === "object") {
+    const recordedAnswers = {};
+    const questionFor = questions && typeof questions === "object" ? questions : {};
+    for (const [id, answer] of Object.entries(answers)) {
+      recordedAnswers[id] = answerRecord(answer, questionFor[id]);
+    }
+    // homeDir "" skips path masking: this scrub is for keys that echoed into an
+    // answer, not a second pass over the state.
+    safeAnswers = redactSecrets(recordedAnswers, {
+      literals,
+      homeDir: "",
+      maskEmails: false,
+    }).value;
+  }
+  return {
+    v: 1,
+    feature,
+    model,
+    requestedModel,
+    questions: Object.entries(questions ?? {}).map(([id, question]) =>
+      questionRecord(id, question),
+    ),
+    answers: safeAnswers,
+    latencyMs,
+    transport,
+    redactions,
+    privacyRedactions,
+    outcome,
+    ...(modelDrift === true ? { modelDrift: true, tunedModel } : {}),
+    ...(typeof errorClass === "string" ? { errorClass } : {}),
+    ...(Number.isInteger(status) ? { status } : {}),
+  };
+}
+
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A ledger object, or a session custom entry of type jev-decision. Anything else is dropped. */
+function ledgerData(value) {
+  if (!isPlainObject(value)) return null;
+  if (value.type === "custom") {
+    if (value.customType !== "jev-decision" || !isPlainObject(value.data)) return null;
+    return value.data;
+  }
+  if (typeof value.outcome !== "string") return null;
+  return value;
+}
+
+const GUARDRAIL_SIGNALS = [
+  ["destructive", "noul"],
+  ["intent_mismatch", "noul"],
+  ["credentials", "noul"],
+  ["blast_radius", "score"],
+];
+
+function guardrailSignals(answers) {
+  if (!isPlainObject(answers)) return null;
+  const signals = {};
+  for (const [id, field] of GUARDRAIL_SIGNALS) {
+    const numeric = finiteNumber(answers[id]?.[field]);
+    if (numeric === null) continue;
+    signals[id] = numeric;
+  }
+  return Object.keys(signals).length > 0 ? signals : null;
+}
+
+/**
+ * Scoreable replay-corpus records from guardrail ledger entries.
+ *
+ * The corpus file is `{ sampled, records: [{ action, verdict, reason, signals, source }] }`.
+ * The ledger never kept the command, so action is a fixed placeholder and
+ * verdict/reason stay empty — judge-thresholds scores the signals.
+ */
+export function toReplayCorpus(entries) {
+  const records = [];
+  if (!Array.isArray(entries)) return { sampled: 0, records };
+  for (const entry of entries) {
+    const data = ledgerData(entry);
+    if (!data || data.outcome !== "ok") continue;
+    const signals = guardrailSignals(data.answers);
+    if (!signals) continue;
+    records.push({
+      action: "(not recorded)",
+      verdict: null,
+      reason: null,
+      signals,
+      source: "ledger",
+    });
+  }
+  return { sampled: records.length, records };
+}

@@ -8,14 +8,25 @@
 // threshold sets you want to compare. A candidate only earns a change when the
 // labeled cases in scripts/validate-judge.mjs stay quiet too.
 //
+// CURRENT.tunedModel is the Jev those lines were measured on (jev-1.13.0).
+// A ledger export (`replay-corpus.mjs --from-ledger`) is the same file shape,
+// with action "(not recorded)" because the session entry never stored the command.
+//
 // Read-only: it reads a JSON file and prints.
 
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { routeVerdict } from "../packages/guardrail/judge.mjs";
+import { TUNED_MODEL } from "../shared/jev-ledger.mjs";
 
-export const CURRENT = { destructive: 0.5, intentMismatch: 0.6, credentials: 0.6, blastRadius: 2 };
+export const CURRENT = {
+  tunedModel: TUNED_MODEL,
+  destructive: 0.5,
+  intentMismatch: 0.6,
+  credentials: 0.6,
+  blastRadius: 2,
+};
 
 // The calibration published for this four-dimension split puts the lines
 // higher: destructive 0.9, exfiltration 0.7, beyond-scope 0.85, impact 2.5.
@@ -88,6 +99,12 @@ function histogram(values, edges) {
   return [...buckets, above].map((count, index) => `${labels[index]} ${count}`).join("  ");
 }
 
+/** A missing action is the ledger placeholder, null, or an empty string. */
+function shownAction(action) {
+  if (action == null || String(action).trim() === "" || action === "(not recorded)") return null;
+  return String(action).replace(/\s+/g, " ").slice(0, 110);
+}
+
 function main(file, flags) {
   const records = JSON.parse(fs.readFileSync(file, "utf8")).records ?? [];
   const scored = records.filter(scoreable);
@@ -117,9 +134,15 @@ function main(file, flags) {
         `newly allowed ${newlyAllowed.length}`,
     );
     if (flags.includes("--show-allow")) {
-      for (const action of newlyAllowed.slice(0, 8)) {
-        console.log(`    ${String(action).replace(/\s+/g, " ").slice(0, 110)}`);
+      const recorded = [];
+      let missing = 0;
+      for (const action of newlyAllowed) {
+        const line = shownAction(action);
+        if (line === null) missing += 1;
+        else if (recorded.length < 8) recorded.push(line);
       }
+      for (const line of recorded) console.log(`    ${line}`);
+      if (missing > 0) console.log(`    action wasn't recorded for ${missing} records`);
     }
   }
 }

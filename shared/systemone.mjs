@@ -8,6 +8,7 @@
 // fallback when that registry is missing — every scripts/ entry point, and any
 // host that has not registered the provider. bindSystemOne threads the Pi
 // context through the extension handlers so the .mjs callers stay unchanged.
+// The same hook appends a jev-decision session entry. The entry is local.
 //
 // Plain .mjs so node --test can cover it without a TS loader (see AGENTS.md).
 // The extension entrypoint owns tool registration; everything here is pure
@@ -18,6 +19,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+import {
+  appendLedgerEntry,
+  buildLedgerEntry,
+  callingFeature,
+  ledgerErrorClass,
+  ledgerHttpStatus,
+  TUNED_MODEL,
+  warnModelDrift,
+} from "./jev-ledger.mjs";
 import { redactSecrets } from "./redact.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
@@ -511,10 +521,10 @@ function withSessionUsage(result, priorUsage) {
  * returned tool result; compaction drafts use `compactionUsage` instead,
  * because that usage belongs on the entry Pi actually records.
  */
-function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage } = {}) {
+function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage, pi } = {}) {
   const parent = systemOneAls.getStore();
   const usage = parent?.usage ?? [];
-  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, usage }, async () => {
+  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, pi: pi ?? parent?.pi, usage }, async () => {
     const result = await fn();
     if (!attachUsage || parent?.usage) return result;
     return withSessionUsage(result, priorUsage);
@@ -547,6 +557,7 @@ export function bindSystemOne(pi) {
         runWithSystemOneContext(ctx, () => handler(payload, ctx), {
           attachUsage: event === "tool_result",
           priorUsage: event === "tool_result" ? payload?.usage : undefined,
+          pi,
         }),
       );
   }
@@ -558,7 +569,10 @@ export function bindSystemOne(pi) {
         execute:
           typeof def?.execute === "function"
             ? (...args) =>
-                runWithSystemOneContext(args[4], () => def.execute(...args), { attachUsage: true })
+                runWithSystemOneContext(args[4], () => def.execute(...args), {
+                  attachUsage: true,
+                  pi,
+                })
             : def?.execute,
       });
   }
@@ -570,7 +584,8 @@ export function bindSystemOne(pi) {
         def && typeof def.handler === "function"
           ? {
               ...def,
-              handler: (...args) => runWithSystemOneContext(args[1], () => def.handler(...args)),
+              handler: (...args) =>
+                runWithSystemOneContext(args[1], () => def.handler(...args), { pi }),
             }
           : def,
       );
@@ -582,7 +597,8 @@ export function bindSystemOne(pi) {
         def && typeof def.route === "function"
           ? {
               ...def,
-              route: (request, ctx) => runWithSystemOneContext(ctx, () => def.route(request, ctx)),
+              route: (request, ctx) =>
+                runWithSystemOneContext(ctx, () => def.route(request, ctx), { pi }),
             }
           : def,
       );
@@ -785,7 +801,7 @@ async function askOverHttp({
  * Uses Pi's classifier when `ctx` (or the context bound by `bindSystemOne`)
  * has a TypeSafe System One model. Otherwise posts to `/systemone` directly.
  *
- * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object }} opts
+ * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object, feature?: string }} opts
  * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number, privacyRedactions?: number }>}
  */
 export async function askSystemOne({
@@ -797,65 +813,146 @@ export async function askSystemOne({
   signal,
   retryDelayMs = RETRY_BASE_MS,
   ctx,
+  feature,
+  failurePolicy,
 } = {}) {
-  const config = resolveConfig(env);
-  const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
-  const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
-  const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
-  // Redact before validating: the size and shape checks should describe what
-  // would actually be sent, and a secret is not what makes a request too big.
-  // The local key is not the only credential that can sit in the state. On the
-  // classify path Pi may also hold a stored TypeSafe key that never appears in
-  // the environment.
-  const literals = [config.apiKey];
-  if (classifier) {
-    const stored = await storedProviderKey(registry);
-    if (stored) literals.push(stored);
-  }
-  // One masked copy, before either transport. Home paths are masked by default;
-  // emails only when PI_MASK_EMAILS=1. Credential redactions stay a separate count.
-  const {
-    value: safeState,
-    count: redactions,
-    privacyCount = 0,
-  } = redactSecrets(state, {
-    literals,
-    maskEmails: env?.PI_MASK_EMAILS === "1",
-  });
-  validateRequest({ state: safeState, questions });
-  // Nothing is sent without a local key. Pi's stored login is not a substitute;
-  // that can be an opt-in later. The HTTP path already refused here.
-  if (!config.apiKey) throw missingKeyError(env);
-  if (classifier) {
-    return askViaClassify({
-      registry,
-      classifier,
-      safeState,
-      questions,
-      redactions,
-      privacyCount,
-      requestedModel,
-      config,
-      env,
-      fetchImpl,
-      signal,
-      retryDelayMs,
+  const started = Date.now();
+  const sessionPi = systemOneAls.getStore()?.pi;
+  const namedFeature =
+    typeof feature === "string" && feature.trim() ? feature.trim() : callingFeature();
+  const bag = {
+    feature: namedFeature,
+    requestedModel: "",
+    transport: "http",
+    redactions: 0,
+    privacyRedactions: 0,
+    literals: [],
+  };
+  try {
+    const config = resolveConfig(env);
+    const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
+    bag.requestedModel = requestedModel;
+    const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
+    const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
+    bag.transport = classifier ? "classify" : "http";
+    // Redact before validating: the size and shape checks should describe what
+    // would actually be sent, and a secret is not what makes a request too big.
+    // The local key is not the only credential that can sit in the state. On the
+    // classify path Pi may also hold a stored TypeSafe key that never appears in
+    // the environment.
+    const literals = [config.apiKey];
+    if (classifier) {
+      const stored = await storedProviderKey(registry);
+      if (stored) literals.push(stored);
+    }
+    bag.literals = literals;
+    // One masked copy, before either transport. Home paths are masked by default;
+    // emails only when PI_MASK_EMAILS=1. Credential redactions stay a separate count.
+    const {
+      value: safeState,
+      count: redactions,
+      privacyCount = 0,
+    } = redactSecrets(state, {
+      literals,
+      maskEmails: env?.PI_MASK_EMAILS === "1",
     });
+    bag.redactions = redactions;
+    bag.privacyRedactions = privacyCount;
+    validateRequest({ state: safeState, questions });
+    // Nothing is sent without a local key. Pi's stored login is not a substitute;
+    // that can be an opt-in later. The HTTP path already refused here.
+    if (!config.apiKey) throw missingKeyError(env);
+    if (!classifier && typeof fetchImpl !== "function") {
+      throw new Error("A fetch implementation is required to call TypeSafe.");
+    }
+    const sessionCtx = ctx ?? systemOneAls.getStore()?.ctx;
+    const result = classifier
+      ? await askViaClassify({
+          registry,
+          classifier,
+          safeState,
+          questions,
+          redactions,
+          privacyCount,
+          requestedModel,
+          config,
+          env,
+          fetchImpl,
+          signal,
+          retryDelayMs,
+        })
+      : await askOverHttp({
+          config,
+          requestedModel,
+          safeState,
+          questions,
+          redactions,
+          privacyCount,
+          fetchImpl,
+          signal,
+          retryDelayMs,
+        });
+    // The answer is in hand. Ledger work — the drift warning, the entry, the
+    // append — must not turn it into a throw. Pi's ctx.ui and ctx.sessionManager
+    // getters throw after /new, a fork, or a reload, and a malformed answer
+    // throws inside the builder. Swallowing here also keeps the outer catch from
+    // recording that success as a failure.
+    try {
+      const modelDrift = typeof result.model === "string" && result.model !== TUNED_MODEL;
+      if (modelDrift) warnModelDrift({ reported: result.model, ctx: sessionCtx });
+      appendLedgerEntry(
+        sessionPi,
+        buildLedgerEntry({
+          feature: namedFeature,
+          model: result.model,
+          requestedModel,
+          questions,
+          answers: result.answers,
+          latencyMs: Date.now() - started,
+          transport: bag.transport,
+          redactions,
+          privacyRedactions: privacyCount,
+          outcome: "ok",
+          literals,
+          modelDrift,
+          tunedModel: TUNED_MODEL,
+        }),
+      );
+    } catch {
+      // The gate is waiting on `result`, not on the session entry.
+    }
+    return result;
+  } catch (error) {
+    try {
+      // Classifying the error reads it as a string. A thrown value with no
+      // prototype cannot be stringified, and that TypeError must not replace
+      // the value the transport threw.
+      const errorClass = ledgerErrorClass(error);
+      const policy =
+        failurePolicy === "fail-open" || failurePolicy === "fail-closed" ? failurePolicy : null;
+      appendLedgerEntry(
+        sessionPi,
+        buildLedgerEntry({
+          feature: bag.feature,
+          model: null,
+          requestedModel: bag.requestedModel,
+          questions,
+          answers: null,
+          latencyMs: Date.now() - started,
+          transport: bag.transport,
+          redactions: bag.redactions,
+          privacyRedactions: bag.privacyRedactions,
+          outcome: policy ?? errorClass,
+          errorClass: policy ? errorClass : undefined,
+          literals: bag.literals,
+          status: errorClass === "http" ? ledgerHttpStatus(error) : undefined,
+        }),
+      );
+    } catch {
+      // Classifying or building the entry must not replace the Jev error.
+    }
+    throw error;
   }
-  if (typeof fetchImpl !== "function") {
-    throw new Error("A fetch implementation is required to call TypeSafe.");
-  }
-  return askOverHttp({
-    config,
-    requestedModel,
-    safeState,
-    questions,
-    redactions,
-    privacyCount,
-    fetchImpl,
-    signal,
-    retryDelayMs,
-  });
 }
 
 function formatProbabilities(probabilities, legend) {
