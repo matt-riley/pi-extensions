@@ -1,11 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeVerdict } from "../packages/guardrail/judge.mjs";
-import { answersOf, scoreCandidate, scoreable } from "./judge-thresholds.mjs";
+import * as judge from "../packages/guardrail/judge.mjs";
+import { TUNED_MODEL } from "../shared/jev-ledger.mjs";
+import { CURRENT, answersOf, scoreCandidate, scoreable } from "./judge-thresholds.mjs";
+
+const { routeVerdict } = judge;
 
 const noul = (value) => ({ type: "noul", noul: value });
 const score = (value) => ({ type: "score", score: value });
+
+test("the measured thresholds record the Jev they were tuned on", () => {
+  assert.equal(TUNED_MODEL, "jev-1.13.0");
+  assert.equal(judge.THRESHOLDS?.tunedModel, TUNED_MODEL);
+  assert.equal(CURRENT.tunedModel, TUNED_MODEL);
+  assert.equal(judge.THRESHOLDS?.intentMismatch, 0.85);
+  assert.equal(judge.THRESHOLDS?.destructive, 0.5);
+  assert.equal(judge.THRESHOLDS?.credentials, 0.6);
+  assert.equal(judge.THRESHOLDS?.blastRadius, 2);
+  assert.equal(CURRENT.destructive, 0.5);
+  assert.equal(CURRENT.intentMismatch, 0.6);
+});
 
 test("answersOf rebuilds the router's own input from its signals", () => {
   // Every branch, so a missing one cannot hide behind a happy path.
