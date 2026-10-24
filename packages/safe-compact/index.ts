@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, bindSystemOne, compactionUsage } from "../../shared/systemone.mjs";
 import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { judgeMoment } from "./judge.mjs";
 import {
@@ -113,6 +113,7 @@ const percentFlag = (raw: unknown, fallback: number) => {
 };
 
 export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {}) {
+  bindSystemOne(pi);
   // One memo per session: a retry or an overlapping span reuses old answers.
   const ask = memoizeAsk(options.ask ?? askSystemOne);
 
@@ -338,7 +339,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
-    return { entries: [...drafts, { type: "compaction", ...draft }] };
+    return { entries: [...drafts, compactionUsage({ type: "compaction", ...draft })] };
   });
 
   pi.on("session_before_compact", async (event, ctx) => {
@@ -377,7 +378,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       }
       noteConsumed = true;
       return {
-        compaction: {
+        compaction: compactionUsage({
           summary: result.summary,
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
@@ -386,7 +387,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
             readFiles: fileLists.readFiles,
             modifiedFiles: fileLists.modifiedFiles,
           },
-        },
+        }),
       };
     } catch (error) {
       discardSnapshot(snap);

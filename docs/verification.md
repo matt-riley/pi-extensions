@@ -27,10 +27,14 @@ an allowlisted environment, disables discovery/MCP/startup networking, and
 serves scripted OpenAI-compatible responses on loopback only. It needs no
 provider credentials and incurs no external model cost. Child sessions use the
 same temporary agent directory. TypeSafe requests, if attempted, point at the
-local fixture and exercise the existing unavailable-judge fallback. Normal user
-settings and sessions are not changed. The host, server and fixtures are cleaned
-up in `finally` on normal success or failure. Forced process termination can
-leave a `pi-smoke-*` directory in the system temporary directory.
+local fixture via `TYPESAFE_BASE_URL` and exercise the existing unavailable-judge
+fallback. An explicit base URL overrides the classifier's catalog host, so a
+registered TypeSafe model still does not call `api.typesafe.ai` during smoke.
+`scripts/` classifiers have no Pi registry and keep the direct HTTP transport
+against that same base URL. Normal user settings and sessions are not changed.
+The host, server and fixtures are cleaned up in `finally` on normal success or
+failure. Forced process termination can leave a `pi-smoke-*` directory in the
+system temporary directory.
 
 This smoke checks host integration and extension behavior, not model judgment,
 interactive rendering, external providers, or successful TypeSafe judgments.

@@ -14,6 +14,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { bindSystemOne } from "../../shared/systemone.mjs";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
 
 import { formatVerified, verifyFindings } from "./findings.mjs";
@@ -61,6 +62,7 @@ function formatLint(result: {
 }
 
 export default function piReviewExtension(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",

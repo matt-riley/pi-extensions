@@ -38,11 +38,15 @@ renaming one can break another:
   `readOnlyHint: true` is trusted only for tools this repo registers.
 - **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`**,
   **`pi-router`**, **`pi-review`**, **`pi-done-gate`**, **`pi-diagnosis-nudge`**,
-  **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`** and the
-  `scripts/` classifiers all import from the shared `shared/systemone.mjs` —
-  `askSystemOne` for the request, `validateRequest` for the state/question
-  contract, `usableNumber` for reading answers — so they share one request
-  validation, timeout and error handling instead of duplicating transport.
+  **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`**,
+  **`pi-prompt-coach`**, **`pi-subagents`** and the `scripts/` classifiers all
+  import from the shared `shared/systemone.mjs` — `askSystemOne` for the
+  request, `validateRequest` for the state/question contract, `usableNumber`
+  for reading answers — so they share one request validation, timeout and
+  error handling instead of duplicating transport. Inside Pi, that request
+  goes through `classify()` when a TypeSafe System One model is registered,
+  and stays on the direct HTTP transport otherwise. The `scripts/` classifiers
+  have no Pi model registry, so they stay on HTTP.
 - **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
   allowlist from `shared/bash-policy.mjs` at the repo root, and both
   `pi-plan-mode` and **`pi-guardrail`** import the FIFO dialog serializer from

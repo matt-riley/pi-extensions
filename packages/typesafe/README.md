@@ -69,12 +69,32 @@ errors.
 
 A `429` (rate limited) or `529` (overloaded) is retried twice with exponential
 backoff (0.5s, then 1s), as [TypeSafe asks](https://docs.typesafe.ai/api/errors.md),
-within the same timeout and cancellation.
+within the same timeout and cancellation. That schedule is the direct HTTP
+transport. Inside Pi 1.4 or later, `askSystemOne` uses
+`ctx.modelRegistry.classify()` when a TypeSafe System One classifier is
+registered, and Pi retries 429 and 529 itself (`maxRetries: 2`). This client
+does not retry those again on top. The model id on the wire stays `jev-1.13.0`
+(or `TYPESAFE_MODEL`, or the per-call override) even when Pi's catalog entry is
+`jev-latest`. An explicit `TYPESAFE_BASE_URL` still replaces the catalog host,
+which is how a proxy or the smoke fixture is reached. With no local key, Pi's
+stored TypeSafe auth is used; a missing key with no stored auth still fails
+with the `TYPESAFE_API_KEY` message. The direct POST is what runs when no
+classifier is registered. Every `scripts/` classifier is in that group: those
+processes have no Pi model registry.
 
 The tool sends text/JSON state and choice/noul/score questions, not `assets` or
 `box`, so it doesn't send the `TypeSafe-Danger-Zone-Images` opt-in header, which
-TypeSafe wants only on requests that contain images. Use the
+TypeSafe wants only on requests that contain images. The classify call also
+passes no images, and it sets `User-Agent` to null so Pi's client identity is
+not added to a request that never sent one. Use the
 [image API](https://docs.typesafe.ai/images) directly for those experiments.
+
+Classify usage is copied onto the tool result, which is where Pi counts it
+toward the session. A gate that is not a tool result or a compaction entry
+(the guardrail, the router, the done-gate, prompt-coach) has nowhere in Pi
+1.4 to record an extension `classify()` call, so those tokens stay out of the
+session total. The answers themselves stay in today's shape: `noul`, score
+probabilities, and `{ input_tokens, output_tokens }`.
 
 ## Example
 
@@ -116,8 +136,10 @@ reason about.
 
 ## Tests
 
-`npm test` — `systemone.test.mjs` covers request shape, validation, transport,
-timeout/abort and formatting; `files.test.mjs`, `relevant.test.mjs` and
+`npm test` — `systemone.test.mjs` covers the direct HTTP transport, validation,
+timeout/abort and formatting; `systemone-classify.test.mjs` covers the Pi
+classify path, the `jev-1.13.0` pin, 429/529, redaction, and the fail-open /
+fail-closed gates; `files.test.mjs`, `relevant.test.mjs` and
 `spans.test.mjs` cover path resolution, the secret and symlink guards, the
 command gate, fan-out, ranking and range selection; `extension.test.mjs` covers
 the tool wiring. All with the network stubbed out.

@@ -32,7 +32,7 @@ import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
-import { resolveApiKey } from "../../shared/systemone.mjs";
+import { bindSystemOne, resolveApiKey } from "../../shared/systemone.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
@@ -140,6 +140,7 @@ interface PlanModeState {
 }
 
 export default function planMode(pi: ExtensionAPI) {
+  bindSystemOne(pi);
   const state: PlanModeState = {
     enabled: false,
     previousTools: null,

@@ -1,14 +1,19 @@
 // systemone.mjs — TypeSafe System One ("Jev") request logic.
 //
-// Lives in shared/ because three packages consume it: pi-typesafe's
-// typesafe_ask tool, pi-skill-select's optional tiebreaker, and the guardrail's
-// destructive-action judge. One transport, one set of validation and timeout
-// rules, one place to fix a bug.
+// Shared by every extension that asks Jev and by the scripts/ classifiers.
+// One transport, one set of validation and timeout rules, one place to fix a bug.
+//
+// Inside Pi, askSystemOne uses ctx.modelRegistry.classify() when a TypeSafe
+// System One classifier is registered. The direct HTTPS POST remains the
+// fallback when that registry is missing — every scripts/ entry point, and any
+// host that has not registered the provider. bindSystemOne threads the Pi
+// context through the extension handlers so the .mjs callers stay unchanged.
 //
 // Plain .mjs so node --test can cover it without a TS loader (see AGENTS.md).
 // The extension entrypoint owns tool registration; everything here is pure
 // request building, validation, transport and formatting so it stays testable.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -334,40 +339,326 @@ function backoff(ms, signal) {
   });
 }
 
-/**
- * Ask TypeSafe's System One model one or more typed questions about `state`.
- *
- * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number }} opts
- * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
- */
-export async function askSystemOne({
-  state,
-  questions,
-  model,
-  env = process.env,
-  fetchImpl = globalThis.fetch,
-  signal,
-  retryDelayMs = RETRY_BASE_MS,
-} = {}) {
-  const config = resolveConfig(env);
-  // Redact before validating: the size and shape checks should describe what
-  // would actually be sent, and a secret is not what makes a request too big.
-  const { value: safeState, count: redactions } = redactSecrets(state, {
-    literals: [config.apiKey],
-  });
-  validateRequest({ state: safeState, questions });
-  if (!config.apiKey) {
-    const sources = apiKeySources(env);
-    const detail = sources.parseError ? ` (unreadable config: ${sources.parseError})` : "";
-    throw new Error(
-      `TYPESAFE_API_KEY is not set. Set it in the environment or as typesafe.apiKey in ${sources.checked.join(" or ")}${detail}.`,
-    );
-  }
-  if (typeof fetchImpl !== "function") {
-    throw new Error("A fetch implementation is required to call TypeSafe.");
-  }
-  const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
+/** The extension context for the in-flight Pi handler, plus classify usage. */
+const systemOneAls = new AsyncLocalStorage();
 
+function missingKeyError(env) {
+  const sources = apiKeySources(env);
+  const detail = sources.parseError ? ` (unreadable config: ${sources.parseError})` : "";
+  return new Error(
+    `TYPESAFE_API_KEY is not set. Set it in the environment or as typesafe.apiKey in ${sources.checked.join(" or ")}${detail}.`,
+  );
+}
+
+function isSystemOneClassifier(model) {
+  return (
+    !!model &&
+    model.type === "classifier" &&
+    model.provider === "typesafe" &&
+    model.api === "typesafe-system-one"
+  );
+}
+
+/** An explicit base URL (proxy, smoke fixture). Unset keeps the catalog host. */
+function configuredBaseUrl(env, config) {
+  const raw = typeof env?.TYPESAFE_BASE_URL === "string" ? env.TYPESAFE_BASE_URL.trim() : "";
+  return raw ? config.baseUrl : null;
+}
+
+/**
+ * The TypeSafe System One model Pi should classify with.
+ *
+ * Stock Pi registers `jev-latest`, not the pinned id. Cloning the catalog
+ * model and rewriting `id` keeps auth, base URL and the classify implementation
+ * while the wire payload stays on the version the thresholds were measured on.
+ * Returns null when nothing registered can serve this call, which is the
+ * signal to use the direct HTTP transport.
+ */
+function selectClassifier(registry, requestedModel, baseUrl) {
+  if (!registry || typeof registry.classify !== "function") return null;
+  let model = null;
+  if (typeof registry.findOfType === "function") {
+    const exact = registry.findOfType("classifier", "typesafe", requestedModel);
+    if (isSystemOneClassifier(exact)) model = exact;
+  }
+  if (!model && typeof registry.getModelsOfType === "function") {
+    const models = registry.getModelsOfType("classifier", "typesafe");
+    if (Array.isArray(models)) {
+      model = models.find((candidate) => isSystemOneClassifier(candidate)) ?? null;
+    }
+  }
+  if (!model) return null;
+  const cloned = { ...model, id: requestedModel };
+  if (baseUrl) cloned.baseUrl = baseUrl;
+  return cloned;
+}
+
+function mapPiAnswers(answers) {
+  if (!isPlainObject(answers)) return {};
+  const mapped = {};
+  for (const [id, answer] of Object.entries(answers)) {
+    // Pi rewrites wire `noul` to `{ type: "bool", probability }`. Callers still
+    // route on `type: "noul"` and `answer.noul`.
+    mapped[id] = answer?.type === "bool" ? { type: "noul", noul: answer.probability } : answer;
+  }
+  return mapped;
+}
+
+function mapPiUsage(usage) {
+  if (!isPlainObject(usage)) return null;
+  if ("input_tokens" in usage || "output_tokens" in usage) return usage;
+  if (typeof usage.input === "number" || typeof usage.output === "number") {
+    return { input_tokens: usage.input ?? 0, output_tokens: usage.output ?? 0 };
+  }
+  return null;
+}
+
+async function readJsonClone(response) {
+  if (!response || typeof response.clone !== "function") return undefined;
+  try {
+    const cloned = response.clone();
+    if (!cloned || typeof cloned.json !== "function") return undefined;
+    const payload = await cloned.json();
+    return isPlainObject(payload) ? payload : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function classifyFailure(result, config, env) {
+  const message =
+    typeof result?.errorMessage === "string" && result.errorMessage.trim()
+      ? result.errorMessage
+      : `TypeSafe classify failed (${result?.stopReason ?? "unknown"})`;
+  // Pi's own auth error, and only when we had nothing to pass in. A local key
+  // that Pi rejected should stay Pi's message.
+  if (!config.apiKey && /no api key|not configured|api key/i.test(message)) {
+    return missingKeyError(env);
+  }
+  return new Error(message);
+}
+
+function emptySessionUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
+function addSessionUsage(total, usage) {
+  total.input += usage.input || 0;
+  total.output += usage.output || 0;
+  total.cacheRead += usage.cacheRead || 0;
+  total.cacheWrite += usage.cacheWrite || 0;
+  total.totalTokens += usage.totalTokens || 0;
+  const cost = isPlainObject(usage.cost) ? usage.cost : {};
+  total.cost.input += cost.input || 0;
+  total.cost.output += cost.output || 0;
+  total.cost.cacheRead += cost.cacheRead || 0;
+  total.cost.cacheWrite += cost.cacheWrite || 0;
+  total.cost.total += cost.total || 0;
+}
+
+function recordSessionUsage(usage) {
+  const bucket = systemOneAls.getStore()?.usage;
+  if (!bucket || !isPlainObject(usage) || typeof usage.input !== "number") return;
+  bucket.push(usage);
+}
+
+function takeSessionUsage() {
+  const bucket = systemOneAls.getStore()?.usage;
+  if (!bucket?.length) return undefined;
+  const total = emptySessionUsage();
+  for (const usage of bucket) addSessionUsage(total, usage);
+  bucket.length = 0;
+  return total;
+}
+
+function withSessionUsage(result) {
+  const usage = takeSessionUsage();
+  if (!usage || result == null || typeof result !== "object" || Array.isArray(result)) {
+    return result;
+  }
+  if (result.usage) return result;
+  return { ...result, usage };
+}
+
+/**
+ * Run `fn` where askSystemOne can see `ctx.modelRegistry`. Nested calls share
+ * the outer usage bucket. `attachUsage` copies Pi-shaped classify usage onto a
+ * returned tool result; compaction drafts use `compactionUsage` instead,
+ * because that usage belongs on the entry Pi actually records.
+ */
+function runWithSystemOneContext(ctx, fn, { attachUsage = false } = {}) {
+  const parent = systemOneAls.getStore();
+  const usage = parent?.usage ?? [];
+  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, usage }, async () => {
+    const result = await fn();
+    if (!attachUsage || parent?.usage) return result;
+    return withSessionUsage(result);
+  });
+}
+
+/** Put this turn's classify usage on a compaction draft, when there is any. */
+export function compactionUsage(entry) {
+  const usage = takeSessionUsage();
+  if (!usage || !entry || typeof entry !== "object" || Array.isArray(entry) || entry.usage) {
+    return entry;
+  }
+  return { ...entry, usage };
+}
+
+/**
+ * Thread the Pi context into every handler this extension registers.
+ *
+ * Called before the extension's own `on` / `registerTool` / `registerCommand`
+ * / `registerVirtualModel`. The .mjs judges keep calling `askSystemOne()`
+ * with no context argument; the registry arrives through the async store, so
+ * it never becomes part of a memo key.
+ */
+export function bindSystemOne(pi) {
+  if (!pi || typeof pi !== "object") return pi;
+  if (typeof pi.on === "function") {
+    const originalOn = pi.on.bind(pi);
+    pi.on = (event, handler) =>
+      originalOn(event, (payload, ctx) =>
+        runWithSystemOneContext(ctx, () => handler(payload, ctx), {
+          attachUsage: event === "tool_result",
+        }),
+      );
+  }
+  if (typeof pi.registerTool === "function") {
+    const originalRegisterTool = pi.registerTool.bind(pi);
+    pi.registerTool = (def) =>
+      originalRegisterTool({
+        ...def,
+        execute:
+          typeof def?.execute === "function"
+            ? (...args) =>
+                runWithSystemOneContext(args[4], () => def.execute(...args), { attachUsage: true })
+            : def?.execute,
+      });
+  }
+  if (typeof pi.registerCommand === "function") {
+    const originalRegisterCommand = pi.registerCommand.bind(pi);
+    pi.registerCommand = (name, def) =>
+      originalRegisterCommand(
+        name,
+        def && typeof def.handler === "function"
+          ? {
+              ...def,
+              handler: (...args) => runWithSystemOneContext(args[1], () => def.handler(...args)),
+            }
+          : def,
+      );
+  }
+  if (typeof pi.registerVirtualModel === "function") {
+    const originalRegisterVirtualModel = pi.registerVirtualModel.bind(pi);
+    pi.registerVirtualModel = (def) =>
+      originalRegisterVirtualModel(
+        def && typeof def.route === "function"
+          ? {
+              ...def,
+              route: (request, ctx) => runWithSystemOneContext(ctx, () => def.route(request, ctx)),
+            }
+          : def,
+      );
+  }
+  return pi;
+}
+
+function reportedModel(payload, result, requestedModel) {
+  if (typeof payload?.model === "string" && payload.model.trim()) return payload.model;
+  if (typeof result?.model === "string" && result.model.trim()) return result.model;
+  return requestedModel;
+}
+
+async function askViaClassify({
+  registry,
+  classifier,
+  safeState,
+  questions,
+  redactions,
+  requestedModel,
+  config,
+  env,
+  fetchImpl,
+  signal,
+}) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, config.timeoutMs);
+  const forwardAbort = () => controller.abort(signal?.reason);
+  const captured = { payload: undefined };
+  try {
+    if (signal?.aborted) throw new Error("TypeSafe request aborted");
+    if (signal) signal.addEventListener("abort", forwardAbort, { once: true });
+    // Pi retries 429 and 529 itself when maxRetries is 2. A second loop here
+    // would multiply attempts. The outer signal is the whole-call budget;
+    // timeoutMs would be a fresh budget per attempt.
+    const fetchWrapper = async (url, init) => {
+      const response = await fetchImpl(url, { ...init, redirect: "error" });
+      // Pi parses noul into bool and drops score probabilities. The raw body
+      // is what every gate already knows how to read.
+      captured.payload = await readJsonClone(response);
+      return response;
+    };
+    let result;
+    try {
+      result = await registry.classify(
+        classifier,
+        { state: safeState, questions },
+        {
+          signal: controller.signal,
+          maxRetries: MAX_RETRIES,
+          fetch: fetchWrapper,
+          headers: { "User-Agent": null },
+          ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+        },
+      );
+    } catch (error) {
+      if (timedOut) {
+        throw new Error(`TypeSafe request timed out after ${config.timeoutMs}ms`, { cause: error });
+      }
+      if (signal?.aborted) throw new Error("TypeSafe request aborted", { cause: error });
+      throw error;
+    }
+    if (timedOut) throw new Error(`TypeSafe request timed out after ${config.timeoutMs}ms`);
+    if (signal?.aborted || result?.stopReason === "aborted") {
+      throw new Error("TypeSafe request aborted");
+    }
+    if (result?.stopReason !== "stop") throw classifyFailure(result, config, env);
+    recordSessionUsage(result?.usage);
+    const payload = captured.payload;
+    return {
+      model: reportedModel(payload, result, requestedModel),
+      answers: isPlainObject(payload?.answers) ? payload.answers : mapPiAnswers(result?.answers),
+      usage: isPlainObject(payload?.usage) ? payload.usage : mapPiUsage(result?.usage),
+      redactions,
+    };
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", forwardAbort);
+  }
+}
+
+async function askOverHttp({
+  config,
+  requestedModel,
+  safeState,
+  questions,
+  redactions,
+  fetchImpl,
+  signal,
+  retryDelayMs,
+}) {
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -377,12 +668,8 @@ export async function askSystemOne({
   const forwardAbort = () => controller.abort(signal?.reason);
 
   try {
-    if (signal?.aborted) {
-      throw new Error("TypeSafe request aborted");
-    }
-    if (signal) {
-      signal.addEventListener("abort", forwardAbort, { once: true });
-    }
+    if (signal?.aborted) throw new Error("TypeSafe request aborted");
+    if (signal) signal.addEventListener("abort", forwardAbort, { once: true });
     const body = JSON.stringify({ model: requestedModel, state: safeState, questions });
     let response;
     let attempt = 0;
@@ -421,8 +708,7 @@ export async function askSystemOne({
       throw new Error(`TypeSafe returned invalid JSON: ${message}`, { cause: error });
     }
     return {
-      model:
-        typeof payload?.model === "string" && payload.model.trim() ? payload.model : requestedModel,
+      model: reportedModel(payload, null, requestedModel),
       answers: isPlainObject(payload?.answers) ? payload.answers : {},
       usage: isPlainObject(payload?.usage) ? payload.usage : null,
       redactions,
@@ -431,16 +717,71 @@ export async function askSystemOne({
     if (timedOut) {
       throw new Error(`TypeSafe request timed out after ${config.timeoutMs}ms`, { cause: error });
     }
-    if (signal?.aborted) {
-      throw new Error("TypeSafe request aborted", { cause: error });
-    }
+    if (signal?.aborted) throw new Error("TypeSafe request aborted", { cause: error });
     throw error;
   } finally {
     clearTimeout(timer);
-    if (signal) {
-      signal.removeEventListener("abort", forwardAbort);
-    }
+    if (signal) signal.removeEventListener("abort", forwardAbort);
   }
+}
+
+/**
+ * Ask TypeSafe's System One model one or more typed questions about `state`.
+ *
+ * Uses Pi's classifier when `ctx` (or the context bound by `bindSystemOne`)
+ * has a TypeSafe System One model. Otherwise posts to `/systemone` directly.
+ *
+ * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object }} opts
+ * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
+ */
+export async function askSystemOne({
+  state,
+  questions,
+  model,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  signal,
+  retryDelayMs = RETRY_BASE_MS,
+  ctx,
+} = {}) {
+  const config = resolveConfig(env);
+  // Redact before validating: the size and shape checks should describe what
+  // would actually be sent, and a secret is not what makes a request too big.
+  const { value: safeState, count: redactions } = redactSecrets(state, {
+    literals: [config.apiKey],
+  });
+  validateRequest({ state: safeState, questions });
+  const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
+  const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
+  const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
+  if (classifier) {
+    return askViaClassify({
+      registry,
+      classifier,
+      safeState,
+      questions,
+      redactions,
+      requestedModel,
+      config,
+      env,
+      fetchImpl,
+      signal,
+    });
+  }
+  if (!config.apiKey) throw missingKeyError(env);
+  if (typeof fetchImpl !== "function") {
+    throw new Error("A fetch implementation is required to call TypeSafe.");
+  }
+  return askOverHttp({
+    config,
+    requestedModel,
+    safeState,
+    questions,
+    redactions,
+    fetchImpl,
+    signal,
+    retryDelayMs,
+  });
 }
 
 function formatProbabilities(probabilities, legend) {
