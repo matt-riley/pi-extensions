@@ -697,6 +697,25 @@ test("fail-open: skill-select keeps lexical order when classify errors", async (
   );
 });
 
+test("redaction: Pi's stored TypeSafe key is removed before classify sees the state", async () => {
+  const stored = "ts-stored-pi-key";
+  const { ctx, calls } = classifierCtx(async () => stopResult({ pick: { type: "noul", noul: 1 } }));
+  ctx.modelRegistry.getApiKeyForProvider = async (provider) =>
+    provider === "typesafe" ? stored : undefined;
+  const result = await askSystemOne({
+    state: { note: `authorization ${stored}` },
+    questions: NOUL,
+    env: ENV,
+    ctx,
+    fetchImpl: boomFetch(),
+  });
+  assert.equal(calls.length, 1, "classify was not used");
+  const sent = JSON.stringify(calls[0].context.state);
+  assert.equal(sent.includes(stored), false, "Pi's stored key was sent in the state");
+  assert.match(sent, /<REDACTED:/);
+  assert.ok(result.redactions >= 1);
+});
+
 test("usage: tool_result and tool execute add Jev's tokens to usage that is already set", async () => {
   const handlers = {};
   const tools = {};
