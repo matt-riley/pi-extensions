@@ -660,3 +660,31 @@ test("a ledger entry records a choice by index and never the option text", async
   assert.equal(pi.entries[0].data.answers.pick.probabilities["1"], 0.2);
   assert.equal(result.answers.pick.choice, label);
 });
+
+test("every ledger entry carries schema version 1", async () => {
+  const { fetchImpl } = capturingFetch((n) =>
+    n === 1
+      ? jsonResponse({
+          model: "jev-1.13.0",
+          answers: { destructive: { type: "noul", noul: 0.2 } },
+          usage: {},
+        })
+      : jsonResponse({ error: "busy" }, { status: 500 }),
+  );
+  const pi = sessionPi();
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { destructive: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  await pi.handlers[0].handler({}, {});
+  await assert.rejects(() => pi.handlers[0].handler({}, {}));
+  assert.equal(pi.entries[0].data.v, 1);
+  assert.equal(pi.entries[1].data.v, 1);
+  assert.equal(pi.entries[0].data.outcome, "ok");
+  assert.equal(pi.entries[1].data.outcome, "http");
+});
