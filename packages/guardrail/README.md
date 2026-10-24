@@ -6,7 +6,7 @@ costs nothing and the rare dangerous case gets a real decision.
 | Layer | Decides | Cost |
 | --- | --- | --- |
 | Read-only fast path | `git status`, `rg`, `cat` — provably harmless | microseconds, reused from `shared/bash-policy.mjs` |
-| Deterministic rules (`policy.mjs`) | delete / overwrite / history-rewrite / privilege / remote-destroy / credential shapes, against regenerable, workspace, home, system and secret targets | microseconds, no I/O, no network |
+| Deterministic rules (`policy.mjs`, with `policy-targets.mjs`, `policy-shapes.mjs`, `policy-bash.mjs`) | delete / overwrite / history-rewrite / privilege / remote-destroy / credential shapes, against regenerable, workspace, home, system and secret targets | microseconds, no I/O, no network |
 | TypeSafe judgment (`judge.mjs`) | the ambiguous band only: is this unrecoverable, beyond the request, how far would it reach, does it touch secrets | one batched `jev` request, 4 s deadline |
 | Human confirm | everything above that still matters | one dialog: **Approve** / **Deny** / **Suggest an alternative** |
 
@@ -155,7 +155,7 @@ touching thresholds, question wording, or the shape tables.
 | --- | --- | --- |
 | `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
 | `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
-| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
+| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone-config.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
 
 In-session: `/guardrail` for status and counters, `/guardrail off` and
 `/guardrail on` to disarm and re-arm; `/guardrail revoke` clears current grants.

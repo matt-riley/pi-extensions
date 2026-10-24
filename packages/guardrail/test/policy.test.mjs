@@ -2,14 +2,10 @@ import { homedir } from "node:os";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  classifyTarget,
-  evaluateBashCommand,
-  evaluateToolCall,
-  isEnvFile,
-  isSecretPath,
-  worst,
-} from "../policy.mjs";
+import { evaluateToolCall } from "../policy.mjs";
+import { worst } from "../policy-verdict.mjs";
+import { classifyTarget, isEnvFile, isSecretPath } from "../policy-targets.mjs";
+import { evaluateBashCommand } from "../policy-bash.mjs";
 
 const CWD = `${homedir()}/Documents/projects/personal/workv3`;
 

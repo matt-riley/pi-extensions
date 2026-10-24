@@ -16,7 +16,8 @@ import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { excerpt, mapPool, usable } from "../../shared/spans.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { findRepoRoot, listRepoFiles, normalizeRel } from "../code-search/inventory.mjs";
-import { evaluateBashCommand, isEnvFile, isSecretPath } from "../guardrail/policy.mjs";
+import { isEnvFile, isSecretPath } from "../guardrail/policy-targets.mjs";
+import { evaluateBashCommand } from "../guardrail/policy-bash.mjs";
 
 const MAX_FILES = 255;
 const MAX_FILE_BYTES = 1_000_000;
