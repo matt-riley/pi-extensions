@@ -892,26 +892,35 @@ export async function askSystemOne({
           signal,
           retryDelayMs,
         });
-    const modelDrift = typeof result.model === "string" && result.model !== TUNED_MODEL;
-    if (modelDrift) warnModelDrift({ reported: result.model, ctx: sessionCtx });
-    appendLedgerEntry(
-      sessionPi,
-      buildLedgerEntry({
-        feature: namedFeature,
-        model: result.model,
-        requestedModel,
-        questions,
-        answers: result.answers,
-        latencyMs: Date.now() - started,
-        transport: bag.transport,
-        redactions,
-        privacyRedactions: privacyCount,
-        outcome: "ok",
-        literals,
-        modelDrift,
-        tunedModel: TUNED_MODEL,
-      }),
-    );
+    // The answer is in hand. Ledger work — the drift warning, the entry, the
+    // append — must not turn it into a throw. Pi's ctx.ui and ctx.sessionManager
+    // getters throw after /new, a fork, or a reload, and a malformed answer
+    // throws inside the builder. Swallowing here also keeps the outer catch from
+    // recording that success as a failure.
+    try {
+      const modelDrift = typeof result.model === "string" && result.model !== TUNED_MODEL;
+      if (modelDrift) warnModelDrift({ reported: result.model, ctx: sessionCtx });
+      appendLedgerEntry(
+        sessionPi,
+        buildLedgerEntry({
+          feature: namedFeature,
+          model: result.model,
+          requestedModel,
+          questions,
+          answers: result.answers,
+          latencyMs: Date.now() - started,
+          transport: bag.transport,
+          redactions,
+          privacyRedactions: privacyCount,
+          outcome: "ok",
+          literals,
+          modelDrift,
+          tunedModel: TUNED_MODEL,
+        }),
+      );
+    } catch {
+      // The gate is waiting on `result`, not on the session entry.
+    }
     return result;
   } catch (error) {
     const errorClass = ledgerErrorClass(error);
