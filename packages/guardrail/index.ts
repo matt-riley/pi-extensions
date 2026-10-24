@@ -121,8 +121,8 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     approvals.clear();
   };
   pi.on("input", revoke);
+  // A switch replaces the runtime, which fires session_start again.
   pi.on("session_start", revoke);
-  pi.on("session_switch", revoke);
   const state = {
     enabled: !disabledByEnv(),
     judged: 0,
@@ -139,10 +139,12 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     }
   };
 
-  const annotationsFor = (toolName: string) => {
+  // Annotations decide trust, so a registry that throws must not decide policy:
+  // pi's ctx getters throw after /new, and an escaped throw would skip the gate.
+  const registeredTool = (toolName: string) => {
     try {
       const tools = typeof pi.getAllTools === "function" ? pi.getAllTools() : [];
-      return tools.find((tool) => tool.name === toolName)?.annotations;
+      return tools.find((tool) => tool.name === toolName);
     } catch {
       return undefined;
     }
@@ -155,15 +157,14 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     const input = event?.input ?? {};
     const cwd = canonicalPath(ctx?.cwd ?? process.cwd());
     const epoch = generation;
-    const tool = pi.getAllTools?.().find((candidate) => candidate.name === toolName);
-    const annotations = annotationsFor(toolName);
+    const tool = registeredTool(toolName);
     const options = {
       toolName,
       input,
       cwd,
       resolvePath: canonicalPath,
       external: Boolean(tool?.namespace || /^(mcp__|cloudflare_mcp_)/.test(toolName)),
-      annotations,
+      annotations: tool?.annotations,
     };
     let decision = evaluateToolCall(options);
 
