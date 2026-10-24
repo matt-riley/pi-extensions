@@ -5,7 +5,10 @@ import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
 // neither keep today's allowlist. Only exposure "direct" is a candidate;
 // deferred, model-only, codemode, and hidden stay out unless plan mode owns them.
 
-const EXTERNAL_PLAN_TOOLS = new Set(["read", "grep", "find", "ls", "lore_recall"]);
+// Unannotated readers from pi or other extensions, in the order plan mode offers
+// them. bash is listed for that ordering; planToolVerdict returns "bash" first.
+const EXTERNAL_TOOLS = ["read", "bash", "grep", "find", "ls", "lore_recall"];
+const EXTERNAL_SET = new Set(EXTERNAL_TOOLS);
 
 // Plan mode's own tools. They stay available even when deferred, because the
 // mode is what activates them. plan_mode_complete writes the plan file.
@@ -35,8 +38,6 @@ const HISTORICAL_PLAN_TOOLS = [
   "plan_fetch_url",
   "web_search",
 ];
-
-const EXTERNAL_PREFIX = ["read", "bash", "grep", "find", "ls", "lore_recall"];
 
 function knownExposure(info) {
   return typeof info?.exposure === "string" ? info.exposure : null;
@@ -70,7 +71,7 @@ export function planToolVerdict(name, info, options = {}) {
     if (open && !PLAN_OPEN_WORLD.has(tool)) return "block";
     return "allow";
   }
-  if (EXTERNAL_PLAN_TOOLS.has(tool)) return "allow";
+  if (EXTERNAL_SET.has(tool)) return "allow";
   return "block";
 }
 
@@ -89,7 +90,7 @@ export function selectPlanTools(registered) {
       names.push(toolName);
     }
   };
-  for (const toolName of EXTERNAL_PREFIX) consider(toolName, byName.get(toolName));
+  for (const toolName of EXTERNAL_TOOLS) consider(toolName, byName.get(toolName));
   for (const tool of registered) {
     if (tool?.name) consider(tool.name, tool);
   }
