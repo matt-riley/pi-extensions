@@ -256,7 +256,7 @@ function guardrailSignals(answers) {
 /**
  * Scoreable replay-corpus records from guardrail ledger entries.
  *
- * The corpus file is `{ sampled, records: [{ action, verdict, reason, signals }] }`.
+ * The corpus file is `{ sampled, records: [{ action, verdict, reason, signals, source }] }`.
  * The ledger never kept the command, so action is a fixed placeholder and
  * verdict/reason stay empty — judge-thresholds scores the signals.
  */
@@ -273,6 +273,7 @@ export function toReplayCorpus(entries) {
       verdict: null,
       reason: null,
       signals,
+      source: "ledger",
     });
   }
   return { sampled: records.length, records };
