@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import * as judge from "../packages/guardrail/judge.mjs";
+import * as ledger from "../shared/jev-ledger.mjs";
 import { TUNED_MODEL } from "../shared/jev-ledger.mjs";
 import { CURRENT, answersOf, scoreCandidate, scoreable } from "./judge-thresholds.mjs";
 
@@ -20,6 +21,51 @@ test("the measured thresholds record the Jev they were tuned on", () => {
   assert.equal(judge.THRESHOLDS?.blastRadius, 2);
   assert.equal(CURRENT.destructive, 0.5);
   assert.equal(CURRENT.intentMismatch, 0.6);
+});
+
+test("guardrail ledger entries export as replay-corpus records without the action", () => {
+  assert.equal(typeof ledger.toReplayCorpus, "function");
+  const secret = "SECRET-STATE-do-not-export";
+  const corpus = ledger.toReplayCorpus([
+    {
+      feature: "guardrail",
+      outcome: "ok",
+      answers: {
+        destructive: { type: "noul", noul: 0.2 },
+        intent_mismatch: { type: "noul", noul: 0.9 },
+        credentials: { type: "noul", noul: 0.1 },
+        blast_radius: { type: "score", score: 1 },
+      },
+      state: { command: secret },
+    },
+    {
+      type: "custom",
+      customType: "jev-decision",
+      data: {
+        feature: "skill-select",
+        outcome: "ok",
+        transport: "http",
+        answers: { best: { type: "choice", choice: "grill-me" } },
+        state: secret,
+      },
+    },
+    { type: "custom", customType: "router-decision", data: { state: secret } },
+    null,
+  ]);
+  assert.equal(corpus.sampled, 1);
+  assert.equal(corpus.records.length, 1);
+  assert.equal(corpus.records[0].action, "(not recorded)");
+  assert.equal(corpus.records[0].signals.intent_mismatch, 0.9);
+  assert.equal(corpus.records[0].signals.destructive, 0.2);
+  assert.equal(JSON.stringify(corpus).includes(secret), false, "state reached the corpus");
+  const scored = scoreCandidate(corpus.records, {
+    destructive: 0.5,
+    intentMismatch: 0.85,
+    credentials: 0.6,
+    blastRadius: 2,
+  });
+  assert.equal(scored.judged, 1);
+  assert.equal(scored.counts.confirm, 1);
 });
 
 test("answersOf rebuilds the router's own input from its signals", () => {
