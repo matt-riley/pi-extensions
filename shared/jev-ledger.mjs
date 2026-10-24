@@ -45,6 +45,39 @@ function answerRecord(answer) {
   return record;
 }
 
+/** A closed class for a thrown Jev call. The raw message can quote a response body. */
+export function ledgerErrorClass(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.startsWith("TYPESAFE_API_KEY is not set")) return "missing-key";
+  if (message.startsWith("TypeSafe request timed out")) return "timeout";
+  if (message.startsWith("TypeSafe request aborted")) return "aborted";
+  if (message.startsWith("TypeSafe request failed with status")) return "http";
+  if (message.startsWith("TypeSafe returned invalid JSON")) return "invalid-json";
+  if (message.startsWith("A fetch implementation is required")) return "network";
+  if (
+    message.startsWith("Provide at least one question") ||
+    message.includes("must be an object") ||
+    message.includes("unknown question type") ||
+    message.includes("needs instructions") ||
+    message.includes("needs criteria") ||
+    message.startsWith("TypeSafe state is") ||
+    message.includes("which JSON") ||
+    message.includes("refers to `") ||
+    message.startsWith("TYPESAFE_BASE_URL")
+  ) {
+    return "validation";
+  }
+  if (error instanceof TypeError) return "network";
+  return "classify";
+}
+
+/** Status digit from our own HTTP error, never the response body. */
+export function ledgerHttpStatus(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const match = message.match(/status (\d+)/);
+  return match ? Number(match[1]) : undefined;
+}
+
 /**
  * Pi 1.4: appendEntry(customType, data?) persists a custom entry that does not
  * enter the model context. A missing or throwing hook is a host problem, not
@@ -72,20 +105,22 @@ export function buildLedgerEntry({
   privacyRedactions,
   outcome,
   literals,
+  status,
 } = {}) {
-  const recordedAnswers = {};
+  let safeAnswers = null;
   if (answers && typeof answers === "object") {
+    const recordedAnswers = {};
     for (const [id, answer] of Object.entries(answers)) {
       recordedAnswers[id] = answerRecord(answer);
     }
+    // homeDir "" skips path masking: this scrub is for keys that echoed into an
+    // answer, not a second pass over the state.
+    safeAnswers = redactSecrets(recordedAnswers, {
+      literals,
+      homeDir: "",
+      maskEmails: false,
+    }).value;
   }
-  // homeDir "" skips path masking: this scrub is for keys that echoed into an
-  // answer, not a second pass over the state.
-  const safeAnswers = redactSecrets(recordedAnswers, {
-    literals,
-    homeDir: "",
-    maskEmails: false,
-  }).value;
   return {
     feature,
     model,
@@ -97,5 +132,6 @@ export function buildLedgerEntry({
     redactions,
     privacyRedactions,
     outcome,
+    ...(Number.isInteger(status) ? { status } : {}),
   };
 }

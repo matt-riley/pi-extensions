@@ -18,7 +18,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-import { appendLedgerEntry, buildLedgerEntry } from "./jev-ledger.mjs";
+import {
+  appendLedgerEntry,
+  buildLedgerEntry,
+  ledgerErrorClass,
+  ledgerHttpStatus,
+} from "./jev-ledger.mjs";
 import { redactSecrets } from "./redact.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
@@ -803,45 +808,88 @@ export async function askSystemOne({
 } = {}) {
   const started = Date.now();
   const sessionPi = systemOneAls.getStore()?.pi;
-  const config = resolveConfig(env);
-  const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
-  const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
-  const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
-  // Redact before validating: the size and shape checks should describe what
-  // would actually be sent, and a secret is not what makes a request too big.
-  // The local key is not the only credential that can sit in the state. On the
-  // classify path Pi may also hold a stored TypeSafe key that never appears in
-  // the environment.
-  const literals = [config.apiKey];
-  if (classifier) {
-    const stored = await storedProviderKey(registry);
-    if (stored) literals.push(stored);
-  }
-  // One masked copy, before either transport. Home paths are masked by default;
-  // emails only when PI_MASK_EMAILS=1. Credential redactions stay a separate count.
-  const {
-    value: safeState,
-    count: redactions,
-    privacyCount = 0,
-  } = redactSecrets(state, {
-    literals,
-    maskEmails: env?.PI_MASK_EMAILS === "1",
-  });
-  validateRequest({ state: safeState, questions });
-  // Nothing is sent without a local key. Pi's stored login is not a substitute;
-  // that can be an opt-in later. The HTTP path already refused here.
-  if (!config.apiKey) throw missingKeyError(env);
-  const record = (result, transport) => {
+  const namedFeature = typeof feature === "string" && feature.trim() ? feature.trim() : "unknown";
+  const bag = {
+    feature: namedFeature,
+    requestedModel: "",
+    transport: "http",
+    redactions: 0,
+    privacyRedactions: 0,
+    literals: [],
+  };
+  try {
+    const config = resolveConfig(env);
+    const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
+    bag.requestedModel = requestedModel;
+    const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
+    const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
+    bag.transport = classifier ? "classify" : "http";
+    // Redact before validating: the size and shape checks should describe what
+    // would actually be sent, and a secret is not what makes a request too big.
+    // The local key is not the only credential that can sit in the state. On the
+    // classify path Pi may also hold a stored TypeSafe key that never appears in
+    // the environment.
+    const literals = [config.apiKey];
+    if (classifier) {
+      const stored = await storedProviderKey(registry);
+      if (stored) literals.push(stored);
+    }
+    bag.literals = literals;
+    // One masked copy, before either transport. Home paths are masked by default;
+    // emails only when PI_MASK_EMAILS=1. Credential redactions stay a separate count.
+    const {
+      value: safeState,
+      count: redactions,
+      privacyCount = 0,
+    } = redactSecrets(state, {
+      literals,
+      maskEmails: env?.PI_MASK_EMAILS === "1",
+    });
+    bag.redactions = redactions;
+    bag.privacyRedactions = privacyCount;
+    validateRequest({ state: safeState, questions });
+    // Nothing is sent without a local key. Pi's stored login is not a substitute;
+    // that can be an opt-in later. The HTTP path already refused here.
+    if (!config.apiKey) throw missingKeyError(env);
+    if (!classifier && typeof fetchImpl !== "function") {
+      throw new Error("A fetch implementation is required to call TypeSafe.");
+    }
+    const result = classifier
+      ? await askViaClassify({
+          registry,
+          classifier,
+          safeState,
+          questions,
+          redactions,
+          privacyCount,
+          requestedModel,
+          config,
+          env,
+          fetchImpl,
+          signal,
+          retryDelayMs,
+        })
+      : await askOverHttp({
+          config,
+          requestedModel,
+          safeState,
+          questions,
+          redactions,
+          privacyCount,
+          fetchImpl,
+          signal,
+          retryDelayMs,
+        });
     appendLedgerEntry(
       sessionPi,
       buildLedgerEntry({
-        feature: typeof feature === "string" && feature.trim() ? feature.trim() : "unknown",
+        feature: namedFeature,
         model: result.model,
         requestedModel,
         questions,
         answers: result.answers,
         latencyMs: Date.now() - started,
-        transport,
+        transport: bag.transport,
         redactions,
         privacyRedactions: privacyCount,
         outcome: "ok",
@@ -849,43 +897,27 @@ export async function askSystemOne({
       }),
     );
     return result;
-  };
-  if (classifier) {
-    return record(
-      await askViaClassify({
-        registry,
-        classifier,
-        safeState,
+  } catch (error) {
+    const errorClass = ledgerErrorClass(error);
+    appendLedgerEntry(
+      sessionPi,
+      buildLedgerEntry({
+        feature: bag.feature,
+        model: null,
+        requestedModel: bag.requestedModel,
         questions,
-        redactions,
-        privacyCount,
-        requestedModel,
-        config,
-        env,
-        fetchImpl,
-        signal,
-        retryDelayMs,
+        answers: null,
+        latencyMs: Date.now() - started,
+        transport: bag.transport,
+        redactions: bag.redactions,
+        privacyRedactions: bag.privacyRedactions,
+        outcome: errorClass,
+        literals: bag.literals,
+        status: errorClass === "http" ? ledgerHttpStatus(error) : undefined,
       }),
-      "classify",
     );
+    throw error;
   }
-  if (typeof fetchImpl !== "function") {
-    throw new Error("A fetch implementation is required to call TypeSafe.");
-  }
-  return record(
-    await askOverHttp({
-      config,
-      requestedModel,
-      safeState,
-      questions,
-      redactions,
-      privacyCount,
-      fetchImpl,
-      signal,
-      retryDelayMs,
-    }),
-    "http",
-  );
 }
 
 function formatProbabilities(probabilities, legend) {
