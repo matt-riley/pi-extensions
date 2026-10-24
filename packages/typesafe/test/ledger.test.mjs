@@ -294,3 +294,26 @@ test("a failed Jev call records an error class and still throws", async () => {
   assert.equal(data.answers, null);
   assert.equal(JSON.stringify(data).includes(bodySentinel), false, "error body reached the entry");
 });
+
+test("a failed call records fail-open or fail-closed and keeps the error class", async () => {
+  const { fetchImpl } = capturingFetch(() => jsonResponse({ error: "busy" }, { status: 503 }));
+  const questions = { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } };
+  const pi = sessionPi();
+  pi.on("tool_call", (_event, ctx) =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions,
+      env: ENV,
+      fetchImpl,
+      failurePolicy: ctx.failurePolicy,
+    }),
+  );
+
+  await assert.rejects(() => pi.handlers[0].handler({}, { failurePolicy: "fail-open" }));
+  assert.equal(pi.entries[0].data.outcome, "fail-open");
+  assert.equal(pi.entries[0].data.errorClass, "http");
+
+  await assert.rejects(() => pi.handlers[0].handler({}, { failurePolicy: "fail-closed" }));
+  assert.equal(pi.entries[1].data.outcome, "fail-closed");
+  assert.equal(pi.entries[1].data.errorClass, "http");
+});
