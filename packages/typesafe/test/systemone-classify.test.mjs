@@ -929,3 +929,57 @@ test("usage: tool_result and tool execute add Jev's tokens to usage that is alre
   assert.equal(executed.usage.input, 111, "existing tool usage was left unchanged");
   assert.equal(executed.usage.cost.total, 0.18);
 });
+
+test("deadline: a classify result that arrives after the timeout is not an answer", async () => {
+  let aborted = false;
+  const { ctx } = classifierCtx(async (_model, _context, options) => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    aborted = options.signal.aborted;
+    return stopResult({ pick: { type: "noul", noul: 1 } });
+  });
+  await assert.rejects(
+    askSystemOne({
+      state: { note: "hello" },
+      questions: NOUL,
+      env: { ...ENV, TYPESAFE_TIMEOUT_MS: "5" },
+      ctx,
+      fetchImpl: boomFetch(),
+    }),
+    /timed out after 5ms/,
+  );
+  assert.equal(aborted, true, "the timed-out classify request was left running");
+});
+
+test("deadline: a caller abort during classify is reported as an abort, not a timeout", async () => {
+  const { ctx } = classifierCtx(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return stopResult({ pick: { type: "noul", noul: 1 } });
+  });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 5);
+  await assert.rejects(
+    askSystemOne({
+      state: { note: "hello" },
+      questions: NOUL,
+      env: { ...ENV, TYPESAFE_TIMEOUT_MS: "5000" },
+      ctx,
+      signal: controller.signal,
+      fetchImpl: boomFetch(),
+    }),
+    /aborted/i,
+  );
+});
+
+test("host binding is applied once, so a second extension does not wrap the host again", () => {
+  const pi = {
+    on() {},
+    registerTool() {},
+  };
+  bindSystemOne(pi);
+  const boundOn = pi.on;
+  const boundRegister = pi.registerTool;
+  // Every extension that asks Jev calls this with the same host object.
+  bindSystemOne(pi);
+  assert.equal(pi.on, boundOn, "the second bind wrapped on() again");
+  assert.equal(pi.registerTool, boundRegister, "the second bind wrapped registerTool() again");
+});

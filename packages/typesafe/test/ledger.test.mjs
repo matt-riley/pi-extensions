@@ -356,6 +356,56 @@ test("a failed call records fail-open or fail-closed and keeps the error class",
   assert.equal(pi.entries[1].data.errorClass, "http");
 });
 
+test("a timed-out call is ledgered as a timeout on both transports", async () => {
+  const questions = { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } };
+  const env = { ...ENV, TYPESAFE_TIMEOUT_MS: "5" };
+  // A fetch that hangs until the deadline aborts it: the same shape as a stalled
+  // provider, and the only path that produces the timeout class.
+  const hanging = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+
+  const httpPi = sessionPi();
+  httpPi.on("tool_call", () =>
+    askSystemOne({ state: { note: "plain" }, questions, env, fetchImpl: hanging, ctx: {} }),
+  );
+  await assert.rejects(() => httpPi.handlers[0].handler({}, {}), /timed out after 5ms/);
+  assert.equal(httpPi.entries[0].data.outcome, "timeout");
+
+  const model = {
+    id: "jev-latest",
+    type: "classifier",
+    provider: "typesafe",
+    api: "typesafe-system-one",
+    baseUrl: "https://api.typesafe.ai/v1",
+  };
+  const classifyPi = sessionPi();
+  classifyPi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions,
+      env,
+      ctx: {
+        modelRegistry: {
+          findOfType: () => model,
+          getModelsOfType: () => [model],
+          classify: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return { stopReason: "stop", answers: {} };
+          },
+        },
+      },
+      fetchImpl: async () => {
+        throw new Error("direct HTTP transport was used");
+      },
+    }),
+  );
+  await assert.rejects(() => classifyPi.handlers[0].handler({}, {}), /timed out after 5ms/);
+  assert.equal(classifyPi.entries[0].data.outcome, "timeout");
+  assert.equal(classifyPi.entries[0].data.transport, "classify");
+});
+
 test("a drifted reported model warns once per session and does not re-tune", async () => {
   const notices = [];
   const reported = { model: "jev-1.13.0" };
