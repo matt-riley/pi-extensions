@@ -178,6 +178,23 @@ function workspaceRoots(roots, cwd) {
 }
 
 /**
+ * Checkouts can live under the agent directory (this repo does). Their files
+ * are workspace, not Pi control plane, but the config around them is not:
+ * only roots strictly below the agent directory get the override.
+ */
+function workspaceInsideAgent(roots, cwd, resolvePath) {
+  const agent = resolvedTarget(
+    process.env.PI_CODING_AGENT_DIR || path.join(homedir(), ".pi/agent"),
+    cwd,
+    resolvePath,
+  );
+  return roots.filter((root) => {
+    const rel = path.relative(agent, root);
+    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  });
+}
+
+/**
  * Classify a path token as one of:
  *   regenerable | secret | system | workspace | home | unknown
  *
@@ -206,24 +223,29 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd, resolvePath) {
   // against a cwd would invent a directory literally named `~`.
   const tildeish = /^(~|\$HOME|\$\{HOME\})(\/|$)/.test(token);
   const home = homedir();
+  const base = tildeish ? home : cwd;
+  const resolved =
+    !opaque && base && typeof base === "string" && base.trim() ? path.resolve(base, token) : null;
+  const roots = workspaceRoots(rootCwd, cwd);
+  const inNestedWorkspace =
+    resolved !== null &&
+    workspaceInsideAgent(roots, cwd, resolvePath).some(
+      (root) => resolved === root || resolved.startsWith(root + path.sep),
+    );
 
   if (isSecretPath(token)) return "secret";
-  const control = isControlPlanePath(token, cwd, resolvePath);
+  const control = isControlPlanePath(token, cwd, resolvePath) && !inNestedWorkspace;
   if (!control && isRegenerablePath(token)) return "regenerable";
   if (SYSTEM_PREFIXES.some((p) => token === p || token.startsWith(`${p}/`))) return "system";
   if (control) return "control";
   if (/^\/(Users|home)\/[^/]+(\/\.ssh|\/\.aws|\/\.gnupg)(\/|$)/.test(token)) return "secret";
 
-  if (!opaque) {
-    const base = tildeish ? home : cwd;
-    if (base && typeof base === "string" && base.trim()) {
-      const resolved = path.resolve(base, token);
-      if (isRegenerablePath(resolved)) return "regenerable";
-      for (const root of workspaceRoots(rootCwd, cwd)) {
-        if (resolved === root || resolved.startsWith(root + path.sep)) return "workspace";
-      }
-      if (home && (resolved === home || resolved.startsWith(home + path.sep))) return "home";
+  if (resolved !== null) {
+    if (isRegenerablePath(resolved)) return "regenerable";
+    for (const root of roots) {
+      if (resolved === root || resolved.startsWith(root + path.sep)) return "workspace";
     }
+    if (home && (resolved === home || resolved.startsWith(home + path.sep))) return "home";
   }
 
   if (HOME_PREFIXES.some((re) => re.test(token))) return "home";

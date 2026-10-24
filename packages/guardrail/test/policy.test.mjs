@@ -244,6 +244,24 @@ test("a cd makes the directory it enters part of the workspace", () => {
   assert.equal(verdict("cd ~/Documents && rm -rf notes"), "judge");
 });
 
+test("a checkout under the agent directory is workspace, not control plane", () => {
+  const agent = `${homedir()}/.pi/agent`;
+  const checkout = `${agent}/extensions/pi-extensions`;
+  assert.equal(classifyTarget(`${checkout}/src/app.ts`, checkout), "workspace");
+  assert.equal(classifyTarget(`${checkout}/AGENTS.md`, checkout), "workspace");
+  assert.equal(
+    evaluateToolCall({
+      toolName: "write",
+      input: { path: `${checkout}/src/app.ts`, content: "x" },
+      cwd: checkout,
+    }).verdict,
+    "allow",
+  );
+  // The agent config around the checkout still needs approval.
+  assert.equal(classifyTarget(`${agent}/settings.json`, checkout), "control");
+  assert.equal(classifyTarget(`${agent}/extensions/other/index.ts`, checkout), "control");
+});
+
 test("inline code that only mentions a destructive command is not destructive", () => {
   // Third measured regression: this repo's own measurement scripts quote the
   // commands they classify, so `node -e "…'rm -rf'…"` was prompting.
