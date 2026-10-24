@@ -226,6 +226,56 @@ test("classify path: Pi bool answers become noul when the response body cannot b
   assert.equal(result.usage.output_tokens, 1);
 });
 
+test("classify path: a missing answer falls back to the raw response body", async () => {
+  const questions = {
+    pick: { type: "noul", instructions: "Looking at `note`: is it fine?" },
+    risk: { type: "noul", instructions: "Looking at `note`: is it risky?" },
+  };
+  const raw = {
+    model: "jev-1.13.0",
+    answers: { pick: { type: "noul", noul: 0.77 } },
+    usage: { input_tokens: 4, output_tokens: 2 },
+  };
+  const { fetchImpl } = capturingFetch(() => jsonResponse(raw));
+  const { ctx } = classifierCtx(async (_model, _context, options) => {
+    await options.fetch("https://api.typesafe.ai/v1/systemone", { method: "POST" });
+    // Pi's parseAnswers throws this, then classify reports stopReason "error".
+    // The HTTP transport would have returned the partial answers object.
+    return {
+      stopReason: "error",
+      errorMessage: "System One API did not return an answer for risk",
+      usage: piUsage(4, 2),
+    };
+  });
+  const result = await askSystemOne({
+    state: { note: "hello" },
+    questions,
+    env: ENV,
+    ctx,
+    fetchImpl,
+  });
+  assert.equal(result.answers.pick.type, "noul");
+  assert.equal(result.answers.pick.noul, 0.77);
+  assert.equal(result.answers.risk, undefined);
+  assert.deepEqual(result.usage, { input_tokens: 4, output_tokens: 2 });
+
+  const other = classifierCtx(async () => ({
+    stopReason: "error",
+    errorMessage: "System One API error (500): no",
+  }));
+  await assert.rejects(
+    () =>
+      askSystemOne({
+        state: { note: "hello" },
+        questions,
+        env: ENV,
+        ctx: other.ctx,
+        fetchImpl: boomFetch(),
+      }),
+    /System One API error \(500\)/,
+  );
+});
+
 test("classify path: an error from classify is not sent again over direct HTTP", async () => {
   const http = [];
   const { ctx, calls } = classifierCtx(async () => {
