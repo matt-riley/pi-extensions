@@ -607,12 +607,20 @@ function reportedModel(payload, result, requestedModel) {
   return requestedModel;
 }
 
+function countedRedactions(redactions, privacyCount) {
+  return {
+    redactions,
+    ...(privacyCount > 0 ? { privacyRedactions: privacyCount } : {}),
+  };
+}
+
 async function askViaClassify({
   registry,
   classifier,
   safeState,
   questions,
   redactions,
+  privacyCount,
   requestedModel,
   config,
   env,
@@ -686,7 +694,7 @@ async function askViaClassify({
       model: reportedModel(payload, result, requestedModel),
       answers: isPlainObject(payload?.answers) ? payload.answers : mapPiAnswers(result?.answers),
       usage: isPlainObject(payload?.usage) ? payload.usage : mapPiUsage(result?.usage),
-      redactions,
+      ...countedRedactions(redactions, privacyCount),
     };
   } finally {
     clearTimeout(timer);
@@ -700,6 +708,7 @@ async function askOverHttp({
   safeState,
   questions,
   redactions,
+  privacyCount,
   fetchImpl,
   signal,
   retryDelayMs,
@@ -756,7 +765,7 @@ async function askOverHttp({
       model: reportedModel(payload, null, requestedModel),
       answers: isPlainObject(payload?.answers) ? payload.answers : {},
       usage: isPlainObject(payload?.usage) ? payload.usage : null,
-      redactions,
+      ...countedRedactions(redactions, privacyCount),
     };
   } catch (error) {
     if (timedOut) {
@@ -777,7 +786,7 @@ async function askOverHttp({
  * has a TypeSafe System One model. Otherwise posts to `/systemone` directly.
  *
  * @param {{ state: unknown, questions: object, model?: string, env?: object, fetchImpl?: typeof fetch, signal?: AbortSignal, retryDelayMs?: number, ctx?: object }} opts
- * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number }>}
+ * @returns {Promise<{ model: string, answers: object, usage: object | null, redactions: number, privacyRedactions?: number }>}
  */
 export async function askSystemOne({
   state,
@@ -803,7 +812,16 @@ export async function askSystemOne({
     const stored = await storedProviderKey(registry);
     if (stored) literals.push(stored);
   }
-  const { value: safeState, count: redactions } = redactSecrets(state, { literals });
+  // One masked copy, before either transport. Home paths are masked by default;
+  // emails only when PI_MASK_EMAILS=1. Credential redactions stay a separate count.
+  const {
+    value: safeState,
+    count: redactions,
+    privacyCount = 0,
+  } = redactSecrets(state, {
+    literals,
+    maskEmails: env?.PI_MASK_EMAILS === "1",
+  });
   validateRequest({ state: safeState, questions });
   // Nothing is sent without a local key. Pi's stored login is not a substitute;
   // that can be an opt-in later. The HTTP path already refused here.
@@ -815,6 +833,7 @@ export async function askSystemOne({
       safeState,
       questions,
       redactions,
+      privacyCount,
       requestedModel,
       config,
       env,
@@ -832,6 +851,7 @@ export async function askSystemOne({
     safeState,
     questions,
     redactions,
+    privacyCount,
     fetchImpl,
     signal,
     retryDelayMs,
@@ -875,14 +895,15 @@ export function usableNumber(value) {
 }
 
 /** Render answers as compact text for the model to read. */
-export function formatAnswers({ model, usage, answers, redactions } = {}) {
+export function formatAnswers({ model, usage, answers, redactions, privacyRedactions } = {}) {
   const lines = [];
   const tokens = usage
     ? `input_tokens=${usage.input_tokens ?? "?"} output_tokens=${usage.output_tokens ?? "?"}`
     : "usage unavailable";
   // A redaction changes what the model was shown, so it belongs next to the
   // answer it shaped rather than in a log nobody reads.
-  const redacted = redactions > 0 ? ` · ${redactions} redacted` : "";
+  const totalRedactions = (redactions ?? 0) + (privacyRedactions ?? 0);
+  const redacted = totalRedactions > 0 ? ` · ${totalRedactions} redacted` : "";
   lines.push(`${model ?? DEFAULT_MODEL} (${tokens})${redacted}`);
   const entries = Object.entries(answers ?? {});
   if (entries.length === 0) {
