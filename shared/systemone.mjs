@@ -21,6 +21,7 @@ import { isAbsolute, join } from "node:path";
 import {
   appendLedgerEntry,
   buildLedgerEntry,
+  callingFeature,
   ledgerErrorClass,
   ledgerHttpStatus,
   TUNED_MODEL,
@@ -816,7 +817,8 @@ export async function askSystemOne({
 } = {}) {
   const started = Date.now();
   const sessionPi = systemOneAls.getStore()?.pi;
-  const namedFeature = typeof feature === "string" && feature.trim() ? feature.trim() : "unknown";
+  const namedFeature =
+    typeof feature === "string" && feature.trim() ? feature.trim() : callingFeature();
   const bag = {
     feature: namedFeature,
     requestedModel: "",

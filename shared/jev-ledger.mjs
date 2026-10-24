@@ -7,6 +7,20 @@
 
 import { redactSecrets } from "./redact.mjs";
 
+const FRAME_SKIP = /\/(?:shared\/(?:systemone|jev-ledger)\.mjs|node_modules\/|test\/)/;
+
+/** Package or script that called into the ledger, ignoring the ledger and tests. */
+export function callingFeature(stack = new Error().stack ?? "") {
+  for (const line of String(stack).split("\n")) {
+    if (FRAME_SKIP.test(line)) continue;
+    const pkg = line.match(/packages\/([^/]+)\//);
+    if (pkg) return pkg[1];
+    const script = line.match(/scripts\/([^/]+)\.mjs/);
+    if (script) return script[1].replace(/\.test$/, "");
+  }
+  return "unknown";
+}
+
 /** The Jev the guardrail and judge-thresholds lines were measured on. */
 export const TUNED_MODEL = "jev-1.13.0";
 
