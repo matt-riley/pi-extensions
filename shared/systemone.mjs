@@ -845,6 +845,7 @@ export async function askSystemOne({
         redactions,
         privacyRedactions: privacyCount,
         outcome: "ok",
+        literals,
       }),
     );
     return result;

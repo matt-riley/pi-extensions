@@ -1,8 +1,11 @@
 // jev-ledger.mjs — local session record of one Jev call.
 //
-// The entry is what pi.appendEntry stores. It is not sent anywhere. Question
-// instructions are kept here as the static template; a later check decides
-// whether that text is safe to keep.
+// The entry is what pi.appendEntry stores. It stays in the session and is not
+// sent anywhere. Question instructions and criteria can carry user text, so
+// the entry keeps the id and the kind only. Answer strings are scrubbed with
+// the same literals the request used, in case a choice echoes a key.
+
+import { redactSecrets } from "./redact.mjs";
 
 function finiteNumber(value) {
   if (value === null || value === undefined) return null;
@@ -12,9 +15,7 @@ function finiteNumber(value) {
 }
 
 function questionRecord(id, question) {
-  const record = { id, kind: typeof question?.type === "string" ? question.type : "unknown" };
-  if (typeof question?.instructions === "string") record.template = question.instructions;
-  return record;
+  return { id, kind: typeof question?.type === "string" ? question.type : "unknown" };
 }
 
 function probabilityRecord(probabilities) {
@@ -70,6 +71,7 @@ export function buildLedgerEntry({
   redactions,
   privacyRedactions,
   outcome,
+  literals,
 } = {}) {
   const recordedAnswers = {};
   if (answers && typeof answers === "object") {
@@ -77,12 +79,19 @@ export function buildLedgerEntry({
       recordedAnswers[id] = answerRecord(answer);
     }
   }
+  // homeDir "" skips path masking: this scrub is for keys that echoed into an
+  // answer, not a second pass over the state.
+  const safeAnswers = redactSecrets(recordedAnswers, {
+    literals,
+    homeDir: "",
+    maskEmails: false,
+  }).value;
   return {
     feature,
     model,
     requestedModel,
     questions: Object.entries(questions ?? {}).map(([id, question]) => questionRecord(id, question)),
-    answers: recordedAnswers,
+    answers: safeAnswers,
     latencyMs,
     transport,
     redactions,
