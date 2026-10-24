@@ -118,3 +118,33 @@ test("askSystemOne appends a jev-decision entry for a successful call", async ()
   assert.equal(result.model, "jev-1.13.0");
   assert.equal(result.answers.destructive.noul, 0.2);
 });
+
+test("a bound pi without appendEntry still returns the Jev answer", async () => {
+  const { fetchImpl } = capturingFetch(() =>
+    jsonResponse({
+      model: "jev-1.13.0",
+      answers: { destructive: { type: "noul", noul: 0.2 } },
+      usage: {},
+    }),
+  );
+  const handlers = [];
+  const pi = {
+    on(event, handler) {
+      handlers.push({ event, handler });
+    },
+  };
+  bindSystemOne(pi);
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: {
+        destructive: { type: "noul", instructions: "Looking at `note`: is it fine?" },
+      },
+      env: ENV,
+      fetchImpl,
+    }),
+  );
+
+  const result = await handlers[0].handler({}, {});
+  assert.equal(result.answers.destructive.noul, 0.2);
+});
