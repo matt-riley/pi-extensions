@@ -1,48 +1,29 @@
 # pi-footer
 
-Replaces pi's built-in footer with an always-on status line showing, left
-to right: **model** (robot glyph + provider/id) in the accent color, the
-**thinking level** badge (brain glyph, color-coded per level),
-**extension statuses**, **↑input ↓output token totals** (link/warning),
-**$cost** (success), the **current directory name** (folder glyph, muted),
-and the **git branch** (branch glyph, muted).
+A work-oriented statusline: **project · branch · work state**, then model and
+context pressure and model/thinking level when there is room. It uses the current theme, not a new one.
 
-The footer re-renders live when the model changes (Ctrl+P), the thinking
-level changes (Shift+Tab), a message completes (token totals tick up), or
-the git branch changes.
-
-## Install
-
-Installed as part of the `pi-extensions` collection (see the [root
-README](../../README.md)). Standalone registration comes later with npm
-publishing.
+States reflect actual pi activity: `ready`, `planning` (read-only mode), or
+`working`. `ready`
+means idle, **not verified**. A backed-up workbench draft remains visible as
+`draft saved`.
 
 ## Usage
 
-The custom footer is on by default. Toggle it:
+Installed through the collection's root manifest; see the [root README](../../README.md).
 
-```text
-/footer
-```
+- `/footer` toggles between the personal and built-in footer.
+- `/footer details` shows token totals, cost and extension statuses on demand.
+  Accounting stays out of the statusline; `/session` is still available.
 
-`/footer` restores the built-in footer when off, and reinstates the custom
-one when on.
+Workspace and work state take priority over model/accounting information in
+narrow terminals. Layout measures terminal columns, including CJK characters,
+combining marks and emoji; names cannot inject terminal control sequences.
+No Nerd Font is required. The layout lives in a new `workspace.mjs` module so
+upgrading from the former footer through `/reload` does not hit pi's cached old
+helper exports. Later edits to an already-loaded helper may still need a pi restart.
 
-## Requirements
-
-Glyphs are [Nerd Font](https://www.nerdfonts.com) v3 icons — your terminal
-needs a Nerd Font installed (MonoLisa ships a paid NF variant; free
-alternatives include JetBrains Mono Nerd Font and MesloLGM Nerd Font) or
-they render as empty boxes. `/footer` restores the built-in footer if you
-want the plain look back.
-
-## Notes
-
-- Token totals are the running session totals (input + output across all
-  assistant messages on the current branch), matching what pi reports in
-  `/session`.
-- Cost uses each model's configured pricing; cheap models show four decimal
-  places.
-- Under narrow terminals the footer degrades gracefully: it drops the branch,
-  then the directory name, then cost and token counts, then truncates the
-  model label, then the thinking badge.
+The footer refreshes on session/branch, model/thinking, tool and agent lifecycle
+events. Planning status reads the existing plan-mode extension status.
+Token totals cover assistant messages on the active branch. Cost uses configured
+model pricing, not a billing-service quote. Nothing polls Git or calls a model.

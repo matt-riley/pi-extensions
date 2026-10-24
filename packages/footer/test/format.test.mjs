@@ -9,7 +9,7 @@ import {
   thinkColor,
   truncateToWidth,
   visibleWidth,
-} from "../format.mjs";
+} from "../workspace.mjs";
 
 // Fake theme.fg emitting realistic numeric SGR codes (pi emits e.g. 38;5;214m).
 const apply = (color, text) => `\u001b[38;5;1m${text}\u001b[0m`;

@@ -1,40 +1,7 @@
-// /footer — always-on status footer.
-//
-// Replaces pi's built-in footer with one that shows, left to right:
-//   🤖 model (provider/id) · 🧠 thinking level badge · extension statuses ·
-//   ▦ context % · ↑input ↓output tokens · $cost · 📁 directory · git branch
-// Glyphs are Nerd Font v3 icons (see ICONS in format.mjs) — requires a
-// Nerd Font in the terminal. Re-renders when the model, thinking level,
-// context usage, or an assistant message changes. Toggle with /footer.
-
+// Personal footer: workspace and actual work state first; accounting on demand.
 import { basename } from "node:path";
-
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { composeLine, ctxColor, fmtCost, fmtTokens, ICONS, thinkColor } from "./format.mjs";
-
-const FALLBACK_ICONS = {
-  robot: "\uec20",
-  brain: "\uee9c",
-  arrowUp: "\uf062",
-  arrowDown: "\uf063",
-  dollar: "\uf155",
-  folder: "\uf07b",
-  gitBranch: "\uec6f",
-  gauge: "\ued2f",
-};
-
-// Stale-module guard (same failure mode as FALLBACK_ICONS): /reload re-imports
-// this file fresh but serves a cached pre-ctxColor format.mjs, where the missing
-// binding reads as undefined — fall back to inline thresholds instead of
-// letting render throw and kill pi via uncaughtException.
-const ctxColorSafe = (percent: number): string =>
-  typeof ctxColor === "function"
-    ? ctxColor(percent)
-    : percent >= 90
-      ? "error"
-      : percent >= 75
-        ? "warning"
-        : "muted";
+import { fmtCost, fmtTokens, workLabel, workspaceLine } from "./workspace.mjs";
 
 interface BranchEntry {
   type?: string;
@@ -44,113 +11,100 @@ interface BranchEntry {
   };
 }
 
-interface ContextUsage {
-  tokens: number | null;
-  contextWindow: number;
-  percent: number | null;
-}
-
-interface Seg {
-  text: string;
-  color?: string;
-}
-
 export default function (pi: ExtensionAPI) {
   let enabled = true;
   let requestRender: (() => void) | undefined;
+  let readStatuses: (() => ReadonlyMap<string, string>) | undefined;
 
   const refresh = () => {
     if (enabled) requestRender?.();
   };
-
-  pi.on("model_select", refresh);
-  pi.on("thinking_level_select", refresh);
-  pi.on("message_end", refresh);
-  pi.on("session_compact", refresh);
+  for (const event of [
+    "model_select",
+    "thinking_level_select",
+    "message_end",
+    "session_compact",
+    "agent_start",
+    "agent_end",
+    "agent_settled",
+    "session_tree",
+  ])
+    pi.on(event, refresh);
 
   pi.registerCommand("footer", {
-    description: "Toggle the custom status footer",
-    handler: async (_args, ctx) => {
+    description: "Toggle the personal footer, or /footer details for usage and extension status",
+    handler: async (args, ctx) => {
+      if (args.trim() === "details") {
+        let input = 0,
+          output = 0,
+          cost = 0;
+        for (const entry of (ctx.sessionManager?.getBranch?.() ?? []) as BranchEntry[]) {
+          if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
+          input += entry.message.usage?.input ?? 0;
+          output += entry.message.usage?.output ?? 0;
+          cost += entry.message.usage?.cost?.total ?? 0;
+        }
+        const statuses = Array.from(readStatuses?.().values() ?? []).join(" · ");
+        ctx.ui?.notify?.(
+          "Usage: ↑" +
+            fmtTokens(input) +
+            " ↓" +
+            fmtTokens(output) +
+            " " +
+            fmtCost(cost) +
+            (statuses ? "\n" + statuses : "") +
+            "\n/session for native session details.",
+          "info",
+        );
+        return;
+      }
       enabled = !enabled;
       if (enabled) installFooter(ctx);
-      else ctx.ui?.setFooter?.(undefined);
-      ctx.ui?.notify?.(enabled ? "Custom footer on" : "Default footer restored", "info");
+      else {
+        ctx.ui?.setFooter?.(undefined);
+        requestRender = undefined;
+        readStatuses = undefined;
+      }
+      ctx.ui?.notify?.(enabled ? "Personal footer on" : "Default footer restored", "info");
     },
   });
 
   pi.on("session_start", (_event, ctx) => {
     if (enabled) installFooter(ctx);
   });
+  pi.on("session_shutdown", () => {
+    requestRender = undefined;
+    readStatuses = undefined;
+  });
 
   function installFooter(ctx: ExtensionContext) {
     if (!ctx.ui?.setFooter) return;
-
     ctx.ui.setFooter((tui, theme, footerData) => {
       requestRender = () => tui.requestRender?.();
-      const dispose = footerData.onBranchChange?.(() => tui.requestRender?.());
-      const fg = (color: string, text: string) => {
-        try {
-          return theme?.fg?.(color, text) ?? text;
-        } catch {
-          return text;
-        }
-      };
-
+      readStatuses = () => footerData.getExtensionStatuses?.() ?? new Map();
+      const dispose = footerData.onBranchChange?.(refresh);
+      const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
       return {
         invalidate() {},
         dispose,
         render(width: number): string[] {
+          const statuses = footerData.getExtensionStatuses?.() ?? new Map();
           const model = ctx.model;
-          const level = ctx.thinkingLevel ?? "off";
-          // Merge so a stale format.mjs (missing newer glyphs after /reload)
-          // can never leave a slot undefined — fallback keys are always fresh.
-          const icons = { ...FALLBACK_ICONS, ...ICONS };
-
-          let input = 0;
-          let output = 0;
-          let cost = 0;
-          for (const entry of (ctx.sessionManager?.getBranch?.() ?? []) as BranchEntry[]) {
-            if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
-            const usage = entry.message.usage;
-            if (!usage) continue;
-            input += usage.input ?? 0;
-            output += usage.output ?? 0;
-            cost += usage.cost?.total ?? 0;
-          }
-
-          const left: Seg[] = [];
-          if (model?.id) {
-            left.push({
-              text: `${icons.robot} ${model.provider ? `${model.provider}/${model.id}` : model.id}`,
-              color: "accent",
-            });
-          }
-          if (left.length)
-            left.push({ text: ` ${icons.brain} ~${level}`, color: thinkColor(level) });
-
-          const right: Seg[] = [];
-          const statuses = footerData.getExtensionStatuses?.();
-          if (statuses?.size) {
-            right.push({ text: ` ${Array.from(statuses.values()).join(" · ")}`, color: "dim" });
-          }
-          const usage = (
-            ctx as { getContextUsage?: () => ContextUsage | undefined }
-          ).getContextUsage?.();
-          if (usage && usage.percent != null) {
-            right.push({
-              text: ` ${icons.gauge} ${Math.round(usage.percent)}%`,
-              color: ctxColorSafe(usage.percent),
-            });
-          }
-          right.push({ text: ` ${icons.arrowUp} ${fmtTokens(input)}`, color: "mdLink" });
-          right.push({ text: ` ${icons.arrowDown} ${fmtTokens(output)}`, color: "warning" });
-          right.push({ text: ` ${icons.dollar} ${fmtCost(cost)}`, color: "success" });
-          const dir = basename(ctx.cwd || process.cwd());
-          if (dir) right.push({ text: ` ${icons.folder} ${dir}`, color: "muted" });
-          const branch = footerData.getGitBranch?.();
-          if (branch) right.push({ text: ` ${icons.gitBranch} ${branch}`, color: "muted" });
-
-          return [composeLine(left, right, width, fg)];
+          return [
+            workspaceLine(
+              {
+                project: basename(ctx.cwd || process.cwd()),
+                branch: footerData.getGitBranch?.(),
+                state: workLabel(ctx.isIdle ? !ctx.isIdle() : false, statuses),
+                model: model?.id ? (model.provider ? model.provider + "/" : "") + model.id : "",
+                level: ctx.thinkingLevel,
+                percent: ctx.getContextUsage?.()?.percent,
+                savedDraft: statuses.has("workbench"),
+              },
+              width,
+              fg,
+            ),
+          ];
         },
       };
     });

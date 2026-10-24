@@ -1,25 +1,64 @@
 // Pure footer layout logic for the pi-footer extension. No pi imports —
 // testable with `node --test`, colors applied via the injected `apply` fn.
 
-// ANSI SGR sequences are exactly what this strips, control characters and all.
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\u001b\[[0-9;]*m/g;
+import { stripVTControlCharacters } from "node:util";
 
-/** Visible width of a string with ANSI color codes stripped. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+// Full-width terminal ranges plus emoji; private-use Nerd Font glyphs remain 1.
+const WIDE =
+  /[\p{Emoji_Presentation}\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3ffff}]/u;
+const cellWidth = (text) =>
+  /^[\p{Mark}\p{Cf}]+$/u.test(text) ? 0 : WIDE.test(text) || text.includes("\ufe0f") ? 2 : 1;
+
+/** Visible terminal columns, not UTF-16 units. */
 export function visibleWidth(str) {
-  return str.replace(ANSI_RE, "").length;
+  let width = 0;
+  for (const { segment } of graphemes.segment(stripVTControlCharacters(str)))
+    width += cellWidth(segment);
+  return width;
 }
 
 /** Truncate plain segment text without allowing a rendered line to overflow. */
 export function truncateToWidth(str, width) {
   const limit = Math.max(0, Math.floor(width));
-  const text = String(str ?? "").replace(ANSI_RE, "");
+  const text = stripVTControlCharacters(String(str ?? ""));
   if (limit === 0) return "";
-  if (text.length <= limit) return text;
-  if (limit === 1) return "…";
-  return `${Array.from(text)
-    .slice(0, limit - 1)
-    .join("")}…`;
+  if (visibleWidth(text) <= limit) return text;
+  let result = "",
+    used = 0;
+  for (const { segment } of graphemes.segment(text)) {
+    const cells = cellWidth(segment);
+    if (used + cells > limit - 1) break;
+    result += segment;
+    used += cells;
+  }
+  return result + "…";
+}
+
+/** Work state describes activity, never test success or task completion. */
+export function workLabel(busy, statuses) {
+  return statuses?.has("plan-mode") ? "planning" : busy ? "working" : "ready";
+}
+
+export function workspaceLine(data, width, apply) {
+  const clean = (value) => stripVTControlCharacters(String(value ?? "")).replace(/\p{Cc}/gu, "");
+  const left = [
+    {
+      text: clean(data.project) + (data.branch ? " · " + clean(data.branch) : ""),
+      color: "muted",
+    },
+  ];
+  const right = [
+    {
+      text: clean(data.state) + (data.savedDraft ? " · draft saved" : ""),
+      color: data.state === "ready" ? "muted" : "warning",
+    },
+  ];
+  if (data.percent != null)
+    right.push({ text: " · " + Math.round(data.percent) + "%", color: ctxColor(data.percent) });
+  if (data.model) right.push({ text: " · " + clean(data.model), color: "accent" });
+  if (data.level) right.push({ text: " ~" + clean(data.level), color: thinkColor(data.level) });
+  return composeLine(left, right, width, apply);
 }
 
 /** 1234 -> "1.2k", 2500000 -> "2.5M", 42 -> "42". */
@@ -115,7 +154,7 @@ export function composeLine(left, right, width, apply) {
     const model = l[0];
     const rest = l.slice(1);
     const room = width - vis(rest) - vis(r) - 2; // block gap + ellipsis
-    if (room >= 1) l = [{ ...model, text: model.text.slice(0, room) + "…" }, ...rest];
+    if (room >= 1) l = [{ ...model, text: truncateToWidth(model.text, room + 1) }, ...rest];
   }
 
   while (l.length > 1 && overflow()) l.pop();

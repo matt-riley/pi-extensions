@@ -1,0 +1,7 @@
+{
+  "name": "pi-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal command centre, file references and read-only change inspection",
+  "type": "module"
+}

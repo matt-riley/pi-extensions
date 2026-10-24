@@ -23,7 +23,8 @@ plain TypeScript loaded directly by pi.
 | [`pi-influencer`](./packages/influencer) | Stores reusable AI influencer identities and builds recipe-driven image and Seedance 2.5 video-prompt briefs. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-review`](./packages/review) | On-demand review with judgment behind it: `lint_change` scores a diff against this repo's standing preferences and commit rules, `verify_findings` drops findings whose own quotation is not in the diff before asking whether the rest hold. |
-| [`pi-footer`](./packages/footer) | Always-on `/footer` status bar: model, thinking badge, extension statuses, context %, token counts, cost, directory, git branch. |
+| [`pi-workbench`](./packages/workbench) | `/ui` command centre, `/files` reference picker, and read-only `/changes` browser with Neovim handoff; native dialogs and recoverable prompt drafts. |
+| [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals model accounting and extension statuses. |
 
 ### Package dependencies
 
@@ -31,6 +32,7 @@ These packages are published as separate directories but are not fully
 independent — some import modules from their siblings, so deleting or
 renaming one can break another:
 
+- **`pi-workbench`** reuses **`pi-code-search`**'s Git-aware file inventory; its optional planning/subagent/footer actions appear only when those commands are loaded.
 - **`pi-diagnosis-nudge`** reuses verification detection from **`pi-done-gate`**;
   both import revision fingerprints from **`pi-subagents`**.
 - **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /

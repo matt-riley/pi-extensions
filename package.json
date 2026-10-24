@@ -48,7 +48,8 @@
       "./packages/subagents/index.ts",
       "./packages/footer/index.ts",
       "./packages/safe-compact/index.ts",
-      "./packages/review/index.ts"
+      "./packages/review/index.ts",
+      "./packages/workbench/index.ts"
     ],
     "skills": [
       "./.agents/skills"
