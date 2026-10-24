@@ -68,6 +68,20 @@ test("guardrail ledger entries export as replay-corpus records without the actio
   assert.equal(scored.counts.confirm, 1);
 });
 
+test("an exported replay record names the ledger as its source", () => {
+  const corpus = ledger.toReplayCorpus([
+    {
+      outcome: "ok",
+      answers: { destructive: { type: "noul", noul: 0.2 } },
+    },
+  ]);
+  assert.equal(corpus.records.length, 1);
+  assert.equal(corpus.records[0].source, "ledger");
+  assert.equal(corpus.records[0].action, "(not recorded)");
+  assert.equal(corpus.records[0].verdict, null);
+  assert.equal(corpus.records[0].reason, null);
+});
+
 test("answersOf rebuilds the router's own input from its signals", () => {
   // Every branch, so a missing one cannot hide behind a happy path.
   const cases = [
