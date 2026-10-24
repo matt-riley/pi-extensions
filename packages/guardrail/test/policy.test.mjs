@@ -244,7 +244,8 @@ test("a checkout under the agent directory is workspace, not control plane", () 
   const agent = `${homedir()}/.pi/agent`;
   const checkout = `${agent}/extensions/pi-extensions`;
   assert.equal(classifyTarget(`${checkout}/src/app.ts`, checkout), "workspace");
-  assert.equal(classifyTarget(`${checkout}/AGENTS.md`, checkout), "workspace");
+  assert.equal(classifyTarget(`${checkout}/AGENTS.md`, checkout), "control");
+  assert.equal(verdict(`cd ${checkout} && echo x > src/app.ts`), "allow");
   assert.equal(
     evaluateToolCall({
       toolName: "write",
@@ -256,6 +257,60 @@ test("a checkout under the agent directory is workspace, not control plane", () 
   // The agent config around the checkout still needs approval.
   assert.equal(classifyTarget(`${agent}/settings.json`, checkout), "control");
   assert.equal(classifyTarget(`${agent}/extensions/other/index.ts`, checkout), "control");
+});
+
+test("checkout instructions and project Pi configuration still require approval", () => {
+  const agent = process.env.PI_CODING_AGENT_DIR || `${homedir()}/.pi/agent`;
+  const checkout = `${agent}/extensions/pi-extensions`;
+  for (const target of [
+    "AGENTS.md",
+    "nested/AGENTS.md",
+    ".pi/settings.json",
+    ".pi/models.json",
+    ".pi/router.json",
+    ".pi/mcp.json",
+    ".pi/trust.json",
+    ".pi/extensions/custom/index.ts",
+    ".pi/skills/review/SKILL.md",
+    ".pi/prompts/review.md",
+    ".pi/agents/reviewer.md",
+  ]) {
+    for (const toolName of ["write", "edit"]) {
+      const result = evaluateToolCall({
+        toolName,
+        input: { path: target },
+        cwd: checkout,
+      });
+      assert.equal(result.verdict, "confirm", `${toolName} ${target}`);
+      assert.ok(result.evidence.approvalScopes.length, target);
+    }
+    for (const [cwd, command] of [
+      [checkout, `echo x > ${target}`],
+      [CWD, `cd ${checkout} && echo x > ${target}`],
+    ]) {
+      const result = evaluateToolCall({ toolName: "bash", input: { command }, cwd });
+      assert.equal(result.verdict, "confirm", command);
+      assert.ok(result.evidence.approvalScopes.length, command);
+    }
+    assert.equal(tool("read", { path: `${checkout}/${target}` }), "allow", target);
+  }
+});
+
+test("entering installed control directories does not exempt their files", () => {
+  const agent = process.env.PI_CODING_AGENT_DIR || `${homedir()}/.pi/agent`;
+  for (const [directory, file] of [
+    ["prompts", "review.md"],
+    ["skills/review", "SKILL.md"],
+    ["agents", "reviewer.md"],
+    ["extensions", "index.ts"],
+  ]) {
+    const cwd = `${agent}/${directory}`;
+    assert.equal(tool("write", { path: file }, { cwd }), "confirm", cwd);
+    const command = `cd ${cwd} && echo x > ${file}`;
+    const result = evaluateToolCall({ toolName: "bash", input: { command }, cwd: CWD });
+    assert.equal(result.verdict, "confirm", command);
+    assert.ok(result.evidence.approvalScopes.length, command);
+  }
 });
 
 test("inline code that only mentions a destructive command is not destructive", () => {

@@ -67,7 +67,7 @@ export function resolvedTarget(raw, cwd, resolvePath = (value) => value) {
   return resolvePath(path.resolve(cwd || process.cwd(), expanded));
 }
 
-function isControlPlanePath(raw, cwd, resolvePath) {
+function isControlPlanePath(raw, cwd, resolvePath, inNestedWorkspace) {
   const target = resolvedTarget(raw, cwd, resolvePath);
   const agent = resolvedTarget(
     process.env.PI_CODING_AGENT_DIR || path.join(homedir(), ".pi/agent"),
@@ -82,7 +82,7 @@ function isControlPlanePath(raw, cwd, resolvePath) {
     /^(AGENTS\.md|settings\.json|models\.json|router\.json|mcp\.json|trust\.json|keybindings\.json)$/.test(
       rel,
     ) ||
-    /^(extensions|skills|prompts|agents)(\/|$)/.test(rel) ||
+    (/^(extensions|skills|prompts|agents)(\/|$)/.test(rel) && !inNestedWorkspace) ||
     /(^|\/)\.pi\/(settings\.json|models\.json|router\.json|mcp\.json|trust\.json|extensions(\/|$)|skills(\/|$)|prompts(\/|$)|agents(\/|$))/.test(
       target,
     )
@@ -131,8 +131,8 @@ function workspaceRoots(roots, cwd) {
 
 /**
  * Checkouts can live under the agent directory (this repo does). Their files
- * are workspace, not Pi control plane, but the config around them is not:
- * only roots strictly below the agent directory get the override.
+ * are workspace, not Pi control plane. Only roots inside an extension package
+ * get the override; entering installed skills, prompts or agents does not.
  */
 function workspaceInsideAgent(roots, cwd, resolvePath) {
   const agent = resolvedTarget(
@@ -141,8 +141,8 @@ function workspaceInsideAgent(roots, cwd, resolvePath) {
     resolvePath,
   );
   return roots.filter((root) => {
-    const rel = path.relative(agent, root);
-    return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+    const rel = path.relative(agent, root).split(path.sep).join("/");
+    return /^extensions\/[^/]+(\/|$)/.test(rel);
   });
 }
 
@@ -188,7 +188,7 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd, resolvePath) {
     );
 
   if (isSecretPath(token)) return "secret";
-  const control = isControlPlanePath(token, cwd, resolvePath) && !inNestedWorkspace;
+  const control = isControlPlanePath(token, cwd, resolvePath, inNestedWorkspace);
   if (!control && isRegenerablePath(token)) return "regenerable";
   if (SYSTEM_PREFIXES.some((p) => token === p || token.startsWith(`${p}/`))) return "system";
   if (control) return "control";
