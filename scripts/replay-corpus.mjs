@@ -9,6 +9,7 @@
 //   node scripts/replay-corpus.mjs --list judge    # every judged command
 //   node scripts/replay-corpus.mjs --judge 40      # shadow the judged band too
 //   node scripts/replay-corpus.mjs --judge 150 --judge-json out.json   # raw signals
+//   node scripts/replay-corpus.mjs --from-ledger session.jsonl --judge-json out.json
 //
 // The last one is the shadow trial: the deterministic policy says which calls
 // reach Jev, and this asks Jev about a sample of them, so the interruption rate
@@ -24,6 +25,7 @@ import { judgeToolCall } from "../packages/guardrail/judge.mjs";
 import { evaluateToolCall } from "../packages/guardrail/policy.mjs";
 import { memoizeAsk } from "../packages/safe-compact/plan.mjs";
 import { mapPool } from "../shared/spans.mjs";
+import { toReplayCorpus } from "../shared/jev-ledger.mjs";
 import { askSystemOne } from "../shared/systemone.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
@@ -31,7 +33,7 @@ const CONFIG_KEYS = new Set(["command", "cmd", "script", "shell"]);
 const PATH_KEYS = new Set(["path", "file_path", "filePath", "target", "filename", "destination"]);
 
 function parseArgs(argv) {
-  const opts = { samples: 0, list: null, max: Infinity, judge: 0, judgeJson: null };
+  const opts = { samples: 0, list: null, max: Infinity, judge: 0, judgeJson: null, fromLedger: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--samples") opts.samples = Number(argv[++i]) || 0;
@@ -39,6 +41,7 @@ function parseArgs(argv) {
     else if (arg === "--max") opts.max = Number(argv[++i]) || Infinity;
     else if (arg === "--judge") opts.judge = Number(argv[i + 1]) || 40;
     else if (arg === "--judge-json") opts.judgeJson = argv[++i] ?? null;
+    else if (arg === "--from-ledger") opts.fromLedger = argv[++i] ?? null;
     if (arg === "--judge" && Number(argv[i + 1])) i += 1;
   }
   return opts;
@@ -296,8 +299,39 @@ function preview(text, width = 100) {
     .slice(0, width);
 }
 
+function readLedgerFile(file) {
+  const text = fs.readFileSync(file, "utf8");
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  const entries = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line));
+    } catch {
+      // A torn line is not a ledger entry.
+    }
+  }
+  return entries;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.fromLedger) {
+    const corpus = toReplayCorpus(readLedgerFile(opts.fromLedger));
+    const json = JSON.stringify(corpus, null, 1);
+    if (opts.judgeJson) fs.writeFileSync(opts.judgeJson, json);
+    else console.log(json);
+    return;
+  }
   if (!fs.existsSync(SESSIONS_DIR)) {
     console.error(`No sessions directory at ${SESSIONS_DIR}`);
     process.exit(1);

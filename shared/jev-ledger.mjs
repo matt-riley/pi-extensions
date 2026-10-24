@@ -179,3 +179,61 @@ export function buildLedgerEntry({
     ...(Number.isInteger(status) ? { status } : {}),
   };
 }
+
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A ledger object, or a session custom entry of type jev-decision. Anything else is dropped. */
+function ledgerData(value) {
+  if (!isPlainObject(value)) return null;
+  if (value.type === "custom") {
+    if (value.customType !== "jev-decision" || !isPlainObject(value.data)) return null;
+    return value.data;
+  }
+  if (typeof value.outcome !== "string") return null;
+  return value;
+}
+
+const GUARDRAIL_SIGNALS = [
+  ["destructive", "noul"],
+  ["intent_mismatch", "noul"],
+  ["credentials", "noul"],
+  ["blast_radius", "score"],
+];
+
+function guardrailSignals(answers) {
+  if (!isPlainObject(answers)) return null;
+  const signals = {};
+  for (const [id, field] of GUARDRAIL_SIGNALS) {
+    const numeric = finiteNumber(answers[id]?.[field]);
+    if (numeric === null) continue;
+    signals[id] = numeric;
+  }
+  return Object.keys(signals).length > 0 ? signals : null;
+}
+
+/**
+ * Scoreable replay-corpus records from guardrail ledger entries.
+ *
+ * The corpus file is `{ sampled, records: [{ action, verdict, reason, signals }] }`.
+ * The ledger never kept the command, so action is a fixed placeholder and
+ * verdict/reason stay empty — judge-thresholds scores the signals.
+ */
+export function toReplayCorpus(entries) {
+  const records = [];
+  if (!Array.isArray(entries)) return { sampled: 0, records };
+  for (const entry of entries) {
+    const data = ledgerData(entry);
+    if (!data || data.outcome !== "ok") continue;
+    const signals = guardrailSignals(data.answers);
+    if (!signals) continue;
+    records.push({
+      action: "(not recorded)",
+      verdict: null,
+      reason: null,
+      signals,
+    });
+  }
+  return { sampled: records.length, records };
+}
