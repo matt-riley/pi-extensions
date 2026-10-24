@@ -2,8 +2,10 @@
 //
 // The entry is what pi.appendEntry stores. It stays in the session and is not
 // sent anywhere. Question instructions and criteria can carry user text, so
-// the entry keeps the id and the kind only. Answer strings are scrubbed with
-// the same literals the request used, in case a choice echoes a key.
+// the entry keeps the id and the kind only. A choice is the index of that
+// label in the question's criteria, and probability keys are those indexes
+// too — the label text itself is never stored. Answer strings that remain are
+// scrubbed with the same literals the request used, in case one echoes a key.
 
 import { redactSecrets } from "./redact.mjs";
 
@@ -71,7 +73,15 @@ function questionRecord(id, question) {
   return { id, kind: typeof question?.type === "string" ? question.type : "unknown" };
 }
 
-function probabilityRecord(probabilities) {
+/** Criteria labels in the order the question declared them. Null when there are none. */
+function criteriaLabels(question) {
+  const criteria = question?.criteria;
+  if (Array.isArray(criteria)) return criteria.map((item) => String(item));
+  if (criteria && typeof criteria === "object") return Object.keys(criteria);
+  return null;
+}
+
+function probabilityRecord(probabilities, labels) {
   if (!probabilities || typeof probabilities !== "object" || Array.isArray(probabilities)) {
     return undefined;
   }
@@ -79,12 +89,20 @@ function probabilityRecord(probabilities) {
   for (const [key, value] of Object.entries(probabilities)) {
     const numeric = finiteNumber(value);
     if (numeric === null) continue;
-    out[key] = numeric;
+    // Score answers already key levels by index ("0", "1", "2"). Those stay.
+    // A choice key is the option label; store its position and drop the text.
+    if (/^\d+$/.test(key)) {
+      out[key] = numeric;
+      continue;
+    }
+    const index = labels ? labels.indexOf(key) : -1;
+    if (index === -1) continue;
+    out[String(index)] = numeric;
   }
-  return out;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function answerRecord(answer) {
+function answerRecord(answer, question) {
   if (!answer || typeof answer !== "object" || Array.isArray(answer)) return null;
   const record = {};
   if (typeof answer.type === "string") record.type = answer.type;
@@ -92,8 +110,12 @@ function answerRecord(answer) {
     const numeric = finiteNumber(answer[key]);
     if (numeric !== null) record[key] = numeric;
   }
-  if (typeof answer.choice === "string") record.choice = answer.choice;
-  const probabilities = probabilityRecord(answer.probabilities);
+  const labels = criteriaLabels(question);
+  if (typeof answer.choice === "string" && labels) {
+    const index = labels.indexOf(answer.choice);
+    if (index !== -1) record.choice = index;
+  }
+  const probabilities = probabilityRecord(answer.probabilities, labels);
   if (probabilities) record.probabilities = probabilities;
   return record;
 }
@@ -166,8 +188,9 @@ export function buildLedgerEntry({
   let safeAnswers = null;
   if (answers && typeof answers === "object") {
     const recordedAnswers = {};
+    const questionFor = questions && typeof questions === "object" ? questions : {};
     for (const [id, answer] of Object.entries(answers)) {
-      recordedAnswers[id] = answerRecord(answer);
+      recordedAnswers[id] = answerRecord(answer, questionFor[id]);
     }
     // homeDir "" skips path masking: this scrub is for keys that echoed into an
     // answer, not a second pass over the state.
