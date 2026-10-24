@@ -22,8 +22,10 @@ import {
 } from "./files.mjs";
 import { formatRanges, selectRelevantRanges } from "./relevant.mjs";
 import { TYPESAFE_TOOLS } from "./tools.mjs";
+import { findCode } from "./semantic.mjs";
+import { createInjectionScreen } from "./screen.mjs";
 
-const [ASK_TOOL, READ_RELEVANT_TOOL] = TYPESAFE_TOOLS;
+const [ASK_TOOL, READ_RELEVANT_TOOL, FIND_CODE_TOOL] = TYPESAFE_TOOLS;
 
 const errorResult = (prefix: string, error: unknown) => ({
   content: [
@@ -72,6 +74,52 @@ const QUESTION_SCHEMA = Type.Object(
 
 export default function piTypesafeExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
+  let screen = createInjectionScreen();
+  pi.on("session_start", () => {
+    screen = createInjectionScreen();
+  });
+  pi.on("agent_end", () => {
+    screen = createInjectionScreen();
+  });
+  pi.on("tool_result", (event) => screen(event));
+
+  pi.registerTool({
+    name: FIND_CODE_TOOL,
+    label: "find_code",
+    exposure: "deferred",
+    annotations: OPEN_READ,
+    description:
+      "Find code by behavior when you do not know its name. Jev reads up to 100 repo files in a scoped path or glob " +
+      "and returns ranked paths and real line ranges, not source text. Use code_search for known symbols; " +
+      "find_code is an on-demand semantic fallback, not an automatic pre-read hook. Files over 48000 characters " +
+      "are skipped explicitly; failures and omissions report incomplete, not no-match. Requires TYPESAFE_API_KEY.",
+    parameters: Type.Object({
+      goal: Type.String({ minLength: 1, maxLength: 1500 }),
+      path: Type.Optional(
+        Type.String({
+          description: "Scoped directory, file or glob, relative to cwd (default .).",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      try {
+        const result = await findCode({
+          goal: params.goal,
+          path: params.path,
+          cwd: ctx.cwd ?? process.cwd(),
+          signal,
+          exec: (cmd: string, args: string[], opts?: { timeout?: number }) =>
+            pi.exec(cmd, args, opts),
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      } catch (error) {
+        return errorResult("find_code", error);
+      }
+    },
+  });
   pi.registerTool({
     name: ASK_TOOL,
     label: "typesafe_ask",

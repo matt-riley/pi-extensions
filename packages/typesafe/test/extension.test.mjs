@@ -13,6 +13,7 @@ function load() {
   typesafe({
     registerTool: (def) => (tools[def.name] = def),
     exec: async () => ({ code: 1, stdout: "", stderr: "" }),
+    on: () => {},
   });
   return tools;
 }
@@ -21,8 +22,16 @@ const q = { a: { type: "noul", instructions: "?" } };
 const run = (tools, params, extraCtx = {}) =>
   tools.typesafe_ask.execute("id", params, undefined, undefined, { ...ctx, ...extraCtx });
 
-test("both tools register", () => {
-  assert.deepEqual(Object.keys(load()).sort(), ["read_relevant", "typesafe_ask"]);
+test("tools register and semantic discovery is deferred", () => {
+  const tools = load();
+  assert.deepEqual(Object.keys(tools).sort(), ["find_code", "read_relevant", "typesafe_ask"]);
+  assert.equal(tools.find_code.exposure, "deferred");
+});
+
+test("find_code refuses an empty goal without calling Jev", async () => {
+  const result = await load().find_code.execute("id", { goal: "" }, undefined, undefined, ctx);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /goal/);
 });
 
 test("typesafe_ask needs state, paths or command", async () => {
