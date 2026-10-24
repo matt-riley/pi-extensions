@@ -10,15 +10,16 @@
 // longer carries is dropped before the nudge is built.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { hasCommandSubstitution, splitSegments } from "../../shared/shell-parse.mjs";
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
 
 // Prose edits do not need a test run; a README tweak is not unverified code.
 const DOC_FILE = /\.(md|mdx|markdown|txt|rst|adoc)$/i;
 
-// Each pattern must sit in command position — the start of the command or right
-// after a separator — so `grep "npm test" README.md` is not a verification run.
-const CMD_START = String.raw`(?:^|[;&|(]\s*)(?:[A-Z_][A-Z0-9_]*=\S*\s+)*`;
+// Only standalone commands have an exit status attributable to the check.
+// A compound shell can skip a check or hide its failure behind a later success.
+const CMD_START = String.raw`^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:rtk\s+)?`;
 const RUNNER = String.raw`(?:(?:npx|bunx|pnpm\s+exec|pnpm\s+dlx|uv\s+run|python3?\s+-m)\s+)?`;
 const VERIFY_COMMANDS = [
   String.raw`(?:bash\s+|sh\s+|node\s+)?(?:\.\/)?\.pi\/verify\b`,
@@ -35,13 +36,31 @@ export function isVerifyCommand(command) {
   if (typeof command !== "string") {
     return false;
   }
-  return VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()));
+  return (
+    standalone(command) &&
+    !/\s(?:--help|--version|--dry-run|--collect-only|--listTests|--list|-h)\b/.test(command) &&
+    VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()))
+  );
 }
+
+function standalone(command) {
+  return splitSegments(command).length === 1 && !hasCommandSubstitution(command);
+}
+
+const sameRevision = (before, after) =>
+  Boolean(
+    before?.fingerprint && before.head === after?.head && before.fingerprint === after.fingerprint,
+  );
 
 /** Fresh state; reset on each user input so every run is judged on its own. */
 export function createGateState() {
   return {
     dirty: new Set(),
+    edited: new Set(),
+    verificationStatus: "unknown",
+    verificationRevision: null,
+    remoteVerificationStatus: "unknown",
+    remoteVerificationRevision: null,
     nudged: false,
     verificationSeen: false,
     remoteVerificationSeen: false,
@@ -51,6 +70,11 @@ export function createGateState() {
 
 export function resetGateState(state) {
   state.dirty.clear();
+  state.edited.clear();
+  state.verificationStatus = "unknown";
+  state.verificationRevision = null;
+  state.remoteVerificationStatus = "unknown";
+  state.remoteVerificationRevision = null;
   state.nudged = false;
   state.verificationSeen = false;
   state.remoteVerificationSeen = false;
@@ -78,7 +102,9 @@ export function isRemoteVerifyCommand(command) {
   if (typeof command !== "string") {
     return false;
   }
-  return REMOTE_VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()));
+  return (
+    standalone(command) && REMOTE_VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()))
+  );
 }
 
 /**
@@ -99,33 +125,116 @@ function repoRelativePath(cwd, path) {
   return rel;
 }
 
+/** A started check is attempted, not evidence of a pass. */
+export function observeToolStart(state, { toolName, input } = {}) {
+  if (toolName !== "bash") return;
+  if (isRemoteVerifyCommand(input?.command)) {
+    state.remoteVerificationStatus = "attempted";
+    state.remoteVerificationSeen = false;
+    state.remoteVerificationRevision = null;
+  } else if (isVerifyCommand(input?.command)) {
+    state.verificationStatus = "attempted";
+    state.verificationSeen = false;
+    state.verificationRevision = null;
+    for (const path of state.edited) state.dirty.add(path);
+  }
+}
+
 /**
  * Observe one finished tool call.
  *
  * - a successful edit/write to a non-doc file inside the cwd marks that path
  *   unverified, stored relative to the cwd
- * - a verification command clears every unverified path, pass or fail: the
- *   model has seen the result either way — and is remembered as
- *   `verificationSeen`, which tells the claim judgment whether any check ran
+ * - only an observed success against an unchanged known revision clears paths
+ * - failed, skipped/masked, unknown and stale checks never count as passed
  */
-export function observeToolResult(state, { toolName, input, isError, cwd } = {}) {
+export function observeToolResult(
+  state,
+  { toolName, input, isError, cwd, before, after, content } = {},
+) {
   if (EDIT_TOOLS.has(toolName)) {
     const raw = typeof input?.path === "string" ? input.path : undefined;
     const path = raw ? repoRelativePath(cwd, raw) : null;
     if (isError !== true && path && !DOC_FILE.test(path)) {
+      invalidateEvidence(state, null);
+      state.edited.add(path);
       state.dirty.add(path);
     }
     return;
   }
   if (toolName === "bash" && isRemoteVerifyCommand(input?.command)) {
-    if (isError !== true) {
-      state.remoteVerificationSeen = true;
+    let status = "unknown";
+    if (isError === true) status = "failed";
+    else if (isError === false && sameRevision(before, after) && after.clean === true) {
+      // A rollup must include the tested SHA. A list command's exit status
+      // and human-readable logs cannot establish CI success for this revision.
+      try {
+        const data = JSON.parse(
+          (content ?? [])
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n"),
+        );
+        const checks = data.statusCheckRollup;
+        if (
+          /\bgh\s+pr\s+view\b/.test(input.command) &&
+          data.headRefOid === after.head &&
+          Array.isArray(checks) &&
+          checks.length
+        ) {
+          if (
+            checks.every(
+              (check) =>
+                check.state === "SUCCESS" ||
+                (check.status === "COMPLETED" && check.conclusion === "SUCCESS"),
+            )
+          )
+            status = "passed";
+          else if (
+            checks.some(
+              (check) =>
+                ["FAILURE", "ERROR"].includes(check.state) ||
+                ["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"].includes(check.conclusion),
+            )
+          )
+            status = "failed";
+        }
+      } catch {
+        /* Missing/truncated/unstructured output stays unknown. */
+      }
     }
+    state.remoteVerificationStatus = status;
+    state.remoteVerificationSeen = status === "passed";
+    state.remoteVerificationRevision = status === "passed" ? after : null;
     return;
   }
   if (toolName === "bash" && isVerifyCommand(input?.command)) {
-    state.dirty.clear();
-    state.verificationSeen = true;
+    const status =
+      isError === true
+        ? "failed"
+        : isError === false && sameRevision(before, after)
+          ? "passed"
+          : "unknown";
+    state.verificationStatus = status;
+    state.verificationSeen = status === "passed";
+    state.verificationRevision = status === "passed" ? after : null;
+    if (status === "passed") state.dirty.clear();
+    else for (const path of state.edited) state.dirty.add(path);
+  }
+}
+
+/** Edits, shell writes and external changes after a check invalidate its evidence. */
+export function invalidateEvidence(state, revision) {
+  if (state.verificationSeen && !sameRevision(state.verificationRevision, revision)) {
+    state.verificationSeen = false;
+    state.verificationStatus = "unknown";
+    state.verificationRevision = null;
+    for (const path of state.edited) state.dirty.add(path);
+  }
+  if (state.remoteVerificationSeen && !sameRevision(state.remoteVerificationRevision, revision)) {
+    state.remoteVerificationSeen = false;
+    state.remoteVerificationStatus = "unknown";
+    state.remoteVerificationRevision = null;
   }
 }
 
@@ -237,6 +346,7 @@ export function buildNudge(state, debugHits = [], claimText = null) {
     "or say plainly why verification does not apply.",
     "Then close with your explanation of the work plus one line of what the check proved,",
     "not a report about this reminder.",
+    `Verification status: ${state.verificationStatus}.`,
   ];
   if (debugHits.length > 0) {
     lines.push(`Leftover debug instrumentation to remove: ${list(debugHits)}.`);

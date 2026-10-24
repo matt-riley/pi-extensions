@@ -28,8 +28,10 @@ import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { installMeasurement } from "./measurement.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone.mjs";
+import { revisionSnapshot } from "../subagents/evidence.mjs";
 // Namespace import too: /reload can serve a cached gate.mjs, and a binding added
 // since the process started has to be read as a property, where a named import
 // fails. See the livePaths call below.
@@ -41,7 +43,11 @@ import {
   createGateState,
   debugTagsInDiff,
   debugTagsInFile,
+  invalidateEvidence,
+  isVerifyCommand,
+  isRemoteVerifyCommand,
   observeToolResult,
+  observeToolStart,
   resetGateState,
   shouldNudge,
 } from "./gate.mjs";
@@ -53,14 +59,28 @@ const MAX_UNTRACKED_BYTES = 1_000_000;
 
 export default function piDoneGateExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
+  installMeasurement(pi);
   const state = createGateState();
   let lastClaim: string | undefined;
+  let generation = 0;
+  const checks = new Map<string, { before: any; generation: number }>();
 
   // null means git could not answer — no repo, no HEAD, git missing. That is
   // not the same as "nothing changed", so callers must not read it as one.
   const git = async (cwd: string, args: string[]): Promise<string | null> => {
     const result = await pi.exec("git", ["-C", cwd, ...args], { timeout: GIT_TIMEOUT_MS });
     return result.code === 0 ? result.stdout : null;
+  };
+
+  const snapshot = async (cwd: string) => {
+    try {
+      const revision = await revisionSnapshot(cwd);
+      if (!revision) return null;
+      const status = await git(cwd, ["status", "--porcelain", "--untracked-files=normal"]);
+      return { ...revision, clean: status !== null && !status.trim() };
+    } catch {
+      return null;
+    }
   };
 
   const listUntracked = async (cwd: string): Promise<string[] | null> => {
@@ -98,11 +118,15 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async () => {
+    generation++;
+    checks.clear();
     resetGateState(state);
     lastClaim = undefined;
   });
 
   pi.on("input", async () => {
+    generation++;
+    checks.clear();
     resetGateState(state);
     lastClaim = undefined;
   });
@@ -119,16 +143,38 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
   });
 
+  pi.on("tool_call", async (event, ctx) => {
+    if (
+      event.toolName !== "bash" ||
+      !(isVerifyCommand(event.input?.command) || isRemoteVerifyCommand(event.input?.command))
+    )
+      return;
+    const epoch = generation;
+    observeToolStart(state, event);
+    const before = await snapshot(ctx.cwd ?? process.cwd());
+    if (epoch === generation) checks.set(event.toolCallId, { before, generation: epoch });
+  });
+
   pi.on("tool_result", async (event, ctx) => {
+    const check = checks.get(event.toolCallId);
+    checks.delete(event.toolCallId);
+    const after = check ? await snapshot(ctx.cwd ?? process.cwd()) : null;
+    if (check && check.generation !== generation) return;
     observeToolResult(state, {
+      before: check?.before,
+      after,
+      content: event.content,
       toolName: event?.toolName,
       input: event?.input,
-      isError: event?.isError === true,
+      isError: event?.isError,
       cwd: ctx?.cwd,
     });
   });
 
   pi.on("agent_before_settle", async (event, ctx) => {
+    if (state.verificationSeen || state.remoteVerificationSeen) {
+      invalidateEvidence(state, await snapshot(ctx.cwd ?? process.cwd()));
+    }
     const needsVerify = shouldNudge(state, event?.outcome);
     // A run that changed nothing can still claim "CI is green" after checking
     // only this machine. The claim is the whole trigger here, so it is read

@@ -13,14 +13,23 @@ import {
   debugTagsInFile,
   isRemoteVerifyCommand,
   isVerifyCommand,
+  invalidateEvidence,
   livePaths,
   observeToolResult,
+  observeToolStart,
   resetGateState,
   shouldNudge,
 } from "../gate.mjs";
 
 const edit = (path, isError = false) => ({ toolName: "edit", input: { path }, isError });
-const bash = (command) => ({ toolName: "bash", input: { command }, isError: false });
+const revision = { head: "abc123", fingerprint: "tree-1", clean: true };
+const bash = (command) => ({
+  toolName: "bash",
+  input: { command },
+  isError: false,
+  before: revision,
+  after: revision,
+});
 
 test("recognizes verification commands in command position", () => {
   for (const command of [
@@ -38,9 +47,9 @@ test("recognizes verification commands in command position", () => {
     "python -m pytest tests",
     ".pi/verify",
     "bash .pi/verify/run.sh",
-    "cd packages/foo && npm test",
+    "rtk npm test",
     "CI=1 npm test",
-    "npm run build; npm test",
+    "CI=1 rtk npm run check",
   ]) {
     assert.equal(isVerifyCommand(command), true, command);
   }
@@ -55,6 +64,14 @@ test("does not mistake reads or searches for verification", () => {
     "npm install",
     "git status",
     "echo pytest",
+    "false && npm test",
+    "npm test || true",
+    "npm test; echo done",
+    "npm test &",
+    "npm test | cat",
+    "echo $(npm test)",
+    "cd missing && npm test",
+    "npm test -- --listTests",
     undefined,
   ]) {
     assert.equal(isVerifyCommand(command), false, String(command));
@@ -74,15 +91,21 @@ test("a code edit with no later verification nudges once", () => {
   assert.equal(shouldNudge(state, "completed"), false, "at most one nudge per run");
 });
 
-test("verification after the last edit clears the gate, even when the check fails", () => {
+test("a failed check stays unverified; only a successful final-revision check clears the gate", () => {
   const state = createGateState();
   observeToolResult(state, edit("src/a.ts"));
   observeToolResult(state, { ...bash("npm test"), isError: true });
+  assert.equal(shouldNudge(state, "completed"), true);
+  assert.equal(state.verificationSeen, false);
+  assert.equal(state.verificationStatus, "failed");
+  observeToolResult(state, bash("npm test"));
   assert.equal(shouldNudge(state, "completed"), false);
+  assert.equal(state.verificationStatus, "passed");
 
   observeToolResult(state, edit("src/b.ts"));
   assert.equal(shouldNudge(state, "completed"), true, "an edit after the check re-arms it");
-  assert.deepEqual([...state.dirty], ["src/b.ts"]);
+  assert.deepEqual([...state.dirty], ["src/a.ts", "src/b.ts"]);
+  assert.equal(state.verificationSeen, false);
 });
 
 test("doc edits, failed edits and non-verify bash leave the gate clean", () => {
@@ -229,9 +252,85 @@ test("only a successful remote check counts as remote evidence", () => {
   observeToolResult(state, { ...bash("gh pr checks 42"), isError: true });
   assert.equal(state.remoteVerificationSeen, false, "a failing check is not CI green");
   observeToolResult(state, bash("gh pr checks 42"));
+  assert.equal(state.remoteVerificationSeen, false, "command success alone is not remote evidence");
+  observeToolResult(state, {
+    ...bash("gh pr view 42 --json headRefOid,statusCheckRollup"),
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          headRefOid: revision.head,
+          statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }],
+        }),
+      },
+    ],
+  });
   assert.equal(state.remoteVerificationSeen, true);
   resetGateState(state);
   assert.equal(state.remoteVerificationSeen, false, "the next run starts over");
+});
+
+test("a started check is only attempted until an unchanged-revision result succeeds", () => {
+  const state = createGateState();
+  observeToolStart(state, bash("npm test"));
+  assert.equal(state.verificationStatus, "attempted");
+  assert.equal(state.verificationSeen, false);
+  observeToolResult(state, bash("npm test"));
+  assert.equal(state.verificationStatus, "passed");
+  observeToolStart(state, bash("gh pr checks 42"));
+  assert.equal(state.remoteVerificationStatus, "attempted");
+  assert.equal(state.remoteVerificationSeen, false);
+  assert.equal(state.verificationSeen, true);
+});
+
+test("revision changes, unknown identity and failed later checks invalidate earlier success", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  observeToolResult(state, { ...bash("npm test"), after: { ...revision, fingerprint: "tree-2" } });
+  assert.equal(state.verificationSeen, false);
+  assert.equal(state.verificationStatus, "unknown");
+  observeToolResult(state, { ...bash("npm test"), before: null });
+  assert.equal(state.verificationSeen, false);
+  observeToolResult(state, bash("npm test"));
+  invalidateEvidence(state, { ...revision, fingerprint: "tree-3" });
+  assert.equal(state.verificationSeen, false);
+  assert.deepEqual([...state.dirty], ["src/a.ts"]);
+  observeToolResult(state, bash("npm test"));
+  observeToolResult(state, { ...bash("npm test"), isError: true });
+  assert.equal(state.verificationSeen, false);
+  assert.deepEqual([...state.dirty], ["src/a.ts"]);
+});
+
+test("remote evidence requires nonempty successful checks, matching HEAD, and a clean unchanged tree", () => {
+  const command = "rtk gh pr view 42 --json headRefOid,statusCheckRollup";
+  for (const [rollup, head, after, isError] of [
+    [[], revision.head, revision, false],
+    [[{ status: "IN_PROGRESS", conclusion: null }], revision.head, revision, false],
+    [[{ status: "COMPLETED", conclusion: "FAILURE" }], revision.head, revision, false],
+    [[{ status: "COMPLETED", conclusion: "SKIPPED" }], revision.head, revision, false],
+    [[{ state: "SUCCESS" }], "different-head", revision, false],
+    [[{ state: "SUCCESS" }], revision.head, { ...revision, clean: false }, false],
+    [[{ state: "SUCCESS" }], revision.head, { ...revision, fingerprint: "tree-2" }, false],
+    [[{ state: "SUCCESS" }], revision.head, revision, true],
+  ]) {
+    const state = createGateState();
+    observeToolResult(state, {
+      ...bash(command),
+      after,
+      isError,
+      content: [
+        { type: "text", text: JSON.stringify({ headRefOid: head, statusCheckRollup: rollup }) },
+      ],
+    });
+    assert.equal(
+      state.remoteVerificationSeen,
+      false,
+      JSON.stringify({ rollup, head, after, isError }),
+    );
+  }
+  const state = createGateState();
+  observeToolResult(state, { ...bash(command), content: [{ type: "text", text: "not JSON" }] });
+  assert.equal(state.remoteVerificationStatus, "unknown");
 });
 
 test("remote checks are recognized in command position only", () => {

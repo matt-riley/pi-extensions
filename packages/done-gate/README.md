@@ -18,7 +18,7 @@ TypeSafe reads that claim as done with the unverified edits unmentioned
 (asserts_verified 0.88 · acknowledges_gap 0.05). Name what is unverified, or run the checks.
 ```
 
-No tools, no config, no runtime dependencies. The last line appears only when a
+No config or runtime dependencies. The last line appears only when a
 claim judgment disagrees with what the run actually did; without TypeSafe
 credentials the reminder stops after the first paragraph.
 
@@ -36,7 +36,8 @@ apply.
   path is not a finding. If git cannot answer (no repo, no HEAD, git missing)
   the gate keeps its paths rather than going silent.
 - **Non-doc, successful, after the last verification.** Prose edits, failed
-  edits, and edits followed by a check do not arm it.
+  edits, and edits followed by a successful final-revision check do not arm it.
+  Failed, unknown, skipped/masked or stale checks leave code unverified.
 
 ## Why `agent_before_settle`
 
@@ -89,10 +90,14 @@ overclaim one layer out: the evidence in the session is a local test run, and
 the claim is about a runner. The shape of the run cannot see it, so the claim is
 read instead.
 
-- **Remote evidence** is a successful `gh pr checks`, `gh run view|list|watch`,
-  `gh api …/check-runs` or `gh pr view …statusCheckRollup`, in command position.
-  A failing remote check is not evidence of a green one; `git push` is not
-  evidence at all, because a push starts CI rather than reporting it.
+- **Remote evidence** requires a standalone successful
+  `gh pr view <pr> --json headRefOid,statusCheckRollup` (optionally through RTK).
+  The JSON must have a nonempty rollup, every check must be successful, and
+  `headRefOid` must equal local HEAD on an unchanged, clean tree. Missing,
+  pending, skipped, neutral, failed, truncated or unrelated results do not pass.
+  `gh run list`, textual logs/check listings and `git push` are not evidence
+  of relevant CI success. This is the PR rollup at observation time, not proof
+  of deployment, merging, branch protection or future checks.
 - **The check runs on its own** when a completed run changes nothing, closes
   with a claim that could assert remote success (`couldClaimRemote`), and the
   session saw no remote check. The pre-filter is a sentence that names a runner
@@ -106,23 +111,33 @@ and no check on a runner succeeded this run: verified locally is not verified
 remotely. Say which one you have.
 ```
 
-A claim that names its gap is still left alone, and a remote check that did run
-clears the reading.
+A claim that names its gap is still left alone. Only successful, revision-bound
+remote evidence clears the reading.
 
 ## Behaviour
 
 - **Edits** are successful `edit` / `write` calls to non-doc files inside the
   session cwd. Prose files (`.md`, `.mdx`, `.txt`, `.rst`, `.adoc`) do not
   count, and anything outside the cwd is not the repo's to check.
-- **Remote verification** is a successful `gh pr checks`, `gh run view|list|watch`,
-  `gh api …/check-runs` or `gh pr view …statusCheckRollup`, in command position.
+- **Remote verification** uses the structured rollup contract above, not
+  command exit status alone.
 - **Verification** is a `bash` call that runs, in command position: `.pi/verify`,
   `npm|pnpm|yarn|bun [run] test|check|lint|typecheck|verify`, `node --test`,
   `go test|vet`, `cargo test|check|clippy`, `make test|check|lint|verify`, or
   `pytest`, `vitest`, `jest`, `tsc`, `mypy`, `ruff`, `oxlint`, `eslint`,
-  `golangci-lint` (optionally via `npx`, `bunx`, `uv run`, `python -m`, …). A
-  failing check still counts: the model has seen the result. `grep "npm test"`
-  does not.
+  `golangci-lint` (optionally via `npx`, `bunx`, `uv run`, `python -m`, …).
+  Recognized standalone checks support an outer `rtk` prefix and environment
+  assignments. Compound shells/pipelines/background jobs and listing/dry-run
+  flags are conservatively not accepted: run the check as its own bash call,
+  rather than `cd x && npm test`, `false && npm test` or `npm test || true`.
+  A started check is `attempted`; only explicit host success and equal known
+  before/after revision fingerprints make it `passed`. Failures are `failed`;
+  unknown identity or changes during/after checking are `unknown`. Fingerprints
+  include HEAD, staged/unstaged and nonignored untracked contents, reusing the
+  subagent evidence helper. Checks that modify tracked files need a second run.
+  This records an observed command contract, not all acceptance criteria or a
+  proof that arbitrary scripts really test the feature. Unknown command forms
+  must be reported honestly; `grep "npm test"` is not a check.
 - **One nudge per user input**, and only after a `completed` run, never after an
   abort or error. It is appended with `display: false`.
 - **One claim judgment** rides along with that nudge, when the run has a final
@@ -133,12 +148,54 @@ clears the reading.
   (`shared/systemone.mjs`). Inside Pi the request uses `classify()` when a
   TypeSafe classifier is registered, and the direct HTTP transport otherwise.
   Every failure degrades to no extra line.
+- **Limit:** native `edit`/`write` calls arm the gate; shell-only edits do not
+  independently arm it. Shell/external changes after an observed pass invalidate
+  that evidence and re-arm previously observed native edits. Committed/reverted
+  files are still subject to the working-tree filter above. This reminder is
+  not a sandbox or a universal completion proof.
 - **Debug tags.** At nudge time, added lines in `git diff -U0 HEAD` and untracked
   files (up to 200, 1 MB each) are scanned for `[DEBUG-` and listed as
   `path:line`. Tags already committed are not reported. Outside a git repo the
   scan is silently empty.
 - It only ever sets `continue` to `true`, and keeps earlier handlers' entries,
   so it composes with other `agent_before_settle` extensions.
+
+## Controlled measurements
+
+`measure_command` is a deferred tool for local benchmark/evaluation observations:
+
+```js
+await tools.measure_command({
+  command: "node bench.mjs --candidate",
+  baseline_command: "node bench.mjs --baseline", // optional; same workspace revision
+  expected_work: 100,
+  runs: 3,
+});
+```
+
+Each invocation must print **only** JSON such as
+`{"completed":100,"cached":0}`. Completed work must exactly match the positive
+`expected_work`; zero/partial/unknown work and cache hits are rejected.
+For an application metric rather than elapsed time, set `metric: "value"` and
+`unit`, and emit a finite numeric `value` alongside the counters.
+
+The tool executes 3–10 trials per arm through normal nested bash dispatch.
+Baseline/candidate order alternates; every trial needs explicit host success,
+untruncated output and the same known Git fingerprint before/after. Each command
+has a 1–60s timeout (30s default); the whole measurement has a 120s deadline.
+Failures, cancellation and revision changes produce no successful report.
+
+The structured result retains raw samples, completed/cache counters, revision,
+count, mean, min/max and sample standard deviation. Duration includes process and
+tool overhead. Comparisons report descriptive differences and range overlap;
+a zero baseline has no percentage change. Range overlap is not a significance
+test, and no result is labelled a causal improvement.
+
+Counters are self-reported by the command: inspect its instrumentation. This
+does not prove work semantics, evaluation quality, cache honesty, a bottleneck
+or an end-to-end gain. It validates reports made **through this tool**, not
+arbitrary prose or other measurement programs. The existing bounded workflow
+pilot retains its own narrower protocol. The completion reminder is unchanged.
 
 ## Tests
 
