@@ -105,7 +105,7 @@ test("routine commands are allowed without a judge", () => {
     "find . -name '*.ts' | xargs wc -l",
     "sed -i '' -e 's/foo/bar/' src/app.ts",
     "tee dist/report.txt",
-    "git push origin main",
+    "git fetch origin",
     "ssh -i ~/.ssh/id_ed25519 github.com",
     "cat ~/.ssh/id_ed25519.pub",
     "chmod +x scripts/run.sh",
@@ -196,8 +196,8 @@ test("scoped damage outside the workspace asks, it does not refuse", () => {
   }
 });
 
-test("force-with-lease is not treated as a bare force push", () => {
-  assert.equal(verdict("git push --force-with-lease origin main"), "allow");
+test("force-with-lease still needs authorization to publish", () => {
+  assert.equal(verdict("git push --force-with-lease origin main"), "confirm");
 });
 
 test("the catastrophic set is refused without a dialog", () => {
@@ -237,10 +237,7 @@ test("a cd makes the directory it enters part of the workspace", () => {
   // personal did its work in ~/.pi/agent/extensions/pi-extensions, and every
   // target there resolved outside the session cwd — so config writes and
   // redirects read as home-directory damage.
-  assert.equal(
-    verdict("cd /Users/mattriley/.pi/agent/extensions/pi-extensions && echo x > knip.json"),
-    "allow",
-  );
+  assert.equal(verdict(`cd ${CWD}/../other-repo && echo x > knip.json`), "allow");
   assert.equal(verdict(`cd ${CWD}/../other-repo && rm -rf dist`), "allow");
   // $HOME stays off the roots list: `cd ~` does not make home a workspace.
   assert.equal(verdict("cd ~ && rm -rf Documents"), "confirm");
@@ -308,8 +305,8 @@ test("a write outside the session's cwd is routine, not suspicious", () => {
     "~/.zshrc",
     "~/settings.json",
     `${CWD}/../other-repo/app.ts`,
-    "/Users/mattriley/.pi/agent/extensions/pi-extensions/knip.json",
-    "/Users/mattriley/.pi/agent/extensions/pi-extensions/.fallowrc.json",
+    `${CWD}/../other-repo/knip.json`,
+    `${CWD}/../other-repo/.fallowrc.json`,
   ]) {
     assert.equal(tool("write", { path, content: "x" }), "allow", path);
   }
@@ -359,6 +356,125 @@ test("unknown tools are judged by their arguments, not their names", () => {
   assert.equal(tool("some_future_tool", { path: "~/Documents/notes.md", content: "x" }), "allow");
   assert.equal(tool("some_future_tool", { query: "hello" }), "allow");
 });
+test("consequential external effects require deterministic scoped approval", () => {
+  for (const command of [
+    "gh pr merge 123 --squash",
+    "git push origin main",
+    "git push --force-with-lease origin topic",
+    "rtk git push origin main",
+    "terraform apply -auto-approve",
+    "tofu apply plan",
+    "npm publish",
+    "pnpm publish",
+    "wrangler deploy",
+    "kubectl apply -f app.yaml",
+    "gh api repos/me/app/issues -X POST -f title=hello",
+    "sh -c 'git push origin main'",
+  ]) {
+    const result = evaluateToolCall({
+      toolName: "bash",
+      input: { command },
+      cwd: CWD,
+      scriptTexts: {},
+    });
+    assert.equal(result.verdict, "confirm", command);
+    assert.ok(result.evidence.approvalScopes.length, command);
+  }
+  for (const command of [
+    "git status",
+    "git fetch origin",
+    "terraform plan",
+    "gh pr view 123",
+    "wrangler whoami",
+  ]) {
+    assert.equal(verdict(command), "allow", command);
+  }
+});
+
+test("control-plane writes require approval, even from their own workspace", () => {
+  const agent = `${homedir()}/.pi/agent`;
+  assert.equal(tool("write", { path: "/etc/AGENTS.md" }), "block");
+  for (const target of [
+    "AGENTS.md",
+    "settings.json",
+    "router.json",
+    "trust.json",
+    "mcp.json",
+    "extensions/x/index.ts",
+  ]) {
+    const result = evaluateToolCall({
+      toolName: "write",
+      input: { path: `${agent}/${target}` },
+      cwd: agent,
+    });
+    assert.equal(result.verdict, "confirm", target);
+    assert.ok(result.evidence.approvalScopes.length);
+    assert.equal(tool("read", { path: `${agent}/${target}` }), "allow");
+  }
+  for (const command of [
+    "echo x > ~/.pi/agent/AGENTS.md",
+    "echo x >> ~/.pi/agent/settings.json",
+    "tee -a ~/.pi/agent/router.json",
+    "cp /tmp/new.json ~/.pi/agent/settings.json",
+    "sed -i s/a/b/ ~/.pi/agent/trust.json",
+  ])
+    assert.equal(verdict(command), "confirm", command);
+  assert.equal(
+    evaluateToolCall({
+      toolName: "update_config",
+      input: { command: "echo safe", destination: `${agent}/settings.json` },
+      cwd: CWD,
+    }).verdict,
+    "confirm",
+  );
+  assert.equal(
+    evaluateToolCall({
+      toolName: "update_config",
+      input: { command: "echo safe", destination: "~/.ssh/id_rsa" },
+      cwd: CWD,
+    }).verdict,
+    "block",
+  );
+  assert.equal(tool("write", { path: `${homedir()}/notes.md` }), "allow");
+  assert.equal(tool("write", { path: "src/main.ts" }), "allow");
+});
+
+test("names cannot exempt remote writers and missing remote annotations fail closed", () => {
+  for (const [name, annotations] of [
+    ["mcp__cloud__get_and_delete", { readOnlyHint: false }],
+    ["mcp__cloud__deploy", undefined],
+    ["cloudflare_mcp_update_worker", { readOnlyHint: false, openWorldHint: true }],
+  ]) {
+    const result = evaluateToolCall({
+      toolName: name,
+      input: { target: "app" },
+      cwd: CWD,
+      external: true,
+      annotations,
+    });
+    assert.equal(result.verdict, "confirm", name);
+    assert.ok(result.evidence.approvalScopes.length);
+  }
+  assert.equal(
+    evaluateToolCall({
+      toolName: "mcp__cloud__get",
+      input: {},
+      external: true,
+      annotations: { readOnlyHint: true },
+    }).verdict,
+    "allow",
+  );
+  assert.equal(
+    evaluateToolCall({
+      toolName: "mcp__cloud__write",
+      input: { command: "rm -rf ~" },
+      cwd: CWD,
+      external: true,
+    }).verdict,
+    "block",
+  );
+});
+
 test("worst picks the most severe verdict", () => {
   assert.equal(worst("allow", "judge"), "judge");
   assert.equal(worst("confirm", "judge"), "confirm");

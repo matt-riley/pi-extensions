@@ -14,6 +14,33 @@ The catastrophic set is refused with no dialog at all — home and filesystem
 roots, `.git` internals, private keys, disk wipes, credentials piped to a
 network command — because a tired `Enter` should not be able to wipe `~`.
 
+## Human authorization and control files
+
+Recognized external effects (push, merge, publish, deploy/apply and mutating
+GitHub API calls) require deterministic human approval, independently of the
+semantic destruction judge. Namespaced/MCP tools without a read-only hint also
+require approval; destructive hints override reader-like names. Hints are not
+verified capabilities. Ordinary reads, project writes and regenerable output
+remain routine.
+
+Pi instructions (`AGENTS.md`), global settings/model/router/MCP/trust files,
+installed extensions, skills, prompts and agent definitions are control files.
+Project `.pi` equivalents are covered too. File tools and recognized shell
+writes/redirects require approval even from inside those directories. The host
+resolves symlink aliases and parent directories before choosing the scope.
+
+Approval is **current-input only**, not a durable allowlist: the dialog shows
+its target scopes and cwd. An identical shell invocation or remote tool call
+may reuse approval; a file approval covers further edits of that same file,
+not siblings. Different commands/targets/cwd need new approval. New user input,
+session start/switch, `/guardrail revoke`, and either toggle clear grants;
+pending old dialogs cannot grant permission to the new input. Concurrent
+identical requests share one dialog. No UI, cancellation or denial refuses the
+call. Catastrophic blocks are evaluated before grants and cannot be approved.
+CLI targets are the displayed invocation, not cryptographically pinned remote
+identities: changing CLI config or obfuscated/runtime-generated actions needs
+an actual sandbox or stronger service-side permissions.
+
 ## The dialog
 
 ```
@@ -40,7 +67,10 @@ of the original.
 Dialogs share plan mode's FIFO queue (`shared/dialog-queue.mjs`): two flagged
 calls in one assistant message must not stack two prompts.
 
-## Measured behaviour
+## Historical measured behaviour
+
+The replay figures below predate scoped authorization/control-file protection;
+they are not a measurement of the current interruption rate.
 
 `node scripts/replay-corpus.mjs` replays every bash/edit/write call in
 `~/.pi/agent/sessions` and reports what the guardrail would have done:
@@ -112,7 +142,7 @@ touching thresholds, question wording, or the shape tables.
 | `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
 
 In-session: `/guardrail` for status and counters, `/guardrail off` and
-`/guardrail on` to disarm and re-arm.
+`/guardrail on` to disarm and re-arm; `/guardrail revoke` clears current grants.
 
 With no interactive UI (`-p`, JSON, or a host without dialogs) the flagged band
 is **refused**, never assumed: there is nobody to ask, so the safe answer is no.
@@ -134,6 +164,8 @@ binary or an obfuscated payload does.
   claim keeps the previous rule: a command-shaped argument runs the shell
   rules, secret or system paths are refused, and names that look read-only
   (`get_*`, `list_*`, `lore_*`, and pi's own discovery tools) are trusted.
+  A namespaced/MCP tool whose read-only hint is absent, or that declares
+  `destructiveHint: true`, still requires scoped human authorization.
 - **Subagents are covered.** `pi-subagents` builds children with
   `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
   `agentDir` is what makes pi load global extensions — so a child gets this
@@ -147,7 +179,8 @@ binary or an obfuscated payload does.
 
 ## Known tradeoffs
 
-- **Location is not a signal.** A write outside the session's cwd is allowed —
+- **Ordinary location is not a signal.** Outside protected control files,
+  a write outside the session's cwd is allowed —
   the guardrail does not care which repo you are in, only whether the target is
   a secret, a system path, or a dotenv file. The rule that did care produced
   eight prompts in one session, all legitimate config writes in a sibling repo.
@@ -161,10 +194,10 @@ binary or an obfuscated payload does.
   Disagreeing costs one line (`THRESHOLDS.destructive = 0.45`) and buys a prompt
   on every deliberate cleanup; the case is recorded in `scripts/validate-judge.mjs`
   so the choice stays visible rather than accidental.
-- **No session memory.** Approving the same action twice asks twice. The
-  measured cost is one dialog every two sessions, so an allowlist would add
-  state and drift for very little; add `Approve for this session` as a fourth
-  option if that stops being true.
+- **No durable session allowlist.** Only deterministic authorization/control
+  scopes are reused within the current input. Other destructive confirmations
+  still ask each time. The historical dialog rate above does not cover these
+  new authorization rules.
 - **`PATH`-level classifiers are heuristics.** `dist`, `build`, `coverage`,
   `node_modules`, `.cache`, `/tmp` and lock files count as regenerable: deleting
   an irreplaceable file that happens to live in `dist/` would count as cheap.
@@ -173,7 +206,7 @@ binary or an obfuscated payload does.
 
 ## Tests
 
-`node --test packages/guardrail/test/*.test.mjs` — 74 cases:
+`node --test packages/guardrail/test/*.test.mjs`:
 
 - `policy.test.mjs` — shapes, target classes, quoting, heredocs, chaining,
   indirection, file tools, unknown tools, annotation hints.

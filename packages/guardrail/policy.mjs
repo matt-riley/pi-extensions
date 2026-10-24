@@ -109,6 +109,34 @@ const HOME_PREFIXES = [
   /^\/(Users|home)\/[^/]+(\/|$)/,
 ];
 
+// Pure path matching; the host supplies realpath resolution for symlink aliases.
+function resolvedTarget(raw, cwd, resolvePath = (value) => value) {
+  const expanded = String(raw).replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, homedir());
+  return resolvePath(path.resolve(cwd || process.cwd(), expanded));
+}
+
+function isControlPlanePath(raw, cwd, resolvePath) {
+  const target = resolvedTarget(raw, cwd, resolvePath);
+  const agent = resolvedTarget(
+    process.env.PI_CODING_AGENT_DIR || path.join(homedir(), ".pi/agent"),
+    cwd,
+    resolvePath,
+  );
+  const rel = path.relative(agent, target).split(path.sep).join("/");
+  if (isRegenerablePath(rel)) return false;
+  return (
+    path.basename(target) === "AGENTS.md" ||
+    rel === "" ||
+    /^(AGENTS\.md|settings\.json|models\.json|router\.json|mcp\.json|trust\.json|keybindings\.json)$/.test(
+      rel,
+    ) ||
+    /^(extensions|skills|prompts|agents)(\/|$)/.test(rel) ||
+    /(^|\/)\.pi\/(settings\.json|models\.json|router\.json|mcp\.json|trust\.json|extensions(\/|$)|skills(\/|$)|prompts(\/|$)|agents(\/|$))/.test(
+      target,
+    )
+  );
+}
+
 function isRegenerablePath(token) {
   return REGENERABLE.some((re) => re.test(token));
 }
@@ -165,7 +193,7 @@ function workspaceRoots(roots, cwd) {
  * `cd`); the third argument is the workspace root, or the set of roots, and
  * defaults to `cwd`. A path inside any root is workspace.
  */
-export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
+export function classifyTarget(rawToken, cwd, rootCwd = cwd, resolvePath) {
   const token = String(rawToken ?? "")
     .trim()
     .replace(/^["']|["']$/g, "");
@@ -179,9 +207,11 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
   const tildeish = /^(~|\$HOME|\$\{HOME\})(\/|$)/.test(token);
   const home = homedir();
 
-  if (isRegenerablePath(token)) return "regenerable";
   if (isSecretPath(token)) return "secret";
+  const control = isControlPlanePath(token, cwd, resolvePath);
+  if (!control && isRegenerablePath(token)) return "regenerable";
   if (SYSTEM_PREFIXES.some((p) => token === p || token.startsWith(`${p}/`))) return "system";
+  if (control) return "control";
   if (/^\/(Users|home)\/[^/]+(\/\.ssh|\/\.aws|\/\.gnupg)(\/|$)/.test(token)) return "secret";
 
   if (!opaque) {
@@ -210,6 +240,7 @@ export function classifyTarget(rawToken, cwd, rootCwd = cwd) {
 const CLASS_VERDICT = {
   regenerable: "allow",
   workspace: null,
+  control: "confirm",
   unknown: null,
   home: "confirm",
   system: "block",
@@ -231,6 +262,7 @@ const SHAPE_DEFAULT = {
   delete: "judge",
   overwrite: "allow", // a redirect into the workspace is how work gets written
   history: "judge", // local history rewriting: recoverable from reflog/remote
+  authorization: "confirm", // external effects need human scope, even if reversible
   remote: "confirm", // irreversible on a remote: force push, drop table, repo delete
   privilege: "confirm", // sudo, chmod -R, process kills: disruptive, not silent
   wipe: "block", // mkfs, fdisk, diskutil erase: no judgment makes this fine
@@ -371,6 +403,36 @@ function remoteShape(head, whole) {
   return null;
 }
 
+function authorizationShape(head, args) {
+  // RTK preserves the underlying action; it is not an authorization boundary.
+  if (head === "rtk") return authorizationShape(args[0], args.slice(1));
+  const text = args.join(" ");
+  const consequential =
+    (head === "git" && /\bpush\b/.test(text)) ||
+    (head === "gh" &&
+      (/\b(pr\s+(merge|create|close|reopen|edit)|release\s+(create|upload|delete)|repo\s+(create|delete|edit|rename|transfer))\b/.test(
+        text,
+      ) ||
+        (/\bapi\b/.test(text) &&
+          /(^|\s)(-X|--method|-f|-F|--field|--raw-field|--input)(=|\s)/.test(text)))) ||
+    (["terraform", "tofu"].includes(head) && /\b(apply|destroy|import)\b/.test(text)) ||
+    (["npm", "pnpm", "yarn", "bun"].includes(head) &&
+      /^(?:(?:run|npm)\s+)?(?:publish|deploy|release)\b/.test(text)) ||
+    (["wrangler", "vercel", "netlify", "fly", "flyctl"].includes(head) &&
+      /\b(deploy|publish|delete|destroy|promote)\b/.test(text)) ||
+    (head === "kubectl" && /\b(apply|create|delete|replace|patch|scale|rollout)\b/.test(text)) ||
+    (head === "helm" && /\b(install|upgrade|uninstall|rollback)\b/.test(text)) ||
+    (head === "docker" && /\bpush\b/.test(text));
+  return consequential
+    ? {
+        id: "authorization",
+        detail: head + " external effect",
+        targets: [],
+        scope: head + " " + text,
+      }
+    : null;
+}
+
 function privilegeShape(head, args, whole) {
   if (head === "sudo" || head === "su") return { id: "privilege", detail: head, targets: [] };
   if (
@@ -413,7 +475,7 @@ function deleteShape(head, args, whole) {
 
 function overwriteShape(head, args, segment) {
   const writes = [];
-  const redirects = redirectTargets(segment).filter((r) => r.op === ">" && r.target);
+  const redirects = redirectTargets(segment).filter((r) => r.target);
   for (const r of redirects) writes.push(r.target);
 
   if (head === "dd") {
@@ -432,7 +494,11 @@ function overwriteShape(head, args, segment) {
       targets: explicit ? values : values.slice(-1),
     };
   }
-  if (head === "tee" && !args.some((a) => a === "-a" || a === "--append")) {
+  if (["cp", "mv", "install"].includes(head)) {
+    const paths = nonFlagArgs(args);
+    return { id: "overwrite", detail: head, targets: head === "mv" ? paths : paths.slice(-1) };
+  }
+  if (head === "tee") {
     return { id: "overwrite", detail: "tee (truncates)", targets: nonFlagArgs(args) };
   }
   if (writes.length)
@@ -453,6 +519,7 @@ function detectShapes(segment) {
     overwriteShape(head, args, segment),
     privilegeShape(head, args, whole),
     remoteShape(head, whole),
+    authorizationShape(head, args),
   ].filter(Boolean);
   return found;
 }
@@ -653,8 +720,8 @@ const CATASTROPHIC_TARGETS = [
 // the shell rules made every `=>` look like a redirect.
 const SHELL_HEADS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh"]);
 
-function evaluateInline(interpreter, text, cwd) {
-  if (SHELL_HEADS.has(interpreter)) return evaluateBashCommand(text, { cwd });
+function evaluateInline(interpreter, text, cwd, resolvePath) {
+  if (SHELL_HEADS.has(interpreter)) return evaluateBashCommand(text, { cwd, resolvePath });
   return evaluateSourceText(text, `${interpreter} inline`);
 }
 
@@ -690,12 +757,12 @@ function secretReadVsNetwork(segments) {
  * the caller does the reading, so this stays testable.
  */
 export function evaluateBashCommand(command, options = {}) {
-  const { cwd, scriptTexts } = options;
+  const { cwd, scriptTexts, resolvePath } = options;
   // Heredoc bodies are data written to a file, not shell to be run: parse the
   // command lines only, and expand an unquoted body's substitutions below.
   const { text, bodies } = stripHeredocs(String(command ?? ""));
   const segments = splitSegments(text);
-  const evidence = { shapes: [], targets: [], scriptRefs: [], inline: [] };
+  const evidence = { shapes: [], targets: [], scriptRefs: [], inline: [], approvalScopes: [] };
   let verdict = "allow";
   let reason = null;
   // `cd /tmp && rm -rf scratch` is scratch, not a workspace delete. Chained
@@ -727,11 +794,20 @@ export function evaluateBashCommand(command, options = {}) {
     }
     for (const shape of detectShapes(segment)) {
       evidence.shapes.push(`${shape.id}: ${shape.detail}`);
+      if (shape.scope)
+        evidence.approvalScopes.push(
+          `external:${resolvedTarget(effectiveCwd || cwd || ".", cwd, resolvePath)}:${shape.scope}`,
+        );
       const fallback = SHAPE_DEFAULT[shape.id] ?? "judge";
       const targets = shape.targets.length ? shape.targets : [null];
       const perTarget = targets.map((target) => {
-        const klass = target === null ? null : classifyTarget(target, effectiveCwd, roots);
+        const klass =
+          target === null ? null : classifyTarget(target, effectiveCwd, roots, resolvePath);
         if (target !== null) evidence.targets.push(`${target} → ${klass}`);
+        if (klass === "control")
+          evidence.approvalScopes.push(
+            `control:${shape.id}:${resolvedTarget(target, effectiveCwd, resolvePath)}`,
+          );
         // A target class both raises and lowers the shape's default: rm -rf
         // dist is harmless and rm -rf .git is not, yet both are "delete".
         const byClass = klass
@@ -745,7 +821,7 @@ export function evaluateBashCommand(command, options = {}) {
           t.target !== null && CATASTROPHIC_TARGETS.some((re) => re.test(String(t.target).trim())),
       );
       const touchesSecret = shape.targets.some(
-        (t) => classifyTarget(t, effectiveCwd, roots) === "secret",
+        (t) => classifyTarget(t, effectiveCwd, roots, resolvePath) === "secret",
       );
       if (shape.id === "delete" && wipe) {
         shapeVerdict = "block";
@@ -777,7 +853,8 @@ export function evaluateBashCommand(command, options = {}) {
   evidence.scriptRefs = indirection.scriptRefs;
   evidence.inline = indirection.inline.map((i) => `${i.head}: ${String(i.text).slice(0, 80)}`);
   for (const item of indirection.inline) {
-    const inlineVerdict = evaluateInline(item.head, item.text, effectiveCwd);
+    const inlineVerdict = evaluateInline(item.head, item.text, effectiveCwd, resolvePath);
+    evidence.approvalScopes.push(...(inlineVerdict.evidence?.approvalScopes ?? []));
     if (inlineVerdict.verdict !== "allow") {
       reason ??= `${item.head} runs inline code with destructive operations`;
       verdict = worst(verdict, inlineVerdict.verdict);
@@ -792,7 +869,8 @@ export function evaluateBashCommand(command, options = {}) {
     ...bodies.filter((b) => !b.quoted).flatMap((b) => collectSubstitutions(b.body)),
   ];
   for (const inner of substitutions) {
-    const sub = evaluateBashCommand(inner, { cwd: effectiveCwd, scriptTexts: {} });
+    const sub = evaluateBashCommand(inner, { cwd: effectiveCwd, scriptTexts: {}, resolvePath });
+    evidence.approvalScopes.push(...(sub.evidence?.approvalScopes ?? []));
     if (sub.verdict !== "allow") {
       reason ??= sub.reason
         ? `substitution: ${sub.reason}`
@@ -808,7 +886,11 @@ export function evaluateBashCommand(command, options = {}) {
   const unresolved = Array.isArray(options.unresolvedScripts) ? options.unresolvedScripts : [];
   if (scriptTexts && typeof scriptTexts === "object") {
     for (const [scriptPath, scriptSrc] of Object.entries(scriptTexts)) {
-      const scriptVerdict = evaluateSourceText(scriptSrc, scriptPath).verdict;
+      const result = /\.(sh|bash|zsh)$/.test(scriptPath)
+        ? evaluateBashCommand(scriptSrc, { cwd: effectiveCwd, scriptTexts: {}, resolvePath })
+        : evaluateSourceText(scriptSrc, scriptPath);
+      evidence.approvalScopes.push(...(result.evidence?.approvalScopes ?? []));
+      const scriptVerdict = result.verdict;
       if (scriptVerdict !== "allow") {
         reason ??= `${scriptPath} contains destructive operations`;
         verdict = worst(verdict, scriptVerdict);
@@ -850,8 +932,8 @@ function collectCommands(input, out = []) {
   return out;
 }
 
-function evaluateFileTool(toolName, input, { cwd } = {}) {
-  const evidence = { targets: [], shapes: [] };
+function evaluateFileTool(toolName, input, { cwd, resolvePath } = {}) {
+  const evidence = { targets: [], shapes: [], approvalScopes: [] };
   let verdict = "allow";
   let reason = null;
 
@@ -859,7 +941,7 @@ function evaluateFileTool(toolName, input, { cwd } = {}) {
   if (!paths.length) return { verdict: "allow", reason: null, evidence };
 
   for (const target of paths) {
-    const klass = classifyTarget(target, cwd);
+    const klass = classifyTarget(target, cwd, cwd, resolvePath);
     evidence.targets.push(`${target} → ${klass}`);
     let targetVerdict = "allow";
     if (klass === "secret") {
@@ -868,6 +950,10 @@ function evaluateFileTool(toolName, input, { cwd } = {}) {
     } else if (klass === "system") {
       targetVerdict = "block";
       reason = `${toolName} would modify a system path: ${target}`;
+    } else if (klass === "control") {
+      targetVerdict = "confirm";
+      reason ??= `${toolName} would modify human-owned Pi instructions/configuration`;
+      evidence.approvalScopes.push(`control:overwrite:${resolvedTarget(target, cwd, resolvePath)}`);
     } else if (isEnvFile(target)) {
       // Dotenv secrets are a human decision wherever they live.
       targetVerdict = "confirm";
@@ -921,6 +1007,8 @@ export function evaluateToolCall({
   cwd,
   scriptTexts,
   unresolvedScripts,
+  resolvePath,
+  external = false,
   annotations,
 } = {}) {
   const name = String(toolName ?? "");
@@ -930,18 +1018,47 @@ export function evaluateToolCall({
   const hinted = trustedReadOnlyHint(lower, annotations);
   const readOnly = hinted === null ? isReadOnlyToolName(lower) : hinted;
 
-  if (readOnly) return { verdict: "allow", reason: null, evidence: { shapes: [] } };
+  const needsAuthorization =
+    external && (annotations?.readOnlyHint !== true || annotations?.destructiveHint === true);
+  const authorize = (result) => {
+    if (!needsAuthorization || result.verdict === "block") return result;
+    return {
+      ...result,
+      verdict: worst(result.verdict, "confirm"),
+      reason: result.reason || "external tool effects require scoped human authorization",
+      evidence: {
+        ...result.evidence,
+        approvalScopes: [
+          ...(result.evidence?.approvalScopes ?? []),
+          `tool:${name}:${JSON.stringify(input ?? {})}`,
+        ],
+      },
+    };
+  };
+
+  if (readOnly && !needsAuthorization)
+    return { verdict: "allow", reason: null, evidence: { shapes: [] } };
 
   // Command-shaped arguments run the shell rules, whatever the tool is called.
   // That covers bash, and any future extension tool that shells out — a
   // tool's name is a promise, its arguments are the evidence.
   const commands = collectCommands(input);
   if (commands.length) {
-    let verdict = "allow";
-    let reason = null;
-    const evidence = { shapes: [], targets: [], scriptRefs: [], inline: [] };
+    const file = evaluateFileTool(name, input, { cwd, resolvePath });
+    let { verdict, reason } = file;
+    const evidence = {
+      ...file.evidence,
+      scriptRefs: [],
+      inline: [],
+      approvalScopes: file.evidence.approvalScopes ?? [],
+    };
     for (const command of commands) {
-      const result = evaluateBashCommand(command, { cwd, scriptTexts, unresolvedScripts });
+      const result = evaluateBashCommand(command, {
+        cwd,
+        scriptTexts,
+        unresolvedScripts,
+        resolvePath,
+      });
       verdict = worst(verdict, result.verdict);
       reason ??= result.reason;
       evidence.shapes.push(...(result.evidence.shapes ?? []));
@@ -950,14 +1067,13 @@ export function evaluateToolCall({
       // them here means scripts are never read and never reclassified.
       evidence.scriptRefs.push(...(result.evidence.scriptRefs ?? []));
       evidence.inline.push(...(result.evidence.inline ?? []));
+      evidence.approvalScopes.push(...(result.evidence.approvalScopes ?? []));
     }
-    return { verdict, reason, evidence };
+    return authorize({ verdict, reason, evidence });
   }
 
   // Path-shaped arguments: secrets and system paths are refused whoever is
   // asking; anything else is routine, because sessions work across repos.
   // because nagging about every read of a home-directory path would be noise.
-  const fileish = evaluateFileTool(name, input, { cwd });
-  if (fileish.verdict !== "allow") return fileish;
-  return { verdict: "allow", reason: null, evidence: { shapes: [] } };
+  return authorize(evaluateFileTool(name, input, { cwd, resolvePath }));
 }

@@ -8,7 +8,7 @@
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -47,18 +47,19 @@ function harness({
   const dialogs = [];
   const notifications = [];
   const pi = {
+    getAllTools: () => tools,
     on: (name, handler) => {
       (handlers[name] ??= []).push(handler);
     },
     registerCommand: (name, def) => {
       commands[name] = def;
     },
-    getAllTools: () => tools,
   };
   const ui = {
     select: async (title, options) => {
       dialogs.push({ title, options });
-      return choices.shift();
+      const choice = choices.shift();
+      return typeof choice === "function" ? choice() : choice;
     },
     input: async (title, placeholder) => {
       dialogs.push({ title, placeholder });
@@ -81,6 +82,15 @@ function harness({
     notifications,
     run: (toolName, input) => handlers.tool_call[0]({ toolName, input }, ctx),
     command: (args) => commands.guardrail.handler(args, ctx),
+    input: async () => {
+      for (const fn of handlers.input ?? []) await fn({}, ctx);
+    },
+    session: async () => {
+      for (const fn of handlers.session_start ?? []) await fn({}, ctx);
+    },
+    setCwd: (nextCwd) => {
+      ctx.cwd = nextCwd;
+    },
   };
 }
 
@@ -299,6 +309,107 @@ test("status reports what happened this session", async () => {
   assert.match(last, /Guardrail on/);
   assert.match(last, /1 asked/);
   assert.match(last, /1 refused/);
+});
+
+test("authorization is scoped to an exact external action, target, cwd and input", async () => {
+  const h = harness({ cwd: "/work/one", choices: [APPROVE, DENY, DENY, DENY] });
+  const input = { command: "git push origin main" };
+  assert.equal(await h.run("bash", input), undefined);
+  assert.equal(await h.run("bash", input), undefined);
+  assert.equal(h.dialogs.length, 1);
+  assert.equal((await h.run("bash", { command: "git push other main" })).block, true);
+  h.setCwd("/work/two");
+  assert.equal((await h.run("bash", input)).block, true);
+  h.setCwd("/work/one");
+  await h.input();
+  assert.equal((await h.run("bash", input)).block, true);
+  assert.equal(h.dialogs.length, 4);
+});
+
+test("control-plane approval covers the file, not sibling files; revoke clears it", async () => {
+  const h = harness({ choices: [APPROVE, DENY, DENY] });
+  const path = join(process.env.HOME, ".pi/agent/settings.json");
+  assert.equal(await h.run("write", { path, content: "{}" }), undefined);
+  assert.equal(await h.run("edit", { path, edits: [{ oldText: "a", newText: "b" }] }), undefined);
+  assert.equal(h.dialogs.length, 1);
+  assert.match(h.dialogs[0].title, /scope/i);
+  assert.equal(
+    (await h.run("write", { path: join(process.env.HOME, ".pi/agent/router.json"), content: "{}" }))
+      .block,
+    true,
+  );
+  await h.command("revoke");
+  assert.equal((await h.run("write", { path, content: "{}" })).block, true);
+});
+
+test("concurrent identical calls share one approval, but pending old approvals cannot survive new input", async () => {
+  const h = harness({ choices: [APPROVE] });
+  const call = { command: "gh pr merge 42 --squash" };
+  assert.deepEqual(await Promise.all([h.run("bash", call), h.run("bash", call)]), [
+    undefined,
+    undefined,
+  ]);
+  assert.equal(h.dialogs.length, 1);
+  let resolve;
+  const stale = harness({
+    choices: [
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+      DENY,
+    ],
+  });
+  const pending = stale.run("bash", call);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(typeof resolve, "function");
+  await stale.input();
+  resolve(APPROVE);
+  assert.equal((await pending).block, true);
+  assert.equal((await stale.run("bash", call)).block, true);
+});
+
+test("missing UI, cancellation and catastrophic patterns cannot use scoped approval", async () => {
+  for (const hasUI of [true, false]) {
+    const h = harness({ hasUI, choices: [undefined] });
+    assert.equal((await h.run("bash", { command: "terraform apply -auto-approve" })).block, true);
+  }
+  const h = harness({ choices: [APPROVE] });
+  await h.run("bash", { command: "git push origin main" });
+  assert.equal((await h.run("bash", { command: "git push origin main && rm -rf ~" })).block, true);
+  await h.session();
+  assert.equal((await h.run("bash", { command: "git push origin main" })).block, true);
+});
+
+test("remote annotations override reader-like names and require approval without a UI", async () => {
+  const h = harness({
+    hasUI: false,
+    tools: [
+      {
+        name: "mcp__cloud__get_and_delete",
+        namespace: { name: "cloud" },
+        annotations: { readOnlyHint: false },
+      },
+      {
+        name: "mcp__cloud__get",
+        namespace: { name: "cloud" },
+        annotations: { readOnlyHint: true },
+      },
+      { name: "mcp__cloud__deploy", namespace: { name: "cloud" } },
+    ],
+  });
+  assert.equal((await h.run("mcp__cloud__get_and_delete", { id: "one" })).block, true);
+  assert.equal((await h.run("mcp__cloud__deploy", { id: "one" })).block, true);
+  assert.equal(await h.run("mcp__cloud__get", { id: "one" }), undefined);
+});
+
+test("symlink aliases of control files are protected", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "guardrail-link-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  symlinkSync(join(process.env.HOME, ".pi/agent/settings.json"), join(dir, "alias"));
+  const h = harness({ cwd: dir, hasUI: false });
+  assert.equal((await h.run("write", { path: "alias", content: "{}" })).block, true);
 });
 
 test.after?.(() => {

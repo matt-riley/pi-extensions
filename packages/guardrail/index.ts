@@ -16,8 +16,8 @@
 // for the session, and PI_GUARDRAIL=off for a whole process.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readFileSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync, statSync, realpathSync } from "node:fs";
+import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone.mjs";
@@ -86,9 +86,29 @@ function readScriptRefs(refs, cwd) {
   return { scriptTexts, unresolved };
 }
 
+// Resolve the nearest existing ancestor too: a new file can be written through
+// a symlinked parent. This is identity for approval scope, not a filesystem lock.
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(canonicalPath(parent), basename(path));
+  }
+}
+
 export default function piGuardrailExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
   const enqueueDialog = createDialogQueue();
+  const approvals = new Set<string>();
+  let generation = 0;
+  const revoke = () => {
+    generation++;
+    approvals.clear();
+  };
+  pi.on("input", revoke);
+  pi.on("session_start", revoke);
+  pi.on("session_switch", revoke);
   const state = {
     enabled: !disabledByEnv(),
     judged: 0,
@@ -119,20 +139,26 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
 
     const toolName = String(event?.toolName ?? "");
     const input = event?.input ?? {};
-    const cwd = ctx?.cwd ?? process.cwd();
+    const cwd = canonicalPath(ctx?.cwd ?? process.cwd());
+    const epoch = generation;
+    const tool = pi.getAllTools?.().find((candidate) => candidate.name === toolName);
     const annotations = annotationsFor(toolName);
-
-    let decision = evaluateToolCall({ toolName, input, cwd, annotations });
+    const options = {
+      toolName,
+      input,
+      cwd,
+      resolvePath: canonicalPath,
+      external: Boolean(tool?.namespace || /^(mcp__|cloudflare_mcp_)/.test(toolName)),
+      annotations,
+    };
+    let decision = evaluateToolCall(options);
 
     // Follow one level of indirection: classify the scripts the command runs.
     const refs = decision?.evidence?.scriptRefs ?? [];
     if (refs.length) {
       const { scriptTexts, unresolved } = readScriptRefs(refs, cwd);
       decision = evaluateToolCall({
-        toolName,
-        input,
-        cwd,
-        annotations,
+        ...options,
         scriptTexts,
         unresolvedScripts: unresolved,
       });
@@ -195,7 +221,25 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       };
     }
 
-    state.confirmed += 1;
+    const scopes: string[] = [...new Set<string>(decision?.evidence?.approvalScopes ?? [])];
+    // Shell scopes include the entire invocation, so approving a push cannot
+    // bless a newly appended command. File edits intentionally cover that file.
+    const scopeKey = scopes.length
+      ? JSON.stringify([
+          cwd,
+          scopes.sort(),
+          toolName === "bash"
+            ? input.command
+            : scopes.every((scope) => scope.startsWith("control:"))
+              ? null
+              : [toolName, input],
+        ])
+      : null;
+    if (scopeKey && approvals.has(scopeKey)) {
+      state.allowed += 1;
+      return undefined;
+    }
+
     if (!ask) {
       state.blocked += 1;
       notify(ctx, `🛑 Guardrail blocked (no UI to ask) — ${reason}`, "warning");
@@ -210,6 +254,9 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       "🛑 Guardrail",
       describeAction(toolName, input),
       reason,
+      scopeKey
+        ? `Approval scope (current input only):\n${scopes.join("\n")}\nRepository/cwd: ${cwd}`
+        : "",
       recommended ? `➡️ Recommended: ${recommended}` : "",
     ]
       .filter((part) => part.length > 0)
@@ -217,7 +264,15 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
 
     let choice;
     try {
-      choice = await enqueueDialog(() => ask.select(title, [APPROVE, DENY, SUGGEST]));
+      choice = await enqueueDialog(async () => {
+        if (epoch !== generation) return DENY;
+        if (scopeKey && approvals.has(scopeKey)) return APPROVE;
+        state.confirmed += 1;
+        const selected = await ask.select(title, [APPROVE, DENY, SUGGEST]);
+        if (epoch !== generation) return DENY;
+        if (selected === APPROVE && scopeKey) approvals.add(scopeKey);
+        return selected;
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notify(ctx, `🛑 Guardrail dialog failed — ${message}`, "error");
@@ -266,12 +321,19 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       const action = String(args ?? "")
         .trim()
         .toLowerCase();
+      if (action === "revoke") {
+        revoke();
+        notify(ctx, "Guardrail approvals revoked.", "info");
+        return;
+      }
       if (action === "off" || action === "disable") {
+        revoke();
         state.enabled = false;
         notify(ctx, "Guardrail off for this session. /guardrail on to re-arm.", "warning");
         return;
       }
       if (action === "on" || action === "enable") {
+        revoke();
         state.enabled = true;
         notify(ctx, "Guardrail on.", "info");
         return;
@@ -279,7 +341,7 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       const status = [
         `Guardrail ${state.enabled ? "on" : "OFF"} (PI_GUARDRAIL=${state.enabled ? "unset" : "off"})`,
         `this session: ${state.allowed} allowed · ${state.confirmed} asked · ${state.blocked} refused · ${state.judged} judged`,
-        `judge timeout ${timeoutMs()}ms; /guardrail on|off`,
+        `judge timeout ${timeoutMs()}ms; ${approvals.size} current-input approvals; /guardrail on|off|revoke`,
       ].join("\n");
       notify(ctx, status, "info");
     },
