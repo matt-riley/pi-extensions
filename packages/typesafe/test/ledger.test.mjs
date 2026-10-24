@@ -51,6 +51,40 @@ function sessionPi() {
   return pi;
 }
 
+/** A classify host that reports a model other than the tuned one, so drift checks read ctx. */
+function driftedHost() {
+  return {
+    sessionManager: {},
+    ui: { notify() {} },
+    modelRegistry: {
+      findOfType() {
+        return {
+          id: "jev-1.13.0",
+          type: "classifier",
+          provider: "typesafe",
+          api: "typesafe-system-one",
+          baseUrl: "https://api.typesafe.ai/v1",
+        };
+      },
+      async classify() {
+        return {
+          stopReason: "stop",
+          model: "jev-1.14.0",
+          answers: { pick: { type: "noul", noul: 0.4 } },
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      },
+    },
+  };
+}
+
 const QUESTIONS = {
   destructive: {
     type: "noul",
@@ -491,5 +525,63 @@ test("askSystemOne names the calling package when no feature is passed", async (
       ["Error", "    at classifyCi (file:///workspace/scripts/ci-triage.mjs:10:1)"].join("\n"),
     ),
     "ci-triage",
+  );
+});
+
+test("a ctx whose ui getter throws still returns the Jev answer", async () => {
+  const pi = sessionPi();
+  const ctx = driftedHost();
+  Object.defineProperty(ctx, "ui", {
+    get() {
+      throw new Error("ui detached after /new");
+    },
+  });
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      ctx,
+      fetchImpl: async () => {
+        throw new Error("http fallback should not run");
+      },
+    }),
+  );
+
+  const result = await pi.handlers[0].handler({}, {});
+  assert.equal(result.model, "jev-1.14.0");
+  assert.equal(result.answers.pick.noul, 0.4);
+  assert.ok(
+    pi.entries.every((entry) => entry.data.outcome === "ok"),
+    "ledger work must not record a successful call as a failure",
+  );
+});
+
+test("a ctx whose sessionManager getter throws still returns the Jev answer", async () => {
+  const pi = sessionPi();
+  const ctx = driftedHost();
+  Object.defineProperty(ctx, "sessionManager", {
+    get() {
+      throw new Error("sessionManager detached after /new");
+    },
+  });
+  pi.on("tool_call", () =>
+    askSystemOne({
+      state: { note: "plain" },
+      questions: { pick: { type: "noul", instructions: "Looking at `note`: is it fine?" } },
+      env: ENV,
+      ctx,
+      fetchImpl: async () => {
+        throw new Error("http fallback should not run");
+      },
+    }),
+  );
+
+  const result = await pi.handlers[0].handler({}, {});
+  assert.equal(result.model, "jev-1.14.0");
+  assert.equal(result.answers.pick.noul, 0.4);
+  assert.ok(
+    pi.entries.every((entry) => entry.data.outcome === "ok"),
+    "ledger work must not record a successful call as a failure",
   );
 });
