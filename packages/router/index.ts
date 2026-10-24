@@ -165,6 +165,20 @@ export default function piRouterExtension(
 ) {
   bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
+  let generation = 0;
+  const judgments = new Set<AbortController>();
+  const judge: typeof askSystemOne = async (input) => {
+    const controller = new AbortController();
+    judgments.add(controller);
+    try {
+      return await ask({
+        ...input,
+        signal: AbortSignal.any([controller.signal, input.signal ?? AbortSignal.timeout(4000)]),
+      });
+    } finally {
+      judgments.delete(controller);
+    }
+  };
   const configPath = deps.configPath ?? routerConfigPath();
   // First run: leave a file with the built-in lists to open and edit.
   ensureRouterConfig(configPath);
@@ -354,6 +368,7 @@ export default function piRouterExtension(
     request: ModelRouteRequest<RouterState>,
     ctx: ExtensionContext,
   ): Promise<ModelRoute<RouterState>> {
+    const epoch = generation;
     const reason = request?.reason ?? "user";
     const selected = parseThinking(request?.thinkingLevel, DEFAULT_THINKING);
     const offers = await candidates(ctx);
@@ -383,7 +398,7 @@ export default function piRouterExtension(
     // Disabled, a child session, or a request outside the agent loop: hold the
     // base (or the last decision) without judging. `direct` covers compaction
     // summaries and extension calls, and carries no state.
-    if (!config.enabled || isSubagentChild || reason === "direct") {
+    if (epoch !== generation || !config.enabled || isSubagentChild || reason === "direct") {
       const model = base?.model ?? heldModel;
       if (!model) throw new Error("Router: no physical model is available to route to");
       return { model, thinkingLevel: base?.thinking ?? selected };
@@ -451,7 +466,7 @@ export default function piRouterExtension(
       try {
         const result = prefetched
           ? { answers: prefetched }
-          : await ask({
+          : await judge({
               state: buildDifficultyState({
                 prompt,
                 window: shareWindow ? history : [],
@@ -467,10 +482,13 @@ export default function piRouterExtension(
         counters.judged++;
         // Anything that happened while the judgement was in flight invalidates
         // it — most importantly /route off.
-        if (!config.enabled) {
+        if (!config.enabled || epoch !== generation) {
           return { model: base?.model ?? currentModel, thinkingLevel: selected };
         }
       } catch (error) {
+        if (!config.enabled || epoch !== generation) {
+          return { model: base?.model ?? currentModel, thinkingLevel: selected };
+        }
         // A judgement that fails keeps the model that was working.
         nextAttempts = attempts + 1;
         const failed: RouterState = {
@@ -649,9 +667,10 @@ export default function piRouterExtension(
   // would otherwise make). The playbook rides in the system prompt for every
   // run of that task. No key, an error or an unsure answer injects nothing.
   pi.on("before_agent_start", async (event, ctx) => {
-    if (!playbooksEnabled || isSubagentChild) return;
+    if (!config.enabled || !playbooksEnabled || isSubagentChild) return;
     // Pi 1.2+: custom-message runs carry no prompt to judge.
     if (event?.messageType !== "user") return;
+    const epoch = generation;
     const prompt = String(event?.prompt ?? "")
       .trim()
       .slice(0, 2000);
@@ -672,7 +691,7 @@ export default function piRouterExtension(
       const routing = config.enabled && modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
       let type = NO_PLAYBOOK;
       try {
-        const result = await ask({
+        const result = await judge({
           state: buildDifficultyState({
             prompt,
             window: shareWindow ? history : [],
@@ -684,11 +703,13 @@ export default function piRouterExtension(
           },
           signal: AbortSignal.timeout(config.timeoutMs),
         });
+        if (!config.enabled || epoch !== generation) return;
         type = taskTypeFromAnswer(result?.answers?.task_type);
         if (routing && result?.answers) pending = { prompt, answers: result.answers };
       } catch {
         // Judge unavailable: no playbook for this task, and no retry until the next one.
       }
+      if (!config.enabled || epoch !== generation) return;
       playbook = { type, text: loadPlaybook(type) };
       try {
         pi.appendEntry?.("router-playbook", { at: Date.now(), type, boundary: boundary.route });
@@ -733,12 +754,24 @@ export default function piRouterExtension(
         .toLowerCase();
       if (action === "off" || action === "disable") {
         config.enabled = false;
+        generation++;
+        for (const controller of judgments) controller.abort();
+        playbook = undefined;
+        pending = null;
+        setPlaybookStatus(ctx, null);
         setStatus(ctx, "router: off");
-        notify(ctx, "Router off. /route on to re-arm.", "warning");
+        notify(
+          ctx,
+          "Router off: no routing/playbook judgments or router sharing. /route on to re-arm.",
+          "warning",
+        );
         return;
       }
       if (action === "on" || action === "enable") {
         config.enabled = true;
+        generation++;
+        playbook = undefined;
+        pending = null;
         setStatus(ctx, "router: armed");
         notify(ctx, "Router on.", "info");
         return;
@@ -760,7 +793,7 @@ export default function piRouterExtension(
       notify(
         ctx,
         [
-          `Router ${config.enabled ? "on" : "OFF"} · select ${PROVIDER}/${MODEL_ID} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${shareWindow ? "prompt + recent turns" : "prompt only"}`,
+          `Router ${config.enabled ? "on" : "OFF"} · select ${PROVIDER}/${MODEL_ID} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${!config.enabled ? "none (off)" : shareWindow ? "prompt + recent turns" : "prompt only"}`,
           `models ${configPath}${loaded.error ? ` (broken: ${loaded.error}; using defaults)` : ""}`,
           `base ${lists(loaded.base)} · mid ${lists(loaded.mid)} · frontier ${lists(loaded.frontier)}`,
           `${c.turns} turns · ${c.judged} judged · ${c.escalated} escalated · ${c.steppedDown} stepped down · ${c.held} held · ${c.tooBig} too big to switch`,
@@ -768,7 +801,7 @@ export default function piRouterExtension(
             ? `routed to ${lastState.model ?? "?"} (${lastState.tier}) · base ${lastState.base ?? "?"}`
             : "no routing decision yet",
           lastLine,
-          `playbooks ${playbooksEnabled ? "on" : "off"} · this task: ${playbook?.type ?? "not judged"}`,
+          `playbooks ${config.enabled && playbooksEnabled ? "on" : "off"} · this task: ${playbook?.type ?? "not judged"}`,
         ].join("\n"),
       );
     },

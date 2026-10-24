@@ -155,8 +155,11 @@ pattern that names its provider is taken literally, and non-GPT patterns
 | `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and playbook injection |
 
 In-session: `/route` for status and counters, `/route off` and `/route on`.
-`off` skips judgements and holds the base; it does not change which model is
-selected. `/route status` prints the config path and the lists it is using.
+`off` stops both routing and playbook judgments/sharing, cancels in-flight
+judgments and clears their cached answers/playbook. A result arriving after
+an off/on cycle is discarded too. It holds the base without changing the
+selected model. This switch covers this router, not other TypeSafe-enabled
+extensions. `/route status` prints sharing/playbook state, config path and lists.
 
 ## Playbooks
 
@@ -175,7 +178,8 @@ for every run of that task, and the footer shows `playbook: <type>`.
 - **No second call when routing.** With `router/auto` selected, the same batched
   call also rates difficulty, and `route()` uses that answer for the same prompt
   instead of asking again.
-- **Not in subagent children.** Their task comes from the orchestrator.
+- **Not while off or in subagent children.** `/route off` and `PI_ROUTER=off`
+  stop playbooks too; children get their task from the orchestrator.
 - Each judgement is recorded as a `router-playbook` entry (type and whether it
   was a boundary), kept apart from `router-decision` so the routing reports are
   unchanged.
@@ -211,8 +215,11 @@ Routing is a data-flow decision as much as a model one, so it is worth being
 explicit: the judgement sends the prompt, the working directory, and (by default)
 the last four turns — including assistant replies — to TypeSafe. An escalation
 then serves that conversation from a different provider than the one you were
-using. `PI_ROUTER_SHARE=prompt` narrows the first of those; nothing narrows the
-second except `/route off`, or not escalating.
+using. `PI_ROUTER_SHARE=prompt` omits recent conversation from both routing
+and playbook judgments (the current prompt and cwd still leave the machine).
+`/route off` or `PI_ROUTER=off` stops both judgment paths and their sharing.
+Provider escalation is avoided by staying off or not escalating; other
+extensions and the selected physical provider retain their own data flows.
 
 ## What it deliberately does not do
 

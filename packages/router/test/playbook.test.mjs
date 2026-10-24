@@ -14,6 +14,8 @@ import { loadPlaybook, NO_PLAYBOOK, PLAYBOOK_TYPES, taskTypeFromAnswer } from ".
 const SAVED = {
   PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD,
   PI_ROUTER_PLAYBOOKS: process.env.PI_ROUTER_PLAYBOOKS,
+  PI_ROUTER: process.env.PI_ROUTER,
+  PI_ROUTER_SHARE: process.env.PI_ROUTER_SHARE,
 };
 const tempDirs = [];
 
@@ -63,6 +65,7 @@ function harness({ answers, fail = false, selected = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "router-playbook-"));
   tempDirs.push(dir);
   const handlers = {};
+  const commands = {};
   const entries = [];
   const statuses = [];
   const asks = [];
@@ -72,7 +75,9 @@ function harness({ answers, fail = false, selected = null } = {}) {
     on: (name, fn) => {
       handlers[name] = fn;
     },
-    registerCommand: () => {},
+    registerCommand: (name, definition) => {
+      commands[name] = definition;
+    },
     appendEntry: (customType, data) => entries.push({ customType, data }),
     registerVirtualModel: (def) => {
       virtualModel = def;
@@ -92,11 +97,12 @@ function harness({ answers, fail = false, selected = null } = {}) {
     ask: async (input) => {
       asks.push(input);
       if (fail) throw new Error("no key");
-      return { answers: answers(input) };
+      return { answers: await answers(input) };
     },
   });
   return {
     asks,
+    command: (args) => commands.route.handler(args, ctx),
     entries,
     statuses,
     setBranch: (messages) => {
@@ -173,6 +179,58 @@ test("subagent children and PI_ROUTER_PLAYBOOKS=off never judge", async () => {
   const off = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
   assert.equal(await off.start("fix the failing test"), undefined);
   assert.equal(child.asks.length + off.asks.length, 0);
+});
+
+test("router off prevents playbook judgments even with a physical model", async () => {
+  process.env.PI_ROUTER = "off";
+  const h = harness({ selected: LUNA, answers: () => ({ task_type: choice("bug") }) });
+  assert.equal(await h.start("fix the parser"), undefined);
+  assert.equal(h.asks.length, 0);
+  await h.command("on");
+  assert.match(await h.start("fix the parser"), /Playbook/);
+  await h.command("off");
+  assert.equal(await h.start("fix the parser"), undefined);
+  assert.equal(h.asks.length, 1);
+});
+
+test("off cancels a pending playbook judgment and off/on cannot revive its result", async () => {
+  let resolve;
+  const h = harness({
+    answers: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  });
+  const pending = h.start("fix the empty message parser");
+  assert.equal(h.asks.length, 1);
+  await h.command("off");
+  assert.equal(h.asks[0].signal.aborted, true);
+  await h.command("on");
+  resolve({ task_type: choice("bug", 0.9) });
+  assert.equal(await pending, undefined);
+  assert.equal(h.entries.length, 0);
+});
+
+test("off/on during candidate discovery cannot start an old request's judgment", async () => {
+  const h = harness({
+    selected: { provider: "router", id: "auto" },
+    answers: () => ({ difficulty: { type: "score", score: 2.6 } }),
+  });
+  const prompt = "audit the parser state transitions";
+  const pending = h.route(prompt, [user(prompt)]);
+  await h.command("off");
+  await h.command("on");
+  await pending;
+  assert.equal(h.asks.length, 0);
+});
+
+test("prompt-only sharing omits previous conversation", async () => {
+  process.env.PI_ROUTER_SHARE = "prompt";
+  const h = harness({ answers: () => ({ task_type: choice("bug") }) });
+  h.setBranch([user("PRIVATE CONTEXT"), assistant("PRIVATE RESPONSE")]);
+  await h.start("fix the empty message parser");
+  assert.equal(h.asks.length, 1);
+  assert.deepEqual(h.asks[0].state.conversation, []);
 });
 
 test("with router/auto selected, one call rates both and route() reuses it", async () => {
