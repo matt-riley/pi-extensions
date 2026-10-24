@@ -528,23 +528,25 @@ test("auth: a local key is required before classify, even when Pi has a stored T
   assert.match(caught?.message ?? "", /TYPESAFE_API_KEY is not set/);
 });
 
-test("auth: with no local key, classify runs and apiKey is omitted", async () => {
+test("auth: with no local key, classify is not called", async () => {
   const { ctx, calls } = classifierCtx(async () =>
     stopResult({ pick: { type: "bool", probability: 0.5 } }),
   );
-  const result = await askSystemOne({
-    state: { note: "hello" },
-    questions: NOUL,
-    env: NO_KEY_ENV,
-    ctx,
-    fetchImpl: boomFetch(),
-  });
-  assert.equal(calls.length, 1, "classify was not used");
-  assert.equal(calls[0].options.apiKey, undefined);
-  assert.equal(result.answers.pick.noul, 0.5);
+  await assert.rejects(
+    () =>
+      askSystemOne({
+        state: { note: "hello" },
+        questions: NOUL,
+        env: NO_KEY_ENV,
+        ctx,
+        fetchImpl: boomFetch(),
+      }),
+    /TYPESAFE_API_KEY is not set/,
+  );
+  assert.equal(calls.length, 0, "classify ran without a local key");
 });
 
-test("auth: a Pi auth error with no local key uses the TYPESAFE_API_KEY message", async () => {
+test("auth: no local key is refused with the TYPESAFE_API_KEY message before classify", async () => {
   const { ctx, calls } = classifierCtx(async () => ({
     stopReason: "error",
     errorMessage: "No API key for provider: typesafe",
@@ -559,7 +561,7 @@ test("auth: a Pi auth error with no local key uses the TYPESAFE_API_KEY message"
         fetchImpl: boomFetch(),
       }),
     (error) => {
-      assert.equal(calls.length, 1, "classify was not used");
+      assert.equal(calls.length, 0, "classify ran without a local key");
       assert.match(error.message, /TYPESAFE_API_KEY is not set/);
       return true;
     },

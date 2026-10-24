@@ -799,6 +799,9 @@ export async function askSystemOne({
   }
   const { value: safeState, count: redactions } = redactSecrets(state, { literals });
   validateRequest({ state: safeState, questions });
+  // Nothing is sent without a local key. Pi's stored login is not a substitute;
+  // that can be an opt-in later. The HTTP path already refused here.
+  if (!config.apiKey) throw missingKeyError(env);
   if (classifier) {
     return askViaClassify({
       registry,
@@ -814,7 +817,6 @@ export async function askSystemOne({
       retryDelayMs,
     });
   }
-  if (!config.apiKey) throw missingKeyError(env);
   if (typeof fetchImpl !== "function") {
     throw new Error("A fetch implementation is required to call TypeSafe.");
   }

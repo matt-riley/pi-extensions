@@ -78,9 +78,10 @@ The 429/529 loop runs in the fetch wrapper instead, with the same two delays.
 The model id on the wire stays `jev-1.13.0` (or `TYPESAFE_MODEL`, or the
 per-call override) even when Pi's catalog entry is `jev-latest`. An explicit
 `TYPESAFE_BASE_URL` still replaces the catalog host, which is how a proxy or
-the smoke fixture is reached. With no local key, Pi's stored TypeSafe auth is
-used; a missing key with no stored auth still fails with the `TYPESAFE_API_KEY`
-message. The direct POST is what runs when no classifier is registered.
+the smoke fixture is reached. A request still requires a local key
+(`TYPESAFE_API_KEY`, `LORE_TYPESAFE_API_KEY`, or lore.json). Pi's stored login
+is not used, so a session with only that login does not call Jev. The direct
+POST is what runs when no classifier is registered.
 Every `scripts/` classifier is in that group: those processes have no Pi model
 registry.
 
