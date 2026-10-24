@@ -69,18 +69,20 @@ errors.
 
 A `429` (rate limited) or `529` (overloaded) is retried twice with exponential
 backoff (0.5s, then 1s), as [TypeSafe asks](https://docs.typesafe.ai/api/errors.md),
-within the same timeout and cancellation. That schedule is the direct HTTP
-transport. Inside Pi 1.4 or later, `askSystemOne` uses
+within the same timeout and cancellation. That is the schedule for both
+transports. Inside Pi 1.4 or later, `askSystemOne` uses
 `ctx.modelRegistry.classify()` when a TypeSafe System One classifier is
-registered, and Pi retries 429 and 529 itself (`maxRetries: 2`). This client
-does not retry those again on top. The model id on the wire stays `jev-1.13.0`
-(or `TYPESAFE_MODEL`, or the per-call override) even when Pi's catalog entry is
-`jev-latest`. An explicit `TYPESAFE_BASE_URL` still replaces the catalog host,
-which is how a proxy or the smoke fixture is reached. With no local key, Pi's
-stored TypeSafe auth is used; a missing key with no stored auth still fails
-with the `TYPESAFE_API_KEY` message. The direct POST is what runs when no
-classifier is registered. Every `scripts/` classifier is in that group: those
-processes have no Pi model registry.
+registered, and passes `maxRetries: 0` so Pi does not apply its own retry
+policy (408, 409, other 5xx, or a `Retry-After` that can outlast the call).
+The 429/529 loop runs in the fetch wrapper instead, with the same two delays.
+The model id on the wire stays `jev-1.13.0` (or `TYPESAFE_MODEL`, or the
+per-call override) even when Pi's catalog entry is `jev-latest`. An explicit
+`TYPESAFE_BASE_URL` still replaces the catalog host, which is how a proxy or
+the smoke fixture is reached. With no local key, Pi's stored TypeSafe auth is
+used; a missing key with no stored auth still fails with the `TYPESAFE_API_KEY`
+message. The direct POST is what runs when no classifier is registered.
+Every `scripts/` classifier is in that group: those processes have no Pi model
+registry.
 
 The tool sends text/JSON state and choice/noul/score questions, not `assets` or
 `box`, so it doesn't send the `TypeSafe-Danger-Zone-Images` opt-in header, which

@@ -618,6 +618,7 @@ async function askViaClassify({
   env,
   fetchImpl,
   signal,
+  retryDelayMs,
 }) {
   const controller = new AbortController();
   let timedOut = false;
@@ -630,14 +631,22 @@ async function askViaClassify({
   try {
     if (signal?.aborted) throw new Error("TypeSafe request aborted");
     if (signal) signal.addEventListener("abort", forwardAbort, { once: true });
-    // Pi retries 429 and 529 itself when maxRetries is 2. A second loop here
-    // would multiply attempts. The outer signal is the whole-call budget;
-    // timeoutMs would be a fresh budget per attempt.
+    // maxRetries: 0 keeps Pi from applying its own policy: 408, 409, other
+    // 5xx, and a Retry-After that can outlast this call. The loop below is
+    // the same 429/529 schedule as the direct HTTP transport.
     const fetchWrapper = async (url, init) => {
-      const response = await fetchImpl(url, { ...init, redirect: "error" });
+      let response;
+      let attempt = 0;
+      for (;;) {
+        response = await fetchImpl(url, { ...init, redirect: "error" });
+        if (response?.ok || !RETRY_STATUSES.has(response?.status) || attempt >= MAX_RETRIES) break;
+        await readErrorBody(response);
+        await backoff(retryDelayMs * 2 ** attempt, controller.signal);
+        attempt++;
+      }
       // Pi parses noul into bool and drops score probabilities. The raw body
-      // is what every gate already knows how to read.
-      captured.payload = await readJsonClone(response);
+      // of a successful response is what every gate already knows how to read.
+      if (response?.ok) captured.payload = await readJsonClone(response);
       return response;
     };
     let result;
@@ -647,7 +656,7 @@ async function askViaClassify({
         { state: safeState, questions },
         {
           signal: controller.signal,
-          maxRetries: MAX_RETRIES,
+          maxRetries: 0,
           fetch: fetchWrapper,
           headers: { "User-Agent": null },
           ...(config.apiKey ? { apiKey: config.apiKey } : {}),
@@ -802,6 +811,7 @@ export async function askSystemOne({
       env,
       fetchImpl,
       signal,
+      retryDelayMs,
     });
   }
   if (!config.apiKey) throw missingKeyError(env);

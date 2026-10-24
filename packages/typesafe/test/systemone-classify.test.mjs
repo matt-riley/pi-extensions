@@ -186,7 +186,7 @@ test("classify path: a registered TypeSafe classifier receives the redacted stat
   assert.equal(context.questions.pick.type, "noul");
   assert.equal(context.state.note, "hello");
   assert.equal(options.headers["User-Agent"], null);
-  assert.equal(options.maxRetries, 2);
+  assert.equal(options.maxRetries, 0);
   assert.equal(options.apiKey, "ts-secret-key");
   assert.equal(
     Object.keys(options.headers).some(
@@ -313,7 +313,7 @@ test("pin: an unset TYPESAFE_BASE_URL keeps the catalog baseUrl", async () => {
   assert.equal(calls[0].model.baseUrl, "https://api.typesafe.ai/v1");
 });
 
-test("retries: a 429 from classify is not asked again and maxRetries is 2", async () => {
+test("retries: a 429 result from classify is not asked again", async () => {
   const { ctx, calls } = classifierCtx(async () => ({
     stopReason: "error",
     errorMessage: "System One API error (429): busy",
@@ -329,7 +329,7 @@ test("retries: a 429 from classify is not asked again and maxRetries is 2", asyn
       }),
     (error) => {
       assert.equal(calls.length, 1, "classify was not used");
-      assert.equal(calls[0].options.maxRetries, 2);
+      assert.equal(calls[0].options.maxRetries, 0);
       assert.match(error.message, /429/);
       assert.doesNotMatch(error.message, /direct HTTP/);
       return true;
