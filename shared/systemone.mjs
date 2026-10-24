@@ -590,6 +590,17 @@ export function bindSystemOne(pi) {
   return pi;
 }
 
+/** Pi's stored provider key. Used only as a redaction literal, never as a request. */
+async function storedProviderKey(registry) {
+  if (typeof registry?.getApiKeyForProvider !== "function") return "";
+  try {
+    const key = await registry.getApiKeyForProvider("typesafe");
+    return typeof key === "string" ? key.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 function reportedModel(payload, result, requestedModel) {
   if (typeof payload?.model === "string" && payload.model.trim()) return payload.model;
   if (typeof result?.model === "string" && result.model.trim()) return result.model;
@@ -764,15 +775,21 @@ export async function askSystemOne({
   ctx,
 } = {}) {
   const config = resolveConfig(env);
-  // Redact before validating: the size and shape checks should describe what
-  // would actually be sent, and a secret is not what makes a request too big.
-  const { value: safeState, count: redactions } = redactSecrets(state, {
-    literals: [config.apiKey],
-  });
-  validateRequest({ state: safeState, questions });
   const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
   const registry = (ctx ?? systemOneAls.getStore()?.ctx)?.modelRegistry;
   const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
+  // Redact before validating: the size and shape checks should describe what
+  // would actually be sent, and a secret is not what makes a request too big.
+  // The local key is not the only credential that can sit in the state. On the
+  // classify path Pi may also hold a stored TypeSafe key that never appears in
+  // the environment.
+  const literals = [config.apiKey];
+  if (classifier) {
+    const stored = await storedProviderKey(registry);
+    if (stored) literals.push(stored);
+  }
+  const { value: safeState, count: redactions } = redactSecrets(state, { literals });
+  validateRequest({ state: safeState, questions });
   if (classifier) {
     return askViaClassify({
       registry,
