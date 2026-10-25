@@ -69,9 +69,11 @@ renaming one can break another:
   one answers "is this provably read-only?", the other "what could this
   destroy?", and both need to tell operators from literal text.
 
-`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-done-gate`,
-`pi-until`, `pi-review`, `pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`,
-`pi-watch-pr` and `pi-footer` import no sibling package, only `shared/`.
+`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-until`, `pi-review`,
+`pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`, `pi-prompt-coach`,
+`pi-influencer`, `pi-watch-pr` and `pi-footer` import no sibling package, only `shared/`.
+`pi-done-gate` loads none at runtime, but its own tests load `pi-jobs`'s `Jobs`, so
+deleting that package still breaks it.
 
 ## Install
 
