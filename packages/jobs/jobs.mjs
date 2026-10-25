@@ -3,7 +3,7 @@ import { EventEmitter, once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { revisionSnapshot } from "../subagents/evidence.mjs";
+import { revisionSnapshot } from "../../shared/revision.mjs";
 import { isVerifyCommand } from "../done-gate/gate.mjs";
 
 const MAX_OUTPUT = 64_000;

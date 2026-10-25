@@ -1,7 +1,7 @@
 // Controlled local observations. No inference of causality or real-world task quality.
 import { Type } from "typebox";
 import { LOCAL_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
-import { revisionSnapshot } from "../subagents/evidence.mjs";
+import { revisionSnapshot } from "../../shared/revision.mjs";
 
 function summarize(samples) {
   const values = samples.map((sample) => sample.value);
