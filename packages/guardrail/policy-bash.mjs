@@ -42,6 +42,16 @@ const inlineFlags = (head) =>
     SHELL_HEADS.has(head) ? "shell" : head === "osascript" ? "osascript" : (FAMILY[head] ?? "js")
   ];
 const SCRIPT_FILE = /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/;
+/** The payload of an inline flag written without a space: `-c"…"`, `--eval=…`. */
+function gluedPayload(arg, flags) {
+  for (const flag of flags) {
+    if (!arg.startsWith(flag) || arg.length === flag.length) continue;
+    const rest = arg.slice(flag.length);
+    if (!flag.startsWith("--")) return rest;
+    if (rest.startsWith("=") && rest.length > 1) return rest.slice(1);
+  }
+  return null;
+}
 // Flags that leave an interpreter reading its program from stdin: `| sh -s`, `| bash -eux`.
 const STDIN_ARG = /^(-|-[seuxo]+)$/;
 
@@ -62,14 +72,24 @@ function collectIndirection(command) {
     if (!INTERPRETER_HEADS.has(head)) continue;
     if (head === "awk") {
       // awk mutates only through system(), pipes, getline or print redirection.
-      const program = args.find((a) => !a.startsWith("-"));
-      if (program && AWK_SIDE_EFFECT.test(program)) inline.push({ head, text: program });
+      // The program follows -v/-F values, so every operand is read, not the first.
+      for (const program of args.filter((a) => !a.startsWith("-"))) {
+        if (AWK_SIDE_EFFECT.test(program)) inline.push({ head, text: program });
+      }
       continue;
     }
-    const flag = args.find((a) => inlineFlags(head).has(a));
+    const flags = inlineFlags(head);
+    const flag = args.find((a) => flags.has(a));
     if (flag) {
       const value = args[args.indexOf(flag) + 1];
       if (value) inline.push({ head, text: value });
+      continue;
+    }
+    // `python3 -c"…"`, `node -e"…"`, `node --eval=…`: with no space the payload
+    // rides on the flag, so reading only exact flags would classify nothing.
+    const glued = args.map((a) => gluedPayload(a, flags)).find(Boolean);
+    if (glued) {
+      inline.push({ head, text: glued });
       continue;
     }
     const here = args.indexOf("<<<");
@@ -81,6 +101,7 @@ function collectIndirection(command) {
     const file = operands.find((a) => SCRIPT_FILE.test(a));
     if (file) scriptRefs.push(file);
     else if (operands.length) inline.push({ head, text: args.join(" ") });
+    // Empty args count here: a bare `sh` is how `… | sh` presents itself.
     else if (args.every((a) => STDIN_ARG.test(a))) stdin.push(head);
   }
   return { scriptRefs, inline, stdin };
@@ -374,6 +395,14 @@ function evaluateAwk(program, context) {
     reason ??= `awk runs \`${command.slice(0, 60)}\` (${nested.reason})`;
     verdict = worst(verdict, nested.verdict);
   }
+  // `print > "file"` writes that file, so it is judged as the redirect it is;
+  // the literals above are commands, which is what `print | "cmd"` is.
+  for (const match of program.matchAll(/>>?\s*"([^"]*)"/g)) {
+    const nested = evaluateBashCommand(`> "${match[1]}"`, context);
+    if (nested.verdict === "allow") continue;
+    reason ??= `awk writes ${match[1]} (${nested.reason})`;
+    verdict = worst(verdict, nested.verdict);
+  }
   return { verdict, reason, evidence: { source: "awk inline", shapes: [] } };
 }
 
@@ -516,7 +545,7 @@ export function evaluateBashCommand(command, options = {}) {
   // `curl … | sh` runs whatever arrives; no reading of the command line can say what.
   if (indirection.stdin.length) {
     verdict = worst(verdict, "judge");
-    reason ??= `pipes unseen code into ${indirection.stdin[0]}`;
+    reason ??= `${indirection.stdin[0]} may read unseen code from stdin`;
   }
   const nested = [];
   for (const segment of segments) {
