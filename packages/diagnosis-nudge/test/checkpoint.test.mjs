@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import extension from "../index.ts";
+import { Jobs } from "../../jobs/jobs.mjs";
 const bashResult = (output, overrides = {}) => ({
   isError: false,
   result: { structuredContent: { output, exit_code: 0, truncated: false, ...overrides } },
@@ -105,6 +106,68 @@ async function harness(t, entries = []) {
       ),
   };
 }
+
+async function startBackground(h, jobs, id) {
+  const event = {
+    toolName: "terminal_start",
+    toolCallId: "job-start-" + id,
+    // Inherited NODE_TEST_CONTEXT disables nested process isolation; run the fixture in-process.
+    input: { command: "node --test --test-isolation=none code.js" },
+  };
+  const blocked = await h.dispatch("tool_call", event);
+  assert.equal(blocked?.block, undefined);
+  const started = await jobs.start({ command: event.input.command, cwd: h.cwd });
+  await h.dispatch("tool_result", {
+    ...event,
+    isError: false,
+    details: { job: jobs.evidence(started.id) },
+  });
+  return async () => {
+    await jobs.wait(started.id, { timeoutMs: 3000 });
+    const job = jobs.evidence(started.id);
+    return h.dispatch("tool_result", {
+      toolName: "terminal_read",
+      toolCallId: "job-read-" + id,
+      input: { id: started.id },
+      isError: job.exit_code !== 0,
+      details: { job },
+      content: [],
+    });
+  };
+}
+
+test("background failures use real completed evidence and exact passing retries clear the gate", async (t) => {
+  const h = await harness(t);
+  const jobs = new Jobs();
+  t.after(() => jobs.shutdown());
+  h.write("first attempted fix");
+  const first = await startBackground(h, jobs, "one");
+  await first();
+  assert.equal(h.branch.at(-1).data.checks[0]?.failures.length, 1, JSON.stringify(jobs.list()));
+  h.write("second attempted fix");
+  await first();
+  assert.equal(
+    await h.call("edit"),
+    undefined,
+    "a replay of the first job is not a second attempt",
+  );
+  const second = await startBackground(h, jobs, "two");
+  await second();
+  assert.equal(h.branch.at(-1).data.checks[0]?.failures.length, 2, JSON.stringify(jobs.list()));
+  assert.equal((await h.call("edit")).block, true);
+  assert.equal(await h.call("terminal_read"), undefined);
+  assert.equal(await h.call("terminal_list"), undefined);
+  assert.equal(
+    await h.call("terminal_stop"),
+    undefined,
+    "owned process cleanup must remain available",
+  );
+  assert.equal((await h.call("terminal_send", { id: "one", text: "yes" })).block, true);
+  h.write("console.log('passed')");
+  const passed = await startBackground(h, jobs, "three");
+  await passed();
+  assert.equal(await h.call("edit"), undefined);
+});
 
 async function arm(h) {
   h.write("first attempted fix");

@@ -6,6 +6,7 @@ import { hasRedirectOutsideQuotes } from "../../shared/shell-parse.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { revisionSnapshot } from "../subagents/evidence.mjs";
 import { isVerifyCommand } from "../done-gate/gate.mjs";
+import { completedJobCheck } from "../../shared/job-evidence.mjs";
 
 const ENTRY = "diagnosis-checkpoint";
 const REASON =
@@ -29,6 +30,9 @@ const READERS = new Set([
   "codemode",
   "tool_search",
   "diagnosis_checkpoint",
+  "terminal_read",
+  "terminal_list",
+  "terminal_stop", // Cleanup of owned processes remains possible while mutations are paused.
 ]);
 const readonly = (command) =>
   typeof command === "string" &&
@@ -40,11 +44,13 @@ export function installCheckpoint(pi) {
   let epoch = 0;
   let diagnosing = false;
   const running = new Map();
+  const backgrounds = new Map();
   const pending = () => state?.checks.some((check) => check.failures.length >= 2);
   const persist = () => pi.appendEntry(ENTRY, structuredClone(state));
   const restore = async (_event, ctx) => {
     const token = ++epoch;
     running.clear();
+    backgrounds.clear();
     diagnosing = false;
     const cwd = resolve(ctx.cwd ?? process.cwd());
     const saved = ctx.sessionManager
@@ -66,7 +72,8 @@ export function installCheckpoint(pi) {
     const command = event.input?.command;
     if (pending() || diagnosing) {
       const knownCheck =
-        event.toolName === "bash" && state.checks.some((check) => check.command === command);
+        ["bash", "terminal_start"].includes(event.toolName) &&
+        state.checks.some((check) => check.command === command);
       const reader =
         READERS.has(event.toolName) ||
         pi
@@ -75,18 +82,32 @@ export function installCheckpoint(pi) {
       if (!(reader || knownCheck || (event.toolName === "bash" && readonly(command))))
         return { block: true, reason: REASON };
     }
-    if (event.toolName !== "bash" || !isVerifyCommand(command) || hasRedirectOutsideQuotes(command))
+    if (
+      !["bash", "terminal_start"].includes(event.toolName) ||
+      !isVerifyCommand(command) ||
+      hasRedirectOutsideQuotes(command)
+    )
       return;
     const token = epoch;
-    const before = await revisionSnapshot(state.cwd);
+    const before = event.toolName === "terminal_start" ? null : await revisionSnapshot(state.cwd);
     if (token === epoch) running.set(event.toolCallId, { before, command, epoch: token });
   });
 
   pi.on("tool_result", async (event) => {
-    const check = running.get(event.toolCallId);
+    const background = event.toolName === "terminal_read";
+    const job = event.details?.job;
+    const check = background ? backgrounds.get(job?.id) : running.get(event.toolCallId);
     running.delete(event.toolCallId);
     if (!check || check.epoch !== epoch) return;
+    if (event.toolName === "terminal_start") {
+      if (job?.version === 1 && job.command === check.command && typeof job.id === "string")
+        backgrounds.set(job.id, { ...check, before: job.before });
+      return;
+    }
     const after = await revisionSnapshot(state.cwd);
+    const observed = background ? completedJobCheck(event, state.cwd, after) : event;
+    if (!observed) return;
+    if (background) backgrounds.delete(job.id);
     if (
       check.epoch !== epoch ||
       !check.before?.fingerprint ||
@@ -98,15 +119,15 @@ export function installCheckpoint(pi) {
       record = { command: check.command, last: state.baseline?.fingerprint, failures: [] };
       state.checks.push(record);
     }
-    if (event.isError === false) record.failures = [];
+    if (observed.isError === false) record.failures = [];
     else if (
-      event.isError === true &&
+      observed.isError === true &&
       record.last &&
       record.last !== after.fingerprint &&
       !record.failures.includes(after.fingerprint)
     )
       record.failures.push(after.fingerprint);
-    else if (event.isError !== true) return;
+    else if (observed.isError !== true) return;
     record.last = after.fingerprint;
     persist();
     if (pending()) return { content: [...(event.content ?? []), { type: "text", text: REASON }] };
@@ -119,6 +140,7 @@ export function installCheckpoint(pi) {
       if (args.trim() === "reset") {
         epoch++;
         running.clear();
+        backgrounds.clear();
         diagnosing = false;
         state.baseline = await revisionSnapshot(state.cwd);
         state.checks = [];

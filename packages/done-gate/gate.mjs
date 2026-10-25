@@ -127,7 +127,7 @@ function repoRelativePath(cwd, path) {
 
 /** A started check is attempted, not evidence of a pass. */
 export function observeToolStart(state, { toolName, input } = {}) {
-  if (toolName !== "bash") return;
+  if (toolName !== "bash" && toolName !== "terminal_start") return;
   if (isRemoteVerifyCommand(input?.command)) {
     state.remoteVerificationStatus = "attempted";
     state.remoteVerificationSeen = false;

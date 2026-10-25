@@ -14,6 +14,7 @@
 // target is), policy-shapes.mjs (what the command does), policy-bash.mjs (what a
 // shell command really runs). This file owns the verdicts and the tool entry.
 
+import { createHash } from "node:crypto";
 import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
 
 import { worst } from "./policy-verdict.mjs";
@@ -145,6 +146,23 @@ export function evaluateToolCall({
       },
     };
   };
+
+  // Bytes sent to an existing program can accept consent or execute code.
+  // Scope approval to this job and this exact payload, not a reusable "yes".
+  if (lower === "terminal_send") {
+    const digest = createHash("sha256")
+      .update(JSON.stringify(input ?? {}))
+      .digest("hex");
+    return authorize({
+      verdict: "confirm",
+      reason:
+        "Terminal input can answer a consent prompt or run commands; approve these exact bytes for this job.",
+      evidence: {
+        shapes: ["interactive terminal input"],
+        approvalScopes: ["terminal-input:" + String(input?.id ?? "") + ":" + digest],
+      },
+    });
+  }
 
   if (readOnly && !needsAuthorization)
     return { verdict: "allow", reason: null, evidence: { shapes: [] } };

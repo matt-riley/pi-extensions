@@ -139,6 +139,26 @@ test("a declared writer is inspected even when the name looks read-only", async 
   assert.equal(h.dialogs.length, 0);
 });
 
+test("owned terminal namespaces keep shell policy; every input call needs fresh exact consent", async () => {
+  const h = harness({
+    choices: [APPROVE, APPROVE, APPROVE],
+    tools: ["terminal_start", "terminal_send", "terminal_stop"].map((name) => ({
+      name,
+      namespace: { name: "terminal" },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    })),
+  });
+  assert.equal(await h.run("terminal_start", { command: "printf local" }), undefined);
+  assert.equal(h.dialogs.length, 0, "namespace organization is not an external-effect grant");
+  assert.equal((await h.run("terminal_start", { command: "rm -rf ~" })).block, true);
+  for (let i = 0; i < 2; i++)
+    assert.equal(await h.run("terminal_send", { id: "one", text: "yes\n" }), undefined);
+  const longInput = "x".repeat(400) + "EXACT_INPUT_END";
+  assert.equal(await h.run("terminal_send", { id: "two", text: longInput }), undefined);
+  assert.equal(h.dialogs.length, 3, "a reused yes must not accept the next prompt automatically");
+  assert.match(h.dialogs[2].title, /EXACT_INPUT_END/);
+});
+
 test("a routine command passes through in silence", async () => {
   const h = harness();
   assert.equal(await h.run("bash", { command: "rm -rf node_modules && npm install" }), undefined);

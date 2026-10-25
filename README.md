@@ -24,6 +24,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-review`](./packages/review) | On-demand review with judgment behind it: `lint_change` scores a diff against this repo's standing preferences and commit rules, `blast_radius` lists the callers outside a diff and the symbols no test mentions, `verify_findings` drops findings whose own quotation is not in the diff before asking whether the rest hold. |
 | [`pi-watch-pr`](./packages/watch-pr) | `watch_pr`: one read of a PR's checks on its head commit, merge state and unresolved threads, with a verdict (`needs-action` / `pending` / `ready` / `closed`). Read-only; `ready` is not a merge grant. |
+| [`pi-jobs`](./packages/jobs) | Pi-native `/jobs` live logs, background commands and optional PTYs, human takeover, revision-bound exit evidence and opt-in Jev attention watches. No herdr/tmux required. |
 | [`pi-workbench`](./packages/workbench) | Live-filtering `/ui` and `/files`, read-only `/changes` with retained review position and Neovim handoff, recoverable drafts and slash-command typo suggestions. |
 | [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals model accounting and extension statuses. |
 
@@ -34,8 +35,7 @@ independent — some import modules from their siblings, so deleting or
 renaming one can break another:
 
 - **`pi-workbench`** reuses **`pi-code-search`**'s Git-aware file inventory; its optional planning/subagent/footer actions appear only when those commands are loaded.
-- **`pi-diagnosis-nudge`** reuses verification detection from **`pi-done-gate`**;
-  both import revision fingerprints from **`pi-subagents`**.
+- **`pi-jobs`** reuses **`pi-workbench`** text sanitization and **`pi-done-gate`** check detection; it and the two gates use revision fingerprints from **`pi-subagents`**. **`pi-diagnosis-nudge`** and **`pi-done-gate`** consume the shared completed-job evidence adapter.
 - **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /
   `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
   (used to implement `plan_fetch_url`). Which other tools it allows is decided
@@ -44,7 +44,7 @@ renaming one can break another:
 - **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`**,
   **`pi-router`**, **`pi-review`**, **`pi-done-gate`**, **`pi-diagnosis-nudge`**,
   **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`**,
-  **`pi-prompt-coach`**, **`pi-subagents`** and the `scripts/` classifiers all
+  **`pi-prompt-coach`**, **`pi-subagents`**, **`pi-jobs`** and the `scripts/` classifiers all
   import from the shared `shared/systemone.mjs` — `askSystemOne` for the
   request, `usableNumber` for reading answers — and from its siblings
   `systemone-config.mjs` (endpoint and key), `systemone-request.mjs`

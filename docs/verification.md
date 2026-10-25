@@ -32,6 +32,11 @@ measurement trials and rejects empty work, then fails the same check after two
 distinct edits. It checks that native writes, shell writes and both nested
 variants are blocked with files absent, executes a real diagnostic observation,
 and checks that a subsequent write succeeds.
+It starts a real failed background job through deferred `terminal_*` tools,
+checks the actual exit status/output, proves one completion follow-up resumes the
+agent without steering, and drives an optional Jev attention watch
+against the redacted local fixture. The watch is inference, not verification;
+`notify: false` must not start another model turn.
 It also runs deferred `find_code` from codemode against a local TypeSafe
 fixture, checks URL-userinfo redaction at that HTTP boundary, and uses a
 structured MCP-shaped tool fixture (not an actual MCP transport) to check
@@ -90,6 +95,7 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Judgment quality, live | `node scripts/judge-live.mjs` | Exit 0 when every labelled case reached the judge; the labels are printed for a human to read, because a model's reading is a hypothesis and the wiring is what the unit tests prove |
 | Judgment paths, live | `node scripts/judges-live.mjs` (or `--only <name>`) | Exit 0 when every judgment path reached its judge: review lint, findings verification, `web_answer`, plan review, CI triage, correction promotion. Each line prints what came back; the readings are a model on a fixture, not ground truth. Costs one real request per case, so it is not part of `npm run check` |
 | Workbench/footer, real terminal | `node .pi/verify/workbench.mjs --upgrade` and `node .pi/verify/workbench.mjs --regular` | Exit 0 in both modes: isolated tmux terminal with real pi and Neovim, local scripted provider, footer upgrade/reload, live filter/select/cancel, recoverable drafts across reload, file references, non-editable staged/unstaged diffs, next/previous navigation with retained query/selection/scroll, read-only Neovim handoff, `/eixt` interception without execution or model calls, Unicode/narrow resize, and actual working → ready state. No personal config or credentials; fixture/server/socket removed in `finally`. Does not prove every terminal forwards Ctrl+Alt identically or exercise Matt's Neovim plugins. The target is the current working tree and printed HEAD, not a hosted revision. |
+| Background jobs, real terminal | `node .pi/verify/jobs.mjs` | Real Pi live logs, follow/scroll/resize/cancel, same-PTY input and detach/reattach, Ctrl+C to the program, explicit human line input, real failed exit status, and owned-process cleanup across reload/session/shutdown. Isolated tmux is only the test terminal, not an extension dependency; no personal config or model requests. |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
 The current `deadwood` build does not scan this repository's `.mjs` modules

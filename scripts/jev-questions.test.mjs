@@ -27,6 +27,7 @@ import { classifyCi } from "./ci-triage.mjs";
 import { promoteCorrections } from "./promote-corrections.mjs";
 import { answerFromPage } from "../packages/web-fetch/answer.mjs";
 import { reviewPlan } from "../packages/plan-mode/plan-review.mjs";
+import { judgeWatches } from "../packages/jobs/attention.mjs";
 import { checkMemory } from "./memory-check.mjs";
 
 const DIFF = [
@@ -73,6 +74,11 @@ function answerPlausibly(questions) {
 }
 
 const CASES = {
+  "jobs attention": (ask) =>
+    judgeWatches({
+      jobs: [{ id: "one", watch: "the server accepts requests", output: "Listening on port 3000" }],
+      ask,
+    }),
   "guardrail judge": (ask) =>
     judgeToolCall({
       action: "rm -rf build",

@@ -544,6 +544,43 @@ test("names cannot exempt remote writers and missing remote annotations fail clo
   );
 });
 
+test("background launch uses shell policy; reads are trusted but exact terminal input needs consent", () => {
+  assert.equal(
+    tool(
+      "terminal_start",
+      { command: "rm -rf ~" },
+      {
+        annotations: { readOnlyHint: false },
+      },
+    ),
+    "block",
+  );
+  assert.equal(
+    tool(
+      "terminal_read",
+      { id: "one" },
+      {
+        annotations: { readOnlyHint: true },
+      },
+    ),
+    "allow",
+  );
+  for (const input of [
+    { id: "one", text: "yes", keys: ["enter"] },
+    { id: "one", keys: ["enter"] },
+    { id: "two", text: "rm -rf ~\n" },
+  ]) {
+    const result = evaluateToolCall({
+      toolName: "terminal_send",
+      input,
+      cwd: CWD,
+      annotations: { readOnlyHint: false },
+    });
+    assert.equal(result.verdict, "confirm");
+    assert.ok(result.evidence.approvalScopes[0].includes(input.id));
+  }
+});
+
 test("worst picks the most severe verdict", () => {
   assert.equal(worst("allow", "judge"), "judge");
   assert.equal(worst("confirm", "judge"), "confirm");

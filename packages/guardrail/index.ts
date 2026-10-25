@@ -19,6 +19,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "node:fs";
 import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
+import { OWNED_TOOL_NAMES } from "../../shared/tool-annotations.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
@@ -59,6 +60,7 @@ function describeAction(toolName, input) {
       : typeof input?.path === "string"
         ? input.path
         : (JSON.stringify(input ?? {}) ?? "");
+  if (name === "terminal_send") return `${name}: ${raw}`; // Show every byte being approved.
   return `${name}: ${String(raw).replace(/\s+/g, " ").trim().slice(0, MAX_ACTION_CHARS)}`;
 }
 
@@ -163,7 +165,10 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       input,
       cwd,
       resolvePath: canonicalPath,
-      external: Boolean(tool?.namespace || /^(mcp__|cloudflare_mcp_)/.test(toolName)),
+      external: Boolean(
+        (tool?.namespace && !OWNED_TOOL_NAMES.has(toolName)) ||
+        /^(mcp__|cloudflare_mcp_)/.test(toolName),
+      ),
       annotations: tool?.annotations,
     };
     let decision = evaluateToolCall(options);
@@ -239,17 +244,18 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     const scopes: string[] = [...new Set<string>(decision?.evidence?.approvalScopes ?? [])];
     // Shell scopes include the entire invocation, so approving a push cannot
     // bless a newly appended command. File edits intentionally cover that file.
-    const scopeKey = scopes.length
-      ? JSON.stringify([
-          cwd,
-          scopes.sort(),
-          toolName === "bash"
-            ? input.command
-            : scopes.every((scope) => scope.startsWith("control:"))
-              ? null
-              : [toolName, input],
-        ])
-      : null;
+    const scopeKey =
+      toolName !== "terminal_send" && scopes.length
+        ? JSON.stringify([
+            cwd,
+            scopes.sort(),
+            toolName === "bash"
+              ? input.command
+              : scopes.every((scope) => scope.startsWith("control:"))
+                ? null
+                : [toolName, input],
+          ])
+        : null;
     if (scopeKey && approvals.has(scopeKey)) {
       state.allowed += 1;
       return undefined;

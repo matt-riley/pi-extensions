@@ -34,9 +34,10 @@ const server = createServer(async (req, res) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
-  if (req.url === "/v1/systemone" && ["semantic", "injection"].includes(phase)) {
+  if (req.url === "/v1/systemone" && ["semantic", "injection", "jobs"].includes(phase)) {
     judgmentRequests.push(body);
     const answers = {};
+    if (body.questions?.watch_0) answers.watch_0 = { type: "noul", noul: 0.96 };
     if (body.questions?.implements) answers.implements = { type: "noul", noul: 0.95 };
     if (body.questions?.injection) answers.injection = { type: "noul", noul: 0.99 };
     res.writeHead(200, { "content-type": "application/json" });
@@ -319,7 +320,7 @@ export default function (pi) {
   await request("get_state");
   const commands = await request("get_commands");
   const names = new Set(commands.commands.map((command) => command.name));
-  for (const name of ["plan", "subagents", "route", "guardrail", "safe-compact"])
+  for (const name of ["plan", "subagents", "route", "guardrail", "safe-compact", "jobs"])
     assert.ok(names.has(name), `Missing command ${name}`);
   assert.doesNotMatch(stderr, /failed to load|error loading/i);
   console.log(`ok: real host loads ${manifest.pi.extensions.length} manifest extensions`);
@@ -351,6 +352,69 @@ export default function (pi) {
   }
   console.log("ok: owned skills and workflow prompts discover and expand outside the repo");
   const codeTool = (code) => ({ name: "codemode", arguments: { code } });
+  phase = "jobs";
+  scripted = [
+    codeTool(
+      'const failed = await tools.terminal_start({command:"sleep 0.05; printf JOB_OUTPUT; exit 7",notify:false});' +
+        "text(await tools.terminal_read({id:failed.id,wait_seconds:3}));",
+    ),
+  ];
+  const failedJob = await prompt("SMOKE_JOBS: inspect a real failed background process.");
+  const finished = failedJob.find(
+    (event) => event.type === "tool_execution_end" && event.toolName === "terminal_read",
+  );
+  assert.equal(finished?.isError, true, JSON.stringify(failedJob));
+  assert.equal(finished.result.details.job.exit_code, 7);
+  assert.equal(finished.result.details.job.output, "JOB_OUTPUT");
+  const beforeWakeRequests = requests,
+    wakeStart = events.length;
+  scripted = [
+    codeTool('text(await tools.terminal_start({command:"sleep 0.25; printf JOB_WAKE"}));'),
+  ];
+  await prompt("SMOKE_JOBS_WAKE: start a background command, then stop until it exits.");
+  const awakened = () => {
+    const slice = events.slice(wakeStart);
+    const notice = slice.findIndex(
+      (event) => event.type === "message_end" && event.message?.customType === "background-job",
+    );
+    return (
+      requests >= beforeWakeRequests + 3 &&
+      notice >= 0 &&
+      slice.slice(notice + 1).some((event) => event.type === "agent_settled")
+    );
+  };
+  const wakeDeadline = Date.now() + 5000;
+  while (!awakened() && Date.now() < wakeDeadline)
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.ok(awakened(), JSON.stringify(events.slice(wakeStart)));
+  assert.equal(requests - beforeWakeRequests, 3, "completion must wake the agent only once");
+  assert.equal(
+    events
+      .slice(wakeStart)
+      .filter(
+        (event) => event.type === "message_end" && event.message?.customType === "background-job",
+      ).length,
+    1,
+  );
+  console.log(
+    "ok: real background completion resumes the agent once with a follow-up, not steering",
+  );
+  scripted = [
+    codeTool(
+      'const job = await tools.terminal_start({command:"printf \\"Server ready https://alice:short@example.invalid\\"; sleep 1.5",watch:"the server is ready",notify:false});' +
+        "text(await tools.terminal_read({id:job.id,wait_seconds:3}));",
+    ),
+  ];
+  const beforeWatchRequests = requests;
+  const watched = await prompt("SMOKE_JOBS_WATCH: observe an attention hint, never verification.");
+  assert.equal(requests - beforeWatchRequests, 2, "notify:false must not start another model turn");
+  const watchRequest = judgmentRequests.find((judgment) => judgment.questions?.watch_0);
+  assert.ok(watchRequest, "The semantic watch did not reach the local judge");
+  assert.doesNotMatch(watchRequest.state.jobs[0].output, /alice:short/);
+  assert.match(JSON.stringify(watched), /Inferred attention hint/);
+  console.log(
+    "ok: background tools preserve real failure status; optional Jev watches use redacted fixture evidence",
+  );
   phase = "semantic";
   scripted = [
     codeTool('text(await tools.find_code({goal:"where are accounts created",path:"lookup"}));'),
@@ -409,7 +473,10 @@ export default function (pi) {
   assert.match(JSON.stringify(empty), /completed work/);
   console.log("ok: controlled measurement executes nested trials and rejects empty work");
 
-  const failingCheck = { name: "bash", arguments: { command: "node --test smoke-fail.test.mjs" } };
+  const failingCheck = codeTool(
+    'const job = await tools.terminal_start({command:"node --test smoke-fail.test.mjs",notify:false});' +
+      "text(await tools.terminal_read({id:job.id,wait_seconds:3}));",
+  );
   scripted = [
     { name: "write", arguments: { path: "smoke-fix.js", content: "first attempt\n" } },
     failingCheck,

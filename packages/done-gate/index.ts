@@ -32,6 +32,7 @@ import { installMeasurement } from "./measurement.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { revisionSnapshot } from "../subagents/evidence.mjs";
+import { completedJobCheck } from "../../shared/job-evidence.mjs";
 // Namespace import too: /reload can serve a cached gate.mjs, and a binding added
 // since the process started has to be read as a property, where a named import
 // fails. See the livePaths call below.
@@ -64,6 +65,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   let lastClaim: string | undefined;
   let generation = 0;
   const checks = new Map<string, { before: any; generation: number }>();
+  const backgroundChecks = new Map<string, number>();
 
   // null means git could not answer — no repo, no HEAD, git missing. That is
   // not the same as "nothing changed", so callers must not read it as one.
@@ -120,6 +122,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   pi.on("session_start", async () => {
     generation++;
     checks.clear();
+    backgroundChecks.clear();
     resetGateState(state);
     lastClaim = undefined;
   });
@@ -127,6 +130,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   pi.on("input", async () => {
     generation++;
     checks.clear();
+    backgroundChecks.clear();
     resetGateState(state);
     lastClaim = undefined;
   });
@@ -145,17 +149,36 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     if (
-      event.toolName !== "bash" ||
+      !["bash", "terminal_start"].includes(event.toolName) ||
       !(isVerifyCommand(event.input?.command) || isRemoteVerifyCommand(event.input?.command))
     )
       return;
     const epoch = generation;
     observeToolStart(state, event);
-    const before = await snapshot(ctx.cwd ?? process.cwd());
+    const before =
+      event.toolName === "terminal_start" ? null : await snapshot(ctx.cwd ?? process.cwd());
     if (epoch === generation) checks.set(event.toolCallId, { before, generation: epoch });
   });
 
   pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName === "terminal_start") {
+      const launched = checks.get(event.toolCallId);
+      checks.delete(event.toolCallId);
+      const job = event.details?.job;
+      if (launched?.generation === generation && job?.version === 1 && typeof job.id === "string")
+        backgroundChecks.set(job.id, generation);
+      return; // Launch success is not verification success.
+    }
+    if (event.toolName === "terminal_read") {
+      const id = event.input?.id;
+      const epoch = backgroundChecks.get(id);
+      if (epoch !== generation) return;
+      const completed = completedJobCheck(event, ctx.cwd, await snapshot(ctx.cwd ?? process.cwd()));
+      if (!completed || epoch !== generation) return;
+      backgroundChecks.delete(id); // Reading an old result again cannot re-verify a later edit.
+      observeToolResult(state, completed);
+      return;
+    }
     const check = checks.get(event.toolCallId);
     checks.delete(event.toolCallId);
     const after = check ? await snapshot(ctx.cwd ?? process.cwd()) : null;
