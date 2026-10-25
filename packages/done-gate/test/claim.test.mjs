@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DEFAULT_TIMEOUT_MS,
+  CLAIM_TIMEOUT_MS,
   buildClaimQuestionSet,
   buildClaimState,
   claimLine,
@@ -172,7 +172,7 @@ test("unusable answers are unjudged, not a verdict", async () => {
 });
 
 test("the default timeout is short because this sits in the settle path", () => {
-  assert.equal(DEFAULT_TIMEOUT_MS, 4000);
+  assert.equal(CLAIM_TIMEOUT_MS, 4000);
 });
 
 // ---------------------------------------------------------------------------

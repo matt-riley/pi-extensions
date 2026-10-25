@@ -57,7 +57,7 @@ export function splitSteps(plan) {
   return chosen.slice(0, MAX_STEPS);
 }
 
-export function buildQuestions(count) {
+export function buildReviewQuestions(count) {
   const questions = {};
   for (let index = 0; index < count; index += 1) {
     const step = q("steps." + index + ".text");
@@ -156,7 +156,7 @@ export async function reviewPlan({
   try {
     const result = await ask({
       state: { steps: steps.map((text) => ({ text })) },
-      questions: buildQuestions(steps.length),
+      questions: buildReviewQuestions(steps.length),
       model,
       env,
       signal: AbortSignal.timeout(timeoutMs),

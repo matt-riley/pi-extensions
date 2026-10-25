@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildQuestions, formatAnswer, routeAnswer, splitPassages } from "../answer.mjs";
+import { buildAnswerQuestions, formatAnswer, routeAnswer, splitPassages } from "../answer.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
 
@@ -36,7 +36,7 @@ test("a page past the character cap says it was cut", () => {
 });
 
 test("every passage is asked about, plus whether the page answers at all", () => {
-  const questions = buildQuestions(2);
+  const questions = buildAnswerQuestions(2);
   assert.deepEqual(Object.keys(questions).sort(), ["answered", "passage_0", "passage_1"]);
   assert.match(questions.passage_1.instructions, /`passages\.1\.text`/);
 });

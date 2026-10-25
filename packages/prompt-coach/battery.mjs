@@ -1,6 +1,6 @@
 // battery.mjs — the small TypeSafe check that protects an on-demand rewrite.
 
-export function buildQuestions() {
+export function buildCoachQuestions() {
   return {
     intent_preserved: {
       type: "noul",
