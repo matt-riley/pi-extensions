@@ -18,8 +18,11 @@ import { checkDiffScope, preflightTask, triageResult } from "../packages/subagen
 import { judgeFailure } from "../packages/diagnosis-nudge/triage.mjs";
 import { judgeQuestion } from "../packages/plan-mode/ask-gate.mjs";
 import { buildTaskTypeQuestion } from "../packages/router/playbook.mjs";
-import { buildDifficultyState, buildQuestions } from "../packages/router/model-battery.mjs";
-import { buildQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
+import {
+  buildDifficultyState,
+  buildDifficultyQuestions,
+} from "../packages/router/model-battery.mjs";
+import { buildCoachQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
 import { rateCandidates } from "../shared/spans.mjs";
 import { lintChange } from "../packages/review/lint.mjs";
 import { verifyFindings } from "../packages/review/findings.mjs";
@@ -164,7 +167,7 @@ const CASES = {
         window: [{ prompt: "fix the test", lastResponse: "done", toolCalls: [{ name: "bash" }] }],
         cwd: "/repo",
       }),
-      questions: buildQuestions(),
+      questions: buildDifficultyQuestions(),
     }),
   "router task type": (ask) =>
     ask({

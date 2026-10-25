@@ -33,6 +33,7 @@ import type {
   ModelRouteRequest,
 } from "@earendil-works/pi-coding-agent";
 
+import { flagOff } from "../../shared/env-flag.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import {
@@ -41,6 +42,7 @@ import {
   routerConfigPath,
   unmatchedPatterns,
 } from "./config.mjs";
+import { decideRoute, unwrap } from "./decide.mjs";
 import { gateTurn } from "./lib.mjs";
 import {
   buildTaskTypeQuestion,
@@ -50,19 +52,15 @@ import {
 } from "./playbook.mjs";
 import {
   buildDifficultyState,
-  buildQuestions,
+  buildDifficultyQuestions,
   chooseModelForTier,
   DIFFICULTY_THRESHOLD,
   FRONTIER_THRESHOLD,
   latestContextTokens,
   modelKey,
-  pairOrder,
   routeFromDifficulty,
   routePair,
   THINKING_LEVELS,
-  thinkingRank,
-  tierOf,
-  tierRank,
   turnsFromMessages,
   WINDOW,
 } from "./model-battery.mjs";
@@ -81,10 +79,8 @@ const MAX_JUDGEMENTS_PER_TASK = 3;
 const STUCK_FAILURES = 2;
 /** Turns to wait after a failed judgement, so a dead judge is not retried per turn. */
 const FAILURE_COOLDOWN_TURNS = 3;
-/** Room the next request needs beyond what the last one read. */
-const CONTEXT_GROWTH_MARGIN = 1.05;
-/** Output and reasoning tokens to keep free in the target window. */
-const OUTPUT_RESERVE = 16000;
+/** The playbook judgment blocks the first request of a task; it gets less time than routing does. */
+const PLAYBOOK_TIMEOUT_MS = 1500;
 
 type RouteTier = "base" | "mid" | "frontier";
 
@@ -106,13 +102,6 @@ interface RouterState {
   thinking: string | null;
   /** The base the last decision held at; router.json re-resolves it. */
   base: string | null;
-}
-
-function envFlag(env = process.env) {
-  const value = String(env?.PI_ROUTER ?? "")
-    .trim()
-    .toLowerCase();
-  return !(value === "off" || value === "0" || value === "false");
 }
 
 function envNumber(name, fallback, env = process.env) {
@@ -154,12 +143,6 @@ function readState(value: unknown): RouterState | null {
   };
 }
 
-/** The model inside a `{ model, thinkingLevel }` scope wrapper, or the entry. */
-function unwrap(entry: unknown) {
-  const value = (entry as { model?: unknown })?.model ?? entry;
-  return (value as { [key: string]: unknown }) ?? null;
-}
-
 export default function piRouterExtension(
   pi: ExtensionAPI,
   deps: { ask?: typeof askSystemOne; configPath?: string } = {},
@@ -196,13 +179,10 @@ export default function piRouterExtension(
       .trim()
       .toLowerCase() !== "prompt";
 
-  const playbooksEnabled =
-    String(process.env?.PI_ROUTER_PLAYBOOKS ?? "")
-      .trim()
-      .toLowerCase() !== "off";
+  const playbooksEnabled = !flagOff(process.env?.PI_ROUTER_PLAYBOOKS);
 
   const config = {
-    enabled: envFlag(),
+    enabled: !flagOff(process.env?.PI_ROUTER),
     threshold: envNumber("PI_ROUTER_THRESHOLD", DIFFICULTY_THRESHOLD),
     frontierThreshold: envNumber("PI_ROUTER_FRONTIER_THRESHOLD", FRONTIER_THRESHOLD),
     timeoutMs: envNumber("PI_ROUTER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS),
@@ -339,32 +319,6 @@ export default function piRouterExtension(
     return { model: unwrap(first), key: modelKey(first), thinking: null };
   }
 
-  /**
-   * Candidates the next request could fit inside.
-   *
-   * The base model here reads 1M tokens while the Codex frontier models hold
-   * 272K, and this machine's p90 request context is 452K. Escalating anyway
-   * would compact the session — losing the context the escalation was meant to
-   * reason over.
-   */
-  function fitting(offers: unknown[], contextTokens: number) {
-    const used = contextTokens * CONTEXT_GROWTH_MARGIN + OUTPUT_RESERVE;
-    if (!Number.isFinite(used) || used <= 0) return offers;
-    return offers.filter((entry) => {
-      const value = unwrap(entry);
-      const window = Number(value?.contextWindow);
-      if (!Number.isFinite(window) || window <= 0) return true; // unknown, not empty
-      return used <= window;
-    });
-  }
-
-  /** Raise thinking, never lower it, for a model that already fits the tier. */
-  function raiseThinking(wanted: string | null, currentLevel: string | null) {
-    if (!wanted) return currentLevel;
-    if (thinkingRank(wanted) > thinkingRank(currentLevel ?? "")) return wanted;
-    return currentLevel;
-  }
-
   async function route(
     request: ModelRouteRequest<RouterState>,
     ctx: ExtensionContext,
@@ -440,7 +394,6 @@ export default function piRouterExtension(
 
     const currentKey = heldKey ?? base?.key ?? null;
     const currentModel = resolveKey(offers, ctx, currentKey) ?? heldModel;
-    const currentRank = tierRank(tierOf(currentKey, tiers));
 
     // Task boundaries and stuck turns are worth a judgement; anything else
     // holds the decision already made. The cap counts attempts, not just
@@ -450,12 +403,13 @@ export default function piRouterExtension(
     const judgeable =
       Boolean(prompt) && worthJudging && attempts < MAX_JUDGEMENTS_PER_TASK && cooldown === 0;
 
+    const held = {
+      key: currentKey,
+      thinking: heldThinking,
+      tier: branchState?.tier ?? BASE_TIER,
+      model: currentModel,
+    };
     let nextAttempts = attempts + (judgeable ? 1 : 0);
-    let nextTier: RouteTier = branchState?.tier ?? BASE_TIER;
-    let nextModel: unknown = currentModel;
-    let nextKey = currentKey;
-    let nextThinking: string | null = heldThinking;
-    let outcome = "held";
     let decided: ReturnType<typeof routeFromDifficulty> | null = null;
 
     // The playbook judgement for this prompt already rated difficulty: spend
@@ -473,7 +427,7 @@ export default function piRouterExtension(
                 window: shareWindow ? history : [],
                 cwd: ctx?.cwd,
               }),
-              questions: buildQuestions(),
+              questions: buildDifficultyQuestions(),
               signal: AbortSignal.timeout(config.timeoutMs),
             });
         decided = routeFromDifficulty(result?.answers, {
@@ -496,9 +450,9 @@ export default function piRouterExtension(
           task,
           attempts: nextAttempts,
           cooldown: FAILURE_COOLDOWN_TURNS,
-          tier: nextTier,
-          model: nextKey,
-          thinking: nextThinking,
+          tier: held.tier,
+          model: held.key,
+          thinking: held.thinking,
           base: base?.key ?? branchState?.base ?? null,
         };
         record({
@@ -516,74 +470,39 @@ export default function piRouterExtension(
           reason: `judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
         };
         lastState = failed;
-        return { model: currentModel, thinkingLevel: nextThinking ?? selected, state: failed };
+        return { model: currentModel, thinkingLevel: held.thinking ?? selected, state: failed };
       }
     }
 
-    if (decided) {
-      if (decided.escalate === null) {
-        // No usable rating: keep what is running. Never a reason to spend less.
-        outcome = "no-rating";
-      } else if (decided.escalate) {
-        const targetRank = tierRank(decided.tier);
-        const fittingOffers = fitting(offers, contextTokens);
-        const pick = chooseModelForTier(fittingOffers, decided.tier, tiers, undefined, selected);
-        if (!pick) {
-          outcome = `no-${decided.tier}-model`;
-          if (offers.length > fittingOffers.length) {
-            counters.tooBig++;
-            setStatus(ctx, `router: ${Math.round(contextTokens / 1000)}k, no ${decided.tier} fits`);
-            notify(
-              ctx,
-              `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(contextTokens / 1000)}k tokens and no available ${decided.tier} model fits it`,
-              "warning",
-            );
-          } else {
-            notify(
-              ctx,
-              `Router: this task rates ${decided.difficulty.toFixed(2)} but no ${decided.tier} model is available`,
-              "warning",
-            );
-          }
-        } else {
-          const targetThinking = pick.thinking ?? selected;
-          const currentPairOrder = pairOrder(currentKey, heldThinking, decided.tier, tiers);
-          const capExceeded = thinkingRank(heldThinking ?? "") > thinkingRank(selected);
-          const betterPair =
-            targetRank > currentRank ||
-            (targetRank === currentRank &&
-              (capExceeded || (currentPairOrder !== null && pick.order < currentPairOrder)));
-
-          if (pick.key === currentKey) {
-            // Same model: raise to the selected pair, but never lower it unless
-            // the user explicitly lowered the virtual model's cap.
-            if (tierOf(currentKey, tiers) === decided.tier) {
-              nextThinking = capExceeded
-                ? (targetThinking ?? selected)
-                : raiseThinking(targetThinking, nextThinking);
-              nextTier = decided.tier;
-            }
-          } else if (betterPair) {
-            nextModel = pick.model;
-            nextKey = pick.key;
-            nextTier = decided.tier;
-            // The pair is selected as a unit. Do not choose Astra first and
-            // then silently clamp it when Sol@xhigh fits under the cap.
-            nextThinking = targetThinking ?? nextThinking;
-            outcome = "escalated";
-          }
-        }
-      } else {
-        // Easy task. Only a task boundary may come back down: a stuck turn
-        // rated easy is still a stuck turn.
-        if (boundary.route && base?.model) {
-          if ((branchState?.tier ?? BASE_TIER) !== BASE_TIER) outcome = "stepped-down";
-          nextModel = base.model;
-          nextKey = base.key;
-          nextTier = BASE_TIER;
-          nextThinking = base.thinking ?? selected;
-        }
-      }
+    const next = decideRoute({
+      decided,
+      offers,
+      tiers,
+      contextTokens,
+      held,
+      base,
+      selected,
+      boundary: boundary.route,
+    });
+    const outcome = next.outcome;
+    const nextModel = next.model;
+    const nextKey = next.key;
+    const nextThinking = next.thinking;
+    const nextTier = next.tier as RouteTier;
+    if (decided && next.warning === "too-big") {
+      counters.tooBig++;
+      setStatus(ctx, `router: ${Math.round(contextTokens / 1000)}k, no ${decided.tier} fits`);
+      notify(
+        ctx,
+        `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(contextTokens / 1000)}k tokens and no available ${decided.tier} model fits it`,
+        "warning",
+      );
+    } else if (decided && next.warning === "unavailable") {
+      notify(
+        ctx,
+        `Router: this task rates ${decided.difficulty.toFixed(2)} but no ${decided.tier} model is available`,
+        "warning",
+      );
     }
 
     const nextState: RouterState = {
@@ -700,9 +619,9 @@ export default function piRouterExtension(
           }),
           questions: {
             task_type: buildTaskTypeQuestion(),
-            ...(routing ? buildQuestions() : {}),
+            ...(routing ? buildDifficultyQuestions() : {}),
           },
-          signal: AbortSignal.timeout(config.timeoutMs),
+          signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
         });
         if (!config.enabled || epoch !== generation) return;
         type = taskTypeFromAnswer(result?.answers?.task_type);

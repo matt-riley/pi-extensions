@@ -20,6 +20,7 @@ import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "n
 import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
 import { OWNED_TOOL_NAMES } from "../../shared/tool-annotations.mjs";
+import { flagOff } from "../../shared/env-flag.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
@@ -38,13 +39,6 @@ const MAX_ACTION_CHARS = 300;
 const APPROVE = "✅ Approve";
 const DENY = "⛔ Deny";
 const SUGGEST = "✏️ Suggest an alternative";
-
-function disabledByEnv(env = process.env) {
-  const value = String(env?.PI_GUARDRAIL ?? "")
-    .trim()
-    .toLowerCase();
-  return value === "off" || value === "0" || value === "false";
-}
 
 function timeoutMs(env = process.env) {
   const value = Number(env?.PI_GUARDRAIL_TIMEOUT_MS);
@@ -126,7 +120,7 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
   // A switch replaces the runtime, which fires session_start again.
   pi.on("session_start", revoke);
   const state = {
-    enabled: !disabledByEnv(),
+    enabled: !flagOff(process.env?.PI_GUARDRAIL),
     judged: 0,
     confirmed: 0,
     blocked: 0,

@@ -27,7 +27,7 @@ import { looksInjected } from "../packages/router/lib.mjs";
 import { tierFor } from "../packages/router/model-tier.mjs";
 import {
   buildDifficultyState as buildState,
-  buildQuestions as modelQuestions,
+  buildDifficultyQuestions as modelQuestions,
 } from "../packages/router/model-battery.mjs";
 import { findSessionFiles, percentile, readSession } from "./lib/sessions.mjs";
 
