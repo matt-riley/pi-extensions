@@ -170,9 +170,13 @@ binary or an obfuscated payload does.
 
 - One level of indirection is followed — heredoc bodies are treated as data,
   `sh -c "…"` and `node -e "…"` payloads are classified as shell first and as
-  source second, `$(…)` bodies are evaluated as commands, and a referenced
-  script is read (bounded to 64KB) and classified. A payload that decodes or
-  fetches its real work at runtime is out of scope.
+  source second, `$(…)`, `eval` and `find -exec` bodies are evaluated as
+  commands, and a referenced script (`bash x.sh` or `./x.sh`) is read (bounded
+  to 64KB) and classified. Wrappers (`env`, `command`, `nohup`, `timeout`,
+  `xargs`, `/bin/rm`) are looked through to the command they run, and the
+  string arguments of `os.system`, `execSync`, `system(…)` and friends are
+  classified as the command lines they are. A payload that decodes or fetches
+  its real work at runtime (`curl … | sh`) cannot be read, so it is judged.
 - `readOnlyHint: false` from any tool is inspected, even when the name looks
   read-only. `readOnlyHint: true` is trusted only for tools this repo
   registers (`OWNED_TOOL_NAMES` in `shared/tool-annotations.mjs`). Pi copies

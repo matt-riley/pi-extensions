@@ -14,9 +14,9 @@
 // Redirects (outside quotes) and command substitution ($(…) / backticks) are
 // rejected. Chain operators (&&, ||, |, ;, &, newline) split the command and
 // every segment must pass. Parsing is quote-aware, so quoted < > ; | && never
-// false-positive. This is a guardrail, not a sandbox: deliberately scripted
-// mutations (e.g. an awk program that writes a file) are out of scope, and the
-// model is additionally instructed not to mutate.
+// false-positive. This is a guardrail, not a sandbox: a mutation that only
+// appears at runtime is out of scope, and the model is additionally
+// instructed not to mutate.
 
 import {
   findHead,
@@ -131,7 +131,6 @@ const MUTATOR_HEADS = new Set([
   "svn",
   "hg",
   // misc
-  "xargs",
   "watch",
   "docker",
   "podman",
@@ -157,11 +156,11 @@ const READ_ONLY_HEADS = new Set([
   "which",
   "whereis",
   "type",
+  "command", // findHead returns it only for the `command -v` lookup
   "dirname",
   "basename",
   "realpath",
   "readlink",
-  "env",
   "printenv",
   "hostname",
   "uname",
@@ -398,7 +397,23 @@ function hasFlagCount(args, letter) {
   });
 }
 
+/** An awk program that shells out or writes: system(), `| getline`, `print | "cmd"`, `print > f`. */
+export const AWK_SIDE_EFFECT = /\bsystem\s*\(|\|\s*getline|\|&|\bprintf?\b[^;{}]*(?:>|\|)/;
+
 const HEAD_RULES = {
+  // awk is read-only until its program shells out (system, pipes, getline from
+  // a command) or prints into a file; a program read with -f is unseen.
+  awk: (args) =>
+    args.some((a) => a === "-f" || a.startsWith("--file")) ||
+    args.some((a) => AWK_SIDE_EFFECT.test(a))
+      ? "awk (program runs commands or writes files) …"
+      : undefined,
+  rg: (args) =>
+    args.some((a) => a === "--pre" || a.startsWith("--pre="))
+      ? "rg --pre (runs a command per file) …"
+      : undefined,
+  date: (args) =>
+    args.some((a) => a === "-s" || a.startsWith("--set")) ? "date --set …" : undefined,
   sed: (args) =>
     args.some((a) => a === "-i" || a.startsWith("-i") || a === "--in-place")
       ? "sed -i (in-place edit) …"
@@ -470,7 +485,6 @@ const HEAD_RULES = {
     )
       ? undefined
       : "xz (not list/test/stdout) …",
-  env: (args) => (args.every((a) => a.includes("=")) ? undefined : "env (executes command) …"),
   // Interactive top never exits in a headless tool call. Only the bounded
   // forms terminate: macOS `top -l <N>` (logging, N samples) and Linux
   // `top -b -n <N>` (batch, N iterations). `-b` alone, or `-l`/`-n` without
@@ -599,6 +613,12 @@ function blockedGit(args) {
 
   if (GIT_BLOCKED.has(sub)) return `git ${sub} …`;
   if (!GIT_READ_ONLY.has(sub)) return `git ${sub} (not read-only) …`;
+  // Read-only subcommands still write a file with --output (log, diff, show)
+  // and run a pager command with grep -O.
+  if (rest.some((a) => a === "--output" || a.startsWith("--output=")))
+    return `git ${sub} --output (writes a file) …`;
+  if (sub === "grep" && rest.some((a) => /^-O|^--open-files-in-pager/.test(a)))
+    return "git grep -O (runs a command) …";
   return undefined;
 }
 

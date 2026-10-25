@@ -12,6 +12,14 @@ test("allows read-only inspection commands", () => {
     "wc -l src/index.ts",
     "sort -u file.txt",
     "awk '{print $1}' file.txt",
+    "awk '$3 > 100 {print $1}' file.txt",
+    // wrappers are judged by the command they run
+    "xargs ls",
+    "env -i",
+    "env FOO=1 ls",
+    "timeout 5 ls",
+    "/usr/bin/grep x f",
+    "command -v rm",
     "sed -n '1,10p' file",
     "tr a-z A-Z",
     "cut -d, -f1 file",
@@ -185,7 +193,7 @@ test("blocks mutators outright", () => {
     'sqlite3 db "select 1"',
     "psql -c x",
     "redis-cli ping",
-    "xargs ls",
+    "xargs rm",
     "watch ls",
     "rm -rf x & echo done",
   ]) {
@@ -280,8 +288,8 @@ test("blocks dangerous flags on otherwise read-only tools", () => {
     "gzip -d file.gz",
     "bzip2 -d f.bz2",
     "xz -d f.xz",
-    "env -i",
-    "env FOO=1 ls",
+    "env rm -rf x",
+    "env -S 'rm -rf x'",
     "sysctl -w vm.swappiness=10",
     "xmllint --output out f.xml",
     // interactive/never-exiting commands hang a headless tool call
@@ -327,8 +335,8 @@ test("blocks redirects and command substitution", () => {
 test("blocks unknown commands (fail-closed)", () => {
   for (const cmd of [
     "somecommand --flag",
-    "timeout 5 ls",
-    "command -v ls",
+    "timeout 5 rm x",
+    "command rm x",
     "gh pr list",
     "aws s3 ls",
     "openssl x509 -in cert.pem -text -noout",
@@ -375,4 +383,26 @@ test("empty and whitespace input is allowed", () => {
   assert.equal(blockedBashCommand(""), undefined);
   assert.equal(blockedBashSegment("   "), undefined);
   assert.equal(blockedBashCommand(undefined), undefined);
+});
+
+test("blocks read-only heads whose flags run commands or write files", () => {
+  for (const cmd of [
+    `awk 'BEGIN{system("rm -rf x")}'`,
+    `awk '{print > "out.txt"}' f`,
+    `awk '{print | "sh"}' f`,
+    `awk '"date" | getline d'`,
+    "awk -f prog.awk f",
+    "rg --pre rm x .",
+    "rg --pre=./decode x .",
+    "git log -p --output=x",
+    "git diff --output x",
+    "git show --output=x HEAD",
+    "git grep -Ovim x",
+    "date -s 2000-01-01",
+    "nohup rm x",
+    "/bin/rm -rf x",
+    "./bin/ls",
+  ]) {
+    assert.ok(blockedBashCommand(cmd), `expected blocked: ${cmd}`);
+  }
 });

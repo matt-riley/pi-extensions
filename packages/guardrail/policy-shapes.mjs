@@ -32,6 +32,7 @@ export const SHAPE_DEFAULT = {
   remote: "confirm", // irreversible on a remote: force push, drop table, repo delete
   privilege: "confirm", // sudo, chmod -R, process kills: disruptive, not silent
   wipe: "block", // mkfs, fdisk, diskutil erase: no judgment makes this fine
+  move: "allow", // mv sources: a rename in the workspace is work; out of home asks by class
 };
 
 export const READ_HEADS = new Set([
@@ -241,6 +242,13 @@ function deleteShape(head, args, whole) {
   return null;
 }
 
+// What mv takes away from its sources. The destination is an overwrite.
+function moveShape(head, args) {
+  if (head !== "mv") return null;
+  const sources = nonFlagArgs(args).slice(0, -1);
+  return sources.length ? { id: "move", detail: "mv (source)", targets: sources } : null;
+}
+
 function overwriteShape(head, args, segment) {
   const writes = [];
   const redirects = redirectTargets(segment).filter((r) => r.target);
@@ -264,7 +272,7 @@ function overwriteShape(head, args, segment) {
   }
   if (["cp", "mv", "install"].includes(head)) {
     const paths = nonFlagArgs(args);
-    return { id: "overwrite", detail: head, targets: head === "mv" ? paths : paths.slice(-1) };
+    return { id: "overwrite", detail: head, targets: paths.slice(-1) };
   }
   if (head === "tee") {
     return { id: "overwrite", detail: "tee (truncates)", targets: nonFlagArgs(args) };
@@ -285,6 +293,7 @@ export function detectShapes(segment) {
     gitShape(head, args),
     deleteShape(head, args, whole),
     overwriteShape(head, args, segment),
+    moveShape(head, args),
     privilegeShape(head, args, whole),
     remoteShape(head, whole),
     authorizationShape(head, args),

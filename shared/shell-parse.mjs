@@ -314,20 +314,59 @@ function substitutionSpans(segment) {
   return out;
 }
 
-// Find the command head: skip leading env assignments (FOO=bar) and flags.
+// Commands that run the rest of their arguments as a command: the flags that
+// take a value, and the positionals before the command (timeout's duration).
+const WRAPPERS = {
+  builtin: { values: [] },
+  caffeinate: { values: ["-t", "-w"] },
+  command: { values: [] },
+  env: { values: ["-u", "-C", "--unset", "--chdir"] },
+  exec: { values: ["-a"] },
+  nice: { values: ["-n", "--adjustment"] },
+  nohup: { values: [] },
+  stdbuf: { values: ["-i", "-o", "-e"] },
+  time: { values: ["-o", "-f", "--output", "--format"] },
+  timeout: { values: ["-s", "-k", "--signal", "--kill-after"], positionals: 1 },
+  xargs: {
+    values: ["-n", "-I", "-P", "-L", "-s", "-d", "-E", "-a"].concat(
+      ["--max-args", "--max-procs", "--max-lines", "--max-chars", "--delimiter", "--arg-file"],
+      ["--eof", "--replace"],
+    ),
+  },
+};
+
+// `/bin/rm` is rm. Only system directories: `./bin/ls` is a repo script.
+const SYSTEM_BIN = /^\/(?:usr\/(?:local\/)?)?s?bin\/|^\/opt\/homebrew\/bin\//;
+
+// Find the command head: skip leading env assignments (FOO=bar) and flags,
+// and look through wrappers (`env rm`, `xargs rm`, `timeout 5 rm`) to the
+// command that actually runs. `command -v rm` is a lookup, not a run.
 export function findHead(tokens) {
+  let list = tokens;
   let i = 0;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t.includes("=") && !t.startsWith("=") && i < tokens.length - 1) {
-      i++;
-      continue;
+  outer: for (;;) {
+    while (i < list.length) {
+      const t = list[i];
+      if ((t.includes("=") && !t.startsWith("=") && i < list.length - 1) || t.startsWith("-")) i++;
+      else break;
     }
-    if (t.startsWith("-")) {
-      i++;
-      continue;
+    const head = list[i]?.replace(SYSTEM_BIN, "").toLowerCase();
+    const wrapper = Object.hasOwn(WRAPPERS, head ?? "") ? WRAPPERS[head] : null;
+    if (!wrapper || (head === "command" && /^-[a-zA-Z]*[vV]/.test(list[i + 1] ?? "")))
+      return { head, args: list.slice(i + 1) };
+    i++;
+    while (i < list.length && list[i].startsWith("-") && list[i] !== "-") {
+      const flag = list[i];
+      if (head === "env" && (flag === "-S" || flag.startsWith("--split-string"))) {
+        // env -S splits one string into the command and its arguments.
+        const inline = flag.includes("=");
+        const value = inline ? flag.slice(flag.indexOf("=") + 1) : (list[i + 1] ?? "");
+        list = [...tokenize(value), ...list.slice(i + (inline ? 1 : 2))];
+        i = 0;
+        continue outer;
+      }
+      i += wrapper.values.includes(flag) ? 2 : 1;
     }
-    break;
+    i += wrapper.positionals ?? 0;
   }
-  return { head: tokens[i]?.toLowerCase(), args: tokens.slice(i + 1) };
 }
