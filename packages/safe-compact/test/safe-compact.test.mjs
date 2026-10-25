@@ -980,3 +980,29 @@ test("a flagged tool result that can be re-run comes back as a pointer, other fl
   assert.equal(result.details.safeCompact.pointed, 1);
   assert.equal(result.details.safeCompact.forced, 1);
 });
+
+test("between soft and hard, a 'not yet' is not re-judged until the context has grown", async () => {
+  let asked = 0;
+  const { handlers, ctx, cleanup } = wiring(async () => {
+    asked++;
+    throw new Error("TypeSafe unreachable");
+  });
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    const at = (tokens, percent) => {
+      ctx.getContextUsage = () => ({ tokens, contextWindow: 40000, percent });
+    };
+    at(24000, 60);
+    await handlers.get("turn_end")(event, ctx);
+    const oneJudgment = asked; // one judgment is several questions
+    assert.ok(oneJudgment > 0);
+    for (let i = 0; i < 2; i++) assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.equal(asked, oneJudgment, "more turns at the same size cost nothing");
+
+    at(36000, 60);
+    await handlers.get("turn_end")(event, ctx);
+    assert.equal(asked, oneJudgment * 2, "10k more tokens earns another look");
+  } finally {
+    cleanup();
+  }
+});
