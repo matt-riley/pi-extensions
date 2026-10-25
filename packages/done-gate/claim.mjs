@@ -19,7 +19,7 @@ import { askSystemOne } from "../../shared/systemone.mjs";
 import { usableNumber } from "../../shared/systemone.mjs";
 
 /** Short on purpose: the run has finished and the person is waiting for it. */
-export const DEFAULT_TIMEOUT_MS = 4000;
+export const CLAIM_TIMEOUT_MS = 4000;
 
 const THRESHOLDS = {
   assertsVerified: 0.5,
@@ -227,7 +227,7 @@ export async function judgeDoneClaim({
   files,
   verificationSeen,
   remoteVerificationSeen,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  timeoutMs = CLAIM_TIMEOUT_MS,
   thresholds = THRESHOLDS,
   model,
   env,

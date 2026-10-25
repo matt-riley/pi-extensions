@@ -226,7 +226,7 @@ extensions and the selected physical provider retain their own data flows.
 - **No tool or skill scoping.** Measured and rejected: 810 turns show shell in
   78%, edit 43% and read 38%, so scoping the common groups risks a turn that
   cannot work, and scoping the rare ones (memory, plan) left a 15%
-  escape-hatch rate — worse than the disease. See `scripts/route-report.mjs`.
+  escape-hatch rate — worse than the disease. Measured with a tool-group scoring script since removed; see git history before `fix/review-findings`.
 - **No per-turn switching.** It costs a full-context cache re-read (98.6% of
   everything this machine reads is a cache read) and buys nothing the task-level
   decision does not already get.

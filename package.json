@@ -15,7 +15,7 @@
     "fallow": "fallow dead-code",
     "fallow:report": "fallow",
     "test": "node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
-    "coverage": "mkdir -p coverage && node --test --experimental-test-coverage --test-coverage-include='packages/**/*.mjs' --test-coverage-include='scripts/*.mjs' --test-coverage-include='shared/*.mjs' --test-coverage-exclude='**/*.test.mjs' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs' scripts/verify-tools.mjs scripts/smoke-pi.mjs",
+    "coverage": "mkdir -p coverage && node --test --experimental-test-coverage --test-coverage-include='packages/**/*.mjs' --test-coverage-include='packages/*/index.ts' --test-coverage-include='scripts/*.mjs' --test-coverage-include='shared/*.mjs' --test-coverage-exclude='**/*.test.mjs' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs' scripts/verify-tools.mjs scripts/smoke-pi.mjs",
     "verify": "node scripts/verify-tools.mjs",
     "collisions": "node packages/skill-select/collisions.mjs",
     "conventions": "node scripts/check-conventions.mjs",

@@ -74,7 +74,7 @@ export function splitPassages(
 }
 
 /** One Noul per passage, plus whether the page answers the question at all. */
-export function buildQuestions(count) {
+export function buildAnswerQuestions(count) {
   const questions = {
     answered: {
       type: "noul",
@@ -183,7 +183,7 @@ export async function answerFromPage({
       question: String(question ?? ""),
       passages: passages.map((passage) => ({ text: passage })),
     },
-    questions: buildQuestions(passages.length),
+    questions: buildAnswerQuestions(passages.length),
     model,
     env,
     signal: signal ?? AbortSignal.timeout(timeoutMs),

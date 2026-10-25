@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { hasRedirectOutsideQuotes } from "../../shared/shell-parse.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
-import { revisionSnapshot } from "../subagents/evidence.mjs";
+import { revisionSnapshot } from "../../shared/revision.mjs";
 import { isVerifyCommand } from "../done-gate/gate.mjs";
 import { completedJobCheck } from "../../shared/job-evidence.mjs";
 

@@ -10,6 +10,7 @@ import {
   stripHeredocs,
   tokenize,
 } from "../../shared/shell-parse.mjs";
+import { AWK_SIDE_EFFECT } from "../../shared/bash-policy.mjs";
 
 import { worst, worstOf } from "./policy-verdict.mjs";
 import { resolvedTarget, isSecretPath, isEnvFile, classifyTarget } from "./policy-targets.mjs";
@@ -25,30 +26,85 @@ import {
   detectShapes,
 } from "./policy-shapes.mjs";
 
-const INLINE_FLAGS = new Set(["-c", "-e", "--eval", "-p", "--print", "-E"]);
+// Each interpreter's inline-code flag: a shell's -e is errexit, not code.
+const INLINE_FLAGS = {
+  shell: new Set(["-c"]),
+  python: new Set(["-c"]),
+  ruby: new Set(["-e"]),
+  perl: new Set(["-e", "-E"]),
+  php: new Set(["-r"]),
+  osascript: new Set(["-e"]),
+  js: new Set(["-e", "--eval", "-p", "--print"]),
+};
+const FAMILY = { python3: "python", python: "python", ruby: "ruby", perl: "perl", php: "php" };
+const inlineFlags = (head) =>
+  INLINE_FLAGS[
+    SHELL_HEADS.has(head) ? "shell" : head === "osascript" ? "osascript" : (FAMILY[head] ?? "js")
+  ];
+const SCRIPT_FILE = /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/;
+/** The payload of an inline flag written without a space: `-c"…"`, `--eval=…`. */
+function gluedPayload(arg, flags) {
+  for (const flag of flags) {
+    if (!arg.startsWith(flag) || arg.length === flag.length) continue;
+    const rest = arg.slice(flag.length);
+    if (!flag.startsWith("--")) return rest;
+    if (rest.startsWith("=") && rest.length > 1) return rest.slice(1);
+  }
+  return null;
+}
+// Flags that leave an interpreter reading its program from stdin: `| sh -s`, `| bash -eux`.
+const STDIN_ARG = /^(-|-[seuxo]+)$/;
 
-/** Script files a command would execute, and inline source passed directly. */
+/** Script files a command would execute, inline source passed directly, and code piped in. */
 function collectIndirection(command) {
   const scriptRefs = [];
   const inline = [];
+  const stdin = [];
   for (const segment of splitSegments(String(command ?? ""))) {
     const tokens = tokenize(segment);
     const { head, args } = findHead(tokens);
-    if (!head || !INTERPRETER_HEADS.has(head)) continue;
-    if (head === "awk") continue; // awk programs mutate only via redirection or system()
-    const flag = args.find((a) => INLINE_FLAGS.has(a));
+    if (!head) continue;
+    // `./cleanup.sh` runs a script as surely as `bash cleanup.sh` does.
+    if (head.includes("/") && SCRIPT_FILE.test(head)) {
+      scriptRefs.push(tokens.find((t) => t.toLowerCase() === head) ?? head);
+      continue;
+    }
+    if (!INTERPRETER_HEADS.has(head)) continue;
+    if (head === "awk") {
+      // awk mutates only through system(), pipes, getline or print redirection.
+      // The program follows -v/-F values, so every operand is read, not the first.
+      for (const program of args.filter((a) => !a.startsWith("-"))) {
+        if (AWK_SIDE_EFFECT.test(program)) inline.push({ head, text: program });
+      }
+      continue;
+    }
+    const flags = inlineFlags(head);
+    const flag = args.find((a) => flags.has(a));
     if (flag) {
       const value = args[args.indexOf(flag) + 1];
       if (value) inline.push({ head, text: value });
       continue;
     }
-    const file = nonFlagArgs(args).find((a) =>
-      /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/.test(a),
-    );
+    // `python3 -c"…"`, `node -e"…"`, `node --eval=…`: with no space the payload
+    // rides on the flag, so reading only exact flags would classify nothing.
+    const glued = args.map((a) => gluedPayload(a, flags)).find(Boolean);
+    if (glued) {
+      inline.push({ head, text: glued });
+      continue;
+    }
+    const here = args.indexOf("<<<");
+    if (here >= 0) {
+      if (args[here + 1]) inline.push({ head, text: args[here + 1] });
+      continue;
+    }
+    const operands = nonFlagArgs(args);
+    const file = operands.find((a) => SCRIPT_FILE.test(a));
     if (file) scriptRefs.push(file);
-    else if (tokens.length > 1) inline.push({ head, text: args.join(" ") });
+    else if (operands.length) inline.push({ head, text: args.join(" ") });
+    // Empty args count here: a bare `sh` is how `… | sh` presents itself.
+    else if (args.every((a) => STDIN_ARG.test(a))) stdin.push(head);
   }
-  return { scriptRefs, inline };
+  return { scriptRefs, inline, stdin };
 }
 
 // Destructive APIs in source text, for the one level of indirection the
@@ -160,11 +216,75 @@ function stripSourceLiterals(src) {
   return out;
 }
 
+// Calls that hand a string to a shell or exec. Their literal arguments are a
+// command line, so they are classified as one instead of being blanked as text.
+// `exec`/`system`/`spawn`/`popen` count bare or on a process module only, so
+// `regex.exec("…")` is not read as a command.
+const SHELL_OUT = new RegExp(
+  [
+    String.raw`\b(?:execSync|execFileSync|spawnSync|execFile|shell_exec|passthru|proc_open|Popen|check_output|check_call|getoutput|getstatusoutput)`,
+    String.raw`\b(?:os|subprocess|child_process|Kernel|IO|Open3)\.\w+`,
+    String.raw`(?<![\w.$])(?:system|exec|spawn|popen)`,
+  ].join("|") + String.raw`\s*\(`,
+  "g",
+);
+
+/** The contents of the string literals in `text`, with template `${…}` holes dropped. */
+function stringLiterals(text) {
+  const out = [];
+  for (let i = 0; i < text.length; i++) {
+    const quote = text[i];
+    if (quote !== "'" && quote !== '"' && quote !== "`") continue;
+    let value = "";
+    for (i++; i < text.length && text[i] !== quote; i++) {
+      if (text[i] === "\\") value += text[++i] ?? "";
+      else if (quote === "`" && text[i] === "$" && text[i + 1] === "{") {
+        let depth = 0;
+        for (; i < text.length; i++) {
+          if (text[i] === "{") depth++;
+          else if (text[i] === "}" && --depth === 0) break;
+        }
+      } else value += text[i];
+    }
+    out.push(value);
+  }
+  return out;
+}
+
+/**
+ * The command lines a source text shells out with. Call sites are found in the
+ * literal-blanked `code`, so a fixture that only mentions `execSync("rm -rf ~")`
+ * inside a string is not a call; the arguments are then read from `src`.
+ */
+function shellOutCommands(src, code) {
+  const commands = [];
+  for (const match of code.matchAll(SHELL_OUT)) {
+    const open = match.index + match[0].length;
+    let close = open;
+    for (let depth = 1; close < code.length; close++) {
+      if (code[close] === "(") depth++;
+      else if (code[close] === ")" && --depth === 0) break;
+    }
+    const command = stringLiterals(src.slice(open, close)).join(" ").trim();
+    if (command) commands.push(command);
+  }
+  return commands;
+}
+
 /** Classify source text (a script, or an inline -e/-c payload). */
-function evaluateSourceText(text, label = "inline code") {
+function evaluateSourceText(text, label = "inline code", context = {}) {
   const src = String(text ?? "");
   const code = stripSourceLiterals(src);
   const hits = [];
+  let verdict = "allow";
+  let reason = null;
+  for (const command of shellOutCommands(src, code)) {
+    const nested = evaluateBashCommand(command, { ...context, scriptTexts: {} });
+    if (nested.verdict === "allow") continue;
+    hits.push(`shells out: ${command.slice(0, 60)}`);
+    reason ??= `${label} shells out to \`${command.slice(0, 60)}\` (${nested.reason})`;
+    verdict = worst(verdict, nested.verdict);
+  }
   // SQL is written inside string literals, so blanking them would hide every
   // statement: those patterns read the raw text.
   for (const [re, name] of SOURCE_RAW_SHAPES) {
@@ -188,11 +308,12 @@ function evaluateSourceText(text, label = "inline code") {
       evidence: { source: label, shapes: hits },
     };
   }
-  return {
-    verdict: "judge",
-    reason: `${label} may destroy data: ${hits.slice(0, 3).join(", ")}`,
-    evidence: { source: label, shapes: hits },
-  };
+  const patterns = hits.filter((hit) => !hit.startsWith("shells out:"));
+  if (patterns.length) {
+    verdict = worst(verdict, "judge");
+    reason ??= `${label} may destroy data: ${patterns.slice(0, 3).join(", ")}`;
+  }
+  return { verdict, reason, evidence: { source: label, shapes: hits } };
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +333,46 @@ const CATASTROPHIC_TARGETS = [
   /^\/\*$/,
   /^\/(etc|usr|var|bin|sbin|lib|System|Library)\/?$/,
 ];
+const WIPE_PATHS = ["/", "/Users", "/home", "/etc", "/usr", "/var", "/bin", "/sbin", "/lib"].concat(
+  ["/System", "/Library"],
+);
+
+/**
+ * Whether deleting `target` wipes a filesystem or home root. Checked after
+ * resolution too, because `cd ~ && rm -rf .` and `cd / && rm -rf usr` name the
+ * root without spelling it, and a bare glob (`rm -rf *`) empties its directory.
+ */
+function wipes(target, cwd, resolvePath = (value) => value) {
+  const raw = String(target).trim();
+  if (CATASTROPHIC_TARGETS.some((re) => re.test(raw))) return true;
+  const glob = /^(.*?)\/?\*$/.exec(raw);
+  const subject = glob ? glob[1] || "." : raw;
+  if (/[*?$`]/.test(subject.replace(/^\$(HOME|\{HOME\})/, "~"))) return false;
+  const resolved = resolvedTarget(subject, cwd, resolvePath);
+  return [homedir(), ...WIPE_PATHS].some(
+    (root) => resolved === root || resolved === resolvePath(root),
+  );
+}
+
+/** A path under a dot-directory or dotfile at the top of the home directory. */
+function isHomeConfig(target, cwd) {
+  const rel = path.relative(homedir(), resolvedTarget(target, cwd));
+  return rel.startsWith(".") && !rel.startsWith("..");
+}
+
+/** Commands a segment runs without naming them as its head. */
+function nestedCommands(head, args) {
+  if (head === "eval") return args.length ? [args.join(" ")] : [];
+  if (head !== "find") return [];
+  const out = [];
+  args.forEach((arg, index) => {
+    if (!/^-(exec|execdir|ok|okdir)$/.test(arg)) return;
+    const rest = args.slice(index + 1);
+    const end = rest.findIndex((a) => a === ";" || a === "\\;" || a === "+");
+    out.push(rest.slice(0, end < 0 ? undefined : end).join(" "));
+  });
+  return out.filter(Boolean);
+}
 
 /** Inline code is either a shell command (classify precisely) or source. */
 // Interpreters whose payload is code, not shell. Reading `node -e` source with
@@ -220,7 +381,29 @@ const SHELL_HEADS = new Set(["bash", "sh", "zsh", "fish", "dash", "ksh"]);
 
 function evaluateInline(interpreter, text, cwd, resolvePath) {
   if (SHELL_HEADS.has(interpreter)) return evaluateBashCommand(text, { cwd, resolvePath });
-  return evaluateSourceText(text, `${interpreter} inline`);
+  if (interpreter === "awk") return evaluateAwk(text, { cwd, resolvePath });
+  return evaluateSourceText(text, `${interpreter} inline`, { cwd, resolvePath });
+}
+
+/** An awk program's string literals are its command lines and its output files. */
+function evaluateAwk(program, context) {
+  let verdict = "allow";
+  let reason = null;
+  for (const command of stringLiterals(program)) {
+    const nested = evaluateBashCommand(command, { ...context, scriptTexts: {} });
+    if (nested.verdict === "allow") continue;
+    reason ??= `awk runs \`${command.slice(0, 60)}\` (${nested.reason})`;
+    verdict = worst(verdict, nested.verdict);
+  }
+  // `print > "file"` writes that file, so it is judged as the redirect it is;
+  // the literals above are commands, which is what `print | "cmd"` is.
+  for (const match of program.matchAll(/>>?\s*"([^"]*)"/g)) {
+    const nested = evaluateBashCommand(`> "${match[1]}"`, context);
+    if (nested.verdict === "allow") continue;
+    reason ??= `awk writes ${match[1]} (${nested.reason})`;
+    verdict = worst(verdict, nested.verdict);
+  }
+  return { verdict, reason, evidence: { source: "awk inline", shapes: [] } };
 }
 
 function secretReadVsNetwork(segments) {
@@ -276,9 +459,8 @@ export function evaluateBashCommand(command, options = {}) {
   for (const segment of segments) {
     const head = findHead(tokenize(segment));
     if (head.head === "cd" && effectiveCwd) {
-      const dest = nonFlagArgs(head.args)[0];
-      if (!dest) effectiveCwd = undefined; // bare `cd` lands in $HOME: unknowable
-      else if (dest !== "-") {
+      const dest = nonFlagArgs(head.args)[0] ?? "~"; // bare `cd` lands in $HOME
+      if (dest !== "-") {
         // Expand a leading ~ rather than resolving it: path.resolve(home, "~")
         // would invent a directory named `~` inside the home directory, and
         // then treat everything under it as the workspace.
@@ -311,12 +493,14 @@ export function evaluateBashCommand(command, options = {}) {
         const byClass = klass
           ? (SHAPE_CLASS_OVERRIDE[shape.id]?.[klass] ?? CLASS_VERDICT[klass])
           : null;
+        // A home dotfile is configuration: `> ~/.zshrc` is not writing a report.
+        if (shape.id === "overwrite" && klass === "home" && isHomeConfig(target, effectiveCwd))
+          return { target, klass, verdict: "confirm" };
         return { target, klass, verdict: byClass ?? fallback };
       });
       let shapeVerdict = worstOf(perTarget.map((t) => t.verdict));
       const wipe = perTarget.find(
-        (t) =>
-          t.target !== null && CATASTROPHIC_TARGETS.some((re) => re.test(String(t.target).trim())),
+        (t) => t.target !== null && wipes(t.target, effectiveCwd, resolvePath),
       );
       const touchesSecret = shape.targets.some(
         (t) => classifyTarget(t, effectiveCwd, roots, resolvePath) === "secret",
@@ -358,6 +542,20 @@ export function evaluateBashCommand(command, options = {}) {
       verdict = worst(verdict, inlineVerdict.verdict);
     }
   }
+  // `curl … | sh` runs whatever arrives; no reading of the command line can say what.
+  if (indirection.stdin.length) {
+    verdict = worst(verdict, "judge");
+    reason ??= `${indirection.stdin[0]} may read unseen code from stdin`;
+  }
+  const nested = [];
+  for (const segment of segments) {
+    const { head, args } = findHead(tokenize(segment));
+    if (/^[$`]/.test(head ?? "")) {
+      verdict = worst(verdict, "judge");
+      reason ??= `runs a command named by ${head}`;
+    }
+    nested.push(...nestedCommands(head, args));
+  }
 
   // Command substitution hides a command inside an argument: `echo $(rm -rf
   // ~)` reads as `echo` to anything that only looks at the first word. An
@@ -365,14 +563,16 @@ export function evaluateBashCommand(command, options = {}) {
   const substitutions = [
     ...collectSubstitutions(text),
     ...bodies.filter((b) => !b.quoted).flatMap((b) => collectSubstitutions(b.body)),
+    // eval and find -exec payloads are commands the head does not name.
+    ...nested,
   ];
   for (const inner of substitutions) {
     const sub = evaluateBashCommand(inner, { cwd: effectiveCwd, scriptTexts: {}, resolvePath });
     evidence.approvalScopes.push(...(sub.evidence?.approvalScopes ?? []));
     if (sub.verdict !== "allow") {
       reason ??= sub.reason
-        ? `substitution: ${sub.reason}`
-        : `substitution runs ${inner.trim().slice(0, 60)}`;
+        ? `nested command: ${sub.reason}`
+        : `nested command runs ${inner.trim().slice(0, 60)}`;
       verdict = worst(verdict, sub.verdict);
     }
   }
@@ -386,7 +586,7 @@ export function evaluateBashCommand(command, options = {}) {
     for (const [scriptPath, scriptSrc] of Object.entries(scriptTexts)) {
       const result = /\.(sh|bash|zsh)$/.test(scriptPath)
         ? evaluateBashCommand(scriptSrc, { cwd: effectiveCwd, scriptTexts: {}, resolvePath })
-        : evaluateSourceText(scriptSrc, scriptPath);
+        : evaluateSourceText(scriptSrc, scriptPath, { cwd: effectiveCwd, resolvePath });
       evidence.approvalScopes.push(...(result.evidence?.approvalScopes ?? []));
       const scriptVerdict = result.verdict;
       if (scriptVerdict !== "allow") {

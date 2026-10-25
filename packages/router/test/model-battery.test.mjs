@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildDifficultyState,
-  buildQuestions,
+  buildDifficultyQuestions,
   chooseModelForTier,
   DEFAULT_MID_PATTERNS,
   DEFAULT_TIERS,
@@ -221,7 +221,7 @@ test("an absent rating is not a decision to downgrade", () => {
 });
 
 test("the question set keeps both instruments, the router using the score", () => {
-  const questions = buildQuestions();
+  const questions = buildDifficultyQuestions();
   assert.deepEqual(Object.keys(questions).sort(), ["difficulty", "needs_frontier"]);
   assert.equal(questions.difficulty.type, "score");
   assert.equal(questions.difficulty.criteria.length, 4);

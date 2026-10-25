@@ -58,10 +58,11 @@ try {
 const apiKey =
   String(process.env.TYPESAFE_API_KEY ?? "").trim() ||
   String(process.env.LORE_TYPESAFE_API_KEY ?? "").trim();
-check(
-  "TypeSafe key visible",
-  true,
-  apiKey ? "found" : "set TYPESAFE_API_KEY or LORE_TYPESAFE_API_KEY",
+// A missing key is a skipped capability, not a broken install: report it without failing.
+console.log(
+  apiKey
+    ? "ok    TypeSafe key visible — found"
+    : "skip  TypeSafe key not visible — set TYPESAFE_API_KEY or LORE_TYPESAFE_API_KEY",
 );
 
 if (process.argv.includes("--live")) {

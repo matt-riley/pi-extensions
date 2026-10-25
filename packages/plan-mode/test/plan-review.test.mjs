@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildQuestions,
+  buildReviewQuestions,
   formatPlanReview,
   reviewPlan,
   routePlanReview,
@@ -52,7 +52,7 @@ test("the step cap keeps the state bounded", () => {
 });
 
 test("each step is asked about verification and callers", () => {
-  const questions = buildQuestions(2);
+  const questions = buildReviewQuestions(2);
   assert.deepEqual(Object.keys(questions).sort(), [
     "callers_0",
     "callers_1",

@@ -133,6 +133,8 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   let noteConsumed = false;
   /** Context size at the last rejected handoff; null once one succeeds. */
   let rejectedAt: number | null = null;
+  // Tokens when Jev last said "not yet": the moment is not re-judged every turn.
+  let waitedAt: number | null = null;
   /** A handoff failed at the hard threshold: pi compacts once the run settles. */
   let fallback = false;
 
@@ -269,6 +271,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       if (rejectedAt !== null && tokens < rejectedAt + RETRY_GROWTH) return;
 
       if (percent < hard) {
+        if (waitedAt !== null && tokens < waitedAt + RETRY_GROWTH) return;
         const messages = branchMessages(ctx);
         const lastUser = messages.findLastIndex((m: any) => m?.role === "user");
         const asText = (list: unknown[]) => list.map((m) => messageText(m)).join("\n\n");
@@ -283,12 +286,17 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
             recentText,
             currentRequest,
             previousWork,
+            ask,
             signal: anySignal([AbortSignal.timeout(MOMENT_TIMEOUT_MS), ctx.signal]),
           });
         } catch {
+          waitedAt = tokens;
           return; // Jev unavailable: wait for the hard threshold
         }
-        if (decideTrigger({ percent, soft, hard, moment }) !== "compact") return;
+        if (decideTrigger({ percent, soft, hard, moment }) !== "compact") {
+          waitedAt = tokens;
+          return;
+        }
       }
     }
     requested = false;
@@ -337,6 +345,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       return;
     }
     rejectedAt = null;
+    waitedAt = null;
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
@@ -419,6 +428,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     noteConsumed = false;
     compacting = false;
     rejectedAt = null;
+    waitedAt = null;
     fallback = false;
   });
 

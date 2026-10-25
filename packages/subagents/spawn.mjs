@@ -20,7 +20,8 @@ import {
   tokensFromUsage,
   turnAction,
 } from "./result.mjs";
-import { assessEvidence, collectEvidence, revisionSnapshot } from "./evidence.mjs";
+import { revisionSnapshot } from "../../shared/revision.mjs";
+import { assessEvidence, collectEvidence } from "./evidence.mjs";
 import { formatLastTool } from "./widget.mjs";
 
 const WRAP_MESSAGE = "Wrap up immediately — provide your final answer now.";

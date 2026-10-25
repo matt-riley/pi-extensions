@@ -171,7 +171,7 @@ const DIFFICULTY_LEVELS = [
   "Frontier territory: subtle design or debugging where a weak answer costs a lot and nobody will notice it is wrong.",
 ];
 
-export function buildQuestions() {
+export function buildDifficultyQuestions() {
   return {
     difficulty: {
       type: "score",

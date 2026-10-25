@@ -32,6 +32,7 @@ export const SHAPE_DEFAULT = {
   remote: "confirm", // irreversible on a remote: force push, drop table, repo delete
   privilege: "confirm", // sudo, chmod -R, process kills: disruptive, not silent
   wipe: "block", // mkfs, fdisk, diskutil erase: no judgment makes this fine
+  move: "allow", // mv sources: a rename in the workspace is work; out of home asks by class
 };
 
 export const READ_HEADS = new Set([
@@ -241,6 +242,28 @@ function deleteShape(head, args, whole) {
   return null;
 }
 
+/** cp/mv/install operands and destination: -t/--target-directory names the destination. */
+function copyArgs(args) {
+  let dest = null;
+  const rest = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "-t" || arg === "--target-directory") dest = args[++i] ?? null;
+    else if (arg.startsWith("--target-directory=")) dest = arg.slice("--target-directory=".length);
+    else rest.push(arg);
+  }
+  const paths = nonFlagArgs(rest);
+  if (dest === null) dest = paths.pop() ?? null;
+  return { paths, dest };
+}
+
+// What mv takes away from its sources. The destination is an overwrite.
+function moveShape(head, args) {
+  if (head !== "mv") return null;
+  const { paths } = copyArgs(args);
+  return paths.length ? { id: "move", detail: head, targets: paths } : null;
+}
+
 function overwriteShape(head, args, segment) {
   const writes = [];
   const redirects = redirectTargets(segment).filter((r) => r.target);
@@ -263,8 +286,8 @@ function overwriteShape(head, args, segment) {
     };
   }
   if (["cp", "mv", "install"].includes(head)) {
-    const paths = nonFlagArgs(args);
-    return { id: "overwrite", detail: head, targets: head === "mv" ? paths : paths.slice(-1) };
+    const { dest } = copyArgs(args);
+    return dest ? { id: "overwrite", detail: head, targets: [dest] } : null;
   }
   if (head === "tee") {
     return { id: "overwrite", detail: "tee (truncates)", targets: nonFlagArgs(args) };
@@ -285,6 +308,7 @@ export function detectShapes(segment) {
     gitShape(head, args),
     deleteShape(head, args, whole),
     overwriteShape(head, args, segment),
+    moveShape(head, args),
     privilegeShape(head, args, whole),
     remoteShape(head, whole),
     authorizationShape(head, args),

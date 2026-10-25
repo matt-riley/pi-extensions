@@ -35,7 +35,8 @@ independent — some import modules from their siblings, so deleting or
 renaming one can break another:
 
 - **`pi-workbench`** reuses **`pi-code-search`**'s Git-aware file inventory; its optional planning/subagent/footer actions appear only when those commands are loaded.
-- **`pi-jobs`** reuses **`pi-workbench`** text sanitization and **`pi-done-gate`** check detection; it and the two gates use revision fingerprints from **`pi-subagents`**. **`pi-diagnosis-nudge`** and **`pi-done-gate`** consume the shared completed-job evidence adapter.
+- **`pi-jobs`** reuses **`pi-workbench`** text sanitization and **`pi-done-gate`** check detection; **`pi-diagnosis-nudge`** also reuses **`pi-done-gate`**'s check detection. Subagents, jobs and both gates bind evidence to the revision fingerprint in `shared/revision.mjs`, and consume the shared completed-job evidence adapter.
+- **`pi-typesafe`** reuses **`pi-code-search`**'s file inventory and **`pi-guardrail`**'s path policy (`policy-bash.mjs`, `policy-targets.mjs`) to decide what a file question may read.
 - **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /
   `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
   (used to implement `plan_fetch_url`). Which other tools it allows is decided
@@ -68,9 +69,11 @@ renaming one can break another:
   one answers "is this provably read-only?", the other "what could this
   destroy?", and both need to tell operators from literal text.
 
-`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-typesafe`, `pi-skill-select`,
-`pi-diagnosis-nudge`, `pi-done-gate`, `pi-until`, `pi-review` and `pi-footer` have
-no dependencies on other packages in this repo.
+`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-until`, `pi-review`,
+`pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`, `pi-prompt-coach`,
+`pi-influencer`, `pi-watch-pr` and `pi-footer` import no sibling package, only `shared/`.
+`pi-done-gate` loads none at runtime, but its own tests load `pi-jobs`'s `Jobs`, so
+deleting that package still breaks it.
 
 ## Install
 

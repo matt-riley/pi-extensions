@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
-import { buildQuestions } from "./battery.mjs";
+import { buildCoachQuestions } from "./battery.mjs";
 import { extractLastUserPrompt, usableNoul, validateCandidate } from "./lib.mjs";
 import { collectProbe } from "./probe.mjs";
 import {
@@ -144,7 +144,7 @@ export default function piPromptCoachExtension(
             rewritten_prompt: validation.text,
             repository_probe: probe,
           },
-          questions: buildQuestions(),
+          questions: buildCoachQuestions(),
           signal: AbortSignal.timeout(intentTimeoutMs),
         });
         intentProbability = usableNoul(result?.answers?.intent_preserved);
