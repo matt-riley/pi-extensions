@@ -17,8 +17,10 @@ Installed through the collection's root manifest; see the [root README](../../RE
   Accounting stays out of the statusline; `/session` is still available.
 
 Workspace and work state take priority over model/accounting information in
-narrow terminals. Layout measures terminal columns, including CJK characters,
-combining marks and emoji; names cannot inject terminal control sequences.
+narrow terminals. Layout measures terminal columns with pi-tui's own
+`visibleWidth` and `truncateToWidth` (supplied by the pi host), so the footer
+agrees with pi's line-width check on CJK, emoji, Thai, Devanagari and anything
+else; names cannot inject terminal control sequences.
 No Nerd Font is required. The layout lives in a new `workspace.mjs` module so
 upgrading from the former footer through `/reload` does not hit pi's cached old
 helper exports. Later edits to an already-loaded helper may still need a pi restart.

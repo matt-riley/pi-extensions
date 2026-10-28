@@ -1,46 +1,22 @@
 // Pure footer layout logic for the pi-footer extension. No pi imports —
-// testable with `node --test`, colors applied via the injected `apply` fn.
+// testable with `node --test`. Colours come from the injected `apply` fn, and
+// widths from pi-tui's injected `visibleWidth`/`truncateToWidth`, the same
+// helpers pi uses to reject a line wider than the terminal.
 
 import { stripVTControlCharacters } from "node:util";
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-// Full-width terminal ranges plus emoji; private-use Nerd Font glyphs remain 1.
-const WIDE =
-  /[\p{Emoji_Presentation}\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3ffff}]/u;
-const cellWidth = (text) =>
-  /^[\p{Mark}\p{Cf}]+$/u.test(text) ? 0 : WIDE.test(text) || text.includes("\ufe0f") ? 2 : 1;
-
-/** Visible terminal columns, not UTF-16 units. */
-export function visibleWidth(str) {
-  let width = 0;
-  for (const { segment } of graphemes.segment(stripVTControlCharacters(str)))
-    width += cellWidth(segment);
-  return width;
-}
-
-/** Truncate plain segment text without allowing a rendered line to overflow. */
-export function truncateToWidth(str, width) {
-  const limit = Math.max(0, Math.floor(width));
-  const text = stripVTControlCharacters(String(str ?? ""));
-  if (limit === 0) return "";
-  if (visibleWidth(text) <= limit) return text;
-  let result = "",
-    used = 0;
-  for (const { segment } of graphemes.segment(text)) {
-    const cells = cellWidth(segment);
-    if (used + cells > limit - 1) break;
-    result += segment;
-    used += cells;
-  }
-  return result + "…";
-}
+/**
+ * Segment text cut to `width` columns by pi-tui. Its resets are dropped so the
+ * theme colour that `apply` adds covers the ellipsis too.
+ */
+const cut = (tui, text, width) => stripVTControlCharacters(tui.truncateToWidth(text, width, "…"));
 
 /** Work state describes activity, never test success or task completion. */
 export function workLabel(busy, statuses) {
   return statuses?.has("plan-mode") ? "planning" : busy ? "working" : "ready";
 }
 
-export function workspaceLine(data, width, apply) {
+export function workspaceLine(data, width, apply, tui) {
   const clean = (value) => stripVTControlCharacters(String(value ?? "")).replace(/\p{Cc}/gu, "");
   const left = [
     {
@@ -58,7 +34,7 @@ export function workspaceLine(data, width, apply) {
     right.push({ text: " · " + Math.round(data.percent) + "%", color: ctxColor(data.percent) });
   if (data.model) right.push({ text: " · " + clean(data.model), color: "accent" });
   if (data.level) right.push({ text: " ~" + clean(data.level), color: thinkColor(data.level) });
-  return composeLine(left, right, width, apply);
+  return composeLine(left, right, width, apply, tui);
 }
 
 /** 1234 -> "1.2k", 2500000 -> "2.5M", 42 -> "42". */
@@ -122,7 +98,7 @@ export const ICONS = {
  * Lay one line of footer segments into `width` columns.
  *
  * A segment is `{ text, color? }`; `apply(color, text)` renders a colored
- * segment (pi's `theme.fg`). Segments within a block are adjacent — bake
+ * segment (pi's `theme.fg`); `tui` is pi-tui's `{ visibleWidth, truncateToWidth }`. Segments within a block are adjacent — bake
  * separators into segment text (e.g. `" ~high"`). A single space separates
  * the left and right blocks.
  *
@@ -130,7 +106,7 @@ export const ICONS = {
  * the model label truncates with an ellipsis, then left segments drop from
  * the end (thinking badge before model).
  */
-export function composeLine(left, right, width, apply) {
+export function composeLine(left, right, width, apply, tui) {
   // theme.fg throws on unknown tokens (and kills pi via uncaughtException),
   // so paint never lets a bad color escape the footer renderer.
   const paint = (s) => {
@@ -142,7 +118,7 @@ export function composeLine(left, right, width, apply) {
     }
   };
   const fmt = (segs) => segs.map(paint).join("");
-  const vis = (segs) => visibleWidth(fmt(segs));
+  const vis = (segs) => tui.visibleWidth(fmt(segs));
 
   let l = left.slice();
   let r = right.slice();
@@ -154,7 +130,7 @@ export function composeLine(left, right, width, apply) {
     const model = l[0];
     const rest = l.slice(1);
     const room = width - vis(rest) - vis(r) - 2; // block gap + ellipsis
-    if (room >= 1) l = [{ ...model, text: truncateToWidth(model.text, room + 1) }, ...rest];
+    if (room >= 1) l = [{ ...model, text: cut(tui, model.text, room + 1) }, ...rest];
   }
 
   while (l.length > 1 && overflow()) l.pop();
@@ -170,15 +146,15 @@ export function composeLine(left, right, width, apply) {
   if (l.length && r.length && overflow()) {
     const room = width - vis(r) - 1;
     if (room <= 0) l = [];
-    else l = [{ ...l[0], text: truncateToWidth(l[0].text, room) }, ...l.slice(1)];
+    else l = [{ ...l[0], text: cut(tui, l[0].text, room) }, ...l.slice(1)];
   }
   if (r.length && overflow()) {
     const room = width - vis(l) - (l.length ? 1 : 0);
     if (room <= 0) r = [];
-    else r = [{ ...r[0], text: truncateToWidth(r[0].text, room) }, ...r.slice(1)];
+    else r = [{ ...r[0], text: cut(tui, r[0].text, room) }, ...r.slice(1)];
   }
   if (l.length && overflow()) {
-    l = [{ ...l[0], text: truncateToWidth(l[0].text, width) }, ...l.slice(1)];
+    l = [{ ...l[0], text: cut(tui, l[0].text, width) }, ...l.slice(1)];
   }
 
   const leftStr = fmt(l);

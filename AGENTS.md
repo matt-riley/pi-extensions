@@ -23,6 +23,8 @@ package is published to npm on its own.
   The workbench entrypoint may also import pi’s host-provided `Input`, `SelectList`,
   `ScrollView`, `matchesKey` and `truncateToWidth` from `@earendil-works/pi-tui`.
   These widgets are injected into its plain `.mjs` logic; no runtime package is installed.
+  The footer entrypoint likewise imports only `visibleWidth` and `truncateToWidth` and
+  injects them into `extension.mjs`/`workspace.mjs`; its tests use `test/tui-fixture.mjs`.
 - The real `@earendil-works/pi-coding-agent` npm types are not used for
   `tsc` — see `types/pi-coding-agent.d.ts` for why (its published types are
   stricter than what pi's runtime actually enforces) and keep that stub's
