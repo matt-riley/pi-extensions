@@ -14,6 +14,7 @@ import path from "node:path";
 
 import piRouterExtension from "../index.ts";
 import { DIFFICULTY_THRESHOLD } from "../model-battery.mjs";
+import { SHORT_USAGE_COOLDOWN_MS } from "../usage-cap.mjs";
 
 const LUNA = { provider: "openai-codex", id: "gpt-5.6-luna" };
 const DEEPSEEK = { provider: "deepseek", id: "deepseek-flash", contextWindow: 1000000 };
@@ -74,8 +75,11 @@ function harness({
   thinkingLevel = "medium",
   askImpl,
   config,
+  now,
+  branch = [],
 } = {}) {
   const commands = {};
+  const handlers = {};
   const notifications = [];
   const statuses = [];
   const entries = [];
@@ -84,7 +88,9 @@ function harness({
   let virtualModel = null;
 
   const pi = {
-    on: () => {},
+    on: (event, handler) => {
+      handlers[event] = handler;
+    },
     registerCommand: (name, def) => {
       commands[name] = def;
     },
@@ -109,7 +115,7 @@ function harness({
       getModel: (provider, id) =>
         available.find((model) => model.provider === provider && model.id === id) ?? null,
     },
-    sessionManager: { getBranch: () => [] },
+    sessionManager: { getBranch: () => branch },
     ui: {
       notify: (title, level) => notifications.push({ title, level }),
       setStatus: (id, text) => statuses.push({ id, text }),
@@ -126,6 +132,7 @@ function harness({
       return judge(...args);
     },
     configPath,
+    now,
   });
 
   return {
@@ -136,18 +143,20 @@ function harness({
     askCount: () => askArgs.length,
     askArgs,
     definitions: () => virtualModel,
-    run: (prompt, { state, reason = "user", previous, messages } = {}) =>
+    run: (prompt, { state, reason = "user", previous, failed: failedRoute, messages } = {}) =>
       virtualModel.route(
         {
           reason,
           state,
           previous,
+          failed: failedRoute,
           thinkingLevel,
           messages: messages ?? [user(prompt)],
         },
         ctx,
       ),
     command: (args) => commands.route.handler(args, ctx),
+    emit: (event, payload) => handlers[event]?.(payload, ctx),
   };
 }
 
@@ -767,4 +776,361 @@ test("PI_ROUTER=off disarms it before the first turn", async () => {
   const routed = await h.run("audit the routing design");
   assert.equal(h.askCount(), 0);
   assert.equal(routed.model, LUNA);
+});
+
+const WS_USAGE_LEAK =
+  'Codex error: {"type":"error","status":429,"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}';
+
+test("a websocket usage-limit leak on retry fails over within the tier", async () => {
+  const h = harness({
+    difficulty: 2.6,
+    config: {
+      frontier: [
+        { model: "openai-codex/gpt-6-astra", thinking: "medium" },
+        { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+      ],
+    },
+  });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(first.model, ASTRA);
+  const retried = await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: WS_USAGE_LEAK,
+        provider: ASTRA.provider,
+        model: ASTRA.id,
+      },
+    },
+  });
+  assert.equal(retried.model, SOL);
+  const failover = h.entries.find((entry) => entry.data?.outcome === "failover");
+  assert.ok(failover, JSON.stringify(h.entries.map((entry) => entry.data?.outcome)));
+  assert.equal(failover.data.to, "openai-codex/gpt-5.6-sol");
+  assert.equal(failover.data.from, "openai-codex/gpt-6-astra");
+});
+
+test("an SSE usage limit with a reset suffix cools that model for the next turn", async () => {
+  const h = harness({
+    difficulty: 2.6,
+    config: {
+      frontier: [
+        { model: "openai-codex/gpt-6-astra", thinking: "medium" },
+        { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+      ],
+    },
+  });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(first.model, ASTRA);
+  await h.emit("agent_end", {
+    messages: [
+      ...turn("audit the routing design and tell me what is wrong with it"),
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "You have hit your ChatGPT usage limit (plus plan). Try again in ~180 min.",
+        provider: "openai-codex",
+        model: "gpt-6-astra",
+      },
+    ],
+  });
+  const prompt = "now explain the deploy pipeline end to end for a new reader";
+  const next = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(next.model, SOL);
+});
+
+test("a usage-limit retry warns instead of throwing when the whole tier is cooling", async () => {
+  const h = harness({
+    difficulty: 2.6,
+    available: [LUNA, ASTRA],
+    config: { frontier: [{ model: "openai-codex/gpt-6-astra", thinking: "medium" }] },
+  });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(first.model, ASTRA);
+  const retried = await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: WS_USAGE_LEAK,
+        provider: ASTRA.provider,
+        model: ASTRA.id,
+      },
+    },
+  });
+  assert.equal(retried.model, ASTRA);
+  assert.match(h.notifications.at(-1).title, /cooling down/);
+});
+
+test("turn_end records a usage cap the same way the end of a turn does", async () => {
+  const h = harness({
+    difficulty: 2.6,
+    config: {
+      frontier: [
+        { model: "openai-codex/gpt-6-astra", thinking: "medium" },
+        { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+      ],
+    },
+  });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("turn_end", {
+    messages: [
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "You have hit your ChatGPT usage limit (plus plan). Try again in ~180 min.",
+        provider: "openai-codex",
+        model: "gpt-6-astra",
+      },
+    ],
+  });
+  const prompt = "now explain the deploy pipeline end to end for a new reader";
+  const next = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(next.model, SOL);
+});
+
+const TWO_FRONTIER = {
+  frontier: [
+    { model: "openai-codex/gpt-6-astra", thinking: "medium" },
+    { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+  ],
+};
+
+const usageError = (text, model) => ({
+  role: "assistant",
+  stopReason: "error",
+  errorMessage: text,
+  provider: "openai-codex",
+  model,
+});
+
+test("an SSE usage limit without a suffix expires after the short default", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  const cooledPrompt = "explain the deploy pipeline end to end for a new reader";
+  const cooled = await h.run(cooledPrompt, {
+    state: first.state,
+    messages: [
+      ...turn("audit the routing design and tell me what is wrong with it"),
+      user(cooledPrompt),
+    ],
+  });
+  assert.equal(cooled.model, SOL);
+  now += SHORT_USAGE_COOLDOWN_MS - 1;
+  const stillPrompt = "inventory every on-call contact in the pager directory";
+  const still = await h.run(stillPrompt, {
+    state: cooled.state,
+    messages: [...turn(cooledPrompt), user(stillPrompt)],
+  });
+  assert.equal(still.model, SOL);
+  now += 1;
+  const backPrompt = "rewrite the release checklist for the mobile client";
+  const back = await h.run(backPrompt, {
+    state: still.state,
+    messages: [...turn(stillPrompt), user(backPrompt)],
+  });
+  assert.equal(back.model, ASTRA);
+});
+
+test("when every pair in a tier is cooling the next turn warns and stays", async () => {
+  const h = harness({ difficulty: 2.6, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [
+      usageError("You have hit your ChatGPT usage limit. Try again in ~30 min.", ASTRA.id),
+    ],
+  });
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit. Try again in ~30 min.", SOL.id)],
+  });
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const stayed = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(stayed.model, ASTRA);
+  assert.match(h.notifications.at(-1).title, /cooling down/);
+});
+
+test("an overload retry stays on the model that failed", async () => {
+  const h = harness({ difficulty: 2.6, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  const retried = await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: usageError(
+        "Our servers are currently overloaded. Please try again later.",
+        ASTRA.id,
+      ),
+    },
+  });
+  assert.equal(retried.model, ASTRA);
+  assert.equal(
+    h.entries.some((entry) => entry.data?.outcome === "failover"),
+    false,
+  );
+});
+
+test("a context-overflow retry stays on the model that failed", async () => {
+  const h = harness({ difficulty: 2.6, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  const retried = await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: usageError("Your input exceeds the context window of this model.", ASTRA.id),
+    },
+  });
+  assert.equal(retried.model, ASTRA);
+  assert.equal(
+    h.entries.some((entry) => entry.data?.outcome === "failover"),
+    false,
+  );
+});
+
+test("preview reports when the tier does not fit the current context", async () => {
+  const h = harness({
+    difficulty: 2.6,
+    branch: [
+      user("start on the big refactor task in this repository please"),
+      assistant("Working through it.", { input: 2000, cacheRead: 450000 }),
+    ],
+  });
+  await h.command("preview audit the routing design and tell me what is wrong with it");
+  const text = h.notifications.at(-1).title;
+  assert.match(text, /does not fit/);
+  assert.match(text, /openai-codex\/gpt-6-astra/);
+});
+
+test("preview says the difficulty is unknown when the judge fails", async () => {
+  const h = harness({
+    askImpl: async () => {
+      throw new Error("TYPESAFE_API_KEY is not set");
+    },
+  });
+  await h.command("preview fix the typo in the readme");
+  const text = h.notifications.at(-1).title;
+  assert.match(text, /difficulty unknown/);
+  assert.match(text, /ladder base Luna@medium/);
+  assert.equal(h.askCount(), 1);
+  await h.command("status");
+  assert.match(h.notifications.at(-1).title, /0 turns/);
+});
+
+test("preview names cooled models it skipped without clearing them", async () => {
+  const h = harness({ difficulty: 2.6, config: TWO_FRONTIER });
+  await h.emit("agent_end", {
+    messages: [
+      usageError("You have hit your ChatGPT usage limit. Try again in ~20 min.", ASTRA.id),
+    ],
+  });
+  await h.command("preview audit the routing design and tell me what is wrong with it");
+  const text = h.notifications.at(-1).title;
+  assert.match(text, /cooled down openai-codex\/gpt-6-astra/);
+  assert.match(text, /pair openai-codex\/gpt-5\.6-sol @ medium/);
+  const routed = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(routed.model, SOL);
+});
+
+test("/route preview --json prints the dry run as JSON", async () => {
+  const h = harness({ difficulty: 2.6 });
+  await h.command("preview --json audit the routing design and tell me what is wrong");
+  const body = JSON.parse(h.notifications.at(-1).title);
+  assert.equal(body.difficulty, 2.6);
+  assert.equal(body.tier, "frontier");
+  assert.equal(body.pair.key, "openai-codex/gpt-6-astra");
+  assert.equal(body.pair.thinking, "medium");
+  assert.equal(body.contextFit.fits, true);
+  assert.ok(body.stale.includes("grok-4.6"));
+  assert.match(body.ladder, /frontier Astra@medium/);
+  assert.equal(h.askArgs[0].state.prompt, "audit the routing design and tell me what is wrong");
+  await h.command("status");
+  assert.match(h.notifications.at(-1).title, /0 turns/);
+});
+
+test("/route preview reports a dry run and does not count as a turn", async () => {
+  const h = harness({ difficulty: 1.6 });
+  await h.command("preview fix the failing parser tests in the guardrail package");
+  assert.equal(h.askCount(), 1);
+  const text = h.notifications.at(-1).title;
+  assert.match(text, /1\.60/);
+  assert.match(text, /mid/);
+  assert.match(text, /openai-codex\/gpt-5\.6-luna/);
+  assert.match(text, /medium/);
+  assert.match(text, /fits/);
+  assert.match(text, /grok-4\.6/);
+  assert.match(text, /base Luna@medium · mid Luna@medium \(same as base\)/);
+  assert.equal(h.askArgs[0].state.prompt, "fix the failing parser tests in the guardrail package");
+  await h.command("status");
+  const status = h.notifications.at(-1).title;
+  assert.match(status, /0 turns/);
+  assert.match(status, /no judgement yet/);
+  assert.match(status, /no routing decision yet/);
+});
+
+test("/route status shows the effective ladder at the current cap", async () => {
+  const h = harness({ difficulty: 0.6 });
+  await h.command("status");
+  const status = h.notifications.at(-1).title;
+  assert.match(
+    status,
+    /base Luna@medium · mid Luna@medium \(same as base\) · frontier Astra@medium/,
+  );
+  assert.match(status, /mid collapses onto base/);
+});
+
+test("/route status warns when the low cap filters mid out", async () => {
+  const h = harness({ difficulty: 0.6, thinkingLevel: "low" });
+  await h.command("status");
+  const status = h.notifications.at(-1).title;
+  assert.match(status, /base Luna@low · mid \(none\) · frontier Astra@low/);
+  assert.match(status, /mid is filtered out by the low cap/);
+});
+
+test("a non-matching error retry stays on the model that failed", async () => {
+  const h = harness({ difficulty: 2.6, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  const retried = await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: usageError("An error occurred while processing your request.", ASTRA.id),
+    },
+  });
+  assert.equal(retried.model, ASTRA);
+  assert.equal(
+    h.entries.some((entry) => entry.data?.outcome === "failover"),
+    false,
+  );
 });

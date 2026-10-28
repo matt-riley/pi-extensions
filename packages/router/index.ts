@@ -42,8 +42,16 @@ import {
   routerConfigPath,
   unmatchedPatterns,
 } from "./config.mjs";
-import { decideRoute, unwrap } from "./decide.mjs";
+import { decideRoute, fitting, unwrap } from "./decide.mjs";
+import { routingLadder } from "./ladder.mjs";
 import { gateTurn } from "./lib.mjs";
+import {
+  classifyProviderError,
+  createUsageCaps,
+  offersExceptCooling,
+  usageCapFromMessages,
+  usageCooldownMs,
+} from "./usage-cap.mjs";
 import {
   buildTaskTypeQuestion,
   loadPlaybook,
@@ -116,6 +124,13 @@ function parseThinking(raw, fallback, levels = THINKING_LEVELS) {
   return levels.includes(value) ? value : fallback;
 }
 
+function failedErrorText(request: ModelRouteRequest<RouterState> | undefined): string {
+  const message = request?.failed?.message;
+  if (!message || typeof message !== "object") return "";
+  const text = (message as { errorMessage?: unknown }).errorMessage;
+  return typeof text === "string" ? text : "";
+}
+
 function isRouteTier(value: unknown): value is RouteTier {
   return value === "base" || value === "mid" || value === "frontier";
 }
@@ -145,10 +160,12 @@ function readState(value: unknown): RouterState | null {
 
 export default function piRouterExtension(
   pi: ExtensionAPI,
-  deps: { ask?: typeof askSystemOne; configPath?: string } = {},
+  deps: { ask?: typeof askSystemOne; configPath?: string; now?: () => number } = {},
 ) {
   bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
+  const usageCaps = createUsageCaps();
+  const clock = deps.now ?? (() => Date.now());
   let generation = 0;
   const judgments = new Set<AbortController>();
   const judge: typeof askSystemOne = async (input) => {
@@ -328,6 +345,8 @@ export default function piRouterExtension(
     const selected = parseThinking(request?.thinkingLevel, DEFAULT_THINKING);
     const offers = await candidates(ctx);
     const tiers = modelTiers(ctx);
+    const cooling = usageCaps.active(clock());
+    const liveOffers = offersExceptCooling(offers, cooling);
     // A broken file already said so; its stand-in defaults are not the user's list.
     if (!staleNotified && !tiers.error && offers.length) {
       staleNotified = true;
@@ -344,7 +363,11 @@ export default function piRouterExtension(
 
     // Re-resolved every request, so editing router.json moves the base at the
     // next task rather than at the next session.
-    const base = pickBase(offers, ctx, previousKey, tiers, selected);
+    // A cooling model stays available as a last resort, so an empty live list
+    // degrades to the full catalogue instead of throwing.
+    const base =
+      pickBase(liveOffers, ctx, previousKey, tiers, selected) ??
+      pickBase(offers, ctx, previousKey, tiers, selected);
 
     const heldKey = branchState?.model ?? previousKey ?? base?.key ?? null;
     const heldModel = resolveKey(offers, ctx, heldKey) ?? base?.model ?? null;
@@ -361,9 +384,49 @@ export default function piRouterExtension(
 
     if (!heldModel) throw new Error("Router: no physical model is available to route to");
 
-    // Continuations and retries keep the model that handled the turn. Thinking
-    // signatures and prompt caches stay valid, and a retry is not a new task.
+    // Continuations keep the model that handled the turn. A retry does too,
+    // except a usage-limit error, which cannot succeed on that model: cool it
+    // down and take the next pair in the same tier. Overloads, throttles and
+    // every other retry, including context overflow, stay put.
     if (reason === "continuation" || reason === "retry") {
+      if (reason === "retry" && classifyProviderError(failedErrorText(request)) === "usage") {
+        const failedKey = modelKey(request?.failed) ?? heldKey;
+        const tier = branchState?.tier ?? BASE_TIER;
+        if (failedKey)
+          usageCaps.record(failedKey, usageCooldownMs(failedErrorText(request)), clock());
+        const pick = chooseModelForTier(
+          offersExceptCooling(offers, usageCaps.active(clock())),
+          tier,
+          tiers,
+          undefined,
+          selected,
+        );
+        if (pick) {
+          record({
+            at: Date.now(),
+            outcome: "failover",
+            from: heldKey,
+            to: pick.key,
+            toThinking: pick.thinking ?? heldThinking,
+            tier,
+          });
+          const state: RouterState = {
+            task: branchState?.task ?? 1,
+            attempts: branchState?.attempts ?? 0,
+            cooldown: branchState?.cooldown ?? 0,
+            tier,
+            model: String(pick.key),
+            thinking: pick.thinking ?? heldThinking,
+            base: branchState?.base ?? base?.key ?? null,
+          };
+          return { model: pick.model, thinkingLevel: pick.thinking ?? heldThinking, state };
+        }
+        notify(
+          ctx,
+          `Router: staying on ${failedKey ?? heldKey ?? "the current model"} — every ${tier} model is cooling down after a usage limit`,
+          "warning",
+        );
+      }
       return {
         model: heldModel,
         thinkingLevel: heldThinking,
@@ -474,9 +537,9 @@ export default function piRouterExtension(
       }
     }
 
-    const next = decideRoute({
+    let next = decideRoute({
       decided,
-      offers,
+      offers: liveOffers,
       tiers,
       contextTokens,
       held,
@@ -484,6 +547,30 @@ export default function piRouterExtension(
       selected,
       boundary: boundary.route,
     });
+    // decideRoute will not step to a later pair in the same tier. A model that
+    // is cooling down has to, or the next user turn retries the cap.
+    if (next.key && cooling.includes(next.key)) {
+      const tier = decided?.tier ?? next.tier ?? BASE_TIER;
+      const pick = chooseModelForTier(
+        fitting(liveOffers, contextTokens),
+        tier,
+        tiers,
+        undefined,
+        selected,
+      );
+      if (pick && pick.key !== next.key) {
+        next = {
+          outcome: "failover",
+          model: pick.model,
+          key: pick.key,
+          thinking: pick.thinking ?? next.thinking ?? selected,
+          tier,
+          warning: null,
+        };
+      } else {
+        next = { ...next, warning: next.warning === "too-big" ? "too-big" : "cooling" };
+      }
+    }
     const outcome = next.outcome;
     const nextModel = next.model;
     const nextKey = next.key;
@@ -495,6 +582,12 @@ export default function piRouterExtension(
       notify(
         ctx,
         `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(contextTokens / 1000)}k tokens and no available ${decided.tier} model fits it`,
+        "warning",
+      );
+    } else if (next.warning === "cooling") {
+      notify(
+        ctx,
+        `Router: staying on ${currentKey ?? "the current model"} — every ${decided?.tier ?? next.tier} model is cooling down after a usage limit`,
         "warning",
       );
     } else if (decided && next.warning === "unavailable") {
@@ -538,6 +631,14 @@ export default function piRouterExtension(
         notify(
           ctx,
           `Router: ${nextKey} — difficulty ${decided.difficulty.toFixed(2)} (${boundary.route ? boundary.reason : "task continues"})`,
+        );
+      } else if (outcome === "failover") {
+        record({ ...shared, outcome, to: nextKey, toThinking: nextThinking });
+        setStatus(ctx, `router: ${short(nextKey)}@${nextThinking ?? selected} · usage cap`);
+        notify(
+          ctx,
+          `Router: ${nextKey} — ${currentKey ?? "the previous model"} is cooling down after a usage limit`,
+          "warning",
         );
       } else if (outcome === "stepped-down") {
         counters.steppedDown++;
@@ -643,6 +744,16 @@ export default function piRouterExtension(
     if (playbook?.text) event.systemPromptOptions.sections.router_playbook = playbook.text;
   });
 
+  const noteUsageCap = (event, ctx: ExtensionContext) => {
+    const messages = Array.isArray(event?.messages)
+      ? event.messages
+      : (ctx?.sessionManager?.getBranch?.() ?? []);
+    const cap = usageCapFromMessages(messages);
+    if (cap) usageCaps.record(cap.key, cap.ms, clock());
+  };
+  pi.on("agent_end", noteUsageCap);
+  pi.on("turn_end", noteUsageCap);
+
   pi.on("session_start", (_event, ctx) => {
     counters.turns = 0;
     counters.judged = 0;
@@ -666,12 +777,93 @@ export default function piRouterExtension(
     );
   });
 
+  async function previewRoute(raw: string, ctx: ExtensionContext) {
+    let rest = raw.slice("preview".length).trim();
+    const asJson = rest.toLowerCase().startsWith("--json");
+    if (asJson) rest = rest.slice("--json".length).trim();
+    const prompt = rest.slice(0, 2000);
+    const selected = parseThinking(ctx?.thinkingLevel, DEFAULT_THINKING);
+    const offers = await candidates(ctx);
+    const tiers = modelTiers(ctx);
+    const cooling = usageCaps.active(clock());
+    const liveOffers = offersExceptCooling(offers, cooling);
+    const stale = tiers.error ? [] : unmatchedPatterns(tiers, offers.map(modelKey).filter(Boolean));
+    const ladder = routingLadder({ offers, tiers, cap: selected });
+    const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
+    const history = turnsFromMessages(branch, WINDOW).slice(-WINDOW);
+    const contextTokens = latestContextTokens(history);
+    const fittingOffers = fitting(liveOffers, contextTokens);
+
+    let decided: ReturnType<typeof routeFromDifficulty> | null = null;
+    if (prompt) {
+      try {
+        const result = await judge({
+          state: buildDifficultyState({
+            prompt,
+            window: shareWindow ? history : [],
+            cwd: ctx?.cwd,
+          }),
+          questions: buildDifficultyQuestions(),
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
+        decided = routeFromDifficulty(result?.answers, {
+          threshold: config.threshold,
+          frontierThreshold: config.frontierThreshold,
+        });
+      } catch {
+        decided = null;
+      }
+    }
+
+    const unknown = !decided || decided.escalate === null;
+    const tier = unknown ? null : decided.escalate ? decided.tier : BASE_TIER;
+    const pick = tier ? chooseModelForTier(liveOffers, tier, tiers, undefined, selected) : null;
+    const fits = pick ? fittingOffers.some((entry) => modelKey(entry) === pick.key) : null;
+    const report = {
+      difficulty: unknown ? null : decided.difficulty,
+      tier,
+      reason: unknown ? "difficulty unknown" : decided.reason,
+      pair: pick ? { key: pick.key, thinking: pick.thinking ?? selected } : null,
+      contextFit: { tokens: contextTokens, fits },
+      cooledDown: cooling,
+      stale,
+      ladder: ladder.line,
+      warnings: ladder.warnings,
+    };
+    if (asJson) {
+      notify(ctx, JSON.stringify(report));
+      return;
+    }
+    const pairLine = report.pair ? `${report.pair.key} @ ${report.pair.thinking}` : "(not chosen)";
+    const difficulty = unknown
+      ? "difficulty unknown"
+      : `difficulty ${decided.difficulty.toFixed(2)} — ${tier}`;
+    const fitLine =
+      fits === null
+        ? `context ${contextTokens} tokens`
+        : fits
+          ? `context fits (${contextTokens} tokens)`
+          : `context does not fit (${contextTokens} tokens)`;
+    notify(
+      ctx,
+      [
+        "preview",
+        difficulty,
+        `pair ${pairLine}`,
+        fitLine,
+        `cooled down ${cooling.length ? cooling.join(", ") : "(none)"}`,
+        `stale ${stale.length ? stale.join(", ") : "(none)"}`,
+        `ladder ${ladder.line}`,
+        ...(ladder.warnings.length ? [`warning ${ladder.warnings.join("; ")}`] : []),
+      ].join("\n"),
+    );
+  }
+
   pi.registerCommand(COMMAND, {
-    description: "Show or toggle judged model routing for this session",
+    description: "Show status, preview a prompt, or toggle judged model routing",
     handler: async (args, ctx) => {
-      const action = String(args ?? "")
-        .trim()
-        .toLowerCase();
+      const raw = String(args ?? "").trim();
+      const action = raw.toLowerCase();
       if (action === "off" || action === "disable") {
         config.enabled = false;
         generation++;
@@ -696,8 +888,18 @@ export default function piRouterExtension(
         notify(ctx, "Router on.", "info");
         return;
       }
+      if (action === "preview" || action.startsWith("preview ")) {
+        await previewRoute(raw, ctx);
+        return;
+      }
       const c = counters;
       const loaded = readRouterConfig(configPath);
+      const cap = parseThinking(ctx?.thinkingLevel, DEFAULT_THINKING);
+      const ladder = routingLadder({
+        offers: await candidates(ctx),
+        tiers: loaded,
+        cap,
+      });
       const lists = (values: unknown[]) =>
         values.length
           ? values
@@ -716,6 +918,8 @@ export default function piRouterExtension(
           `Router ${config.enabled ? "on" : "OFF"} · select ${PROVIDER}/${MODEL_ID} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${!config.enabled ? "none (off)" : shareWindow ? "prompt + recent turns" : "prompt only"}`,
           `models ${configPath}${loaded.error ? ` (broken: ${loaded.error}; using defaults)` : ""}`,
           `base ${lists(loaded.base)} · mid ${lists(loaded.mid)} · frontier ${lists(loaded.frontier)}`,
+          `ladder ${ladder.line}`,
+          ...(ladder.warnings.length ? [`warning ${ladder.warnings.join("; ")}`] : []),
           `${c.turns} turns · ${c.judged} judged · ${c.escalated} escalated · ${c.steppedDown} stepped down · ${c.held} held · ${c.tooBig} too big to switch`,
           lastState
             ? `routed to ${lastState.model ?? "?"} (${lastState.tier}) · base ${lastState.base ?? "?"}`

@@ -52,10 +52,26 @@ the first entry in the config's `base` list, defaulting to Luna.
   failures (the stuck case), capped at 3 judgements per task. The gate is the
   same prompt-shape heuristic the measurements used, but `reason` now tells the
   router a user turn from a continuation, so it no longer has to infer that part.
-- **Continuations and retries are held, not judged.** A request after tool
-  results returns the model that handled the turn, so prompt caches and thinking
-  signatures stay valid. Retries are visible for the first time, and a retry
-  stays on the model that failed rather than re-rolling the decision.
+- **Continuations are held, not judged.** A request after tool results returns
+  the model that handled the turn, so prompt caches and thinking signatures stay
+  valid.
+- **Retries stay on the model that failed.** Overloads, throttles, context
+  overflows and every other retry keep that model. A usage-limit error cannot
+  succeed on it, so that one retry moves to the next pair in the same tier and
+  is recorded as a `router-decision` with outcome `failover`. There is no
+  switch for other retries.
+- **A usage cap is remembered until it expires.** At `agent_end` and `turn_end`
+  the last assistant message is read. When `stopReason` is `error` and the text
+  is a usage limit — checked before an overload, because a leaked WebSocket
+  payload contains both `usage_limit_reached` and `429` — that physical
+  `provider/model` is cooled down. `Try again in ~N min` sets the length. With
+  no suffix the wait is two minutes (`SHORT_USAGE_COOLDOWN_MS`), because the
+  same sentence is also how a short throttle is worded. Cooled models are left
+  out of the offers before `chooseModelForTier`, so the next user turn takes
+  the next pair in the same tier. If every pair in the tier is cooling down,
+  the router stays put and warns, the same way it does when a tier is empty.
+  Caps live in process memory, not under the project's `.pi/`, and expired
+  ones drop out.
 - **Escalates in tiers, per task.** At `difficulty >= 1.5` the task routes to
   the mid tier, and at `>= 2.5` to the frontier tier. Within a task the router
   only moves up: a model already at or above the target tier holds, so nothing
@@ -154,12 +170,31 @@ pattern that names its provider is taken literally, and non-GPT patterns
 | `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
 | `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and playbook injection |
 
-In-session: `/route` for status and counters, `/route off` and `/route on`.
+In-session: `/route` for status and counters, `/route preview <prompt>` for a
+dry run, `/route preview --json <prompt>` for the same report as JSON, and
+`/route off` and `/route on`.
 `off` stops both routing and playbook judgments/sharing, cancels in-flight
 judgments and clears their cached answers/playbook. A result arriving after
 an off/on cycle is discarded too. It holds the base without changing the
 selected model. This switch covers this router, not other TypeSafe-enabled
-extensions. `/route status` prints sharing/playbook state, config path and lists.
+extensions. `/route status` prints sharing/playbook state, config path, the
+configured lists, and the effective ladder at the current thinking cap.
+
+The ladder is what each tier resolves to under that cap, for example
+`base Luna@medium · mid Luna@medium (same as base) · frontier Astra@medium`.
+A tier that lands on the same model and the same thinking level as base is
+marked as collapsed, and a tier whose pairs all sit above the cap is marked
+as filtered out. With the default lists, mid collapses onto base at every
+cap, and at `low` mid has no usable pair. The ladder only reports this. It
+does not change which model a turn gets.
+
+`/route preview` asks Jev once, using the same difficulty state, rating and
+pair choice as a real turn. It prints the difficulty, the tier, the pair it
+would choose, whether that pair fits the current context, any cooled-down
+models it skipped, stale patterns, and the ladder. It does not switch models,
+change router state, or count as a turn. With no key, or if the call fails, it
+still prints what it can and says the difficulty is unknown. Preview is an
+explicit request, so it still makes that one call when routing is off.
 
 ## Playbooks
 
@@ -258,11 +293,12 @@ extensions and the selected physical provider retain their own data flows.
 
 ## Tests
 
-`node --test packages/router/test/*.test.mjs` — 120 cases across the package:
+`node --test packages/router/test/*.test.mjs` — 163 cases across the package:
 the decision helpers and what was measured, pair-cap selection, the config
 file's merge semantics, threshold routing, model resolution and scoping, the
-session and metrics arithmetic, and 45 end-to-end cases against a fake pi that
-drive the real `route()` over escalation, holding, step-down, retries, children,
+session and metrics arithmetic, usage-cap recognition and the effective ladder,
+and 61 end-to-end cases against a fake pi that drive the real `route()` over
+escalation, holding, step-down, retries, usage-limit failover, preview, children,
 capacity, live reload, and the kill switch.
 
 ## What an audit of this extension found
@@ -294,9 +330,9 @@ probability-weighted mean, so two very different distributions can share a 1.5;
 uncertainty and confidence are discarded; the difficulty scale mixes reasoning
 complexity with the cost of being wrong; a 2,000-character prompt truncation can
 hide the real requirement; and a rating is not a prompt-injection boundary. The
-router now sees every request, including steering and retries, but holds retries
-deliberately: a provider-outage retry stays on the model that failed rather than
-re-rolling the decision.
+router now sees every request, including steering and retries. A provider-outage
+retry stays on the model that failed. A usage-limit error does not: that retry
+moves to the next pair in the tier, and the cap is remembered for the next turn.
 
 ## Metrics
 
