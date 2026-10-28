@@ -84,6 +84,38 @@ test("a tier with no model on offer is reported as unavailable, not too big", ()
   assert.equal(out.warning, "unavailable");
 });
 
+test("a base model escalates to a different mid pair when the rating clears mid", () => {
+  const defaultTiers = {
+    base: [
+      { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
+      { model: "openai-codex/gpt-5.6-luna" },
+    ],
+    mid: [
+      { model: "openai-codex/gpt-6-astra", thinking: "low" },
+      { model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" },
+    ],
+    frontier: [{ model: "openai-codex/gpt-6-astra" }],
+  };
+  const out = decideRoute({
+    decided: { escalate: true, tier: "mid", difficulty: 1.8 },
+    offers: [luna, astra],
+    tiers: defaultTiers,
+    contextTokens: 10_000,
+    held: {
+      key: "openai-codex/gpt-5.6-luna",
+      thinking: "medium",
+      tier: "base",
+      model: luna,
+    },
+    base: { key: "openai-codex/gpt-5.6-luna", model: luna, thinking: "medium" },
+    selected: "medium",
+    boundary: true,
+  });
+  assert.equal(out.outcome, "escalated");
+  assert.equal(out.key, "openai-codex/gpt-6-astra");
+  assert.equal(out.thinking, "low");
+});
+
 test("never escalates sideways or down a tier", () => {
   const running = held({ key: "openai-codex/gpt-6-astra", tier: "frontier", model: astra });
   const out = decide({ escalate: true, tier: "mid", difficulty: 1.6 }, { held: running });

@@ -58,8 +58,8 @@ export const DEFAULT_FRONTIER_PATTERNS = [
  * happened to have selected": routing only happens while `router/auto` is
  * selected, and this seeds the `base` key in router.json.
  *
- * Luna is the curated default because it is the mid list's only verified entry
- * and the measured workhorse. An unresolvable base falls back to the session's
+ * Luna is the curated default because it is the measured workhorse on this
+ * machine. An unresolvable base falls back to the session's last physical model,
  * last physical model, then the catalogue's first entry, so a missing
  * subscription degrades instead of erroring.
  */
@@ -68,11 +68,10 @@ export const DEFAULT_BASE_PATTERNS = ["openai-codex/gpt-5.6-luna"];
 /**
  * The curated mid tier, best first.
  *
- * One verified entry, not a benchmark result: luna is the model Matt picked by
- * hand when deepseek stalled. It sits between "stay where you are" and the
- * frontier list above.
+ * The default mid *pairs* live in router.json; this list is only for tierOf()
+ * and is kept empty so the base Luna model is not misclassified as mid.
  */
-export const DEFAULT_MID_PATTERNS = ["openai-codex/gpt-5.6-luna"];
+export const DEFAULT_MID_PATTERNS = [];
 
 /** Tier name → preference order. The lists are the policy; the router reads them. */
 export const DEFAULT_TIERS = {

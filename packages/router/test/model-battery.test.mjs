@@ -251,24 +251,34 @@ test("a mid-tier selection comes from the mid list, not the frontier one", () =>
     { provider: "openai-codex", id: "gpt-6-astra" },
     { provider: "openai-codex", id: "gpt-5.6-luna" },
   ];
-  const chosen = chooseModelForTier(available, "mid");
-  assert.equal(chosen.key, "openai-codex/gpt-5.6-luna");
-  assert.equal(chosen.pattern, "openai-codex/gpt-5.6-luna");
+  const tiers = {
+    mid: [
+      { model: "openai-codex/gpt-6-astra", thinking: "low" },
+      { model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" },
+    ],
+  };
+  const chosen = chooseModelForTier(available, "mid", tiers);
+  assert.equal(chosen.key, "openai-codex/gpt-6-astra");
+  assert.equal(chosen.pattern, "openai-codex/gpt-6-astra");
   assert.equal(chosen.tier, "mid");
 });
 
-test("DEFAULT_MID_PATTERNS is the curated mid preference order", () => {
-  assert.deepEqual(DEFAULT_MID_PATTERNS, ["openai-codex/gpt-5.6-luna"]);
+test("DEFAULT_MID_PATTERNS stays empty so base Luna is not classified as mid", () => {
+  assert.deepEqual(DEFAULT_MID_PATTERNS, []);
   assert.equal(DEFAULT_TIERS.mid, DEFAULT_MID_PATTERNS);
 });
 
 test("tierOf classifies a key, frontier first, and unknown keys are null", () => {
   assert.equal(tierOf("openai-codex/gpt-6-astra"), "frontier");
-  assert.equal(tierOf("openai-codex/gpt-5.6-luna"), "mid");
+  assert.equal(tierOf("openai-codex/gpt-5.6-luna"), null);
   assert.equal(tierOf("deepseek/deepseek-flash"), null);
   assert.equal(tierOf(null), null);
   // Frontier is checked first, so a key in both lists is frontier.
   assert.equal(tierOf("x/y", { frontier: ["y"], mid: ["y"] }), "frontier");
+  assert.equal(
+    tierOf("openai-codex/gpt-6-astra", { frontier: ["astra"], mid: ["astra"] }),
+    "frontier",
+  );
 });
 
 test("tierRank orders the tiers and ranks anything unknown below mid", () => {

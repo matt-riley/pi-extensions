@@ -13,17 +13,14 @@ const offers = [
   { provider: "openai-codex", id: "gpt-5.6-sol", contextWindow: 272000 },
 ];
 
-test("the medium cap shows mid collapsed onto base and frontier on Astra", () => {
+test("the medium cap separates base, mid and frontier", () => {
   const ladder = routingLadder({ offers, tiers: DEFAULT_CONFIG, cap: "medium" });
-  assert.equal(
-    ladder.line,
-    "base Luna@medium · mid Luna@medium (same as base) · frontier Astra@medium",
-  );
-  assert.ok(ladder.warnings.some((warning) => /mid/.test(warning) && /base/.test(warning)));
+  assert.equal(ladder.line, "base Luna@medium · mid Astra@low · frontier Astra@medium");
+  assert.equal(ladder.warnings.length, 0);
 });
 
-test("the low cap filters mid out and keeps frontier on Astra low", () => {
+test("the low cap keeps mid on Astra low with base on Luna low", () => {
   const ladder = routingLadder({ offers, tiers: DEFAULT_CONFIG, cap: "low" });
-  assert.equal(ladder.line, "base Luna@low · mid (none) · frontier Astra@low");
-  assert.ok(ladder.warnings.some((warning) => /mid/.test(warning) && /low/.test(warning)));
+  assert.equal(ladder.line, "base Luna@low · mid Astra@low · frontier Astra@low");
+  assert.equal(ladder.warnings.length, 0);
 });

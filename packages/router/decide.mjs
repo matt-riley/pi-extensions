@@ -42,8 +42,14 @@ function raiseThinking(wanted, currentLevel) {
   return thinkingRank(wanted) > thinkingRank(currentLevel ?? "") ? wanted : currentLevel;
 }
 
+/** Escalation rank of what is running; base-tier tasks ignore mid pattern matches. */
+function currentTierRank(held, tiers, baseTier) {
+  if (held.tier && held.tier !== baseTier) return tierRank(held.tier);
+  if (tierOf(held.key, tiers) === "frontier") return tierRank("frontier");
+  return tierRank(baseTier);
+}
+
 /**
- * @param decided  routeFromDifficulty's answer: `{ escalate, tier, difficulty }`
  * @param held     what is in force: `{ key, thinking, tier, model }`
  * @param base     the session baseline `{ key, model, thinking }`, or null
  * @returns `{ outcome, model, key, thinking, tier, warning }` where `warning` is
@@ -91,7 +97,7 @@ export function decideRoute({
   }
 
   const targetThinking = pick.thinking ?? selected;
-  const currentRank = tierRank(tierOf(held.key, tiers));
+  const currentRank = currentTierRank(held, tiers, baseTier);
   const currentPairOrder = pairOrder(held.key, held.thinking, decided.tier, tiers);
   const capExceeded = thinkingRank(held.thinking ?? "") > thinkingRank(selected);
   const targetRank = tierRank(decided.tier);
