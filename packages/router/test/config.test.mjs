@@ -79,6 +79,13 @@ test("the agent directory honours PI_CODING_AGENT_DIR", () => {
   assert.equal(routerConfigPath({}), path.join(os.homedir(), ".pi", "agent", "router.json"));
 });
 
+test("shadowLog in router.json defaults off and can be enabled", () => {
+  const loaded = readRouterConfig(tempFile());
+  assert.equal(loaded.shadowLog, false);
+  const on = readRouterConfig(tempFile(JSON.stringify({ shadowLog: true })));
+  assert.equal(on.shadowLog, true);
+});
+
 test("patterns that match no offered model are named once, by substring", () => {
   const tiers = {
     base: [{ model: "openai-codex/gpt-5.6-luna" }],

@@ -88,25 +88,56 @@ export function readRouterConfig(file = routerConfigPath()) {
   try {
     raw = fs.readFileSync(file, "utf8");
   } catch (error) {
-    if (error?.code === "ENOENT") return { ...defaults(), error: null };
-    return { ...defaults(), error: `could not read ${file}: ${error?.message ?? error}` };
+    if (error?.code === "ENOENT") return { ...defaults(), shadowLog: false, error: null };
+    return {
+      ...defaults(),
+      shadowLog: false,
+      error: `could not read ${file}: ${error?.message ?? error}`,
+    };
   }
 
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    return { ...defaults(), error: `${file} is not valid JSON: ${error?.message ?? error}` };
+    return {
+      ...defaults(),
+      shadowLog: false,
+      error: `${file} is not valid JSON: ${error?.message ?? error}`,
+    };
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { ...defaults(), error: `${file} must be a JSON object like {"base": "..."}` };
+    return {
+      ...defaults(),
+      shadowLog: false,
+      error: `${file} must be a JSON object like {"base": "..."}`,
+    };
   }
 
-  const out = { ...defaults(), error: null };
+  const out = { ...defaults(), shadowLog: false, error: null };
   for (const key of ["base", "mid", "frontier"]) {
     if (key in parsed) out[key] = patternsOf(parsed[key]);
   }
+  if ("shadowLog" in parsed) {
+    const flag = parsed.shadowLog;
+    out.shadowLog = flag === true || String(flag).trim().toLowerCase() === "true";
+  }
   return out;
+}
+
+/** Merge `shadowLog` into router.json without touching tier lists. */
+export function writeShadowLogFlag(file, enabled) {
+  let parsed = {};
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    parsed = { ...DEFAULT_CONFIG };
+  parsed.shadowLog = Boolean(enabled);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 }
 
 /**
