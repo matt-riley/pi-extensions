@@ -92,6 +92,14 @@ by the cap through the fallback entry), defaulting to Luna.
   returns to the base, releasing a frontier model or a raised thinking level. A
   stuck turn rated easy is still a stuck turn, so a failing continuation is
   never downgraded.
+- **Manual tier override.** With `router/auto` selected, prefix a message with
+  `!base`, `!mid`, or `!frontier` (case-insensitive, followed by whitespace or
+  end of message). The prefix is stripped before the model sees the prompt and
+  forces that tier for the current task with no difficulty judgement. The
+  override lasts until the next task boundary; continuations keep it. Usage-cap
+  cooling and same-tier failover still apply. `/route preview` accepts the same
+  prefixes and reports `forced <tier>`. A prefix alone is not sent — the router
+  warns and leaves the input unchanged.
 - **Requests outside the agent loop go to the base.** Compaction summaries and
   extension calls (`reason: "direct"`) carry no routing state and are not judged.
 - **Respects your model scoping.** With `--models` / `enabledModels` in play,

@@ -43,6 +43,7 @@ export async function evaluateShadowTurn({
   judge,
   prefetched,
   clock = () => Date.now(),
+  forcedTierOverride = null,
 }) {
   const branchState = readBranchState(shadowState);
   const previousKey = branchState?.model ?? actualKey;
@@ -69,11 +70,14 @@ export async function evaluateShadowTurn({
     shareWindow,
     judge,
     prefetchedAnswers: pref,
+    forcedTier: forcedTierOverride,
   });
 
-  const wouldTier = wouldBeTierFromPlan(planned.decided, planned.tier);
+  const wouldTier = planned.state?.forcedTier ?? wouldBeTierFromPlan(planned.decided, planned.tier);
   return {
-    judged: Boolean(planned.decided || planned.outcome === "judge-failed"),
+    judged: Boolean(
+      (planned.decided && !planned.decided.forced) || planned.outcome === "judge-failed",
+    ),
     nextState: planned.state,
     entry: {
       at: clock(),

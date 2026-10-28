@@ -113,7 +113,10 @@ test("shadow would-be matches route() through a full scripted sequence", async (
   let messages = [];
   const offers = [LUNA, ASTRA, SOL];
 
-  async function expectParity(prompt, { reason = "user", previous, cooling = [] } = {}) {
+  async function expectParity(
+    prompt,
+    { reason = "user", previous, cooling = [], forcedTierOverride = null } = {},
+  ) {
     if (reason === "user") messages = [...messages, user(prompt)];
     let stepScore = null;
     const stepJudge = async () => {
@@ -164,6 +167,7 @@ test("shadow would-be matches route() through a full scripted sequence", async (
       judge: stepJudge,
       prefetched: null,
       clock: () => now,
+      forcedTierOverride,
     });
     shadowState = nextState;
 
@@ -230,4 +234,87 @@ test("shadow would-be matches route() through a full scripted sequence", async (
   await expectParity("explain the deploy pipeline end to end for a new reader", {
     cooling: ["openai-codex/gpt-6-astra"],
   });
+});
+
+test("shadow would-be matches a forced tier override turn", async () => {
+  const configPath = tempConfig();
+  let virtualModel = null;
+  const handlers = {};
+  const pi = {
+    on: (event, handler) => {
+      handlers[event] = handler;
+    },
+    registerCommand: () => {},
+    appendEntry: () => {},
+    registerVirtualModel: (def) => {
+      virtualModel = def;
+    },
+  };
+  const ctx = {
+    cwd: "/repo",
+    sessionId: "parity-forced",
+    thinkingLevel: "medium",
+    model: { provider: "router", id: "auto" },
+    modelRegistry: {
+      getAvailable: () => [LUNA, ASTRA, SOL],
+      find: (provider, id) =>
+        [LUNA, ASTRA, SOL].find((m) => m.provider === provider && m.id === id) ?? null,
+      getModel: (provider, id) =>
+        [LUNA, ASTRA, SOL].find((m) => m.provider === provider && m.id === id) ?? null,
+    },
+    sessionManager: { getBranch: () => [] },
+    ui: { notify: () => {}, setStatus: () => {} },
+  };
+  piRouterExtension(pi, {
+    configPath,
+    ask: async () => ({ answers: { difficulty: { type: "score", score: 0.5 } } }),
+  });
+  const tiers = {
+    base: [{ model: "openai-codex/gpt-5.6-luna", thinking: "medium" }],
+    mid: [{ model: "openai-codex/gpt-6-astra", thinking: "low" }],
+    frontier: [{ model: "openai-codex/gpt-6-astra", thinking: "medium" }],
+  };
+  let judged = false;
+  const judge = async () => {
+    judged = true;
+    return { answers: { difficulty: { type: "score", score: 0.5 } } };
+  };
+  await handlers.input?.(
+    {
+      text: "!frontier audit the routing design and tell me what is wrong with it",
+      source: "interactive",
+    },
+    ctx,
+  );
+  const prompt = "audit the routing design and tell me what is wrong with it";
+  const messages = [user(prompt)];
+  const routed = await virtualModel.route(
+    { reason: "user", state: null, thinkingLevel: "medium", messages },
+    ctx,
+  );
+  assert.equal(judged, false);
+  assert.equal(routed.state.tier, "frontier");
+  const { entry } = await evaluateShadowTurn({
+    prompt,
+    branch: messages.map((message) => ({ type: "message", message })),
+    shadowState: null,
+    actualKey: "openai-codex/gpt-5.6-luna",
+    actualThinking: "medium",
+    sessionId: "parity-forced",
+    selected: "medium",
+    offers: [LUNA, ASTRA, SOL],
+    tiers,
+    ctx,
+    cooling: [],
+    threshold: 1.5,
+    frontierThreshold: 2.5,
+    timeoutMs: 4000,
+    shareWindow: true,
+    judge,
+    prefetched: null,
+    forcedTierOverride: "frontier",
+  });
+  assert.equal(entry.wouldBe.tier, "frontier");
+  assert.equal(entry.decisionReason, "forced");
+  assert.equal(entry.wouldBe.key, "openai-codex/gpt-6-astra");
 });

@@ -69,6 +69,25 @@ export function decideRoute({
 }) {
   const hold = { outcome: "held", ...held, warning: null };
   if (!decided) return hold;
+  if (decided.forced) {
+    const fittingOffers = fitting(offers, contextTokens);
+    const pick = chooseModelForTier(fittingOffers, decided.tier, tiers, undefined, selected);
+    if (!pick) {
+      return {
+        ...hold,
+        outcome: `no-${decided.tier}-model`,
+        warning: offers.length > fittingOffers.length ? "too-big" : "unavailable",
+      };
+    }
+    return {
+      outcome: "forced",
+      model: pick.model,
+      key: pick.key,
+      thinking: pick.thinking ?? selected,
+      tier: decided.tier,
+      warning: null,
+    };
+  }
   // No usable rating: keep what is running. Never a reason to spend less.
   if (decided.escalate === null) return { ...hold, outcome: "no-rating" };
 

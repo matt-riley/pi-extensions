@@ -4,6 +4,7 @@
 
 import { decideRoute, fitting, unwrap } from "./decide.mjs";
 import { gateTurn } from "./lib.mjs";
+import { forcedTierDecision } from "./tier-override.mjs";
 import {
   buildDifficultyState,
   buildDifficultyQuestions,
@@ -68,6 +69,7 @@ export function readBranchState(value) {
   ) {
     return null;
   }
+  const forcedTier = raw.forcedTier;
   return {
     task: raw.task,
     attempts: raw.attempts,
@@ -76,6 +78,10 @@ export function readBranchState(value) {
     model: typeof raw.model === "string" ? raw.model : null,
     thinking: typeof raw.thinking === "string" ? raw.thinking : null,
     base: typeof raw.base === "string" ? raw.base : null,
+    forcedTier:
+      forcedTier === "base" || forcedTier === "mid" || forcedTier === "frontier"
+        ? forcedTier
+        : null,
   };
 }
 
@@ -143,6 +149,7 @@ export async function planUserRouteTurn({
   judge,
   prefetchedAnswers = null,
   shouldAbortAfterJudge = () => false,
+  forcedTier: forcedTierOverride = null,
 }) {
   const branch = readBranchState(branchState);
   const base =
@@ -161,6 +168,10 @@ export async function planUserRouteTurn({
 
   const currentKey = heldKey ?? base?.key ?? null;
   const currentModel = resolveKey(offers, ctx, currentKey) ?? heldModel;
+
+  let activeForced = branch?.forcedTier ?? null;
+  if (boundary.route && !forcedTierOverride) activeForced = null;
+  if (forcedTierOverride) activeForced = forcedTierOverride;
 
   const { judgeable } = judgeableTurn({
     prompt,
@@ -181,7 +192,9 @@ export async function planUserRouteTurn({
 
   let judged = false;
 
-  if (judgeable) {
+  if (activeForced) {
+    decided = forcedTierDecision(activeForced);
+  } else if (judgeable) {
     try {
       const result = prefetchedAnswers
         ? { answers: prefetchedAnswers }
@@ -259,6 +272,7 @@ export async function planUserRouteTurn({
     model: next.key,
     thinking: next.thinking,
     base: base?.key ?? branch?.base ?? null,
+    forcedTier: activeForced,
   };
 
   return {
@@ -285,6 +299,7 @@ export function wouldBeTierFromPlan(decided, nextTier) {
 
 export function decisionReasonFromPlan(decided, outcome) {
   if (!decided) return "no judgement";
+  if (outcome === "forced" || decided.forced) return "forced";
   if (decided.escalate === null) return outcome ?? "no-rating";
   return outcome ?? decided.reason ?? "held";
 }
