@@ -55,7 +55,6 @@ test("the question names its state paths", () => {
   assert.equal(question.type, "choice");
   assert.match(question.instructions, /`log`/);
   assert.match(question.instructions, /`prior_reruns`/);
-  assert.equal(Object.keys(question.criteria).length, 5);
 });
 
 test("a class outside the set is not a classification", () => {

@@ -31,7 +31,7 @@ const CLASSES = {
 };
 
 /** What to do about each class. Silence is a valid answer: `no_failure` has none. */
-export const ADVICE = {
+const ADVICE = {
   transient: "transient — retry the same command once, unchanged",
   environment: "environment — fix the machine (install, version, port), not the code",
   code_bug: "code bug — fix the code; retrying it unchanged will not help",

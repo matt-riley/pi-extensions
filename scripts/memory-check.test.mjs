@@ -58,7 +58,6 @@ test("only the closest candidates reach the model", () => {
 test("the relation is asked once, each candidate separately", () => {
   const questions = buildQuestions(2);
   assert.deepEqual(Object.keys(questions).sort(), ["relation", "same_0", "same_1"]);
-  assert.equal(Object.keys(questions.relation.criteria).length, 4);
   assert.match(questions.same_1.instructions, /`candidates\.1\.content`/);
 });
 

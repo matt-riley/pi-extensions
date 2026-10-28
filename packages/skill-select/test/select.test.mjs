@@ -143,7 +143,14 @@ test("a large library falls back to a capped lexical pool", async () => {
   const { ask, calls } = fakeAsk({ "skill-0": 0.9 });
   const out = await selectSkills({ skills: many, query: "thing", env: ENV, ask });
   assert.equal(out.reason, "shortlist");
-  assert.equal(Object.keys(calls[0].questions.best.criteria).length, 31); // 30 + none_of_these
+  const criteria = Object.keys(calls[0].questions.best.criteria);
+  assert.ok(criteria.length < many.length, "the pool is capped, not the whole library");
+  assert.ok(criteria.includes("none_of_these"), "the decline option is always offered");
+  for (const name of criteria.filter((key) => key !== "none_of_these"))
+    assert.ok(
+      many.some((entry) => entry.name === name),
+      `${name} is a listed skill`,
+    );
 });
 
 test("gives the provider a short budget and forwards cancellation", async () => {

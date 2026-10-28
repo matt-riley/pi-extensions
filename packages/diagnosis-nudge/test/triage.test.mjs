@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import { validateRequest } from "../../../shared/systemone-request.mjs";
 import {
-  ADVICE,
   LEAK_WARNING,
   MAX_TRIAGE_PER_SESSION,
   buildFailureQuestions,
@@ -81,8 +80,13 @@ test("triageText advises per class and stays quiet when it should", () => {
   assert.equal(triageText({ failureClass: "no_failure", confidence: 1 }), null);
   assert.equal(triageText({}), null);
   assert.equal(triageText(null), null);
-  // Every class that has advice is reachable.
-  assert.equal(Object.keys(ADVICE).length, 5);
+  // Every class the classifier can answer with has advice, except a non-failure.
+  for (const failureClass of Object.keys(buildFailureQuestions().failure_class.criteria))
+    assert.equal(
+      triageText({ failureClass, confidence: 0.9 }) === null,
+      failureClass === "no_failure",
+      `${failureClass} advice`,
+    );
 });
 
 test("a leaked secret is warned about first, whatever the class", () => {
