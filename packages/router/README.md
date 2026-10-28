@@ -179,7 +179,8 @@ pattern that names its provider is taken literally, and non-GPT patterns
 
 In-session: `/route` for status and counters, `/route preview <prompt>` for a
 dry run, `/route preview --json <prompt>` for the same report as JSON, and
-`/route off` and `/route on`.
+`/route off` and `/route on`. `/route shadow on`, `/route shadow off`, and
+`/route shadow report` control the shadow log (see below).
 `off` stops both routing and playbook judgments/sharing, cancels in-flight
 judgments and clears their cached answers/playbook. A result arriving after
 an off/on cycle is discarded too. It holds the base without changing the
@@ -202,6 +203,45 @@ models it skipped, stale patterns, and the ladder. It does not switch models,
 change router state, or count as a turn. With no key, or if the call fails, it
 still prints what it can and says the difficulty is unknown. Preview is an
 explicit request, so it still makes that one call when routing is off.
+
+## Shadow log
+
+Shadow mode is for comparing your chosen physical model to what `router/auto`
+**would** have picked, without switching models or touching session routing
+state. It is **off by default**.
+
+Turn it on in `<agent-dir>/router.json`:
+
+```json
+{ "shadowLog": true }
+```
+
+or in-session with `/route shadow on` (which also writes the flag into
+`router.json`). `/route shadow off` disables it again.
+
+While shadow mode is on and you are **not** on `router/auto`, each user turn
+runs the same gate, difficulty judgement budget, and `decideRoute` path as live
+routing would — so the log stays aligned with production behaviour. Shadow mode
+makes the same judgement calls routing would on those turns; it respects the
+3-per-task cap and failure cooldown. With `router/auto` selected, normal routing
+runs and nothing is written to the shadow file.
+
+Append-only JSONL lives at `<agent-dir>/router-shadow.jsonl` (typically
+`~/.pi/agent/router-shadow.jsonl`). Each line records a timestamp, session id,
+the model and thinking level actually in use, the would-be tier and pair at your
+current cap, the difficulty score (or null), the gate reason, the decision
+reason, and a short hash of the prompt for de-duplication. **No prompt text and
+no conversation** are stored. Delete the file to reset; it is never sent over
+the network.
+
+`/route shadow report` prints turn counts, the share that would have stayed on
+base vs mid vs frontier, and how often the would-be pair differed from the
+actual one. The same summary is available offline:
+
+```
+node scripts/router-shadow-report.mjs
+node scripts/router-shadow-report.mjs /path/to/router-shadow.jsonl
+```
 
 ## Playbooks
 
@@ -305,8 +345,8 @@ the decision helpers and what was measured, pair-cap selection, the config
 file's merge semantics, threshold routing, model resolution and scoping, the
 session and metrics arithmetic, usage-cap recognition and the effective ladder,
 and end-to-end cases against a fake pi that drive the real `route()` over
-escalation, holding, step-down, retries, usage-limit failover, preview, children,
-capacity, live reload, and the kill switch.
+escalation, holding, step-down, retries, usage-limit failover, preview, shadow
+logging, children, capacity, live reload, and the kill switch.
 
 ## What an audit of this extension found
 

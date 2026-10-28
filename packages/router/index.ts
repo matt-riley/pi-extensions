@@ -74,6 +74,7 @@ import {
   WINDOW,
 } from "./model-battery.mjs";
 import { pinnedPhysicalModelKey } from "./parent-physical.mjs";
+import { createShadowLogger } from "./shadow-hook.mjs";
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
@@ -289,6 +290,22 @@ export default function piRouterExtension(
     // The virtual model is a selection, never a destination.
     return list.filter((entry) => modelKey(entry) !== `${PROVIDER}/${MODEL_ID}`);
   }
+
+  const { runShadowLog, handleShadowCommand, resetShadowSession } = createShadowLogger({
+    configPath,
+    config,
+    shareWindow,
+    isSubagentChild,
+    virtualModelKey: `${PROVIDER}/${MODEL_ID}`,
+    parseThinking,
+    defaultThinking: DEFAULT_THINKING,
+    candidates,
+    modelTiers,
+    usageCaps,
+    clock,
+    judge,
+    notify,
+  });
 
   /** Resolve a "provider/id" against the candidate list, then the registry. */
   function resolveKey(offers: unknown[], ctx: ExtensionContext, key: string | null) {
@@ -702,60 +719,64 @@ export default function piRouterExtension(
   // would otherwise make). The playbook rides in the system prompt for every
   // run of that task. No key, an error or an unsure answer injects nothing.
   pi.on("before_agent_start", async (event, ctx) => {
-    if (!config.enabled || !playbooksEnabled || isSubagentChild) return;
-    // Pi 1.2+: custom-message runs carry no prompt to judge.
     if (event?.messageType !== "user") return;
-    const epoch = generation;
-    const prompt = String(event?.prompt ?? "")
-      .trim()
-      .slice(0, 2000);
-    if (!prompt) return;
 
-    const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
-    const turns = turnsFromMessages(branch, WINDOW + 1);
-    // The branch may or may not hold the prompt being started yet.
-    const tail = turns[turns.length - 1];
-    const history = (
-      tail && tail.prompt.slice(0, 2000) === prompt && !tail.lastResponse
-        ? turns.slice(0, -1)
-        : turns
-    ).slice(-WINDOW);
-    const boundary = gateTurn({ prompt, previousTurn: history[history.length - 1] ?? null });
+    if (config.enabled && playbooksEnabled && !isSubagentChild) {
+      const epoch = generation;
+      const prompt = String(event?.prompt ?? "")
+        .trim()
+        .slice(0, 2000);
+      if (!prompt) return;
 
-    if (boundary.route || playbook === undefined) {
-      const routing = config.enabled && modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
-      let type = NO_PLAYBOOK;
-      try {
-        const result = await judge({
-          state: buildDifficultyState({
-            prompt,
-            window: shareWindow ? history : [],
-            cwd: ctx?.cwd,
-          }),
-          questions: {
-            task_type: buildTaskTypeQuestion(),
-            ...(routing ? buildDifficultyQuestions() : {}),
-          },
-          signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
-        });
+      const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
+      const turns = turnsFromMessages(branch, WINDOW + 1);
+      // The branch may or may not hold the prompt being started yet.
+      const tail = turns[turns.length - 1];
+      const history = (
+        tail && tail.prompt.slice(0, 2000) === prompt && !tail.lastResponse
+          ? turns.slice(0, -1)
+          : turns
+      ).slice(-WINDOW);
+      const boundary = gateTurn({ prompt, previousTurn: history[history.length - 1] ?? null });
+
+      if (boundary.route || playbook === undefined) {
+        const routing =
+          config.enabled && modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
+        let type = NO_PLAYBOOK;
+        try {
+          const result = await judge({
+            state: buildDifficultyState({
+              prompt,
+              window: shareWindow ? history : [],
+              cwd: ctx?.cwd,
+            }),
+            questions: {
+              task_type: buildTaskTypeQuestion(),
+              ...(routing ? buildDifficultyQuestions() : {}),
+            },
+            signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
+          });
+          if (!config.enabled || epoch !== generation) return;
+          type = taskTypeFromAnswer(result?.answers?.task_type);
+          if (routing && result?.answers) pending = { prompt, answers: result.answers };
+        } catch {
+          // Judge unavailable: no playbook for this task, and no retry until the next one.
+        }
         if (!config.enabled || epoch !== generation) return;
-        type = taskTypeFromAnswer(result?.answers?.task_type);
-        if (routing && result?.answers) pending = { prompt, answers: result.answers };
-      } catch {
-        // Judge unavailable: no playbook for this task, and no retry until the next one.
+        playbook = { type, text: loadPlaybook(type) };
+        try {
+          pi.appendEntry?.("router-playbook", { at: Date.now(), type, boundary: boundary.route });
+        } catch {
+          // Telemetry only.
+        }
+        setPlaybookStatus(ctx, playbook.text ? type : null);
       }
-      if (!config.enabled || epoch !== generation) return;
-      playbook = { type, text: loadPlaybook(type) };
-      try {
-        pi.appendEntry?.("router-playbook", { at: Date.now(), type, boundary: boundary.route });
-      } catch {
-        // Telemetry only.
-      }
-      setPlaybookStatus(ctx, playbook.text ? type : null);
+
+      // Pi 1.2+: a prompt section, not a full `systemPrompt` replacement.
+      if (playbook?.text) event.systemPromptOptions.sections.router_playbook = playbook.text;
     }
 
-    // Pi 1.2+: a prompt section, not a full `systemPrompt` replacement.
-    if (playbook?.text) event.systemPromptOptions.sections.router_playbook = playbook.text;
+    await runShadowLog(event, ctx);
   });
 
   const noteUsageCap = (event, ctx: ExtensionContext) => {
@@ -779,6 +800,7 @@ export default function piRouterExtension(
     lastState = null;
     playbook = undefined;
     pending = null;
+    resetShadowSession();
     setPlaybookStatus(ctx, null);
     const selected = modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
     setStatus(
@@ -906,6 +928,7 @@ export default function piRouterExtension(
         await previewRoute(raw, ctx);
         return;
       }
+      if (handleShadowCommand(action, ctx)) return;
       const c = counters;
       const loaded = readRouterConfig(configPath);
       const cap = parseThinking(ctx?.thinkingLevel, DEFAULT_THINKING);
