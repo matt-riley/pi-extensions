@@ -82,6 +82,7 @@ import {
   resolveKey,
 } from "./route-turn.mjs";
 import { createShadowLogger } from "./shadow-hook.mjs";
+import { parseTierOverridePrefix } from "./tier-override.mjs";
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
@@ -112,6 +113,8 @@ interface RouterState {
   thinking: string | null;
   /** The base the last decision held at; router.json re-resolves it. */
   base: string | null;
+  /** Manual !tier override for this task, cleared at the next task boundary. */
+  forcedTier?: RouteTier | null;
 }
 
 function envNumber(name, fallback, env = process.env) {
@@ -205,6 +208,8 @@ export default function piRouterExtension(
   // Difficulty answers fetched in before_agent_start for this prompt, so
   // route() can use them instead of asking again for the same task.
   let pending: { prompt: string; answers: unknown } | null = null;
+  let pendingForcedTier: RouteTier | null = null;
+  let pendingForcedPrompt: string | null = null;
 
   const notify = (ctx: ExtensionContext, text: string, level = "info") => {
     try {
@@ -403,6 +408,12 @@ export default function piRouterExtension(
     const startedAt = Date.now();
     const prefetchedAnswers = pending && pending.prompt === prompt ? pending.answers : null;
     pending = null;
+    const forcedTierOverride =
+      pendingForcedTier && pendingForcedPrompt === prompt ? pendingForcedTier : null;
+    if (pendingForcedPrompt === prompt) {
+      pendingForcedTier = null;
+      pendingForcedPrompt = null;
+    }
 
     const planned = await planUserRouteTurn({
       messages,
@@ -421,6 +432,7 @@ export default function piRouterExtension(
       judge,
       prefetchedAnswers,
       shouldAbortAfterJudge: () => !config.enabled || epoch !== generation,
+      forcedTier: forcedTierOverride,
     });
 
     if (planned.aborted) {
@@ -453,7 +465,7 @@ export default function piRouterExtension(
       };
     }
 
-    if (planned.decided) counters.judged++;
+    if (planned.decided && !planned.decided.forced) counters.judged++;
 
     const nextModel = planned.model;
     const nextKey = planned.key;
@@ -502,7 +514,14 @@ export default function piRouterExtension(
     };
     if (decided) {
       const short = (key: string | null) => key?.split("/").pop() ?? "?";
-      if (outcome === "escalated") {
+      if (outcome === "forced") {
+        record({ ...shared, outcome, tier: nextTier, to: nextKey, toThinking: nextThinking });
+        setStatus(
+          ctx,
+          `router: ${short(nextKey)}@${nextThinking ?? selected} · forced ${nextTier}`,
+        );
+        notify(ctx, `Router: ${nextKey} — forced ${nextTier} tier for this task`);
+      } else if (outcome === "escalated") {
         counters.escalated++;
         record({ ...shared, outcome, to: nextKey, toThinking: nextThinking });
         setStatus(
@@ -535,7 +554,10 @@ export default function piRouterExtension(
           : outcome.replace(/-/g, " ");
         setStatus(ctx, `router: ${label}`);
       }
-      last = { difficulty: decided.difficulty ?? 0, reason: decided.reason };
+      last = {
+        difficulty: decided.difficulty ?? 0,
+        reason: decided.forced ? "forced" : decided.reason,
+      };
     } else {
       counters.held++;
     }
@@ -564,6 +586,23 @@ export default function piRouterExtension(
     }
   };
 
+  pi.on("input", (event, ctx) => {
+    if (modelKey(ctx?.model ?? null) !== `${PROVIDER}/${MODEL_ID}`) return;
+    const parsed = parseTierOverridePrefix(event?.text ?? "");
+    if (!parsed) return;
+    if (!parsed.rest) {
+      notify(
+        ctx,
+        "Router: add a prompt after !base, !mid, or !frontier — the tier prefix alone is not sent.",
+        "warning",
+      );
+      return { action: "handled" };
+    }
+    pendingForcedTier = parsed.tier;
+    pendingForcedPrompt = parsed.rest.slice(0, 2000);
+    return { action: "transform", text: parsed.rest };
+  });
+
   // A new task gets one judgement: what kind of work it is (and, when the
   // router is the selected model, how hard — the same batched call route()
   // would otherwise make). The playbook rides in the system prompt for every
@@ -577,6 +616,9 @@ export default function piRouterExtension(
         .trim()
         .slice(0, 2000);
       if (!prompt) return;
+
+      const forcedPending =
+        pendingForcedTier !== null && pendingForcedPrompt === prompt ? pendingForcedTier : null;
 
       const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
       const turns = turnsFromMessages(branch, WINDOW + 1);
@@ -602,13 +644,14 @@ export default function piRouterExtension(
             }),
             questions: {
               task_type: buildTaskTypeQuestion(),
-              ...(routing ? buildDifficultyQuestions() : {}),
+              ...(routing && !forcedPending ? buildDifficultyQuestions() : {}),
             },
             signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
           });
           if (!config.enabled || epoch !== generation) return;
           type = taskTypeFromAnswer(result?.answers?.task_type);
-          if (routing && result?.answers) pending = { prompt, answers: result.answers };
+          if (routing && result?.answers && !forcedPending)
+            pending = { prompt, answers: result.answers };
         } catch {
           // Judge unavailable: no playbook for this task, and no retry until the next one.
         }
@@ -650,6 +693,8 @@ export default function piRouterExtension(
     lastState = null;
     playbook = undefined;
     pending = null;
+    pendingForcedTier = null;
+    pendingForcedPrompt = null;
     resetShadowSession();
     setPlaybookStatus(ctx, null);
     const selected = modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
@@ -681,11 +726,21 @@ export default function piRouterExtension(
     const fittingOffers = fitting(liveOffers, contextTokens);
 
     let decided: ReturnType<typeof routeFromDifficulty> | null = null;
-    if (prompt) {
+    const override = parseTierOverridePrefix(prompt);
+    const judgePrompt = override ? override.rest : prompt;
+    if (override?.tier) {
+      decided = {
+        forced: true,
+        escalate: true,
+        tier: override.tier,
+        difficulty: null,
+        reason: "forced",
+      };
+    } else if (judgePrompt) {
       try {
         const result = await judge({
           state: buildDifficultyState({
-            prompt,
+            prompt: judgePrompt,
             window: shareWindow ? history : [],
             cwd: ctx?.cwd,
           }),
@@ -701,8 +756,14 @@ export default function piRouterExtension(
       }
     }
 
-    const unknown = !decided || decided.escalate === null;
-    const tier = unknown ? null : decided.escalate ? decided.tier : BASE_TIER;
+    const unknown = !decided || (decided.escalate === null && !decided.forced);
+    const tier = decided?.forced
+      ? decided.tier
+      : unknown
+        ? null
+        : decided.escalate
+          ? decided.tier
+          : BASE_TIER;
     const pick = tier ? chooseModelForTier(liveOffers, tier, tiers, undefined, selected) : null;
     const fits = pick ? fittingOffers.some((entry) => modelKey(entry) === pick.key) : null;
     const report = {
@@ -721,9 +782,11 @@ export default function piRouterExtension(
       return;
     }
     const pairLine = report.pair ? `${report.pair.key} @ ${report.pair.thinking}` : "(not chosen)";
-    const difficulty = unknown
-      ? "difficulty unknown"
-      : `difficulty ${decided.difficulty.toFixed(2)} — ${tier}`;
+    const difficulty = decided?.forced
+      ? `forced ${tier}`
+      : unknown
+        ? "difficulty unknown"
+        : `difficulty ${decided.difficulty.toFixed(2)} — ${tier}`;
     const fitLine =
       fits === null
         ? `context ${contextTokens} tokens`
@@ -756,6 +819,8 @@ export default function piRouterExtension(
         for (const controller of judgments) controller.abort();
         playbook = undefined;
         pending = null;
+        pendingForcedTier = null;
+        pendingForcedPrompt = null;
         setPlaybookStatus(ctx, null);
         setStatus(ctx, "router: off");
         notify(
@@ -770,6 +835,8 @@ export default function piRouterExtension(
         generation++;
         playbook = undefined;
         pending = null;
+        pendingForcedTier = null;
+        pendingForcedPrompt = null;
         setStatus(ctx, "router: armed");
         notify(ctx, "Router on.", "info");
         return;

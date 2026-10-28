@@ -77,6 +77,7 @@ function harness({
   config,
   now,
   branch = [],
+  routerSelected = false,
 } = {}) {
   const commands = {};
   const handlers = {};
@@ -104,7 +105,7 @@ function harness({
     cwd: "/Users/mattriley/repo",
     hasUI: true,
     get model() {
-      return null;
+      return routerSelected ? { provider: "router", id: "auto" } : null;
     },
     thinkingLevel,
     scopedModels,
@@ -157,6 +158,7 @@ function harness({
       ),
     command: (args) => commands.route.handler(args, ctx),
     emit: (event, payload) => handlers[event]?.(payload, ctx),
+    input: async (text, source = "interactive") => handlers.input?.({ text, source }, ctx),
   };
 }
 
@@ -1160,6 +1162,15 @@ test("/route preview reports a dry run and does not count as a turn", async () =
   assert.match(status, /no routing decision yet/);
 });
 
+test("/route preview accepts a tier prefix and skips the judge", async () => {
+  const h = harness({ difficulty: 0.6 });
+  await h.command("preview !frontier audit the routing design and tell me what is wrong with it");
+  assert.equal(h.askCount(), 0);
+  const text = h.notifications.at(-1).title;
+  assert.match(text, /forced frontier/);
+  assert.match(text, /openai-codex\/gpt-6-astra/);
+});
+
 test("/route status shows the effective ladder at the current cap", async () => {
   const h = harness({ difficulty: 0.6 });
   await h.command("status");
@@ -1195,4 +1206,76 @@ test("a non-matching error retry stays on the model that failed", async () => {
     h.entries.some((entry) => entry.data?.outcome === "failover"),
     false,
   );
+});
+
+test("!frontier forces the frontier tier without a difficulty judgement", async () => {
+  const h = harness({ difficulty: 0.6, routerSelected: true });
+  const transformed = await h.input(
+    "!frontier audit the routing design and tell me what is wrong with it",
+  );
+  assert.deepEqual(transformed, {
+    action: "transform",
+    text: "audit the routing design and tell me what is wrong with it",
+  });
+  const routed = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(routed.model, ASTRA);
+  assert.equal(routed.state.tier, "frontier");
+  assert.equal(h.askCount(), 0);
+  const entry = h.entries.find((e) => e.customType === "router-decision");
+  assert.equal(entry.data.outcome, "forced");
+  assert.equal(entry.data.tier, "frontier");
+});
+
+test("a forced tier holds on continuations until the next task boundary", async () => {
+  const h = harness({ difficulty: 0.6, routerSelected: true });
+  await h.input("!frontier audit the routing design and tell me what is wrong with it");
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  assert.equal(first.state.forcedTier, "frontier");
+  const held = await h.run("keep going", {
+    reason: "continuation",
+    state: first.state,
+    previous: { provider: ASTRA.provider, id: ASTRA.id, thinkingLevel: "medium" },
+    messages: [
+      user("audit the routing design and tell me what is wrong with it"),
+      assistant("ok"),
+      user("keep going"),
+    ],
+  });
+  assert.equal(held.state.forcedTier, "frontier");
+  assert.equal(h.askCount(), 0);
+});
+
+test("a forced tier clears at the next task boundary without a prefix", async () => {
+  const h = harness({ difficulty: 0.6, routerSelected: true });
+  await h.input("!frontier audit the routing design and tell me what is wrong with it");
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  const next = await h.run(
+    "start a completely new task rewriting the deploy pipeline notes for a brand new reader",
+    {
+      state: first.state,
+      messages: [
+        ...turn("audit the routing design and tell me what is wrong with it"),
+        user(
+          "start a completely new task rewriting the deploy pipeline notes for a brand new reader",
+        ),
+      ],
+    },
+  );
+  assert.equal(next.model, LUNA);
+  assert.equal(next.state.forcedTier, null);
+  assert.equal(h.askCount(), 1);
+});
+
+test("bare !frontier is handled and does not send an empty prompt", async () => {
+  const h = harness({ routerSelected: true });
+  const result = await h.input("!frontier");
+  assert.deepEqual(result, { action: "handled" });
+  assert.match(h.notifications.at(-1).title, /not sent|after !base/i);
+  assert.equal(h.askCount(), 0);
+});
+
+test("tier prefixes are ignored when a physical model is selected", async () => {
+  const h = harness({ difficulty: 0.6, routerSelected: false });
+  const result = await h.input("!frontier audit the routing design");
+  assert.equal(result, undefined);
 });

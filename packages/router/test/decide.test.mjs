@@ -123,6 +123,16 @@ test("never escalates sideways or down a tier", () => {
   assert.equal(out.key, "openai-codex/gpt-6-astra");
 });
 
+test("a forced tier picks that tier even from a higher held tier", () => {
+  const running = held({ key: "openai-codex/gpt-6-astra", tier: "frontier", model: astra });
+  const out = decide(
+    { forced: true, escalate: true, tier: "base", difficulty: null, reason: "forced" },
+    { held: running, boundary: false },
+  );
+  assert.equal(out.outcome, "forced");
+  assert.equal(out.key, "openai-codex/gpt-5.5");
+});
+
 test("fitting drops models whose window cannot hold the next request", () => {
   assert.deepEqual(fitting(offers, 400_000), [base]);
   assert.deepEqual(fitting(offers, 10_000), offers);
