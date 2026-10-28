@@ -179,6 +179,10 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--corrections") flags.corrections = argv[++index];
     else if (argv[index] === "--guidance") flags.guidance = argv[++index];
+    else if (argv[index].startsWith("--")) {
+      console.error("promote-corrections: unknown flag " + argv[index]);
+      process.exit(2);
+    }
   }
   return flags;
 }

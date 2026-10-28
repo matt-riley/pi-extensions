@@ -145,6 +145,10 @@ function parseArgs(argv) {
     if (arg === "--log") flags.log = argv[++index];
     else if (arg === "--step") flags.step = argv[++index];
     else if (arg === "--reruns") flags.reruns = Number(argv[++index]) || 0;
+    else if (arg.startsWith("--")) {
+      console.error("ci-triage: unknown flag " + arg);
+      process.exit(2);
+    }
   }
   return flags;
 }

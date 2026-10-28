@@ -324,6 +324,10 @@ function parseArgs(argv) {
     else if (arg === "--candidates") flags.candidates = argv[++index];
     else if (arg === "--repository") flags.repository = argv[++index];
     else if (arg === "--file") flags.memory = "@" + argv[++index];
+    else if (arg.startsWith("--")) {
+      console.error("memory-check: unknown flag " + arg);
+      process.exit(2);
+    }
   }
   return flags;
 }
