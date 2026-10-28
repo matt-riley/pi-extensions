@@ -300,11 +300,11 @@ extensions and the selected physical provider retain their own data flows.
 
 ## Tests
 
-`node --test packages/router/test/*.test.mjs` — 163 cases across the package:
+`node --test packages/router/test/*.test.mjs` — cases across the package cover
 the decision helpers and what was measured, pair-cap selection, the config
 file's merge semantics, threshold routing, model resolution and scoping, the
 session and metrics arithmetic, usage-cap recognition and the effective ladder,
-and 61 end-to-end cases against a fake pi that drive the real `route()` over
+and end-to-end cases against a fake pi that drive the real `route()` over
 escalation, holding, step-down, retries, usage-limit failover, preview, children,
 capacity, live reload, and the kill switch.
 
@@ -318,6 +318,12 @@ found real defects. Fixed, each with a test:
 | The judgement budget never reset | Three judgements early in a session made every later task unroutable | A task boundary resets it |
 | Step-down ignored the task boundary | A stuck, failing task could be downgraded mid-failure | Stepping down requires a new task |
 | The router assumed ownership of any model | Start A → user picks B → router escalates → easy task restored **A** | `model_select` ends ownership; the baseline is captured immediately before switching |
+| `PI_SUBAGENT_CHILD` was read per prompt | pi-subagents clears it before the child's first prompt, so children *were* routed | Captured at factory time |
+| A decision could land after `/route off` | A stale judgement still switched models | Re-checked after the await |
+| Failed judgements were free and unlimited | A dead judge was retried every turn | Counted as attempts, with a cooldown |
+| The score was coerced, not validated | `true` → 1, `[2]` → 2, `5` → 5 | A finite number inside the scale, or no decision |
+| Capacity was checked after selection | The best model was picked, then refused, while a fitting one existed | Candidates are filtered by capacity first, with headroom and output reserve |
+| `difficulty-report.mjs` judged empty state | An extraction refactor left a positional call where an object was expected | Object call, and the builder now throws on the wrong shape |
 
 Most of that ownership machinery no longer exists. The virtual-model port
 replaced it with pi's own selection/dispatch split: a manually picked model is a
@@ -325,12 +331,6 @@ deselection, the baseline is configuration, and a decision that changes nothing
 mid-flight is just a held continuation. What replaced the state machine is
 router state on the session branch, which also follows forks and survives
 compaction — things the module-level version could not do.
-| `PI_SUBAGENT_CHILD` was read per prompt | pi-subagents clears it before the child's first prompt, so children *were* routed | Captured at factory time |
-| A decision could land after `/route off` | A stale judgement still switched models | Re-checked after the await |
-| Failed judgements were free and unlimited | A dead judge was retried every turn | Counted as attempts, with a cooldown |
-| The score was coerced, not validated | `true` → 1, `[2]` → 2, `5` → 5 | A finite number inside the scale, or no decision |
-| Capacity was checked after selection | The best model was picked, then refused, while a fitting one existed | Candidates are filtered by capacity first, with headroom and output reserve |
-| `difficulty-report.mjs` judged empty state | An extraction refactor left a positional call where an object was expected | Object call, and the builder now throws on the wrong shape |
 
 Still open, and written down rather than fixed: `difficulty` is a
 probability-weighted mean, so two very different distributions can share a 1.5;

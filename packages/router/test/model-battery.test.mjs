@@ -220,12 +220,11 @@ test("an absent rating is not a decision to downgrade", () => {
   }
 });
 
-test("the question set keeps both instruments, the router using the score", () => {
+test("the question set is the difficulty score the router uses", () => {
   const questions = buildDifficultyQuestions();
-  assert.deepEqual(Object.keys(questions).sort(), ["difficulty", "needs_frontier"]);
+  assert.deepEqual(Object.keys(questions), ["difficulty"]);
   assert.equal(questions.difficulty.type, "score");
   assert.equal(questions.difficulty.criteria.length, 4);
-  assert.equal(questions.needs_frontier.type, "noul");
 });
 
 // ---------------------------------------------------------------------------
