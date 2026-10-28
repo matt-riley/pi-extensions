@@ -43,7 +43,7 @@ import {
   routerConfigPath,
   unmatchedPatterns,
 } from "./config.mjs";
-import { decideRoute, fitting, unwrap } from "./decide.mjs";
+import { fitting } from "./decide.mjs";
 import { routingLadder } from "./ladder.mjs";
 import { gateTurn } from "./lib.mjs";
 import {
@@ -74,22 +74,21 @@ import {
   WINDOW,
 } from "./model-battery.mjs";
 import { pinnedPhysicalModelKey } from "./parent-physical.mjs";
+import {
+  BASE_TIER,
+  pickBase,
+  planUserRouteTurn,
+  readBranchState,
+  resolveKey,
+} from "./route-turn.mjs";
 import { createShadowLogger } from "./shadow-hook.mjs";
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
 const COMMAND = "route";
-/** The tier the router holds when a task is not rated above the base. */
-const BASE_TIER = "base";
 /** Default thinking for the virtual selection when pi does not supply one. */
 const DEFAULT_THINKING = "medium";
 const DEFAULT_TIMEOUT_MS = 4000;
-/** Judgements per task, so a long task cannot spend a call on every turn. */
-const MAX_JUDGEMENTS_PER_TASK = 3;
-/** A task is "stuck" when the previous turn ended with this many failures. */
-const STUCK_FAILURES = 2;
-/** Turns to wait after a failed judgement, so a dead judge is not retried per turn. */
-const FAILURE_COOLDOWN_TURNS = 3;
 /** The playbook judgment blocks the first request of a task; it gets less time than routing does. */
 const PLAYBOOK_TIMEOUT_MS = 1500;
 
@@ -134,31 +133,8 @@ function failedErrorText(request: ModelRouteRequest<RouterState> | undefined): s
   return typeof text === "string" ? text : "";
 }
 
-function isRouteTier(value: unknown): value is RouteTier {
-  return value === "base" || value === "mid" || value === "frontier";
-}
-
-/** Router state is JSON from a session branch: validate it, or start fresh. */
 function readState(value: unknown): RouterState | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Record<string, unknown>;
-  if (
-    typeof raw.task !== "number" ||
-    typeof raw.attempts !== "number" ||
-    typeof raw.cooldown !== "number" ||
-    !isRouteTier(raw.tier)
-  ) {
-    return null;
-  }
-  return {
-    task: raw.task,
-    attempts: raw.attempts,
-    cooldown: raw.cooldown,
-    tier: raw.tier,
-    model: typeof raw.model === "string" ? raw.model : null,
-    thinking: typeof raw.thinking === "string" ? raw.thinking : null,
-    base: typeof raw.base === "string" ? raw.base : null,
-  };
+  return readBranchState(value) as RouterState | null;
 }
 
 export default function piRouterExtension(
@@ -186,6 +162,7 @@ export default function piRouterExtension(
   const configPath = deps.configPath ?? routerConfigPath();
   // First run: leave a file with the built-in lists to open and edit.
   ensureRouterConfig(configPath);
+  let cachedShadowLog = readRouterConfig(configPath).shadowLog ?? false;
   // Captured at factory time, not per request: pi-subagents sets
   // PI_SUBAGENT_CHILD only while a child's extensions load. Children must still
   // register the virtual model they inherit, but they get the base model
@@ -266,6 +243,7 @@ export default function piRouterExtension(
   let staleNotified = false;
   function modelTiers(ctx: ExtensionContext) {
     const loaded = readRouterConfig(configPath);
+    cachedShadowLog = loaded.shadowLog ?? false;
     if (loaded.error && !configErrorNotified) {
       configErrorNotified = true;
       notify(ctx, `Router: ${loaded.error} — using the built-in model lists.`, "warning");
@@ -305,55 +283,8 @@ export default function piRouterExtension(
     clock,
     judge,
     notify,
+    getShadowLogEnabled: () => cachedShadowLog,
   });
-
-  /** Resolve a "provider/id" against the candidate list, then the registry. */
-  function resolveKey(offers: unknown[], ctx: ExtensionContext, key: string | null) {
-    if (!key) return null;
-    const match = offers.find((entry) => modelKey(entry) === key);
-    if (match) return unwrap(match);
-    const slash = key.indexOf("/");
-    if (slash <= 0) return null;
-    try {
-      return (
-        ctx?.modelRegistry?.find?.(key.slice(0, slash), key.slice(slash + 1)) ??
-        ctx?.modelRegistry?.getModel?.(key.slice(0, slash), key.slice(slash + 1)) ??
-        null
-      );
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * The session's baseline: the first configured base in scope, then the last
-   * physical model the session used, then whatever the catalogue lists first.
-   * Degrading beats erroring — a missing subscription should narrow routing,
-   * not break the session.
-   */
-  function pickBase(
-    offers: unknown[],
-    ctx: ExtensionContext,
-    previousKey: string | null,
-    tiers: Record<string, unknown[]>,
-    thinkingCap: string,
-  ) {
-    const configured = chooseModelForTier(offers, BASE_TIER, tiers, undefined, thinkingCap);
-    if (configured) {
-      return {
-        model: configured.model as unknown,
-        key: String(configured.key),
-        thinking: configured.thinking,
-      };
-    }
-    if (previousKey) {
-      const model = resolveKey(offers, ctx, previousKey);
-      if (model) return { model, key: previousKey, thinking: null };
-    }
-    const first = offers[0];
-    if (!first) return null;
-    return { model: unwrap(first), key: modelKey(first), thinking: null };
-  }
 
   async function route(
     request: ModelRouteRequest<RouterState>,
@@ -467,147 +398,75 @@ export default function piRouterExtension(
 
     const messages = Array.isArray(request?.messages) ? request.messages : [];
     const turns = turnsFromMessages(messages, WINDOW + 1);
-    // A turn with no reply yet is the one in flight, so the previous completed
-    // turn is what the gate and the failure count need.
-    const tail = turns[turns.length - 1];
-    const includesCurrent = Boolean(tail && !tail.lastResponse && !tail.toolCalls.length);
-    const history = (includesCurrent ? turns.slice(0, -1) : turns).slice(-WINDOW);
-    const previousTurn = history[history.length - 1] ?? null;
-    const prompt = String(tail?.prompt ?? "").slice(0, 2000);
-    const boundary = gateTurn({ prompt, previousTurn });
-    const failuresLastTurn = (previousTurn?.toolCalls ?? []).filter((call) => call.isError).length;
-
+    const prompt = String(turns.at(-1)?.prompt ?? "").slice(0, 2000);
     counters.turns++;
-    const cooldown = Math.max(0, (branchState?.cooldown ?? 0) - 1);
-    // A new task starts a new budget. Resetting only per session meant three
-    // judgements spent early made every later task unroutable.
-    const task = boundary.route ? (branchState?.task ?? 0) + 1 : (branchState?.task ?? 1);
-    const attempts = boundary.route ? 0 : (branchState?.attempts ?? 0);
     const startedAt = Date.now();
-    const contextTokens = latestContextTokens(history);
-
-    const currentKey = heldKey ?? base?.key ?? null;
-    const currentModel = resolveKey(offers, ctx, currentKey) ?? heldModel;
-
-    // Task boundaries and stuck turns are worth a judgement; anything else
-    // holds the decision already made. The cap counts attempts, not just
-    // successes, so an unavailable judge cannot be retried forever, and a
-    // failure earns a short cooldown before the next try.
-    const worthJudging = boundary.route || failuresLastTurn >= STUCK_FAILURES || attempts === 0;
-    const judgeable =
-      Boolean(prompt) && worthJudging && attempts < MAX_JUDGEMENTS_PER_TASK && cooldown === 0;
-
-    const held = {
-      key: currentKey,
-      thinking: heldThinking,
-      tier: branchState?.tier ?? BASE_TIER,
-      model: currentModel,
-    };
-    let nextAttempts = attempts + (judgeable ? 1 : 0);
-    let decided: ReturnType<typeof routeFromDifficulty> | null = null;
-
-    // The playbook judgement for this prompt already rated difficulty: spend
-    // that answer instead of a second call. Consumed once, whatever happens.
-    const prefetched = pending && pending.prompt === prompt ? pending.answers : null;
+    const prefetchedAnswers = pending && pending.prompt === prompt ? pending.answers : null;
     pending = null;
 
-    if (judgeable) {
-      try {
-        const result = prefetched
-          ? { answers: prefetched }
-          : await judge({
-              state: buildDifficultyState({
-                prompt,
-                window: shareWindow ? history : [],
-                cwd: ctx?.cwd,
-              }),
-              questions: buildDifficultyQuestions(),
-              signal: AbortSignal.timeout(config.timeoutMs),
-            });
-        decided = routeFromDifficulty(result?.answers, {
-          threshold: config.threshold,
-          frontierThreshold: config.frontierThreshold,
-        });
-        counters.judged++;
-        // Anything that happened while the judgement was in flight invalidates
-        // it — most importantly /route off.
-        if (!config.enabled || epoch !== generation) {
-          return { model: base?.model ?? currentModel, thinkingLevel: selected };
-        }
-      } catch (error) {
-        if (!config.enabled || epoch !== generation) {
-          return { model: base?.model ?? currentModel, thinkingLevel: selected };
-        }
-        // A judgement that fails keeps the model that was working.
-        nextAttempts = attempts + 1;
-        const failed: RouterState = {
-          task,
-          attempts: nextAttempts,
-          cooldown: FAILURE_COOLDOWN_TURNS,
-          tier: held.tier,
-          model: held.key,
-          thinking: held.thinking,
-          base: base?.key ?? branchState?.base ?? null,
-        };
-        record({
-          at: Date.now(),
-          latencyMs: Date.now() - startedAt,
-          boundary: boundary.route,
-          contextTokens,
-          from: currentKey,
-          tier: null,
-          outcome: "judge-failed",
-          error: error instanceof Error ? error.message : String(error),
-        });
-        last = {
-          difficulty: 0,
-          reason: `judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        };
-        lastState = failed;
-        return { model: currentModel, thinkingLevel: held.thinking ?? selected, state: failed };
-      }
+    const planned = await planUserRouteTurn({
+      messages,
+      branchState,
+      previousKey,
+      offers,
+      liveOffers,
+      tiers,
+      ctx,
+      selected,
+      cooling,
+      threshold: config.threshold,
+      frontierThreshold: config.frontierThreshold,
+      timeoutMs: config.timeoutMs,
+      shareWindow,
+      judge,
+      prefetchedAnswers,
+      shouldAbortAfterJudge: () => !config.enabled || epoch !== generation,
+    });
+
+    if (planned.aborted) {
+      return {
+        model: (base?.model ?? planned.model) as unknown,
+        thinkingLevel: planned.thinking ?? selected,
+      };
     }
 
-    let next = decideRoute({
-      decided,
-      offers: liveOffers,
-      tiers,
-      contextTokens,
-      held,
-      base,
-      selected,
-      boundary: boundary.route,
-    });
-    // decideRoute will not step to a later pair in the same tier. A model that
-    // is cooling down has to, or the next user turn retries the cap.
-    if (next.key && cooling.includes(next.key)) {
-      const tier = decided?.tier ?? next.tier ?? BASE_TIER;
-      const pick = chooseModelForTier(
-        fitting(liveOffers, contextTokens),
-        tier,
-        tiers,
-        undefined,
-        selected,
-      );
-      if (pick && pick.key !== next.key) {
-        next = {
-          outcome: "failover",
-          model: pick.model,
-          key: pick.key,
-          thinking: pick.thinking ?? next.thinking ?? selected,
-          tier,
-          warning: null,
-        };
-      } else {
-        next = { ...next, warning: next.warning === "too-big" ? "too-big" : "cooling" };
-      }
+    if (planned.outcome === "judge-failed") {
+      record({
+        at: Date.now(),
+        latencyMs: Date.now() - startedAt,
+        boundary: planned.boundary.route,
+        contextTokens: planned.contextTokens,
+        from: modelKey(planned.model),
+        tier: null,
+        outcome: "judge-failed",
+        error: planned.error ?? "judge unavailable",
+      });
+      last = {
+        difficulty: 0,
+        reason: `judge unavailable: ${planned.error ?? "unknown"}`,
+      };
+      lastState = planned.state as RouterState;
+      return {
+        model: planned.model as unknown,
+        thinkingLevel: planned.thinking ?? selected,
+        state: planned.state as RouterState,
+      };
     }
-    const outcome = next.outcome;
-    const nextModel = next.model;
-    const nextKey = next.key;
-    const nextThinking = next.thinking;
-    const nextTier = next.tier as RouteTier;
-    if (decided && next.warning === "too-big") {
+
+    if (planned.decided) counters.judged++;
+
+    const nextModel = planned.model;
+    const nextKey = planned.key;
+    const nextThinking = planned.thinking;
+    const nextTier = planned.tier as RouteTier;
+    const nextState = planned.state as RouterState;
+    const decided = planned.decided;
+    const boundary = planned.boundary;
+    const outcome = planned.outcome;
+    const contextTokens = planned.contextTokens;
+    const currentKey = modelKey(heldModel) ?? heldKey;
+
+    if (decided && planned.warning === "too-big") {
       counters.tooBig++;
       setStatus(ctx, `router: ${Math.round(contextTokens / 1000)}k, no ${decided.tier} fits`);
       notify(
@@ -615,13 +474,13 @@ export default function piRouterExtension(
         `Router: staying on ${currentKey ?? "the current model"} — this session reads ${Math.round(contextTokens / 1000)}k tokens and no available ${decided.tier} model fits it`,
         "warning",
       );
-    } else if (next.warning === "cooling") {
+    } else if (planned.warning === "cooling") {
       notify(
         ctx,
-        `Router: staying on ${currentKey ?? "the current model"} — every ${decided?.tier ?? next.tier} model is cooling down after a usage limit`,
+        `Router: staying on ${currentKey ?? "the current model"} — every ${decided?.tier ?? nextTier} model is cooling down after a usage limit`,
         "warning",
       );
-    } else if (decided && next.warning === "unavailable") {
+    } else if (decided && planned.warning === "unavailable") {
       notify(
         ctx,
         `Router: this task rates ${decided.difficulty.toFixed(2)} but no ${decided.tier} model is available`,
@@ -629,15 +488,6 @@ export default function piRouterExtension(
       );
     }
 
-    const nextState: RouterState = {
-      task,
-      attempts: nextAttempts,
-      cooldown,
-      tier: nextTier,
-      model: nextKey,
-      thinking: nextThinking,
-      base: base?.key ?? branchState?.base ?? null,
-    };
     lastState = nextState;
 
     const shared = {
@@ -776,7 +626,7 @@ export default function piRouterExtension(
       if (playbook?.text) event.systemPromptOptions.sections.router_playbook = playbook.text;
     }
 
-    await runShadowLog(event, ctx);
+    runShadowLog(event, ctx);
   });
 
   const noteUsageCap = (event, ctx: ExtensionContext) => {

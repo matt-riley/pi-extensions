@@ -2,7 +2,7 @@
 
 import path from "node:path";
 
-import { readRouterConfig, writeShadowLogFlag } from "./config.mjs";
+import { writeShadowLogFlag } from "./config.mjs";
 import { modelKey } from "./model-battery.mjs";
 import { evaluateShadowTurn } from "./shadow-eval.mjs";
 import {
@@ -26,14 +26,16 @@ export function createShadowLogger({
   clock,
   judge,
   notify,
+  getShadowLogEnabled,
 }) {
   let shadowOverride = null;
   const shadowStates = new Map();
+  /** Per-session chains so shadow turns stay ordered without blocking the agent. */
+  const sessionChains = new Map();
   const shadowLogFile = () => path.join(path.dirname(configPath), "router-shadow.jsonl");
 
   function shadowEnabled() {
-    const loaded = readRouterConfig(configPath);
-    return shadowOverride ?? loaded.shadowLog ?? false;
+    return shadowOverride ?? getShadowLogEnabled?.() ?? false;
   }
 
   function sessionKey(ctx) {
@@ -41,7 +43,7 @@ export function createShadowLogger({
     return typeof id === "string" && id.trim() ? id.trim() : "local";
   }
 
-  async function runShadowLog(event, ctx) {
+  async function runShadowLogWork(event, ctx) {
     if (!shadowEnabled() || isSubagentChild) return;
     if (event?.messageType !== "user") return;
     if (modelKey(ctx?.model ?? null) === virtualModelKey) return;
@@ -85,6 +87,22 @@ export function createShadowLogger({
     appendShadowLine(shadowLogFile(), entry);
   }
 
+  function runShadowLog(event, ctx) {
+    if (!shadowEnabled() || isSubagentChild) return;
+    if (event?.messageType !== "user") return;
+    if (modelKey(ctx?.model ?? null) === virtualModelKey) return;
+    const sid = sessionKey(ctx);
+    const previous = sessionChains.get(sid) ?? Promise.resolve();
+    const work = previous
+      .catch(() => {})
+      .then(() => runShadowLogWork(event, ctx))
+      .catch(() => {});
+    sessionChains.set(sid, work);
+    work.finally(() => {
+      if (sessionChains.get(sid) === work) sessionChains.delete(sid);
+    });
+  }
+
   function handleShadowCommand(action, ctx) {
     if (action === "shadow on" || action === "shadow enable") {
       shadowOverride = true;
@@ -116,6 +134,7 @@ export function createShadowLogger({
 
   function resetShadowSession() {
     shadowStates.clear();
+    sessionChains.clear();
   }
 
   return { runShadowLog, handleShadowCommand, resetShadowSession };

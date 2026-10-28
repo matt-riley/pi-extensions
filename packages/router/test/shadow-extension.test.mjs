@@ -103,6 +103,7 @@ function harness({
     askCount: () => askArgs.length,
     command: (args) => commands.route.handler(args, ctx),
     shadowTurn: (prompt) => handlers.before_agent_start?.({ messageType: "user", prompt }, ctx),
+    flushShadow: () => new Promise((resolve) => setTimeout(resolve, 60)),
   };
 }
 
@@ -117,6 +118,8 @@ test("with shadow off nothing is written", async () => {
 test("shadow on logs would-be tier without changing the selected model", async () => {
   const h = harness({ difficulty: 2.6 });
   await h.shadowTurn("audit the routing design and tell me what is wrong with it");
+  assert.equal(h.askCount(), 0, "the judgement runs in the background");
+  await h.flushShadow();
   assert.equal(h.askCount(), 1);
   const lines = readShadowLines(h.logPath);
   assert.equal(lines.length, 1);
@@ -168,6 +171,8 @@ test("/route shadow on and off toggles logging", async () => {
   assert.equal(fs.existsSync(h.logPath), false);
   await h.command("shadow on");
   await h.shadowTurn("audit the routing design and tell me what is wrong with it");
+  await h.flushShadow();
+  await h.flushShadow();
   assert.equal(readShadowLines(h.logPath).length, 1);
   await h.command("shadow off");
   await h.shadowTurn("another prompt entirely unrelated");
@@ -177,8 +182,27 @@ test("/route shadow on and off toggles logging", async () => {
 test("/route shadow report prints tier shares from the log file", async () => {
   const h = harness({ difficulty: 0.6 });
   await h.shadowTurn("what does this function do");
+  await h.flushShadow();
   await h.command("shadow report");
   const text = h.notifications.at(-1);
   assert.match(text, /1 turn/);
   assert.match(text, /base .*100%/);
+});
+
+test("before_agent_start returns before a slow shadow judge finishes", async () => {
+  let release;
+  const h = harness({
+    askImpl: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  });
+  const started = Date.now();
+  await h.shadowTurn("audit the routing design and tell me what is wrong with it");
+  assert.ok(Date.now() - started < 500, "shadow must not block the agent start hook");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(typeof release, "function");
+  release({ answers: { difficulty: { type: "score", score: 2.6 } } });
+  await h.flushShadow();
+  assert.equal(readShadowLines(h.logPath).length, 1);
 });
