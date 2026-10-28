@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { revisionSnapshot } from "../../packages/subagents/evidence.mjs";
+import { revisionSnapshot } from "../../shared/revision.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const fixture = await mkdtemp(path.join(tmpdir(), "pi-jobs-ui-"));
