@@ -344,14 +344,42 @@ test("a stuck turn cannot step the model down mid-task", async () => {
   });
   assert.equal(stuck.model, ASTRA, "still escalated: this is the same failing task");
 
-  const next = await h.run("now explain the deploy pipeline end to end for a new reader", {
+  const newTask =
+    "now explain how the deploy pipeline works end to end for a new reader, including every stage from merge to production, who owns each step, what can fail silently, what we should monitor, and how rollbacks work";
+  const next = await h.run(newTask, {
     state: stuck.state,
-    messages: [
-      ...turn("keep going", { failures: 2 }),
-      user("now explain the deploy pipeline end to end for a new reader"),
-    ],
+    messages: [...turn("keep going", { failures: 2 }), user(newTask)],
   });
   assert.equal(next.model, LUNA, "a real new task steps back down");
+});
+
+test("a frustrated low-overlap follow-up after two failures does not step down or reset the budget", async () => {
+  const mutable = { difficulty: 2.6 };
+  const h = harness({
+    askImpl: async () => ({
+      answers: { difficulty: { type: "score", score: mutable.difficulty } },
+    }),
+  });
+
+  const taskPrompt = "fix the flaky CI on subagent spawn test, investigate the race";
+  const first = await h.run(taskPrompt);
+  assert.equal(first.model, ASTRA, "escalated");
+
+  mutable.difficulty = 0.2;
+  const frustrated = "still failing. third time. find the actual race";
+  const stuck = await h.run(frustrated, {
+    state: first.state,
+    messages: [...turn(taskPrompt, { failures: 2 }), user(frustrated)],
+  });
+  assert.equal(stuck.model, ASTRA, "must not step down on a stuck continuation");
+  assert.equal(h.askCount(), 2, "re-judged the stuck turn without resetting the task budget");
+
+  mutable.difficulty = 0.2;
+  const afterOneFailure = await h.run(frustrated, {
+    state: first.state,
+    messages: [...turn(taskPrompt, { failures: 1 }), user(frustrated)],
+  });
+  assert.equal(afterOneFailure.model, LUNA, "one failure still allows a topic-shift step-down");
 });
 
 // ---------------------------------------------------------------------------
@@ -433,7 +461,8 @@ test("the judgement budget resets at a task boundary", async () => {
   assert.equal(h.askCount(), 3, "three attempts spent inside one task");
 
   // A new task must judge again rather than inherit the exhausted budget.
-  const prompt = "now audit the deployment scripts for security problems end to end";
+  const prompt =
+    "now audit the deployment scripts for security problems end to end, including secrets handling, least privilege on every credential, network exposure, and what an attacker could reach from a compromised runner";
   await h.run(prompt, { state: routed.state, messages: [...convo, user(prompt)] });
   assert.equal(h.askCount(), 4, "new task gets a fresh budget");
 });
