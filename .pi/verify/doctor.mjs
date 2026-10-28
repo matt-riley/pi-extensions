@@ -46,6 +46,18 @@ for (const { name, args, min, why } of binaries) {
   }
 }
 
+// Optional capabilities: a feature row that needs one is marked unproven without it.
+for (const { name, args, why } of [
+  { name: "gh", args: ["auth", "status"], why: "watch_pr needs an authenticated gh" },
+  {
+    name: "docker",
+    args: ["image", "inspect", "buildpack-deps:bookworm-scm"],
+    why: ".pi/verify/jobs-linux.sh uses an already-cached image and never pulls",
+  },
+]) {
+  console.log(run(name, args) ? `ok      ${name} ready` : `info    ${name} unavailable — ${why}`);
+}
+
 const head = run("git", ["rev-parse", "--short", "HEAD"]) ?? "no HEAD";
 const dirty = (run("git", ["status", "--porcelain"]) ?? "").split("\n").filter(Boolean).length;
 console.log(`target  ${head}, ${dirty} changed path(s) in the working tree`);
