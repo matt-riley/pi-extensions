@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import footer from "../index.ts";
+import { installFooter } from "../extension.mjs";
+import { tui } from "./tui-fixture.mjs";
 
 test("footer refreshes real activity through settlement and keeps detail out of the default view", async () => {
   const handlers = {},
@@ -47,7 +48,7 @@ test("footer refreshes real activity through settlement and keeps detail out of 
       },
     },
   };
-  footer(pi);
+  installFooter(pi, tui);
   handlers.session_start({}, ctx);
   assert.match(render(100)[0], /repo · main/);
   assert.match(render(100)[0], /ready/);
@@ -73,4 +74,25 @@ test("footer refreshes real activity through settlement and keeps detail out of 
   assert.equal(render, undefined);
   await commands.footer.handler("", ctx);
   assert.equal(typeof render, "function");
+});
+
+test("the footer lays out its line with the pi-tui helpers it is given", () => {
+  let render;
+  const handlers = {};
+  const pi = { on: (event, fn) => (handlers[event] = fn), registerCommand() {} };
+  const ctx = {
+    cwd: "/クリーンアップ",
+    model: { id: "モデル" },
+    ui: {
+      setFooter: (factory) => {
+        render = factory({}, { fg: (_c, text) => text }, { getGitBranch: () => "main" }).render;
+      },
+    },
+  };
+  installFooter(pi, tui);
+  handlers.session_start({}, ctx);
+  for (const width of [4, 10, 20, 30]) {
+    const [line] = render(width);
+    assert.ok(tui.visibleWidth(line) <= width, `${width}: ${line}`);
+  }
 });

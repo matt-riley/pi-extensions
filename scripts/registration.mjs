@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 const TUI_STUB = `data:text/javascript,${encodeURIComponent(`
 const unavailable = () => { throw new Error("TUI execution is unavailable in the registration stub"); };
 export const Input = unavailable, SelectList = unavailable, ScrollView = unavailable,
-  matchesKey = unavailable, truncateToWidth = unavailable;
+  matchesKey = unavailable, truncateToWidth = unavailable, visibleWidth = unavailable;
 `)}`;
 
 const SDK_STUB = `data:text/javascript,${encodeURIComponent(`

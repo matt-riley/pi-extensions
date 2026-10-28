@@ -1,23 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  composeLine,
-  ctxColor,
-  fmtCost,
-  fmtTokens,
-  ICONS,
-  thinkColor,
-  truncateToWidth,
-  visibleWidth,
-} from "../workspace.mjs";
+import { composeLine, ctxColor, fmtCost, fmtTokens, ICONS, thinkColor } from "../workspace.mjs";
+import { tui, visibleWidth } from "./tui-fixture.mjs";
 
 // Fake theme.fg emitting realistic numeric SGR codes (pi emits e.g. 38;5;214m).
 const apply = (color, text) => `\u001b[38;5;1m${text}\u001b[0m`;
-
-test("visibleWidth strips ANSI codes", () => {
-  assert.equal(visibleWidth("\u001b[31mabc\u001b[0m"), 3);
-  assert.equal(visibleWidth("plain"), 5);
-});
 
 test("fmtTokens", () => {
   assert.equal(fmtTokens(0), "0");
@@ -56,6 +43,7 @@ test("composeLine fills width with gap between blocks", () => {
     [{ text: "xyz", color: "dim" }],
     20,
     apply,
+    tui,
   );
   assert.equal(visibleWidth(line), 20);
   assert.ok(line.startsWith("\u001b[38;5;1mabc\u001b[0m"));
@@ -66,7 +54,7 @@ test("composeLine drops trailing right segments first", () => {
   const left = [{ text: "m" }];
   const right = [{ text: "aa" }, { text: "bb" }, { text: "cc" }];
   // vis: 1 + 1 + 6 = 8 > 6, so "cc" drops; then 1+1+4 = 6 fits.
-  const line = composeLine(left, right, 6, apply);
+  const line = composeLine(left, right, 6, apply, tui);
   assert.equal(visibleWidth(line), 6);
   assert.ok(line.includes("aabb"));
   assert.ok(!line.includes("cc"));
@@ -76,7 +64,7 @@ test("composeLine truncates model label with ellipsis before dropping it", () =>
   const left = [{ text: "verylongmodelname" }];
   const right = [{ text: "rr" }];
   // vis: 17 + 1 + 2 = 20 > 8; model truncates to 8-2-1-1 = 4 chars + ellipsis.
-  const line = composeLine(left, right, 8, apply);
+  const line = composeLine(left, right, 8, apply, tui);
   assert.equal(visibleWidth(line), 8);
   assert.ok(line.includes("very…"));
   assert.ok(!line.includes("verylong"));
@@ -86,7 +74,7 @@ test("composeLine drops thinking badge before the model", () => {
   const left = [{ text: "model" }, { text: " ~high" }];
   const right = [{ text: "rr" }];
   // vis: 5+6+1+2 = 14 > 10 → badge drops → 5+1+2 = 8 fits, model survives.
-  const line = composeLine(left, right, 10, apply);
+  const line = composeLine(left, right, 10, apply, tui);
   assert.equal(visibleWidth(line), 10);
   assert.ok(line.includes("model"));
   assert.ok(!line.includes("high"));
@@ -105,6 +93,7 @@ test("composeLine width math holds with nerd glyphs", () => {
     [{ text: ` ${ICONS.gitBranch} main`, color: "muted" }],
     24,
     apply,
+    tui,
   );
   assert.equal(visibleWidth(line), 24);
 });
@@ -119,6 +108,7 @@ test("composeLine paints unknown theme colors as plain text", () => {
     [{ text: "xyz", color: "info" }],
     20,
     boom,
+    tui,
   );
   assert.equal(visibleWidth(line), 20);
   assert.ok(line.includes("xyz"));
@@ -128,27 +118,20 @@ test("composeLine paints unknown theme colors as plain text", () => {
 test("composeLine leaves right side when the model must go", () => {
   const left = [{ text: "m" }];
   const right = [{ text: "rr" }];
-  const line = composeLine(left, right, 2, apply);
+  const line = composeLine(left, right, 2, apply, tui);
   assert.equal(visibleWidth(line), 2);
   assert.ok(line.includes("rr"));
   assert.ok(!line.includes("m"));
 });
 
 test("composeLine truncates an oversized single right segment", () => {
-  const line = composeLine([], [{ text: "a very long extension status" }], 10, apply);
+  const line = composeLine([], [{ text: "a very long extension status" }], 10, apply, tui);
   assert.equal(visibleWidth(line), 10);
   assert.ok(line.endsWith("…"));
 });
 
 test("composeLine truncates an oversized single left segment", () => {
-  const line = composeLine([{ text: "a very long model label" }], [], 10, apply);
+  const line = composeLine([{ text: "a very long model label" }], [], 10, apply, tui);
   assert.equal(visibleWidth(line), 10);
   assert.ok(line.endsWith("…"));
-});
-
-test("truncateToWidth handles zero, one, and ANSI-wrapped text", () => {
-  assert.equal(truncateToWidth("abcdef", 0), "");
-  assert.equal(truncateToWidth("abcdef", 1), "…");
-  assert.equal(truncateToWidth("abcdef", 4), "abc…");
-  assert.equal(truncateToWidth("\u001b[31mabcdef\u001b[0m", 4), "abc…");
 });
