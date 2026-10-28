@@ -104,10 +104,11 @@ the first entry in the config's `base` list, defaulting to Luna.
   the context the escalation was meant to reason over — so the router stays put
   and says why. In practice this makes escalation an early-task move, which is
   where the task-boundary design wanted it anyway.
-- **Subagent children hold the base without judging.** Children inherit
-  `router/auto`, so the extension still loads in them and registers the model
-  they are pointed at; a child's `route()` sees `PI_SUBAGENT_CHILD` and answers
-  with the base, no judgement call.
+- **Subagent children hold the base without judging.** Children that still inherit
+  `router/auto` get the base model and the thinking level pi already clamped to the
+  user's cap. A child with an explicit physical model (per-type, per-call, or a
+  cross-family pick) keeps that model and its type thinking; the router does not
+  downgrade it to base.
 
 ## Models
 

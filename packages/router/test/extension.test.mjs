@@ -770,6 +770,31 @@ test("a subagent child holds the base without judging", async () => {
   assert.equal(routed.model, LUNA);
 });
 
+test("a subagent child with a pinned physical model keeps it and its thinking", async () => {
+  process.env.PI_SUBAGENT_CHILD = "1";
+  const h = harness({ difficulty: 2.6, thinkingLevel: "high" });
+  delete process.env.PI_SUBAGENT_CHILD;
+  const routed = await h.run("review the diff", {
+    previous: { model: SOL, thinkingLevel: "high" },
+  });
+  assert.equal(h.askCount(), 0);
+  assert.equal(routed.model, SOL);
+  assert.equal(routed.thinkingLevel, "high");
+});
+
+test("an inheriting subagent child keeps base model but not base-tier thinking", async () => {
+  process.env.PI_SUBAGENT_CHILD = "1";
+  const h = harness({
+    difficulty: 2.6,
+    thinkingLevel: "high",
+    config: { base: [{ model: "openai-codex/gpt-5.6-luna", thinking: "medium" }] },
+  });
+  delete process.env.PI_SUBAGENT_CHILD;
+  const routed = await h.run("scout the repo");
+  assert.equal(routed.model, LUNA);
+  assert.equal(routed.thinkingLevel, "high");
+});
+
 test("PI_ROUTER=off disarms it before the first turn", async () => {
   process.env.PI_ROUTER = "off";
   const h = harness({ difficulty: 2.6 });

@@ -72,6 +72,7 @@ import {
   turnsFromMessages,
   WINDOW,
 } from "./model-battery.mjs";
+import { pinnedPhysicalModelKey } from "./parent-physical.mjs";
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
@@ -377,6 +378,18 @@ export default function piRouterExtension(
     // base (or the last decision) without judging. `direct` covers compaction
     // summaries and extension calls, and carries no state.
     if (epoch !== generation || !config.enabled || isSubagentChild || reason === "direct") {
+      if (isSubagentChild) {
+        const pinnedKey = pinnedPhysicalModelKey(request);
+        if (pinnedKey) {
+          const model = resolveKey(offers, ctx, pinnedKey);
+          if (!model) throw new Error("Router: no physical model is available to route to");
+          // pi passes the child's thinking already clamped to the user's cap.
+          return { model, thinkingLevel: selected };
+        }
+        const model = base?.model ?? heldModel;
+        if (!model) throw new Error("Router: no physical model is available to route to");
+        return { model, thinkingLevel: selected };
+      }
       const model = base?.model ?? heldModel;
       if (!model) throw new Error("Router: no physical model is available to route to");
       return { model, thinkingLevel: base?.thinking ?? selected };

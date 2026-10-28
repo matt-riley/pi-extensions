@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
 import { CROSS_FAMILY, resolveCrossFamily } from "./cross-family.mjs";
+import { physicalParentKeyForCrossFamily } from "../router/parent-physical.mjs";
 import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
@@ -299,13 +300,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         typeof params?.model === "string" && params.model.trim()
           ? params.model.trim()
           : agent.model;
+      const routerFile = path.join(getAgentDir(), "router.json");
       const { model, note: modelNote } =
         modelSpec === CROSS_FAMILY
-          ? await resolveCrossFamily(
-              ctx?.modelRegistry,
-              ctx?.model,
-              path.join(getAgentDir(), "router.json"),
-            )
+          ? await resolveCrossFamily(ctx?.modelRegistry, ctx?.model, routerFile, {
+              physicalParentKey: physicalParentKeyForCrossFamily(ctx?.model, ctx, routerFile),
+            })
           : resolveChildModel(ctx?.modelRegistry, ctx?.model, modelSpec);
       const runsDir = path.join(getAgentDir(), "subagent-runs");
       if (!runsPruned) {

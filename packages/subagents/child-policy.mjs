@@ -36,7 +36,8 @@ export function createChildPolicyExtension({ allowlistBash = false, blockWriters
 // distracts a focused worker. Tool extensions (code-search, web-fetch, typesafe,
 // guardrail) stay. The router is loaded on purpose: a child inherits the
 // `router/auto` model, so the extension that registers it must be there. Its
-// route() sees PI_SUBAGENT_CHILD and holds the base model without judging.
+// route() sees PI_SUBAGENT_CHILD: inheriting children get the base model without
+// judging; pinned or cross-family physical models are kept as-is.
 const CHILD_EXCLUDED =
   /[\\/](?:extensions[\\/]lore|packages[\\/](?:prompt-coach|influencer|skill-select))[\\/]/;
 
