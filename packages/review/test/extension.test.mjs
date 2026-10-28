@@ -35,7 +35,9 @@ for (const name of DEFERRED_REVIEW) {
     const tools = loadTools();
     const registry = createToolRegistry(tools);
     const query =
-      name === "lint_change" ? "lint_change staged diff preferences" : "verify_findings review findings diff";
+      name === "lint_change"
+        ? "lint_change staged diff preferences"
+        : "verify_findings review findings diff";
     const matches = searchAndLoad(registry, query, 8);
     assert.ok(
       matches.some((match) => match.name === name),

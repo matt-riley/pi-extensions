@@ -69,6 +69,7 @@ export default function piReviewExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",
+    exposure: "deferred",
     annotations: OPEN_READ,
     description:
       "Judge a staged or working-tree change against the repository's stated preferences — the ones a linter " +
@@ -153,6 +154,7 @@ export default function piReviewExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "verify_findings",
     label: "verify_findings",
+    exposure: "deferred",
     annotations: OPEN_READ,
     description:
       "Check review findings against the diff they claim to be about. A finding that quotes code absent from the " +

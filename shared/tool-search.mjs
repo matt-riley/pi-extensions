@@ -125,7 +125,10 @@ export function isSearchableExposure(exposure) {
   return exposure === "codemode" || exposure === "deferred";
 }
 
-export function initialActiveToolNames(allTools, { baseActive = ["read", "bash", "edit", "write"] } = {}) {
+export function initialActiveToolNames(
+  allTools,
+  { baseActive = ["read", "bash", "edit", "write"] } = {},
+) {
   const extensionActive = allTools
     .filter((tool) => isActivatedOnRegistration(tool))
     .map((tool) => tool.name);

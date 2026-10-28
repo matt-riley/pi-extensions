@@ -19,7 +19,8 @@ web_answer(url, question, max_spans?)
 `site`, `lang`, `via`) followed by the extracted content in the requested
 format. `batch_web_fetch` fans out with bounded concurrency and reports each
 item's result (or failure) independently. `web_search` returns ranked
-DuckDuckGo results (title, URL, snippet) without an API key.
+DuckDuckGo results (title, URL, snippet) without an API key. `web_answer` and
+`batch_web_fetch` use deferred exposure and load through tool search when needed.
 
 ## `web_answer` — the passage, not the page
 

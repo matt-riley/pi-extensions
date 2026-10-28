@@ -208,6 +208,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_answer",
     label: "web_answer",
+    exposure: "deferred",
     annotations: OPEN_READ,
     description: ANSWER_DESCRIPTION,
     promptSnippet:
@@ -312,6 +313,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "batch_web_fetch",
     label: "batch_web_fetch",
+    exposure: "deferred",
     annotations: OPEN_READ,
     description: BATCH_DESCRIPTION,
     promptSnippet:

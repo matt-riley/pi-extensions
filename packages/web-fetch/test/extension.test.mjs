@@ -34,7 +34,8 @@ for (const name of DEFERRED_WEB) {
   test(`${name} is reachable through tool search`, () => {
     const tools = loadTools();
     const registry = createToolRegistry(tools);
-    const query = name === "web_answer" ? "narrow question web_answer" : "batch_web_fetch many urls";
+    const query =
+      name === "web_answer" ? "narrow question web_answer" : "batch_web_fetch many urls";
     const matches = searchAndLoad(registry, query, 8);
     assert.ok(
       matches.some((match) => match.name === name),

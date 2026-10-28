@@ -1,7 +1,8 @@
 # pi-review — semantic review of a change
 
 Two on-demand tools for the part of review a linter cannot do. Both are
-advisory: they return text, and neither blocks a tool call.
+advisory: they return text, and neither blocks a tool call. `lint_change` and
+`verify_findings` stay deferred until tool search loads them.
 
 ## `lint_change`
 
