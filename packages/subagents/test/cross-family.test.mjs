@@ -54,6 +54,16 @@ test("pickCrossFamily inherits when the parent family is unknown", () => {
   assert.match(result.note, /parent family unknown/);
 });
 
+test("pickCrossFamily uses a routed physical parent when selection is router/auto", () => {
+  const parent = m("router", "auto");
+  const available = [parent, m("openai-codex", "gpt-5.6-sol"), m("xai", "grok-4.6")];
+  const { model, note } = pickCrossFamily(parent, available, ["grok-4.6", "gpt-5.6-sol"], {
+    physicalParentKey: "openai-codex/gpt-5.6-sol",
+  });
+  assert.deepEqual(model, m("xai", "grok-4.6"));
+  assert.match(note, /xai\/grok-4.6/);
+});
+
 test("readPatterns orders frontier, mid, base and tolerates a missing file", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xfam-"));
   const file = path.join(dir, "router.json");
@@ -83,4 +93,18 @@ test("resolveCrossFamily uses only authenticated models from the registry", asyn
     },
   };
   assert.equal((await resolveCrossFamily(broken, parent, file)).model, parent);
+});
+
+test("resolveCrossFamily honours a routed physical parent when selection is router/auto", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xfam-"));
+  const file = path.join(dir, "router.json");
+  fs.writeFileSync(file, JSON.stringify({ frontier: ["grok-4.6"] }));
+  const parent = m("router", "auto");
+  const registry = {
+    getAvailable: async () => [parent, m("openai-codex", "gpt-5.6-sol"), m("xai", "grok-4.6")],
+  };
+  const { model } = await resolveCrossFamily(registry, parent, file, {
+    physicalParentKey: "openai-codex/gpt-5.6-sol",
+  });
+  assert.deepEqual(model, m("xai", "grok-4.6"));
 });

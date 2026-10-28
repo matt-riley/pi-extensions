@@ -65,8 +65,10 @@ export function readPatterns(file) {
  * Choose the first pattern (in preference order) that matches an available
  * model of a different family from the parent. Pure: callers supply the list.
  */
-export function pickCrossFamily(parentModel, available, patterns) {
-  const parentFamily = modelFamily(modelKey(parentModel));
+export function pickCrossFamily(parentModel, available, patterns, options = {}) {
+  const physicalParentKey =
+    typeof options.physicalParentKey === "string" ? options.physicalParentKey.trim() : "";
+  const parentFamily = modelFamily(physicalParentKey || modelKey(parentModel));
   if (!parentFamily) {
     return { model: parentModel, note: "cross-family: parent family unknown; inherited parent" };
   }
@@ -88,7 +90,7 @@ export function pickCrossFamily(parentModel, available, patterns) {
 }
 
 /** Registry-facing wrapper: getAvailable() lists only authenticated models. */
-export async function resolveCrossFamily(modelRegistry, parentModel, routerFile) {
+export async function resolveCrossFamily(modelRegistry, parentModel, routerFile, options = {}) {
   let available = [];
   try {
     const listed = await Promise.resolve(modelRegistry?.getAvailable?.());
@@ -96,5 +98,5 @@ export async function resolveCrossFamily(modelRegistry, parentModel, routerFile)
   } catch {
     available = [];
   }
-  return pickCrossFamily(parentModel, available, readPatterns(routerFile));
+  return pickCrossFamily(parentModel, available, readPatterns(routerFile), options);
 }

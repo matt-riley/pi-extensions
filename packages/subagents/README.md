@@ -54,9 +54,9 @@ listed in `~/.pi/agent/router.json` (frontier, then mid, then base) that is
 authenticated and from a different family than the parent (families are read
 from the model id, so `openai/gpt-*` and `openai-codex/gpt-*` count as one). A
 reviewer on the author's own family tends to share its blind spots. With
-nothing eligible, or when the parent is the router's virtual `router/auto`
-model, they inherit the parent and the result carries a note saying so. The
-rest inherit the parent model. A per-call `model` parameter (`provider/id` or
+nothing eligible, they inherit the parent and the result carries a note saying so.
+When the parent runs `router/auto`, family is taken from the router's last physical
+model (or the configured base before the first route). The rest inherit the parent model. A per-call `model` parameter (`provider/id` or
 `cross-family`) overrides the type's default. Read-only types get bash restricted to plan-mode's
 fail-closed allowlist. The `worker` is write-capable with prompt-level guard
 rails only (stay in scope, never commit/push/install, stop early on ambiguity).
@@ -115,7 +115,9 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
   — never `isError`, so pi does not blindly auto-retry the same failing spawn.
 - Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
 - Children load host extensions except this package and the interactive-only ones
-  (`lore`, `router`, `prompt-coach`, `influencer`, `skill-select`), and never get `subagent`.
+  (`lore`, `prompt-coach`, `influencer`, `skill-select`), and never get `subagent`.
+  The router loads on purpose so children that inherit `router/auto` still register
+  the virtual model; pinned or cross-family children keep their physical model.
 - The orchestrator brief (roster + spawn rules) is appended to the system
   prompt only while subagents are on — never otherwise.
 
