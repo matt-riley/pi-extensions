@@ -16,7 +16,8 @@
 //   - Rules cannot do it: they scored 30% recall at 7% precision and were
 //     confidently wrong on the two most expensive turns in the corpus. A
 //     graded difficulty rating from TypeSafe scores AUC 0.70, and at >= 1.5 is
-//     77% precise at 48% recall, catching 12 of the top 12 turns by spend.
+//     77% precise at 48% recall, catching 7 of the 12 most expensive turns in
+//     the judged sample (packages/router/README.md).
 //
 // So: ask Jev how hard the task is, escalate at the threshold, hold the
 // decision while the task continues, and return to the base at a new task.

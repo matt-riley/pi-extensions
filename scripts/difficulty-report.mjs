@@ -30,6 +30,8 @@ import {
   buildDifficultyQuestions as modelQuestions,
 } from "../packages/router/model-battery.mjs";
 import { findSessionFiles, percentile, readSession } from "./lib/sessions.mjs";
+import { sessionEscalationMetrics, turnCatchLabel } from "./difficulty-report-lib.mjs";
+import { DIFFICULTY_THRESHOLD } from "../packages/router/model-battery.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
 const WINDOW = 4;
@@ -168,12 +170,10 @@ async function main() {
           questions: modelQuestions(),
         });
         const difficulty = Number(result?.answers?.difficulty?.score);
-        const needs = Number(result?.answers?.needs_frontier?.noul);
         rows.push({
           ...row,
           window: undefined,
           difficulty: Number.isFinite(difficulty) ? difficulty : null,
-          needs: Number.isFinite(needs) ? needs : null,
         });
       } catch (error) {
         process.stderr.write(`\n  failed: ${error instanceof Error ? error.message : error}\n`);
@@ -197,9 +197,10 @@ async function main() {
       tierPrice[tier] = entry.context ? (entry.cost / entry.context) * 1e6 : 0;
   }
 
-  const scored = rows.filter((row) => row.needs !== null && row.difficulty !== null);
+  const scored = rows.filter((row) => row.difficulty !== null);
   const pos = scored.filter((row) => row.frontier);
   const neg = scored.filter((row) => !row.frontier);
+  const sessionLevel = sessionEscalationMetrics(scored);
   const report = {
     judged: scored.length,
     frontierTurns: pos.length,
@@ -219,52 +220,9 @@ async function main() {
           neg.map((row) => row.difficulty),
         ),
       },
-      needs: {
-        frontier: percentile(
-          pos.map((row) => row.needs),
-          0.5,
-        ),
-        other: percentile(
-          neg.map((row) => row.needs),
-          0.5,
-        ),
-        auc: auc(
-          pos.map((row) => row.needs),
-          neg.map((row) => row.needs),
-        ),
-      },
     },
-    sweep: sweep(scored, "needs", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9], tierPrice),
-    difficultySweep: sweep(scored, "difficulty", [1, 1.5, 2, 2.5], tierPrice),
-    sessionLevel: null,
-  };
-
-  // The design says routing belongs at task boundaries, so the decision that
-  // matters is per session: escalate if any turn in it looked frontier-worthy.
-  const bySession = new Map();
-  for (const row of scored) {
-    const entry = bySession.get(row.file) ?? { frontier: false, maxNeeds: 0, turns: 0 };
-    entry.frontier ||= row.frontier;
-    entry.maxNeeds = Math.max(entry.maxNeeds, row.needs);
-    entry.turns++;
-    bySession.set(row.file, entry);
-  }
-  let sTp = 0;
-  let sFp = 0;
-  let sFn = 0;
-  for (const entry of bySession.values()) {
-    const predicted = entry.maxNeeds >= 0.5;
-    if (entry.frontier && predicted) sTp++;
-    else if (entry.frontier) sFn++;
-    else if (predicted) sFp++;
-  }
-  report.sessionLevel = {
-    sessions: bySession.size,
-    tp: sTp,
-    fp: sFp,
-    fn: sFn,
-    precision: sTp + sFp ? sTp / (sTp + sFp) : null,
-    recall: sTp + sFn ? sTp / (sTp + sFn) : null,
+    difficultySweep: sweep(scored, "difficulty", [1, DIFFICULTY_THRESHOLD, 2, 2.5], tierPrice),
+    sessionLevel,
   };
 
   if (opts.json) {
@@ -280,21 +238,10 @@ async function main() {
   console.log(
     `   difficulty score  frontier p50 ${report.spread.difficulty.frontier}  other p50 ${report.spread.difficulty.other}   AUC ${report.spread.difficulty.auc?.toFixed(2) ?? "–"}`,
   );
-  console.log(
-    `   needs_frontier    frontier p50 ${report.spread.needs.frontier?.toFixed(2)}  other p50 ${report.spread.needs.other?.toFixed(2)}   AUC ${report.spread.needs.auc?.toFixed(2) ?? "–"}`,
-  );
 
-  console.log("\nthreshold sweep on needs_frontier (frontier = positive)");
   console.log(
-    "   thresh   precision   recall   tp  fp  fn   cost of wrong escalations   frontier spend skipped",
+    `\nthreshold sweep on the difficulty score (router threshold ${DIFFICULTY_THRESHOLD})`,
   );
-  for (const row of report.sweep) {
-    console.log(
-      `   ${row.threshold.toFixed(2)}     ${pct(row.precision)}       ${pct(row.recall)}   ${String(row.tp).padStart(2)}  ${String(row.fp).padStart(2)}  ${String(row.fn).padStart(2)}   ${("$" + row.wrongEscalationCost.toFixed(2)).padStart(20)}   ${("$" + row.missedFrontierSpend.toFixed(2)).padStart(18)}`,
-    );
-  }
-
-  console.log("\nthreshold sweep on the difficulty score (same rows, better instrument)");
   console.log(
     "   score    precision   recall   tp  fp  fn   cost of wrong escalations   frontier spend skipped",
   );
@@ -306,7 +253,7 @@ async function main() {
 
   const session = report.sessionLevel;
   console.log(
-    `\nper session (escalate if any turn looks frontier-worthy): ${session.sessions} sessions`,
+    `\nper session (escalate if any turn clears difficulty >= ${session.threshold}): ${session.sessions} sessions`,
   );
   console.log(
     `   precision ${pct(session.precision)}   recall ${pct(session.recall)}   (tp ${session.tp} · fp ${session.fp} · fn ${session.fn})`,
@@ -335,22 +282,20 @@ async function main() {
     .slice(0, 12);
   console.log("\nseparated by what the turn cost, not by whether it was right:");
   for (const row of interesting) {
-    const flag = row.needs >= 0.5 ? "caught" : "MISSED";
+    const flag = turnCatchLabel(row);
     console.log(
-      `   ${flag}  ${row.difficulty}/3 · ${row.needs.toFixed(2)} · $${row.spend.toFixed(2)}  ${row.prompt.replace(/\s+/g, " ").slice(0, 96)}`,
+      `   ${flag}  ${row.difficulty}/3 · $${row.spend.toFixed(2)}  ${row.prompt.replace(/\s+/g, " ").slice(0, 96)}`,
     );
   }
 
   const falsePositives = neg
-    .filter((row) => row.needs >= 0.8)
-    .sort((a, b) => b.needs - a.needs)
+    .filter((row) => turnCatchLabel(row) === "caught")
+    .sort((a, b) => b.difficulty - a.difficulty)
     .slice(0, 6);
   if (falsePositives.length) {
-    console.log("\nnon-frontier turns Jev would have escalated (the cost of the signal)");
+    console.log("\nnon-frontier turns the router would have escalated at the threshold");
     for (const row of falsePositives) {
-      console.log(
-        `   ${row.difficulty}/3 · ${row.needs.toFixed(2)}  ${row.prompt.replace(/\s+/g, " ").slice(0, 96)}`,
-      );
+      console.log(`   ${row.difficulty}/3  ${row.prompt.replace(/\s+/g, " ").slice(0, 96)}`);
     }
   }
 }

@@ -4,13 +4,11 @@
 // from real spend per million context tokens:
 //
 //   difficulty (score)     AUC 0.70   frontier p50 1.46 vs 1.01 other
-//   needs_frontier (noul)  AUC 0.55   barely better than chance
 //
-// The decision-shaped question is the weaker instrument, which is why the
-// router thresholds a *rating* instead of asking "would a cheap model fail?".
-// At >= 1.5 the rating is 77% precise at 48% recall and catches 11 of the 12
-// most expensive turns in the corpus, including both that the deterministic
-// rules confidently downgraded. Details: scripts/difficulty-report.mjs.
+// At >= 1.5 the rating is 77% precise at 48% recall and catches 7 of the 12
+// most expensive turns in the judged sample (see packages/router/README.md),
+// including both that the deterministic rules confidently downgraded.
+// Details: scripts/difficulty-report.mjs.
 //
 // Both the report script and the extension build their state here, so what was
 // measured is exactly what runs.
@@ -179,18 +177,6 @@ export function buildDifficultyQuestions() {
         "message. A short message can be hard: it may be a follow-up inside a long, difficult task, or a rejection " +
         "of several failed attempts. A long message can be easy: it may be a paste of context with a simple ask.",
       criteria: DIFFICULTY_LEVELS,
-    },
-    needs_frontier: {
-      type: "noul",
-      instructions:
-        "Considering `conversation` as well as `prompt`: is a cheaper or mid-tier model likely to fail at this, or need " +
-        "several attempts, where a frontier model would get it right? Answer no when a cheaper model would very " +
-        "likely handle it.",
-      criteria: {
-        true: "The work involves subtle diagnosis, design, or many interacting constraints; several failed attempts are already visible in the conversation.",
-        false:
-          "Ordinary implementation, mechanical edits, lookups, or short confirmations that any capable model handles.",
-      },
     },
   };
 }
