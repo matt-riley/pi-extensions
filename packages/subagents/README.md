@@ -143,3 +143,5 @@ are skipped silently — every path fails open.
 - **Triage** (after a clean run): `triage: answered | partial | blocked | off_task (p)`.
 - **Scope check** (write-capable agents): the real `git diff` since the spawn is appended as
   `changes:`, and a warning is added when the diff likely goes beyond the task.
+
+`node scripts/subagent-usage-report.mjs` counts spawns, fan-out, triage, tokens and lossy handoffs from local sessions (see `docs/workflow-evaluation.md`).
