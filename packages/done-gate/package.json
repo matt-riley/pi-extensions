@@ -1,7 +1,7 @@
 {
   "name": "pi-done-gate",
   "version": "0.1.0",
-  "description": "Remind the agent to run the repo's checks when a pi run ends with code edits made after the last verification, list leftover [DEBUG- instrumentation tags, and have TypeSafe judge the closing claim when it reports success anyway. Text only; no dependencies.",
+  "description": "Remind the agent, naming the Go, TypeScript or Lua commands that cover the changed files, when a pi run ends with code edits made after the last verification. Lists leftover [DEBUG- tags and asks TypeSafe to judge a closing claim that reports success anyway. Text only; no dependencies.",
   "license": "MIT",
   "type": "module"
 }

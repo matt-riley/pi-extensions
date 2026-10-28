@@ -29,6 +29,9 @@ const VERIFY_COMMANDS = [
   String.raw`cargo\s+(?:test|check|clippy)\b`,
   String.raw`make\s+(?:test|check|lint|verify)\b`,
   String.raw`${RUNNER}(?:pytest|vitest|jest|tsc|mypy|ruff|oxlint|eslint|golangci-lint)\b`,
+  // Without --check, stylua rewrites the file. That is not a verification run.
+  String.raw`${RUNNER}stylua\s+--check\b`,
+  String.raw`${RUNNER}selene\b`,
 ].map((body) => new RegExp(CMD_START + body));
 
 /** True when a bash command runs the repo's checks (tests, typecheck, lint, .pi/verify). */
@@ -322,6 +325,24 @@ export function debugTagsInFile(path, content) {
 
 const MAX_LISTED = 5;
 
+function namedCommands(commands) {
+  const quoted = commands.map((command) => `\`${command}\``);
+  if (quoted.length === 1) return quoted[0];
+  if (quoted.length === 2) return `${quoted[0]} and ${quoted[1]}`;
+  return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
+}
+
+function checkSentence(commands) {
+  if (!Array.isArray(commands) || commands.length === 0) {
+    return "Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise the changed behavior,";
+  }
+  const named = namedCommands(commands);
+  if (commands.length === 1) {
+    return `Before reporting done, run ${named} and exercise the changed behavior,`;
+  }
+  return `Before reporting done, run ${named} as separate commands, and exercise the changed behavior,`;
+}
+
 const list = (items) =>
   items.length > MAX_LISTED
     ? `${items.slice(0, MAX_LISTED).join(", ")} and ${items.length - MAX_LISTED} more`
@@ -337,12 +358,12 @@ const list = (items) =>
  * `claimText` is the claim judgment's line when it has one. It goes last,
  * where the model reads it immediately before deciding what to do next.
  */
-export function buildNudge(state, debugHits = [], claimText = null) {
+export function buildNudge(state, debugHits = [], claimText = null, commands = null) {
   state.nudged = true;
   const files = [...state.dirty];
   const lines = [
     `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`,
-    "Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise the changed behavior,",
+    checkSentence(commands),
     "or say plainly why verification does not apply.",
     "Then close with your explanation of the work plus one line of what the check proved,",
     "not a report about this reminder.",

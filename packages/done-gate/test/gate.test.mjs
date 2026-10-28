@@ -55,6 +55,30 @@ test("recognizes verification commands in command position", () => {
   }
 });
 
+test("a successful stylua --check after the edit counts as verification", () => {
+  assert.equal(isVerifyCommand("stylua --check plugin/init.lua"), true);
+  assert.equal(isVerifyCommand("npx stylua --check plugin/init.lua"), true);
+  assert.equal(isVerifyCommand("stylua plugin/init.lua"), false);
+  assert.equal(isVerifyCommand("stylua --check plugin/init.lua && selene plugin/init.lua"), false);
+
+  const state = createGateState();
+  observeToolResult(state, edit("plugin/init.lua"));
+  observeToolResult(state, bash("stylua --check plugin/init.lua"));
+  assert.equal(state.verificationStatus, "passed");
+  assert.equal(shouldNudge(state, "completed"), false);
+});
+
+test("a successful selene run after the edit counts as verification", () => {
+  assert.equal(isVerifyCommand("selene plugin/init.lua plugin/util.lua"), true);
+  assert.equal(isVerifyCommand("selene --help"), false);
+
+  const state = createGateState();
+  observeToolResult(state, edit("plugin/init.lua"));
+  observeToolResult(state, bash("selene plugin/init.lua"));
+  assert.equal(state.verificationStatus, "passed");
+  assert.equal(shouldNudge(state, "completed"), false);
+});
+
 test("does not mistake reads or searches for verification", () => {
   for (const command of [
     'grep -rn "npm test" README.md',
@@ -244,6 +268,19 @@ test("the nudge asks for the explanation back, not a report about the reminder",
   const state = createGateState();
   observeToolResult(state, edit("src/a.ts"));
   assert.match(buildNudge(state), /close with your explanation of the work/);
+});
+
+test("the nudge names the scoped commands instead of a generic check", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("pkg/foo/a.go"));
+  const text = buildNudge(state, [], null, ["go test ./pkg/foo", "golangci-lint run ./pkg/foo"]);
+  assert.match(
+    text,
+    /run `go test \.\/pkg\/foo` and `golangci-lint run \.\/pkg\/foo` as separate commands, and exercise the changed behavior/,
+  );
+  assert.match(text, /close with your explanation of the work/);
+  assert.match(text, /Verification status: unknown/);
+  assert.doesNotMatch(text, /run the repo's checks/);
 });
 
 test("only a successful remote check counts as remote evidence", () => {

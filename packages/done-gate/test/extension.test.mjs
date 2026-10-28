@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import extension from "../index.ts";
@@ -123,6 +123,56 @@ test("real Git identities bind successful host check events to the final tree", 
   const stale = await h.settle();
   assert.equal(stale.continue, true);
   assert.match(stale.entries[0].content, /Verification status: unknown/);
+});
+
+test("a settled Go edit names the package test, and that command clears the gate", async (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), "done-gate-scope-host-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) =>
+    execFileSync("git", ["-C", cwd, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.name", "test");
+  git("config", "user.email", "test@example.com");
+  mkdirSync(join(cwd, "pkg/foo"), { recursive: true });
+  writeFileSync(join(cwd, "go.mod"), "module example.com/app\n");
+  writeFileSync(join(cwd, "pkg/foo/a.go"), "package foo\n");
+  git("add", ".");
+  git("commit", "-qm", "base");
+  const handlers = {};
+  const ctx = { cwd };
+  extension({
+    registerTool() {},
+    on: (name, fn) => {
+      handlers[name] = fn;
+    },
+    exec: async (file, args) => {
+      const result = spawnSync(file, args, { cwd, encoding: "utf8" });
+      return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+    },
+  });
+  writeFileSync(join(cwd, "pkg/foo/a.go"), "package foo\n\nfunc F() {}\n");
+  await handlers.tool_result(
+    { toolName: "edit", input: { path: "pkg/foo/a.go" }, isError: false },
+    ctx,
+  );
+  const nudged = await handlers.agent_before_settle({ outcome: "completed", entries: [] }, ctx);
+  assert.equal(nudged.continue, true);
+  assert.equal(nudged.entries[0].display, false);
+  assert.match(nudged.entries[0].content, /`go test \.\/pkg\/foo`/);
+  assert.match(nudged.entries[0].content, /close with your explanation of the work/);
+
+  await handlers.input({}, ctx);
+  await handlers.tool_result(
+    { toolName: "edit", input: { path: "pkg/foo/a.go" }, isError: false },
+    ctx,
+  );
+  const event = { toolName: "bash", toolCallId: "1", input: { command: "go test ./pkg/foo" } };
+  await handlers.tool_call(event, ctx);
+  await handlers.tool_result({ ...event, isError: false, content: [] }, ctx);
+  assert.equal(
+    await handlers.agent_before_settle({ outcome: "completed", entries: [] }, ctx),
+    undefined,
+  );
 });
 
 test("failed, masked and tree-changing host checks leave edits unverified", async (t) => {

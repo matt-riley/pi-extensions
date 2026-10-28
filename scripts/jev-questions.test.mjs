@@ -13,6 +13,7 @@ import {
   buildClaimState,
   judgeDoneClaim,
 } from "../packages/done-gate/claim.mjs";
+import { resolveScopedChecks } from "../packages/done-gate/scoped.mjs";
 import { TIEBREAK_ENV, selectSkills } from "../packages/skill-select/select.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "../packages/subagents/judge.mjs";
 import { judgeFailure } from "../packages/diagnosis-nudge/triage.mjs";
@@ -108,6 +109,18 @@ const CASES = {
     ask({
       state: buildClaimState({ claim: "done", files: ["a.mjs"], verificationSeen: true }),
       questions: buildClaimQuestionSet(),
+    }),
+  // Only an ambiguous tsconfig set asks. The key is what makes the call happen;
+  // the stand-in is the only ask, and a missing key would skip the question.
+  "done-gate scoped checks": (ask) =>
+    resolveScopedChecks({
+      files: ["src/main.ts"],
+      repo: {
+        verify: false,
+        tsconfigs: { "src/main.ts": ["src/tsconfig.app.json", "src/tsconfig.node.json"] },
+      },
+      env: { TYPESAFE_API_KEY: "test-key", LORE_CONFIG: "/no/such/lore.json" },
+      ask,
     }),
   // The key is what makes selection ask at all, and it is resolved from the
   // injected env or the machine's config file. Without it in the env this case
