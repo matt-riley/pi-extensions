@@ -194,6 +194,13 @@ export function overlapRatio(a, b) {
   return shared / Math.min(left.size, right.size);
 }
 
+/** Same threshold as `STUCK_FAILURES` in index.ts — previous turn had this many tool errors. */
+const STUCK_FAILURES = 2;
+
+function failedCallsInTurn(turn) {
+  return (turn?.toolCalls ?? []).filter((call) => call.isError).length;
+}
+
 /**
  * The routing gate: route on a shift, stay put on a continuation.
  *
@@ -211,6 +218,15 @@ export function gateTurn({ prompt, previousTurn } = {}) {
   // A long prompt is usually a new task description, not a follow-up.
   if (length >= 200) return { route: true, reason: "long prompt", signals };
   // No vocabulary in common with the previous prompt: a different subject.
-  if (words.size >= 3 && overlap < 0.2) return { route: true, reason: "topic shift", signals };
+  if (words.size >= 3 && overlap < 0.2) {
+    if (failedCallsInTurn(previousTurn) >= STUCK_FAILURES) {
+      return {
+        route: false,
+        reason: "stuck continuation",
+        signals: { ...signals, failuresLastTurn: failedCallsInTurn(previousTurn) },
+      };
+    }
+    return { route: true, reason: "topic shift", signals };
+  }
   return { route: false, reason: "looks like a continuation", signals };
 }

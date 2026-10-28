@@ -15,6 +15,12 @@ function turn(prompt, tools = []) {
   return { prompt, toolCalls: tools.map((name) => ({ name, isError: false })) };
 }
 
+function turnWithFailures(prompt, failures) {
+  const toolCalls = [];
+  for (let i = 0; i < failures; i++) toolCalls.push({ name: "bash", isError: true });
+  return { prompt, toolCalls };
+}
+
 // ---------------------------------------------------------------------------
 // Group mapping and ground truth
 
@@ -79,6 +85,30 @@ test("gateTurn treats a long prompt as a new task", () => {
   const long =
     "Please now look at the routing design and measure the context cost of a typical turn across every session so we can decide";
   assert.equal(gateTurn({ prompt: long, previousTurn: previous }).route, true);
+});
+
+test("gateTurn keeps a low-overlap frustrated follow-up on the same task after two failures", () => {
+  const previous = turnWithFailures(
+    "fix the flaky CI on subagent spawn test, investigate the race",
+    2,
+  );
+  const followUp = "still failing. third time. find the actual race";
+  const result = gateTurn({ prompt: followUp, previousTurn: previous });
+  assert.equal(result.route, false, "must not start a new task");
+  assert.ok(result.signals.overlap < 0.2, "still a low-overlap prompt");
+});
+
+test("gateTurn still treats the same follow-up as a new task after zero or one failure", () => {
+  const followUp = "still failing. third time. find the actual race";
+  for (const failures of [0, 1]) {
+    const previous = turnWithFailures(
+      "fix the flaky CI on subagent spawn test, investigate the race",
+      failures,
+    );
+    const result = gateTurn({ prompt: followUp, previousTurn: previous });
+    assert.equal(result.route, true, `expected topic shift with ${failures} failures`);
+    assert.equal(result.reason, "topic shift");
+  }
 });
 
 test("contentWords drops filler so overlap measures topic, not politeness", () => {
