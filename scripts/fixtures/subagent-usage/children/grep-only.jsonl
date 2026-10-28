@@ -1,0 +1,1 @@
+{"role":"assistant","content":[{"type":"toolCall","id":"r","name":"read","arguments":{"path":"src/secret.ts"}},{"type":"toolCall","id":"g","name":"grep","arguments":{"path":"only-grep.ts","pattern":"x"}}],"timestamp":1}

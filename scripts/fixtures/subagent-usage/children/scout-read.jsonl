@@ -1,0 +1,4 @@
+{"role":"user","content":"Read SENTINEL_subagent_usage_9f3c2a","timestamp":1}
+{"role":"assistant","content":[{"type":"toolCall","id":"r","name":"read","arguments":{"path":"src/secret.ts"}},{"type":"toolCall","id":"g","name":"grep","arguments":{"path":"only-grep.ts","pattern":"SENTINEL_subagent_usage_9f3c2a"}},{"type":"toolCall","id":"s","name":"read","arguments":{"path":"SENTINEL_subagent_usage_9f3c2a.txt"}}],"usage":{"input":10,"output":5,"totalTokens":15},"timestamp":2}
+{"role":"toolResult","toolCallId":"r","toolName":"read","content":[{"type":"text","text":"SENTINEL_subagent_usage_9f3c2a contents of secret"}],"isError":false,"timestamp":3}
+{"role":"assistant","content":[{"type":"text","text":"SENTINEL_subagent_usage_9f3c2a is the auth gate"}],"timestamp":4}

@@ -71,3 +71,58 @@ manual evidence review, never an automatic successful score.
 Use project recipes where setup or acceptance is easy to miss. This pilot does
 not justify mandatory elaborate ceremony on tiny tasks, nor a claim that the
 entire agent system is better. Human correction/rework rates are unmeasured.
+
+## Subagent usage report
+
+Which built-in types are worth keeping is a measurement, not a guess. On the
+machine that has the sessions (they are not in this repo):
+
+```text
+node scripts/subagent-usage-report.mjs
+node scripts/subagent-usage-report.mjs --json
+node scripts/subagent-usage-report.mjs --since 2026-01-01 --limit 50
+node scripts/subagent-usage-report.mjs --sessions ~/.pi/agent/sessions
+```
+
+The default directory is `~/.pi/agent/sessions`. `--since` is a UTC date
+(`YYYY-MM-DD` or any `Date.parse` value) and keeps sessions with activity on
+or after that instant, then drops spawns that started earlier. `--limit` keeps
+the newest N of those session files. The script is read-only: it never writes
+into the sessions directory.
+
+It reads two things the subagents extension already records. Parent sessions
+are Pi JSONL. Each spawn is a `subagent` tool call; tokens come from that tool
+result's `usage` (`totalTokens`, otherwise `input + output + cacheRead +
+cacheWrite`, the same total as `tokensFromUsage`). Duration is the wall clock
+from the assistant message that issued the call to the tool result. `usage`
+has no duration field, so this interval includes preflight and triage as well
+as the child. Jev ledger entries are the `custom` / `jev-decision` records
+`askSystemOne` appends, with `feature: "subagents"`. Question ids distinguish
+the three calls: `self_contained` is preflight, `outcome` is triage,
+`out_of_scope` is scope. Triage stores a choice index, not the label. The
+index follows the criteria order in `triageQuestions()`: `answered`,
+`partial`, `blocked`, `off_task`.
+
+A fan-out is two or more children that all started before the first of them
+finished. Calls from one assistant message share a start, so they are a
+fan-out. Every other spawn is lone sequential. A preflight rejection (`Task
+rejected:`) and an `isError` result are not spawns. A ledger entry whose
+`outcome` is not `ok` contributes no label.
+
+Lossy handoff is an approximate telephone-game signal: after the child
+returns, and before the next user message, the parent calls `read` on a path
+the child also `read`. Paths are resolved against the session cwd, hashed, and
+never printed. `grep`, `bash`, and a `read` issued in the same turn as the
+spawn do not count. The child's reads come from the transcript path on
+`details.transcript` (or the `transcript:` line), usually
+`~/.pi/agent/subagent-runs/*.jsonl`. A missing transcript counts as no
+handoff, so the rate is a lower bound.
+
+Fold candidates are types with more lone sequential spawns than fan-out
+spawns, and more `partial` or `blocked` labels than `answered` or `off_task`.
+A tie is not enough. Types with no triage labels are not candidates. Built-in
+names come from `packages/subagents/agents/*.md` and are listed even at zero;
+any other type name seen on a spawn is appended.
+
+Output is counts and those definitions only. Prompt text, file contents, file
+paths and tool arguments are not printed. `--json` is the same report.
