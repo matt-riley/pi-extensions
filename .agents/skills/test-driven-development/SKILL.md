@@ -21,6 +21,7 @@ When adding tests for behavior that already works, start from the passing baseli
 - Exercise a public interface or stable boundary. Do not export private helpers merely to test them.
 - Prefer real local collaborators. Stub clocks, randomness, network or other nondeterministic boundaries; do not mock the behavior being tested. Avoid paid or live services by default.
 - Use independent expected values and assertions on meaningful effects. A test that calculates its expectation with the same algorithm can share the same bug.
+- A count of what the implementation just built (`Object.keys(ADVICE).length, 5`, a criteria total) is not an independent expectation. Assert the mapping instead — every class is advised or `no_failure`, every criterion is a name the consumer routes — and let the count follow.
 - Assert item counts before comparisons, including zero-item cases when valid. A parser or parity check that compares nothing is not evidence of correctness.
 - Keep fixtures small and deterministic. Assert errors and cleanup as well as successful output when those are part of the contract.
 - Do not weaken assertions, delete regressions or change expected results merely to make the implementation pass.
