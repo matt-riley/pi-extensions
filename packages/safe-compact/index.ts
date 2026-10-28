@@ -1,9 +1,9 @@
 // index.ts — pi extension: safe self-compaction with Jev making the judgment calls.
 //
-// Hybrid trigger: below --compact-soft-at nothing happens; between soft and
-// hard, Jev decides whether this turn boundary is a clean place to compact;
-// at --compact-at (or when the agent calls self_compact) it compacts at that
-// boundary. The summary itself is assembled by plan.mjs from spans Jev
+// Hybrid trigger: below --compact-soft-at nothing happens; from soft to hard, compaction runs
+// when context is high enough. With --compact-boundary-timing, Jev also checks whether this turn
+// is a safe task boundary and defers mid-task work until one (never past hard/overflow). At
+// --compact-at (or self_compact) it compacts regardless. The summary is assembled by plan.mjs;
 // selected and verified. Any failure returns nothing, so pi's native
 // compaction runs, and the manual `/safe-compact` command still uses
 // ctx.compact() for the idle case.
@@ -22,13 +22,13 @@ import { judgeMoment } from "./judge.mjs";
 import {
   buildBoundaryCompaction,
   composeHandoff,
-  decideTrigger,
   fileListsFromDetails,
   memoizeAsk,
   mergeFileLists,
   planBoundary,
 } from "./plan.mjs";
 import { messageText } from "./segment.mjs";
+import { boundaryTimingEnabled, decideCompactionTiming, isSafeBoundary } from "./timing.mjs";
 
 const DEFAULT_SOFT = 50;
 const DEFAULT_HARD = 70;
@@ -126,6 +126,11 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     description: `Context % where compaction happens regardless of moment (default ${DEFAULT_HARD}, max ${MAX_HARD})`,
     type: "string",
   });
+  pi.registerFlag("compact-boundary-timing", {
+    description:
+      "Between soft and hard thresholds, ask Jev whether this turn is a safe task boundary before compacting (default off)",
+    type: "boolean",
+  });
 
   let pendingNote: string | undefined;
   let requested = false;
@@ -137,6 +142,10 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   let waitedAt: number | null = null;
   /** A handoff failed at the hard threshold: pi compacts once the run settles. */
   let fallback = false;
+  /** At most one boundary judgment per turn (turn_end and session_before_compact share it). */
+  let boundaryCache:
+    | { key: string; moment: Awaited<ReturnType<typeof judgeMoment>> | null; judgeFailed: boolean }
+    | undefined;
 
   const thresholds = () => {
     const hard = Math.min(percentFlag(pi.getFlag("compact-at"), DEFAULT_HARD), MAX_HARD);
@@ -148,6 +157,41 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     ((ctx.sessionManager?.getBranch?.() ?? []) as Array<{ type?: string; message?: unknown }>)
       .filter((entry) => entry?.type === "message")
       .map((entry) => entry.message);
+
+  const boundaryTurnKey = (tokens: number, entryCount: number) => `${tokens}:${entryCount}`;
+
+  const assessBoundary = async (
+    ctx: ExtensionContext,
+    tokens: number,
+    entryCount: number,
+    signal: AbortSignal | undefined,
+  ) => {
+    const key = boundaryTurnKey(tokens, entryCount);
+    if (boundaryCache?.key === key) return boundaryCache;
+    const messages = branchMessages(ctx);
+    const lastUser = messages.findLastIndex((m: any) => m?.role === "user");
+    const asText = (list: unknown[]) => list.map((m) => messageText(m)).join("\n\n");
+    const recentText = asText(messages.slice(-RECENT_ENTRIES));
+    const currentRequest = lastUser >= 0 ? messageText(messages[lastUser]) : "";
+    const previousWork = asText(
+      messages.slice(Math.max(0, lastUser - RECENT_ENTRIES), Math.max(0, lastUser)),
+    );
+    let moment: Awaited<ReturnType<typeof judgeMoment>> | null = null;
+    let judgeFailed = false;
+    try {
+      moment = await judgeMoment({
+        recentText,
+        currentRequest,
+        previousWork,
+        ask,
+        signal: anySignal([AbortSignal.timeout(MOMENT_TIMEOUT_MS), signal, ctx.signal]),
+      });
+    } catch {
+      judgeFailed = true;
+    }
+    boundaryCache = { key, moment, judgeFailed };
+    return boundaryCache;
+  };
 
   /**
    * Snapshot the branch that is about to be replaced, and return the record the
@@ -262,41 +306,34 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
 
   pi.on("turn_end", async (event, ctx) => {
     if (compacting) return;
+    const timingOn = boundaryTimingEnabled(pi);
     const { soft, hard } = thresholds();
     const usage = ctx.getContextUsage?.();
     const tokens = usage?.tokens ?? 0;
     const percent = usedPercent(usage);
+    const entryCount = Array.isArray(event?.context?.contextEntries)
+      ? event.context.contextEntries.length
+      : 0;
     if (!requested) {
       if (percent === null || percent === undefined || percent < soft) return;
       if (rejectedAt !== null && tokens < rejectedAt + RETRY_GROWTH) return;
 
-      if (percent < hard) {
+      if (timingOn && percent < hard) {
         if (waitedAt !== null && tokens < waitedAt + RETRY_GROWTH) return;
-        const messages = branchMessages(ctx);
-        const lastUser = messages.findLastIndex((m: any) => m?.role === "user");
-        const asText = (list: unknown[]) => list.map((m) => messageText(m)).join("\n\n");
-        const recentText = asText(messages.slice(-RECENT_ENTRIES));
-        const currentRequest = lastUser >= 0 ? messageText(messages[lastUser]) : "";
-        const previousWork = asText(
-          messages.slice(Math.max(0, lastUser - RECENT_ENTRIES), Math.max(0, lastUser)),
-        );
-        let moment;
-        try {
-          moment = await judgeMoment({
-            recentText,
-            currentRequest,
-            previousWork,
-            ask,
-            signal: anySignal([AbortSignal.timeout(MOMENT_TIMEOUT_MS), ctx.signal]),
-          });
-        } catch {
-          waitedAt = tokens;
-          return; // Jev unavailable: wait for the hard threshold
-        }
-        if (decideTrigger({ percent, soft, hard, moment }) !== "compact") {
+        const { moment, judgeFailed } = await assessBoundary(ctx, tokens, entryCount, ctx.signal);
+        const trigger = decideCompactionTiming({
+          percent,
+          soft,
+          hard,
+          timingEnabled: true,
+          safe: moment ? isSafeBoundary(moment) : false,
+          judgeFailed,
+        });
+        if (trigger === "wait") {
           waitedAt = tokens;
           return;
         }
+        if (trigger === "none") return;
       }
     }
     requested = false;
@@ -353,6 +390,44 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   });
 
   pi.on("session_before_compact", async (event, ctx) => {
+    const timingOn = boundaryTimingEnabled(pi);
+    const { soft, hard } = thresholds();
+    const usage = ctx.getContextUsage?.();
+    const percent = usedPercent(usage);
+    const tokens = usage?.tokens ?? 0;
+    const overflow = event?.reason === "overflow";
+    const manual = event?.reason === "manual";
+    const entryCount = Array.isArray(event?.branchEntries) ? event.branchEntries.length : 0;
+
+    if (
+      timingOn &&
+      !manual &&
+      !overflow &&
+      percent !== null &&
+      percent !== undefined &&
+      percent >= soft &&
+      percent < hard
+    ) {
+      const { moment, judgeFailed } = await assessBoundary(ctx, tokens, entryCount, event?.signal);
+      if (
+        decideCompactionTiming({
+          percent,
+          soft,
+          hard,
+          timingEnabled: true,
+          safe: moment ? isSafeBoundary(moment) : false,
+          judgeFailed,
+          overflow,
+        }) === "wait"
+      ) {
+        ctx.ui?.notify?.(
+          "safe-compact: mid-task, deferring compaction until a safer boundary",
+          "info",
+        );
+        return { cancel: true };
+      }
+    }
+
     const { preparation, branchEntries, signal } = event;
     const snap = snapshot(ctx);
 
@@ -430,6 +505,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     rejectedAt = null;
     waitedAt = null;
     fallback = false;
+    boundaryCache = undefined;
   });
 
   pi.registerCommand("safe-compact", {

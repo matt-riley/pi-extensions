@@ -6,12 +6,13 @@ handoff is assembled and verified rather than trusted to one note.
 
 ## How it works
 
-1. **Trigger (hybrid).** Below `--compact-soft-at` (default 50%) nothing happens. Between soft and
-   `--compact-at` (default 70%, max 90%), Jev judges each turn boundary (mid-change? debugging?
-   just finished?) and compaction runs at the first clean one. At the hard threshold, or when the
-   agent calls `self_compact`, it runs regardless.
-   Percentages are of the context window capped at 300K tokens, so a 1M-token model compacts where
-   a 272K one does instead of re-sending a half-million-token prefix every turn.
+1. **Trigger (hybrid).** Below `--compact-soft-at` (default 50%) nothing happens. From soft up to
+   `--compact-at` (default 70%, max 90%), compaction runs once context is high enough; with
+   `--compact-boundary-timing` (default off, or `PI_SAFE_COMPACT_BOUNDARY_TIMING=1`), Jev also
+   asks whether this turn is a safe task boundary and defers mid-task work until a confident one.
+   At the hard threshold, on overflow, or when the agent calls `self_compact`, compaction runs
+   regardless. Percentages use the context window capped at 300K tokens, so a 1M-token model
+   compacts where a 272K one does instead of re-sending a half-million-token prefix every turn.
 2. **Commit at the boundary.** The handoff is appended as a compaction entry through pi's `turn_end`
    boundary, so the run is never aborted: a mid-task agent continues from the compacted context,
    and a finished turn stays finished. `ctx.compact()` (which aborts the current operation) is
@@ -120,12 +121,14 @@ refused with its size; the exam is for handoffs that fit.
 - Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
 - Commands: `/safe-compact [note]`, `/safe-compact-plan` (dry run, shows the handoff),
   `/safe-compact-info`.
-- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`.
+- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`, `--compact-boundary-timing` (defer between
+  soft and hard until Jev sees a safe task boundary; default off).
 - Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
 - `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
   (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
 
 ## Files
 
-`segment.mjs` (deterministic splitting), `judge.mjs` (every Jev question), `plan.mjs` (routing,
-assembly, verification), `index.ts` (pi wiring).
+`segment.mjs` (deterministic splitting), `judge.mjs` (every Jev question), `timing.mjs` (measured
+boundary thresholds and when to defer), `plan.mjs` (routing, assembly, verification), `index.ts`
+(pi wiring).

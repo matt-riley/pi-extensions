@@ -15,6 +15,7 @@ import {
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
+import { decideCompactionTiming, isSafeBoundary } from "./timing.mjs";
 
 const MAX_SEGMENTS = 400;
 const VERBATIM_MAX = 4000;
@@ -34,10 +35,24 @@ const FAITHFUL_FAILS_BELOW = 0.35;
 
 const KEEP_BELOW = 0.4; // hard-rule thresholds sit low: a false keep is cheap, a false drop is not
 
-export function decideTrigger({ percent, soft, hard, moment }) {
-  if (percent === null || percent === undefined || percent < soft) return "none";
-  if (percent >= hard || moment?.clean) return "compact";
-  return "wait";
+export function decideTrigger({
+  percent,
+  soft,
+  hard,
+  moment,
+  timingEnabled = false,
+  judgeFailed = false,
+  overflow = false,
+}) {
+  return decideCompactionTiming({
+    percent,
+    soft,
+    hard,
+    timingEnabled,
+    safe: moment ? isSafeBoundary(moment) : false,
+    judgeFailed,
+    overflow,
+  });
 }
 
 /**

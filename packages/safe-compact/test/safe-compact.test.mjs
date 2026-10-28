@@ -121,14 +121,30 @@ test("classify: hard rules beat the model, uncertainty keeps", () => {
   );
 });
 
-test("decideTrigger: below soft nothing, above hard always, between defers to the moment", () => {
+test("decideTrigger: below soft nothing, ceiling always compacts, timing gates the middle", () => {
   const args = { soft: 50, hard: 70 };
   assert.equal(decideTrigger({ ...args, percent: 40 }), "none");
   assert.equal(decideTrigger({ ...args, percent: null }), "none");
   assert.equal(decideTrigger({ ...args, percent: 75 }), "compact");
-  assert.equal(decideTrigger({ ...args, percent: 60, moment: { clean: true } }), "compact");
-  assert.equal(decideTrigger({ ...args, percent: 60, moment: { clean: false } }), "wait");
-  assert.equal(decideTrigger({ ...args, percent: 60 }), "wait");
+  assert.equal(
+    decideTrigger({
+      ...args,
+      percent: 60,
+      moment: { midFlight: 0.1, completed: 0.1, debugging: 0.1 },
+      timingEnabled: true,
+    }),
+    "compact",
+  );
+  assert.equal(
+    decideTrigger({
+      ...args,
+      percent: 60,
+      moment: { midFlight: 0.9, completed: 0.1, debugging: 0.1 },
+      timingEnabled: true,
+    }),
+    "wait",
+  );
+  assert.equal(decideTrigger({ ...args, percent: 60, timingEnabled: false }), "compact");
 });
 
 test("judgeMoment: mid-flight or debugging is not clean, unknown is not clean", async () => {
@@ -426,7 +442,7 @@ test("the extension registers its tools, commands and flags", () => {
   });
   assert.deepEqual(seen.tools, ["self_compact", "view_context"]);
   assert.deepEqual(seen.commands, ["safe-compact", "safe-compact-plan", "safe-compact-info"]);
-  assert.deepEqual(seen.flags, ["compact-soft-at", "compact-at"]);
+  assert.deepEqual(seen.flags, ["compact-soft-at", "compact-at", "compact-boundary-timing"]);
   assert.deepEqual(seen.events.sort(), [
     "agent_settled",
     "session_before_compact",
@@ -728,7 +744,7 @@ test("session_before_compact merges previous details into the handoff file lists
 });
 
 /** A stub pi whose snapshots land under a temp dir instead of the agent dir. */
-function wiring(ask = fakeAsk()) {
+function wiring(ask = fakeAsk(), { boundaryTiming = false } = {}) {
   const handlers = new Map();
   const tools = new Map();
   const notices = [];
@@ -738,7 +754,7 @@ function wiring(ask = fakeAsk()) {
       registerCommand: () => {},
       registerFlag: () => {},
       on: (name, handler) => handlers.set(name, handler),
-      getFlag: () => undefined,
+      getFlag: (name) => (name === "compact-boundary-timing" && boundaryTiming ? true : undefined),
       getSettings: () => ({ compaction: { keepRecentTokens: 20000 } }),
     },
     { ask },
@@ -981,12 +997,15 @@ test("a flagged tool result that can be re-run comes back as a pointer, other fl
   assert.equal(result.details.safeCompact.forced, 1);
 });
 
-test("between soft and hard, a 'not yet' is not re-judged until the context has grown", async () => {
+test("between soft and hard with boundary timing, a 'not yet' is not re-judged until the context has grown", async () => {
   let asked = 0;
-  const { handlers, ctx, cleanup } = wiring(async () => {
-    asked++;
-    throw new Error("TypeSafe unreachable");
-  });
+  const { handlers, ctx, cleanup } = wiring(
+    async () => {
+      asked++;
+      throw new Error("TypeSafe unreachable");
+    },
+    { boundaryTiming: true },
+  );
   try {
     const event = { entries: [], context: { contextEntries: largeEntries(30) } };
     const at = (tokens, percent) => {
@@ -1002,6 +1021,160 @@ test("between soft and hard, a 'not yet' is not re-judged until the context has 
     at(36000, 60);
     await handlers.get("turn_end")(event, ctx);
     assert.equal(asked, oneJudgment * 2, "10k more tokens earns another look");
+  } finally {
+    cleanup();
+  }
+});
+
+test("boundary timing off: between soft and hard compacts without a moment judgment", async () => {
+  let momentCalls = 0;
+  const { handlers, ctx, cleanup } = wiring(
+    async (request) => {
+      if ("mid_flight" in request.questions) momentCalls++;
+      return fakeAsk()(request);
+    },
+    { boundaryTiming: false },
+  );
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    const result = await handlers.get("turn_end")(event, ctx);
+    assert.ok(result?.entries?.[0]?.type === "compaction");
+    assert.equal(momentCalls, 0, "boundary timing off should not ask Jev about the moment");
+  } finally {
+    cleanup();
+  }
+});
+
+const momentAsk =
+  (scores) =>
+  async ({ questions }) => ({
+    answers: Object.fromEntries(
+      Object.keys(questions).map((id) => {
+        const value = scores[id] ?? 0.1;
+        if (questions[id]?.type === "score") return [id, { type: "score", score: value }];
+        return [id, noul(value)];
+      }),
+    ),
+  });
+
+const withHandoffAsk = (momentScores) => {
+  const judge = momentAsk(momentScores);
+  return async (request) => {
+    if ("mid_flight" in request.questions) return judge(request);
+    return fakeAsk()(request);
+  };
+};
+
+test("boundary timing on: a safe moment compacts between soft and hard", async () => {
+  const { handlers, ctx, cleanup } = wiring(
+    withHandoffAsk({ completed: 0.9, mid_flight: 0.1, debugging: 0.1 }),
+    { boundaryTiming: true },
+  );
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    const result = await handlers.get("turn_end")(event, ctx);
+    assert.equal(result.entries[0].type, "compaction");
+  } finally {
+    cleanup();
+  }
+});
+
+test("boundary timing on: mid-task defers compaction until the hard ceiling", async () => {
+  const { handlers, ctx, cleanup } = wiring(
+    withHandoffAsk({ mid_flight: 0.95, completed: 0.05, debugging: 0.05 }),
+    { boundaryTiming: true },
+  );
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+
+    ctx.getContextUsage = () => ({ tokens: 28000, contextWindow: 40000, percent: 70 });
+    const forced = await handlers.get("turn_end")(event, ctx);
+    assert.equal(forced.entries[0].type, "compaction");
+  } finally {
+    cleanup();
+  }
+});
+
+test("boundary timing on: judge failure defers below the ceiling but compacts at the ceiling", async () => {
+  let handoffCalls = 0;
+  const { handlers, ctx, cleanup } = wiring(
+    async (request) => {
+      if ("mid_flight" in request.questions) throw new Error("TypeSafe unreachable");
+      handoffCalls++;
+      return fakeAsk()(request);
+    },
+    { boundaryTiming: true },
+  );
+  try {
+    const event = { entries: [], context: { contextEntries: largeEntries(30) } };
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+
+    ctx.getContextUsage = () => ({ tokens: 28000, contextWindow: 40000, percent: 70 });
+    const forced = await handlers.get("turn_end")(event, ctx);
+    assert.equal(forced.entries[0].type, "compaction");
+    assert.ok(handoffCalls > 0, "the ceiling compacts without re-asking the moment judge");
+  } finally {
+    cleanup();
+  }
+});
+
+test("session_before_compact: mid-task defers threshold compactions when timing is on", async () => {
+  const { handlers, ctx, cleanup } = wiring(
+    withHandoffAsk({ mid_flight: 0.95, completed: 0.05, debugging: 0.05 }),
+    { boundaryTiming: true },
+  );
+  try {
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    const deferred = await handlers.get("session_before_compact")(
+      {
+        reason: "threshold",
+        preparation: {
+          messagesToSummarize: [user("GOALMARK fix the retry")],
+          turnPrefixMessages: [],
+          previousSummary: undefined,
+          tokensBefore: 100000,
+          firstKeptEntryId: "keep-1",
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+      },
+      ctx,
+    );
+    assert.deepEqual(deferred, { cancel: true });
+  } finally {
+    cleanup();
+  }
+});
+
+test("session_before_compact: overflow never defers even when timing is on", async () => {
+  const { handlers, ctx, cleanup } = wiring(
+    withHandoffAsk({ mid_flight: 0.95, completed: 0.05, debugging: 0.05 }),
+    { boundaryTiming: true },
+  );
+  try {
+    ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+    const result = await handlers.get("session_before_compact")(
+      {
+        reason: "overflow",
+        preparation: {
+          messagesToSummarize: [user(`GOALMARK fix the retry ${"x".repeat(200)}`)],
+          turnPrefixMessages: [],
+          previousSummary: undefined,
+          tokensBefore: 100000,
+          firstKeptEntryId: "keep-1",
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+      },
+      ctx,
+    );
+    assert.ok(result?.compaction?.summary);
+    assert.notEqual(result?.cancel, true);
   } finally {
     cleanup();
   }

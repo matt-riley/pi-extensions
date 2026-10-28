@@ -7,6 +7,7 @@
 
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { excerpt, mapPool, rateCandidates, topIndices, usable, yes } from "../../shared/spans.mjs";
+import { isSafeBoundary } from "./timing.mjs";
 
 const MAX_TEXT_CHARS = 1500;
 const MAX_HANDOFF_CHARS = 12000;
@@ -179,19 +180,8 @@ export async function judgeMoment({
   const switched = yes(answers?.switched_gears);
   const needsHistory =
     answers?.needs_history?.type === "score" ? usable(answers.needs_history.score) : null;
-  // Unknown counts against compacting: waiting one more turn is cheap.
-  const settled = midFlight !== null && debugging !== null;
-  const finished = (completed ?? 0) >= 0.5 || (settled && midFlight < 0.4 && debugging < 0.4);
-  const switchedAway =
-    compare &&
-    (switched ?? 0) >= 0.7 &&
-    needsHistory !== null &&
-    needsHistory < 1 &&
-    settled &&
-    midFlight < 0.6 &&
-    debugging < 0.4;
-  const clean = settled && (finished || switchedAway);
-  return { clean, midFlight, completed, debugging, switched, needsHistory };
+  const scores = { compared: compare, midFlight, completed, debugging, switched, needsHistory };
+  return { clean: isSafeBoundary(scores), ...scores };
 }
 
 /** Does each handoff entry faithfully reflect its source? One request per entry; null = unusable. */
