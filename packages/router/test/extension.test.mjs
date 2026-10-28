@@ -186,25 +186,29 @@ test("an economy base escalates to the mid tier before the frontier", async () =
     config: { base: "deepseek/deepseek-flash" },
   });
   const routed = await h.run("fix the failing parser tests in the guardrail package");
-  assert.equal(routed.model, LUNA, "the mid pattern, not the frontier");
-  assert.equal(routed.thinkingLevel, "medium");
+  assert.equal(routed.model, ASTRA, "the mid pattern, not the frontier");
+  assert.equal(routed.thinkingLevel, "low");
 });
 
-test("a mid base holds a mid-rated task at the selected cap", async () => {
+test("a mid-rated task escalates to the mid tier pair", async () => {
   const h = harness({ difficulty: 1.8 });
   const routed = await h.run("fix the failing parser tests in the guardrail package");
-  assert.equal(routed.model, LUNA);
-  assert.equal(routed.thinkingLevel, "medium");
+  assert.equal(routed.model, ASTRA);
+  assert.equal(routed.thinkingLevel, "low");
   const entry = h.entries.find((e) => e.customType === "router-decision");
-  assert.equal(entry.data.outcome, "held");
-  assert.equal(entry.data.thinking, undefined);
+  assert.equal(entry.data.outcome, "escalated");
+  assert.equal(entry.data.to, "openai-codex/gpt-6-astra");
 });
 
-test("a selected thinking level above the tier default is not lowered", async () => {
-  const h = harness({ difficulty: 1.8, thinkingLevel: "max" });
+test("a selected thinking cap above the mid pair is not lowered on the same model", async () => {
+  const h = harness({
+    difficulty: 1.8,
+    thinkingLevel: "max",
+    config: { mid: [{ model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" }] },
+  });
   const routed = await h.run("fix the failing parser tests in the guardrail package");
   assert.equal(routed.model, LUNA);
-  assert.equal(routed.thinkingLevel, "max");
+  assert.equal(routed.thinkingLevel, "xhigh");
 });
 
 test("a frontier cap selects Sol xhigh instead of Astra low", async () => {
@@ -495,7 +499,10 @@ test("a missing mid model says so, not 'frontier'", async () => {
   const h = harness({
     difficulty: 1.8,
     available: [DEEPSEEK, ASTRA, SOL],
-    config: { base: "deepseek/deepseek-flash" },
+    config: {
+      base: "deepseek/deepseek-flash",
+      mid: [{ model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" }],
+    },
   });
   const routed = await h.run("fix the failing parser tests in the guardrail package");
   assert.equal(routed.model, DEEPSEEK);
@@ -611,10 +618,13 @@ test("escalates when the session still fits the frontier window", async () => {
 test("the config file is created with the built-in lists", async () => {
   const h = harness({ difficulty: 0.6 });
   const created = JSON.parse(fs.readFileSync(h.configPath, "utf8"));
-  assert.deepEqual(created.base, [{ model: "openai-codex/gpt-5.6-luna" }]);
-  assert.deepEqual(created.mid, [
-    { model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" },
+  assert.deepEqual(created.base, [
     { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
+    { model: "openai-codex/gpt-5.6-luna" },
+  ]);
+  assert.deepEqual(created.mid, [
+    { model: "openai-codex/gpt-6-astra", thinking: "low" },
+    { model: "openai-codex/gpt-5.6-luna", thinking: "xhigh" },
   ]);
   assert.ok(
     created.frontier.some(
@@ -756,7 +766,7 @@ test("/route status reports what it has been doing", async () => {
   assert.match(status, /1 judged/);
   assert.match(status, /1 escalated/);
   assert.match(status, new RegExp(`threshold ${DIFFICULTY_THRESHOLD}`));
-  assert.match(status, /mid .*gpt-5\.6-luna@xhigh/);
+  assert.match(status, /mid .*gpt-6-astra@low/);
   assert.match(status, /frontier .*gpt-5\.6-sol@max/);
   assert.match(status, /routed to openai-codex\/gpt-6-astra/);
 });
@@ -1108,11 +1118,11 @@ test("/route preview reports a dry run and does not count as a turn", async () =
   const text = h.notifications.at(-1).title;
   assert.match(text, /1\.60/);
   assert.match(text, /mid/);
-  assert.match(text, /openai-codex\/gpt-5\.6-luna/);
-  assert.match(text, /medium/);
+  assert.match(text, /openai-codex\/gpt-6-astra/);
+  assert.match(text, /low/);
   assert.match(text, /fits/);
   assert.match(text, /grok-4\.6/);
-  assert.match(text, /base Luna@medium · mid Luna@medium \(same as base\)/);
+  assert.match(text, /base Luna@medium · mid Astra@low/);
   assert.equal(h.askArgs[0].state.prompt, "fix the failing parser tests in the guardrail package");
   await h.command("status");
   const status = h.notifications.at(-1).title;
@@ -1125,19 +1135,17 @@ test("/route status shows the effective ladder at the current cap", async () => 
   const h = harness({ difficulty: 0.6 });
   await h.command("status");
   const status = h.notifications.at(-1).title;
-  assert.match(
-    status,
-    /base Luna@medium · mid Luna@medium \(same as base\) · frontier Astra@medium/,
-  );
-  assert.match(status, /mid collapses onto base/);
+  assert.match(status, /base Luna@medium · mid Astra@low · frontier Astra@medium/);
+  assert.ok(!/mid collapses onto base/.test(status));
 });
 
-test("/route status warns when the low cap filters mid out", async () => {
+test("/route status shows mid and frontier on the same pair at the low cap", async () => {
   const h = harness({ difficulty: 0.6, thinkingLevel: "low" });
   await h.command("status");
   const status = h.notifications.at(-1).title;
-  assert.match(status, /base Luna@low · mid \(none\) · frontier Astra@low/);
-  assert.match(status, /mid is filtered out by the low cap/);
+  assert.match(status, /base Luna@low · mid Astra@low · frontier Astra@low/);
+  assert.ok(!/mid collapses onto base/.test(status));
+  assert.ok(!/mid is filtered out/.test(status));
 });
 
 test("a non-matching error retry stays on the model that failed", async () => {

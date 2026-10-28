@@ -33,9 +33,9 @@ escalations.
 
 That 1.5 line was measured for "escalate at all", not for the size of the step.
 The split between the mid tier and the frontier tier at 2.5 is a curated design
-choice that has not been calibrated, and the mid list is a single verified entry
-(`openai-codex/gpt-5.6-luna` — the model picked by hand when deepseek stalled),
-not a benchmark result. Treat both as dials.
+choice that has not been calibrated. The default mid list leads with
+`Astra@low`, then `Luna@xhigh`, so mid is a real step above the explicit
+`Luna@medium` base pair at the usual caps. Treat both boundaries as dials.
 
 An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
 the `needs_frontier` question, which the router does not use — the audit that
@@ -46,7 +46,8 @@ caught it is summarised at the bottom of this file.
 Select `router/auto` in `/model` (or `--model router/auto`). Selecting a
 physical model instead deselects the router — ownership is a selection, not a
 state machine. The base is what the router holds at when it is not escalating:
-the first entry in the config's `base` list, defaulting to Luna.
+the first entry in the config's `base` list (`Luna@medium` by default, clamped
+by the cap through the fallback entry), defaulting to Luna.
 
 - **Judges at task boundaries** and when the previous turn ended in two or more
   failures (the stuck case), capped at 3 judgements per task. The gate is the
@@ -119,10 +120,13 @@ at the next task, no restart:
 
 ```json
 {
-  "base": [{ "model": "openai-codex/gpt-5.6-luna" }],
+  "base": [
+    { "model": "openai-codex/gpt-5.6-luna", "thinking": "medium" },
+    { "model": "openai-codex/gpt-5.6-luna" }
+  ],
   "mid": [
-    { "model": "openai-codex/gpt-5.6-luna", "thinking": "xhigh" },
-    { "model": "openai-codex/gpt-5.6-luna", "thinking": "medium" }
+    { "model": "openai-codex/gpt-6-astra", "thinking": "low" },
+    { "model": "openai-codex/gpt-5.6-luna", "thinking": "xhigh" }
   ],
   "frontier": [
     { "model": "openai-codex/gpt-5.6-sol", "thinking": "max" },
@@ -141,7 +145,9 @@ at the next task, no restart:
   model at the selected reasoning level.
 - The selected virtual-model reasoning level is a hard cap. Candidates above it
   are filtered before model selection; the first remaining pair wins. A missing
-  `thinking` follows the selected level.
+  `thinking` follows the selected level. The base list includes a cap-following
+  Luna entry after `Luna@medium` so a low cap still resolves base instead of
+  falling through empty-handed.
 - A missing key keeps the built-in default; an explicit `[]` keeps the tier
   empty, which is a decision — a rating that wants that tier holds the current
   model and says why.
@@ -182,11 +188,11 @@ extensions. `/route status` prints sharing/playbook state, config path, the
 configured lists, and the effective ladder at the current thinking cap.
 
 The ladder is what each tier resolves to under that cap, for example
-`base Luna@medium · mid Luna@medium (same as base) · frontier Astra@medium`.
+`base Luna@medium · mid Astra@low · frontier Astra@medium`.
 A tier that lands on the same model and the same thinking level as base is
 marked as collapsed, and a tier whose pairs all sit above the cap is marked
-as filtered out. With the default lists, mid collapses onto base at every
-cap, and at `low` mid has no usable pair. The ladder only reports this. It
+as filtered out. At the `low` cap, mid and frontier can both land on
+`Astra@low` while base stays on `Luna@low`. The ladder only reports this. It
 does not change which model a turn gets.
 
 `/route preview` asks Jev once, using the same difficulty state, rating and
@@ -272,9 +278,9 @@ extensions and the selected physical provider retain their own data flows.
 ## Limits worth knowing
 
 - **The tier split is not calibrated.** Only the 1.5 line was measured, and it
-  was measured for escalating at all. The 2.5 mid/frontier boundary is a design
-  choice and the mid list is a single verified entry, so treat the tier boundary
-  as unvalidated until the reports accumulate decisions.
+  was measured for escalating at all. The 2.5 mid/frontier boundary and the
+  default mid pair order are design choices, so treat the tier boundary as
+  unvalidated until the reports accumulate decisions.
 
 - **Measured precision is inflated, not a floor.** The judged sample was
   enriched (all 50 frontier turns, 40 of the 761 others) where the live base

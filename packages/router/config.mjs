@@ -13,11 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  DEFAULT_BASE_PATTERNS,
-  DEFAULT_FRONTIER_PATTERNS,
-  DEFAULT_MID_PATTERNS,
-} from "./model-battery.mjs";
+import { DEFAULT_BASE_PATTERNS, DEFAULT_FRONTIER_PATTERNS } from "./model-battery.mjs";
 
 const CONFIG_FILE = "router.json";
 
@@ -38,8 +34,8 @@ const pair = (model, thinking) => ({
 
 /** The pairs written to a fresh config file. Stronger pairs come first. */
 export const DEFAULT_CONFIG = {
-  base: [pair(DEFAULT_BASE_PATTERNS[0])],
-  mid: [pair(DEFAULT_MID_PATTERNS[0], "xhigh"), pair(DEFAULT_MID_PATTERNS[0], "medium")],
+  base: [pair(DEFAULT_BASE_PATTERNS[0], "medium"), pair(DEFAULT_BASE_PATTERNS[0])],
+  mid: [pair(DEFAULT_FRONTIER_PATTERNS[0], "low"), pair(DEFAULT_BASE_PATTERNS[0], "xhigh")],
   frontier: [
     pair(DEFAULT_FRONTIER_PATTERNS[1], "max"),
     pair(DEFAULT_FRONTIER_PATTERNS[1], "xhigh"),
