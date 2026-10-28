@@ -3,8 +3,9 @@
 // A run that edits code and settles without running the repo's checks is about
 // to report "done" on faith. At `agent_before_settle` — the last boundary that
 // can still act — this appends one reminder and requests one continuation so
-// the model reads it before the turn closes. It also lists `[DEBUG-` tags left
-// in the working-tree diff.
+// the model reads it before the turn closes. The reminder names the Go,
+// TypeScript or Lua commands that cover the dirty files, or `.pi/verify` when
+// that path exists. It also lists `[DEBUG-` tags left in the working-tree diff.
 //
 // Quiet on purpose. The reminder is `display: false`: the model reads it as a
 // user message, the transcript does not, and it asks for the closing message to
@@ -52,6 +53,7 @@ import {
   resetGateState,
   shouldNudge,
 } from "./gate.mjs";
+import { resolveScopedChecks } from "./scoped.mjs";
 
 const CUSTOM_TYPE = "done-gate";
 const GIT_TIMEOUT_MS = 5_000;
@@ -230,7 +232,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     // swallows its own errors, and the judge reports every failure as
     // "unjudged". The judge takes its own timeout rather than `ctx.signal`,
     // because an inherited abort would drop the judgment silently.
-    const [debugHits, judged] = await Promise.all([
+    const [debugHits, judged, commands] = await Promise.all([
       needsVerify ? findDebugTags(cwd, untracked) : Promise.resolve([]),
       judgeDoneClaim({
         claim: lastClaim,
@@ -238,6 +240,9 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
         verificationSeen: state.verificationSeen,
         remoteVerificationSeen: state.remoteVerificationSeen,
       }),
+      needsVerify
+        ? resolveScopedChecks({ root: cwd, files, env: process.env }).catch(() => [])
+        : Promise.resolve([]),
     ]);
 
     if (!needsVerify) {
@@ -262,7 +267,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
 
     state.dirty = new Set(files);
-    const content = buildNudge(state, debugHits, claimLine(judged));
+    const content = buildNudge(state, debugHits, claimLine(judged), commands);
     // Keep earlier handlers' drafts; only ever set continue to true so another
     // extension's continuation is never cleared.
     return {

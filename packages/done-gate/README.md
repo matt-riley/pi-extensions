@@ -8,19 +8,20 @@ the explanation of the work rather than a report about the reminder.
 This is the text the model sees (you don't):
 
 ```
-Done check: 2 file(s) changed after the last verification run (src/a.ts, src/b.ts).
-Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise
-the changed behavior, or say plainly why verification does not apply. Then close
-with your explanation of the work plus one line of what the check proved, not a
-report about this reminder.
-Leftover debug instrumentation to remove: src/a.ts:42.
-TypeSafe reads that claim as done with the unverified edits unmentioned
-(asserts_verified 0.88 · acknowledges_gap 0.05). Name what is unverified, or run the checks.
+Done check: 1 file(s) changed after the last verification run (pkg/foo/a.go).
+Before reporting done, run `go test ./pkg/foo` and `golangci-lint run ./pkg/foo`
+as separate commands, and exercise the changed behavior, or say plainly why
+verification does not apply. Then close with your explanation of the work plus
+one line of what the check proved, not a report about this reminder.
 ```
 
-No config or runtime dependencies. The last line appears only when a
-claim judgment disagrees with what the run actually did; without TypeSafe
-credentials the reminder stops after the first paragraph.
+When nothing in the change maps to a command, or the only signal is a closing
+claim, the middle sentence stays the generic one: run the repo's checks
+(`.pi/verify` if present). The TypeSafe sentence is unchanged, and it appears
+only when a claim judgment disagrees with what the run actually did. Without
+credentials the reminder stops after the commands.
+
+No config or runtime dependencies.
 
 ## What arms the gate
 
@@ -38,6 +39,44 @@ apply.
 - **Non-doc, successful, after the last verification.** Prose edits, failed
   edits, and edits followed by a successful final-revision check do not arm it.
   Failed, unknown, skipped/masked or stale checks leave code unverified.
+
+## Which commands
+
+The reminder names the commands that cover the files still dirty at settle.
+A successful run of one of those commands, as its own bash call, after the
+last edit is a verification run, so the gate does not fire again. Run them
+separately: `go test ./pkg/foo && golangci-lint run ./pkg/foo` is still one
+compound shell, and those do not count.
+
+**`.pi/verify` wins.** If that path exists (a file or a directory), it is the
+only command named. The language mapping is not also listed.
+
+Otherwise the mapping is deterministic and needs no TypeSafe key:
+
+- **Go.** A `.go` file belongs to its directory. `pkg/foo/testdata` belongs to
+  `./pkg/foo`, because the Go tool ignores `testdata`. One package is
+  `go test ./pkg/foo`. Several packages under one directory collapse to
+  `go test ./pkg/...`. Packages that only meet at the repo root are listed
+  (`go test ./cmd/tool ./pkg/foo`), never `go test ./...`. A nested `go.mod`
+  is `go test -C <module> <packages>`, still one command.
+  `golangci-lint run` is added on those same packages when a
+  `.golangci.yml`, `.golangci.yaml`, `.golangci.toml` or `.golangci.json`
+  sits on the way up from a changed file, or when `golangci-lint` is on `PATH`.
+- **TypeScript** (`.ts`, `.tsx`, `.mts`, `.cts`). `tsc --noEmit -p` the nearest
+  `tsconfig*.json`. Files that share a config share one command. A plain
+  `tsconfig.json` wins when that directory also has other configs. A file with
+  no tsconfig is not given a `tsc` command.
+- **Lua.** `stylua --check <files>` when `stylua.toml` or `.stylua.toml` is
+  above the file, and `selene <files>` when `selene.toml` is. Both, when both
+  configs exist. Files with neither config are left off the command.
+
+Jev is asked only when the nearest directory has two or more tsconfigs and
+none of them is `tsconfig.json` (app versus node, for example). With a key it
+picks one command. With no key, a failed request, or an unusable answer, every
+candidate stays in the reminder. Clear mappings never call it.
+
+A change that matches none of this — a Python file, a `go.mod`, a TypeScript
+file with no tsconfig — keeps the generic sentence.
 
 ## Why `agent_before_settle`
 
@@ -125,7 +164,8 @@ remote evidence clears the reading.
   `npm|pnpm|yarn|bun [run] test|check|lint|typecheck|verify`, `node --test`,
   `go test|vet`, `cargo test|check|clippy`, `make test|check|lint|verify`, or
   `pytest`, `vitest`, `jest`, `tsc`, `mypy`, `ruff`, `oxlint`, `eslint`,
-  `golangci-lint` (optionally via `npx`, `bunx`, `uv run`, `python -m`, …).
+  `golangci-lint`, `stylua --check` or `selene` (optionally via `npx`, `bunx`,
+  `uv run`, `python -m`, …).
   Recognized standalone checks support an outer `rtk` prefix and environment
   assignments. Compound shells/pipelines/background jobs and listing/dry-run
   flags are conservatively not accepted: run the check as its own bash call,
@@ -202,8 +242,10 @@ pilot retains its own narrower protocol. The completion reminder is unchanged.
 ## Tests
 
 `node --test packages/done-gate/test/*.test.mjs` — command recognition
-(positive and negative), the dirty/verify state machine, cwd scoping and
-working-tree liveness, outcome gating, debug-tag line numbers against a real
-temporary git repo, and the claim judgment: the question set, state shaping,
-threshold routing, the line it renders, and the no-request and failed-request
-paths.
+(positive and negative, including `stylua --check` and `selene`), the
+dirty/verify state machine, cwd scoping and working-tree liveness, outcome
+gating, debug-tag line numbers against a real temporary git repo, the scoped
+command mapping (Go packages, nested modules, golangci, nearest tsconfig, Lua
+configs, `.pi/verify` winning, and the Jev choice only when several tsconfigs
+apply), and the claim judgment: the question set, state shaping, threshold
+routing, the line it renders, and the no-request and failed-request paths.
