@@ -52,7 +52,7 @@ test("the reader agent is read-only and pinned to cross-family", () => {
 
 test("the reader task names only the plan path, not chat or plan body", () => {
   const task = buildReaderTask(FIXTURE_PATH);
-  assert.match(task, new RegExp(FIXTURE_PATH.replace(/\./g, "\\.")));
+  assert.ok(task.includes(FIXTURE_PATH));
   assert.doesNotMatch(task, /Retry failed uploads/);
   assert.doesNotMatch(task, /chat history/i);
 });
