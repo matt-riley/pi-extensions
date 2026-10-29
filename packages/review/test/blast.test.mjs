@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -55,8 +55,9 @@ test("report says so when nothing is touched", async () => {
   assert.equal(await report("", () => []), "No definitions touched.");
 });
 
-test("touchedSymbols reads a real diff even when git is set to mnemonic prefixes", () => {
+test("touchedSymbols reads a real diff even when git is set to mnemonic prefixes", (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "blast-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8" });
   git("init", "-q");
   git("config", "diff.mnemonicPrefix", "true");

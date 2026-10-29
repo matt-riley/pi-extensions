@@ -1,15 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { changedFiles, describeChanges, snapshotChanges } from "../diff.mjs";
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: "ignore" });
 
-test("only changes made after the snapshot are attributed", async () => {
+test("only changes made after the snapshot are attributed", async (t) => {
   const cwd = mkdtempSync(path.join(tmpdir(), "subagent-diff-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
   git(cwd, "init", "-q");
   git(cwd, "config", "user.email", "t@example.com");
   git(cwd, "config", "user.name", "t");
@@ -31,8 +32,9 @@ test("only changes made after the snapshot are attributed", async () => {
   assert.match(diff, /\+3/);
 });
 
-test("outside a git repo everything is a quiet no-op", async () => {
+test("outside a git repo everything is a quiet no-op", async (t) => {
   const cwd = mkdtempSync(path.join(tmpdir(), "subagent-nogit-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
   assert.equal(await snapshotChanges(cwd), undefined);
   assert.deepEqual(changedFiles(undefined, undefined), []);
 });

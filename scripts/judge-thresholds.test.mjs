@@ -181,8 +181,9 @@ test("loosening a line can only move calls from confirm to allow", () => {
   assert.deepEqual(b.newlyAllowed, ["go test -race ./..."]);
 });
 
-test("judge-thresholds --show-allow says when the action was not recorded", () => {
+test("judge-thresholds --show-allow says when the action was not recorded", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jev-allow-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "sample.json");
   fs.writeFileSync(
     file,
@@ -208,8 +209,9 @@ test("judge-thresholds --show-allow says when the action was not recorded", () =
   assert.match(result.stdout, /go test -race/);
 });
 
-test("judge-thresholds --show-allow counts unrecorded actions on one line", () => {
+test("judge-thresholds --show-allow counts unrecorded actions on one line", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jev-allow-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "sample.json");
   fs.writeFileSync(
     file,

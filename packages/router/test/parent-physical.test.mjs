@@ -36,8 +36,9 @@ test("lastRoutedPhysicalKey walks assistant messages newest first", () => {
   assert.equal(lastRoutedPhysicalKey(branch), "openai-codex/gpt-5.6-sol");
 });
 
-test("physicalParentKeyForCrossFamily uses the last routed model for router/auto", () => {
+test("physicalParentKeyForCrossFamily uses the last routed model for router/auto", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "router-parent-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "router.json");
   fs.writeFileSync(file, JSON.stringify({ base: [{ model: "openai-codex/gpt-5.6-luna" }] }));
   const ctx = {
@@ -52,8 +53,9 @@ test("physicalParentKeyForCrossFamily uses the last routed model for router/auto
   assert.equal(physicalParentKeyForCrossFamily(ctx.model, ctx, file), "openai-codex/gpt-5.6-sol");
 });
 
-test("physicalParentKeyForCrossFamily falls back to router.json base before any route", () => {
+test("physicalParentKeyForCrossFamily falls back to router.json base before any route", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "router-parent-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "router.json");
   fs.writeFileSync(file, JSON.stringify({ base: [{ model: "openai-codex/gpt-5.6-luna" }] }));
   const ctx = {

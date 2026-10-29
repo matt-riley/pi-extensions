@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { atomicWriteFile, resolvePlanFile } from "../plan-file.mjs";
@@ -145,8 +145,9 @@ test("alt collision loop skips taken numbers", () => {
   );
 });
 
-test("atomicWriteFile writes and replaces content, leaves no temp files", async () => {
+test("atomicWriteFile writes and replaces content, leaves no temp files", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "plan-file-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "PLAN.md");
   await atomicWriteFile(file, "one");
   assert.equal(await readFile(file, "utf8"), "one");
@@ -155,16 +156,18 @@ test("atomicWriteFile writes and replaces content, leaves no temp files", async 
   assert.deepEqual(await readdir(dir), ["PLAN.md"]);
 });
 
-test("atomicWriteFile creates missing parent directories", async () => {
+test("atomicWriteFile creates missing parent directories", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "plan-file-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, ".pi", "PLAN.md");
   await atomicWriteFile(file, "one");
   assert.equal(await readFile(file, "utf8"), "one");
   assert.deepEqual(await readdir(path.join(dir, ".pi")), ["PLAN.md"]);
 });
 
-test("atomicWriteFile cleans up temp on failure", async () => {
+test("atomicWriteFile cleans up temp on failure", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "plan-file-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "PLAN.md");
   await writeFile(file, "keep");
   // The parent path segment is a plain file, not a directory, so even

@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,17 @@ import {
   usesAllowlistedBash,
 } from "../discover.mjs";
 
+const temporaryDirectories = [];
+
+after(() => {
+  for (const directory of temporaryDirectories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
+});
+
 function tempDir() {
-  return mkdtempSync(path.join(tmpdir(), "pi-subagents-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "pi-subagents-"));
+  temporaryDirectories.push(dir);
+  return dir;
 }
 
 function writeAgent(dir, name, body) {
