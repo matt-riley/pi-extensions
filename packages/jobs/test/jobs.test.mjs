@@ -101,7 +101,7 @@ test("cleanup errors remain visible without rejecting lifecycle listeners or han
   const kill = process.kill.bind(process);
   t.mock.method(process, "kill", (pid, signal) => {
     if (pid < 0 && signal === "SIGKILL")
-      throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+      throw Object.assign(new Error("kill EACCES"), { code: "EACCES" });
     return kill(pid, signal);
   });
   const jobs = new Jobs();
@@ -110,7 +110,24 @@ test("cleanup errors remain visible without rejecting lifecycle listeners or han
   const result = await jobs.wait(job.id, { timeoutMs: 3000 });
   assert.equal(result.status, "exited");
   assert.equal(result.exit_code, 0);
-  assert.equal(result.cleanup_error, "kill EPERM");
+  assert.equal(result.cleanup_error, "kill EACCES");
+  await jobs.shutdown();
+});
+
+test("an exited-but-unreaped group leader's EPERM is not a cleanup failure", async (t) => {
+  const kill = process.kill.bind(process);
+  t.mock.method(process, "kill", (pid, signal) => {
+    if (pid < 0 && signal === "SIGTERM")
+      throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+    return kill(pid, signal);
+  });
+  const jobs = new Jobs();
+  t.after(() => jobs.shutdown());
+  const job = await jobs.start({ command: "sleep 30" });
+  await jobs.stop(job.id);
+  const stopped = jobs.read(job.id);
+  assert.equal(stopped.status, "stopped");
+  assert.equal(stopped.cleanup_error, null, "a zombie leader is already gone, not unkillable");
   await jobs.shutdown();
 });
 

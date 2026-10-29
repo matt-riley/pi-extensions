@@ -226,7 +226,11 @@ export class Jobs extends EventEmitter {
         if (process.platform === "win32") job.child.kill(signal);
         else process.kill(-pid, signal);
       } catch (error) {
-        if (error.code === "ESRCH") continue;
+        // ESRCH: already gone. EPERM: the target is one of our own children whose
+        // leader has exited but not been reaped yet — macOS refuses to signal a
+        // zombie group. Nothing is left to kill, and the close-time sweep below
+        // still reaps any surviving descendants.
+        if (error.code === "ESRCH" || error.code === "EPERM") continue;
         job.cleanup_error = error.message;
         failure ??= error;
       }
