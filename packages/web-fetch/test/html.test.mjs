@@ -230,6 +230,15 @@ test("selectMain: longest block child wins", () => {
   assert.ok(textLength(main) > 200);
 });
 
+test("selectMain: a page of 20k sibling blocks still picks the longest block", () => {
+  let html = "<body>";
+  for (let i = 0; i < 20_000; i++) html += "<div><p>small</p></div>";
+  html += "<section><p>" + "words ".repeat(60) + "</p></section></body>";
+  const main = selectMain(stripBoilerplate(treeFrom(html)));
+  assert.equal(main.tag, "section");
+  assert.ok(textLength(main) > 200);
+});
+
 test("selectMain: falls back to body for short pages", () => {
   const tree = stripBoilerplate(treeFrom("<body><h1>Hi</h1><p>short page</p></body>"));
   const main = selectMain(tree);

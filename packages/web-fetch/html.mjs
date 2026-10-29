@@ -708,8 +708,10 @@ export function selectMain(root, { minChars = MIN_MAIN_CHARS } = {}) {
   // Semantic elements win outright — they are the page's declared content.
   let semantic = null;
   const queue = [root];
-  while (queue.length) {
-    const node = queue.shift();
+  // Read the queue by index: Array#shift() degrades to a memmove per visit once
+  // the queue is large, which made wide pages quadratic.
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const node = queue[cursor];
     if (!node) continue;
     if (node.tag !== null) {
       if (node.tag === "article") {
