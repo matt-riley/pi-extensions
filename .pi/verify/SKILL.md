@@ -167,17 +167,16 @@ ok      TYPESAFE_API_KEY set — live judgment and web_answer drives are availab
 doctor: ready for npm run check, npm run verify, npm run smoke and the workbench drive
 ```
 
-`npm run check` is intermittently red at this revision: 9 of 18 full-suite
-runs failed. Eight of those fail in the teardown of
-`packages/done-gate/test/extension.test.mjs:89` with `Error: kill EPERM` from
-`packages/jobs/jobs.mjs:227` — `Jobs.shutdown` (`jobs.mjs:342`) awaits
-`Promise.all` over `stop`, and `#kill` rethrows anything except `ESRCH`, so a
-process group that exits in that window fails the hook. That file passes alone
-(3/3); one other jobs test failed once, without a captured stack. Start from
-`packages/done-gate/test/extension.test.mjs:89` and `jobs.mjs:227`/`:342`; every
-other stage — conventions, `tsc`, oxlint, oxfmt, knip, fallow — passed on every
-run, and the suite has 1128 tests. This is a product defect reported separately;
-do not soften this step to hide it, and do not read one green run as proof.
+`npm run check` used to be intermittently red here (9 of 18 full-suite runs):
+the teardown of `packages/done-gate/test/extension.test.mjs:89` failed with
+`Error: kill EPERM` from `Jobs.#kill`, because `shutdown` (`jobs.mjs:342`)
+awaits `Promise.all` over `stop` and `#kill` rethrew everything except
+`ESRCH`. Measured cause: the job's group leader had exited but not been reaped,
+and macOS refuses to signal a zombie group with `EPERM`. `#kill` now treats
+`EPERM` like `ESRCH` — the process is gone, and the close-time SIGKILL sweep
+still reaps surviving descendants. Verified at the fix by instrumenting
+`process.kill`: the window still hit 3 of 18 parallel `done-gate` runs with 0
+test failures, and 3 consecutive `npm run check` runs passed (1301 tests).
 
 ```text
 $ npm run verify
