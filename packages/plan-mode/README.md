@@ -13,6 +13,7 @@ loop Copilot CLI's plan mode gives you.
 /plan               status (state + plan file path)
 /plan approve       approve the written plan: leaves plan mode, restores tools,
                     and tells the agent to implement the plan file
+/plan check         optional fresh-context comprehension check (see below)
 /plan edit          edit the plan in the editor dialog (Ctrl+G hands off to $EDITOR)
 /plan exit | off    cancel plan mode without implementing
 ```
@@ -121,6 +122,30 @@ plan: no key, a failed request or an unusable answer means the plan is written
 exactly as submitted. A plan where every step holds up gets a one-line "every
 step names its verification" instead of silence, so the check is visible when it
 passes too.
+
+### `/plan check` (comprehension)
+
+Before `/plan approve`, you can run **`/plan check`**: one hidden read-only
+child (via `subagents/spawn.mjs` `runChild`, pinned to **`cross-family`**, no
+fleet widget or panes) reads **only** the plan file path — it never sees the
+planning chat — and may read files the plan names. It must restate the plan under
+**What the plan changes** and **How it will be done**, then list **Gaps**
+(undefined terms, unstated assumptions, missing verification). TypeSafe (Jev) then
+answers two yes/no questions: whether the restatement matches the plan goal, and
+whether any step depends on something the plan never states. The result is
+appended to the plan file as **`## Plan comprehension check`**, and Jev's answers
+are logged in the usual **`jev-decision`** ledger like the step review above.
+
+Cost: **one child run** (up to 8 turns, 120s timeout) plus one Jev request (12s).
+It is **opt-in and advisory** — it never blocks or changes `/plan approve`.
+
+Hard failures are reported honestly:
+
+- A failed, timed-out, or aborted reader is **`not run`** with the reason, never
+  "no gaps".
+- A missing TypeSafe key or a Jev failure still shows the reader's restatement
+  and gaps; the verdict is **`not run`**, never a pass.
+- With no plan file yet, `/plan check` says so and does nothing.
 
 You then read/edit `.pi/PLAN.md` — directly, via `/plan edit` or `ctrl+alt+e`
 (Ctrl+G inside the dialog opens your `$EDITOR`; the plan is written back when

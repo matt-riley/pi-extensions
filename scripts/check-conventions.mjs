@@ -27,6 +27,7 @@ const HOST_EXPORTS = {
       "SessionManager",
       "getAgentDir",
     ],
+    "packages/plan-mode/index.ts": ["getAgentDir"],
   },
   "@earendil-works/pi-tui": {
     "packages/footer/index.ts": ["truncateToWidth", "visibleWidth"],
