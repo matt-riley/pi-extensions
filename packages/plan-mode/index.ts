@@ -6,6 +6,7 @@
 //   /plan <prompt>       -> enter plan mode and submit <prompt>
 //   /plan approve        -> approve the plan: leaves plan mode and kicks off
 //                           implementation from the plan file
+//   /plan check          -> optional fresh-context comprehension check (appended)
 //   /plan status         -> show state and the current plan file path
 //   /plan edit           -> edit the plan in the editor dialog (Ctrl+G hands
 //                           off to $EDITOR, then the plan is written back)
@@ -24,6 +25,7 @@
 // needs in-memory retention. A footer status and a widget show the state.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -35,6 +37,7 @@ import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
+import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
@@ -306,7 +309,7 @@ export default function planMode(pi: ExtensionAPI) {
   // --- Command -------------------------------------------------------------
 
   pi.registerCommand("plan", {
-    description: "Plan mode: <prompt> | approve | status | edit | exit",
+    description: "Plan mode: <prompt> | approve | check | status | edit | exit",
     handler: async (args, ctx) => {
       const arg = (args ?? "").trim();
       if (arg === "status" || arg === "") {
@@ -314,12 +317,65 @@ export default function planMode(pi: ExtensionAPI) {
         const names = selectPlanTools(registeredTools()).join(", ");
         const active = `Plan mode: active — read-only (tools: ${names}).${planLine}`;
         const idlePlan = planLine ? `${planLine} (edit it, then /plan approve to implement)` : "";
-        const usage = "\nusage: /plan <prompt> | approve | status | edit | exit";
+        const usage = "\nusage: /plan <prompt> | approve | check | status | edit | exit";
         notify(ctx, state.enabled ? active : `Plan mode: off.${idlePlan}${usage}`);
         return;
       }
       if (arg === "start") {
         enterPlanMode(ctx);
+        return;
+      }
+      if (arg === "check") {
+        if (!state.planPath) {
+          notify(ctx, "No plan file yet — finish planning first.");
+          return;
+        }
+        const checkPath = state.planPath;
+        if (!existsSync(checkPath)) {
+          notify(ctx, `Plan file missing (${checkPath}) — re-plan or restore it first.`);
+          return;
+        }
+        let currentPlan: string;
+        try {
+          currentPlan = await readFile(checkPath, "utf8");
+        } catch (error) {
+          notify(ctx, `Failed to read ${checkPath}: ${(error as Error).message}`);
+          return;
+        }
+        notify(ctx, "Plan comprehension check running (one read-only child + TypeSafe)…");
+        const routerFile = path.join(getAgentDir(), "router.json");
+        const checked = await runPlanComprehensionCheck({
+          planPath: checkPath,
+          planText: currentPlan,
+          cwd: ctx.cwd ?? process.cwd(),
+          env: process.env,
+          modelRegistry: ctx.modelRegistry,
+          parentModel: ctx.model,
+          ctx,
+          routerFile,
+          resolveModel: (registry, parent, commandCtx) =>
+            resolvePlanCheckModel(registry, parent, commandCtx, routerFile),
+        }).catch((error) => ({
+          appendix: null,
+          notify: `Plan check failed: ${(error as Error).message}`,
+        }));
+        if (!checked.appendix) {
+          notify(ctx, checked.notify ?? "Plan check produced nothing to append.");
+          return;
+        }
+        try {
+          const merged =
+            currentPlan.trimEnd() +
+            (currentPlan.endsWith("\n") ? "" : "\n") +
+            "\n" +
+            checked.appendix;
+          await atomicWriteFile(checkPath, merged);
+          lastWritten = merged;
+        } catch (error) {
+          notify(ctx, `Failed to write ${checkPath}: ${(error as Error).message}`);
+          return;
+        }
+        notify(ctx, checked.notify ?? "Plan comprehension check appended.");
         return;
       }
       if (arg === "approve") {
