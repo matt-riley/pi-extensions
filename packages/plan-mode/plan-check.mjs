@@ -84,6 +84,13 @@ function sectionBody(text, heading) {
   return out.join("\n").trim();
 }
 
+function hasSectionHeading(text, heading) {
+  const marker = `## ${heading}`.toLowerCase();
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .some((line) => line.trim().toLowerCase() === marker);
+}
+
 function gapBullets(gapsSection) {
   const lines = String(gapsSection ?? "")
     .split(/\r?\n/)
@@ -92,11 +99,17 @@ function gapBullets(gapsSection) {
   return lines;
 }
 
+function readerReportUsable(parsed) {
+  if (!parsed) return false;
+  return Boolean(parsed.whatChanges?.trim() && parsed.howDone?.trim());
+}
+
 export function parseReaderReport(text) {
   const whatChanges = sectionBody(text, "What the plan changes");
   const howDone = sectionBody(text, "How it will be done");
+  const hasGapsSection = hasSectionHeading(text, "Gaps");
   const gaps = gapBullets(sectionBody(text, "Gaps"));
-  return { whatChanges, howDone, gaps, raw: String(text ?? "").trim() };
+  return { whatChanges, howDone, gaps, hasGapsSection, raw: String(text ?? "").trim() };
 }
 
 export function buildComprehensionQuestions() {
@@ -170,8 +183,10 @@ export function formatComprehensionAppendix({
   lines.push("");
   if (parsed?.gaps?.length) {
     for (const gap of parsed.gaps) lines.push(`- ${gap}`);
-  } else {
+  } else if (parsed?.hasGapsSection) {
     lines.push("- (reader listed no gaps)");
+  } else {
+    lines.push("- (reader gave no Gaps section)");
   }
   lines.push("");
   if (!jev?.judged) {
@@ -260,12 +275,18 @@ export async function runPlanComprehensionCheck({
     };
   }
 
-  const readerOk = readerResult?.status === "completed" || readerResult?.status === "wrapped up";
-  const parsed = readerOk ? parseReaderReport(readerResult.text) : null;
-  const readerReason = readerResult?.error || (readerOk ? null : readerResult?.status || "failed");
+  const readerFinished =
+    readerResult?.status === "completed" || readerResult?.status === "wrapped up";
+  const parsed = readerFinished ? parseReaderReport(readerResult.text) : null;
+  const readerUsable = readerFinished && readerReportUsable(parsed);
+  let readerReason =
+    readerResult?.error || (readerFinished ? null : readerResult?.status || "failed");
+  if (readerFinished && !readerUsable) {
+    readerReason = "reader returned no usable report";
+  }
 
   let jev = { judged: false, reason: null, answers: null };
-  if (readerOk && parsed) {
+  if (readerUsable && parsed) {
     try {
       const judged = await ask({
         state: {
@@ -298,7 +319,7 @@ export async function runPlanComprehensionCheck({
 
   const appendix = formatComprehensionAppendix({
     goal,
-    readerOk,
+    readerOk: readerUsable,
     readerStatus: readerResult?.status,
     readerReason,
     parsed,

@@ -228,3 +228,50 @@ test("formatComprehensionAppendix never claims zero gaps when reader failed", ()
   assert.match(text, /not run/i);
   assert.doesNotMatch(text, /\(none identified\)/);
 });
+
+test("empty reader output is not run and never calls Jev", async () => {
+  let asked = false;
+  const result = await runPlanComprehensionCheck({
+    planPath: FIXTURE_PATH,
+    planText: FIXTURE_PLAN,
+    cwd: "/tmp",
+    resolveModel: stubModel,
+    runChild: async () => ({ status: "completed", text: "", turns: 1 }),
+    ask: async () => {
+      asked = true;
+    },
+  });
+  assert.equal(asked, false);
+  assert.match(
+    result.appendix,
+    /Fresh-context reader: not run \(reader returned no usable report\)/,
+  );
+  assert.match(result.appendix, /TypeSafe verdict: not run \(reader did not finish\)/);
+});
+
+const READER_RESTATE_ONLY = [
+  "## What the plan changes",
+  "",
+  "Upload retries transient failures instead of failing immediately.",
+  "",
+  "## How it will be done",
+  "",
+  "Edit upload.mjs and add a loop.",
+  "",
+].join("\n");
+
+test("restatement without a Gaps heading names the missing section", async () => {
+  const result = await runPlanComprehensionCheck({
+    planPath: FIXTURE_PATH,
+    planText: FIXTURE_PLAN,
+    cwd: "/tmp",
+    resolveModel: stubModel,
+    runChild: async () => ({ status: "completed", text: READER_RESTATE_ONLY, turns: 1 }),
+    ask: async () => ({
+      model: "test",
+      answers: { same_as_goal: noul(0.9), unstated_dependency: noul(0.1) },
+    }),
+  });
+  assert.match(result.appendix, /\(reader gave no Gaps section\)/);
+  assert.doesNotMatch(result.appendix, /\(reader listed no gaps\)/);
+});
