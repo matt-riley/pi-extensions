@@ -30,6 +30,7 @@ const HOST_EXPORTS = {
   },
   "@earendil-works/pi-tui": {
     "packages/footer/index.ts": ["truncateToWidth", "visibleWidth"],
+    "packages/toasts/index.ts": ["truncateToWidth", "visibleWidth"],
     "packages/jobs/index.ts": ["ScrollView", "matchesKey", "truncateToWidth"],
     "packages/workbench/index.ts": [
       "Input",

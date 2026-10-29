@@ -27,6 +27,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-jobs`](./packages/jobs) | Pi-native `/jobs` live logs, background commands and optional PTYs, human takeover, revision-bound exit evidence and opt-in Jev attention watches. No herdr/tmux required. |
 | [`pi-workbench`](./packages/workbench) | Live-filtering `/ui` and `/files`, read-only `/changes` with retained review position and Neovim handoff, recoverable drafts and slash-command typo suggestions. |
 | [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals model accounting and extension statuses. |
+| [`pi-toasts`](./packages/toasts) | Extension `notify` calls become short-lived top-right toasts in TUI mode instead of permanent transcript rows. |
 
 ### Package dependencies
 
@@ -71,7 +72,7 @@ renaming one can break another:
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-until`, `pi-review`,
 `pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`, `pi-prompt-coach`,
-`pi-influencer`, `pi-watch-pr` and `pi-footer` import no sibling package, only `shared/`.
+`pi-influencer`, `pi-watch-pr`, `pi-footer` and `pi-toasts` import no sibling package, only `shared/`.
 `pi-done-gate` loads none at runtime, but its own tests load `pi-jobs`'s `Jobs`, so
 deleting that package still breaks it.
 
