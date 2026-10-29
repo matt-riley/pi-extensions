@@ -1,0 +1,7 @@
+{
+  "name": "pi-toasts",
+  "version": "0.1.0",
+  "description": "Top-right timed toasts for extension ctx.ui.notify in TUI mode.",
+  "license": "MIT",
+  "type": "module"
+}
