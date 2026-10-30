@@ -70,7 +70,27 @@ model is asked anyway, because it catches the shapes no rule covers yet.
 `PI_DIAGNOSIS_TRIAGE=off` turns the classification off; with no key it is
 skipped silently.
 
+## Repository env facts
+
+When a bare command fails as “not found” and a launcher-backed alternative
+succeeds in the same session (`python -m …`, `npx …`, and similar), the
+extension remembers a candidate fact. After three confirming sessions whose
+edited files do not overlap, the fact is shown on the next matching failure
+as one extra line on that tool result — never in the system prompt.
+
+Facts are stored under `<agentDir>/diagnosis-nudge/env-facts/` (one JSON file
+per git root). Contradictions weigh five times a confirmation; at score zero or
+below the fact is retired permanently. `/diagnosis facts` lists them;
+`/diagnosis facts forget <id>` retires one explicitly. `/diagnosis reset` is
+unchanged.
+
+`PI_DIAGNOSIS_ENV_FACTS=off` (or `0`/`false`/`no`) disables learning and
+display. No network calls are made.
+
 ## Tests
 
 `node --test packages/diagnosis-nudge/test/nudge.test.mjs` — the state machine
 and the content patch, including the re-arm and no-repeat cases.
+
+`node --test packages/diagnosis-nudge/test/env-facts.test.mjs` — env-fact
+learning, confirmation, contradiction, display, commands and the kill switch.

@@ -17,7 +17,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { findRepoRoot } from "../code-search/inventory.mjs";
 import { installCheckpoint } from "./checkpoint.mjs";
+import { agentDirForEnv, createEnvFactsRuntime } from "./env-facts.mjs";
 import { flagOff } from "../../shared/env-flag.mjs";
 import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
@@ -59,11 +61,21 @@ function actionOf(input) {
 
 export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
-  installCheckpoint(pi);
+  const envFacts = createEnvFactsRuntime({
+    getAgentDir: () => agentDirForEnv(),
+    findRepoRoot,
+    exec: (cmd, args, opts) => pi.exec(cmd, args, opts),
+  });
+  installCheckpoint(pi, { envFacts });
   const state = createNudgeState();
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (_event, ctx) => {
     resetNudgeState(state);
+    await envFacts.onSessionStart(ctx);
+  });
+
+  pi.on("tool_call", (event) => {
+    envFacts.onToolCall(event);
   });
 
   pi.on("tool_result", async (event, ctx) => {
@@ -93,9 +105,9 @@ export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
       }
     }
 
-    if (parts.length === 0) {
-      return;
-    }
+    const factLine = await envFacts.onToolResult(event, ctx);
+    if (factLine) parts.push(factLine);
+    if (parts.length === 0) return;
     return { content: appendNudge(event?.content, parts.join("\n")) };
   });
 }

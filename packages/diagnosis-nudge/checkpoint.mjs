@@ -39,7 +39,7 @@ const readonly = (command) =>
   command.trim() &&
   !blockedBashCommand(command.replace(/^rtk\s+/, ""));
 
-export function installCheckpoint(pi) {
+export function installCheckpoint(pi, { envFacts } = {}) {
   let state;
   let epoch = 0;
   let diagnosing = false;
@@ -134,8 +134,13 @@ export function installCheckpoint(pi) {
   });
 
   pi.registerCommand("diagnosis", {
-    description: "Show failed-fix checkpoint status; reset explicitly overrides this workflow gate",
+    description: "Show failed-fix checkpoint status, list env facts, or reset the checkpoint gate",
     handler: async (args, ctx) => {
+      const factsMessage = await envFacts?.handleDiagnosisFactsCommand?.(args);
+      if (factsMessage != null) {
+        ctx.ui?.notify(factsMessage, "info");
+        return;
+      }
       if (!state) await restore({}, ctx);
       if (args.trim() === "reset") {
         epoch++;
