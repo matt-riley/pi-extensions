@@ -44,6 +44,7 @@ export async function evaluateShadowTurn({
   prefetched,
   clock = () => Date.now(),
   forcedTierOverride = null,
+  stuckBaseline = null,
 }) {
   const branchState = readBranchState(shadowState);
   const previousKey = branchState?.model ?? actualKey;
@@ -71,6 +72,7 @@ export async function evaluateShadowTurn({
     judge,
     prefetchedAnswers: pref,
     forcedTier: forcedTierOverride,
+    stuckBaseline,
   });
 
   const wouldTier = planned.state?.forcedTier ?? wouldBeTierFromPlan(planned.decided, planned.tier);
@@ -90,6 +92,7 @@ export async function evaluateShadowTurn({
       },
       difficulty: planned.decided?.difficulty ?? null,
       gateReason: planned.boundary.reason,
+      stuckCheck: planned.boundary.stuckCheck ?? null,
       decisionReason: decisionReasonFromPlan(planned.decided, planned.outcome),
       promptHash: promptHash(String(prompt ?? "").slice(0, 2000)),
     },

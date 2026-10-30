@@ -49,10 +49,16 @@ state machine. The base is what the router holds at when it is not escalating:
 the first entry in the config's `base` list (`Luna@medium` by default, clamped
 by the cap through the fallback entry), defaulting to Luna.
 
-- **Judges at task boundaries** and when the previous turn ended in two or more
-  failures (the stuck case), capped at 3 judgements per task. The gate is the
-  same prompt-shape heuristic the measurements used, but `reason` now tells the
-  router a user turn from a continuation, so it no longer has to infer that part.
+- **Judges at task boundaries** and when the previous turn ended stuck — by default
+  that means two or more failed tool calls on the previous turn (the stuck case),
+  capped at 3 judgements per task. After five good turns in this repository, stuck
+  also requires the previous turn to reach at least 2.5× the median good-turn
+  length in tool calls (rounded up, never below two failures). Good-turn lengths
+  are learned locally in `<agent-dir>/router-turn-baseline.json` and never call a
+  model. `/route preview` and the shadow log print the baseline line used. Set
+  `PI_ROUTER_STUCK_BASELINE=off` to restore the fixed two-failure rule. The gate
+  is the same prompt-shape heuristic the measurements used, but `reason` now tells
+  the router a user turn from a continuation, so it no longer has to infer that part.
 - **Continuations are held, not judged.** A request after tool results returns
   the model that handled the turn, so prompt caches and thinking signatures stay
   valid.
@@ -184,6 +190,7 @@ pattern that names its provider is taken literally, and non-GPT patterns
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
 | `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
 | `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and playbook injection |
+| `PI_ROUTER_STUCK_BASELINE` | unset (on) | `off` / `0` / `false` / `no` keeps the fixed two-failure stuck rule and stops updating `router-turn-baseline.json` |
 
 In-session: `/route` for status and counters, `/route preview <prompt>` for a
 dry run, `/route preview --json <prompt>` for the same report as JSON, and

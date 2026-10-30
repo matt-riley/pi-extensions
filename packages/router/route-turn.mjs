@@ -3,7 +3,7 @@
 // Used by index.ts route() and shadow logging so production and shadow cannot drift.
 
 import { decideRoute, fitting, unwrap } from "./decide.mjs";
-import { gateTurn } from "./lib.mjs";
+import { gateTurn, isStuckTurn } from "./lib.mjs";
 import { forcedTierDecision } from "./tier-override.mjs";
 import {
   buildDifficultyState,
@@ -18,7 +18,6 @@ import {
 
 export const BASE_TIER = "base";
 const MAX_JUDGEMENTS_PER_TASK = 3;
-const STUCK_FAILURES = 2;
 const FAILURE_COOLDOWN_TURNS = 3;
 
 /** Resolve a "provider/id" against the candidate list, then the registry. */
@@ -86,24 +85,24 @@ export function readBranchState(value) {
 }
 
 /** Same rule as route(): when a difficulty judgement may run on a user turn. */
-export function judgeableTurn({ prompt, boundary, failuresLastTurn, attempts, cooldown }) {
-  const worthJudging = boundary.route || failuresLastTurn >= STUCK_FAILURES || attempts === 0;
+export function judgeableTurn({ prompt, boundary, previousTurn, baseline, attempts, cooldown }) {
+  const worthJudging = boundary.route || isStuckTurn(previousTurn, baseline) || attempts === 0;
   const judgeable =
     Boolean(prompt) && worthJudging && attempts < MAX_JUDGEMENTS_PER_TASK && cooldown === 0;
   return { worthJudging, judgeable };
 }
 
-function parseMessages(messages) {
+function parseMessages(messages, baseline) {
   const turns = turnsFromMessages(messages, WINDOW + 1);
   const tail = turns[turns.length - 1];
   const includesCurrent = Boolean(tail && !tail.lastResponse && !tail.toolCalls.length);
   const history = (includesCurrent ? turns.slice(0, -1) : turns).slice(-WINDOW);
   const previousTurn = history[history.length - 1] ?? null;
   const prompt = String(tail?.prompt ?? "").slice(0, 2000);
-  const boundary = gateTurn({ prompt, previousTurn });
+  const boundary = gateTurn({ prompt, previousTurn, baseline });
   const failuresLastTurn = (previousTurn?.toolCalls ?? []).filter((call) => call.isError).length;
   const contextTokens = latestContextTokens(history);
-  return { prompt, history, boundary, failuresLastTurn, contextTokens };
+  return { prompt, history, boundary, failuresLastTurn, contextTokens, previousTurn };
 }
 
 function applyCoolingFailover(next, decided, liveOffers, tiers, contextTokens, selected, cooling) {
@@ -150,6 +149,7 @@ export async function planUserRouteTurn({
   prefetchedAnswers = null,
   shouldAbortAfterJudge = () => false,
   forcedTier: forcedTierOverride = null,
+  stuckBaseline = null,
 }) {
   const branch = readBranchState(branchState);
   const base =
@@ -160,7 +160,10 @@ export async function planUserRouteTurn({
   const heldModel = resolveKey(offers, ctx, heldKey) ?? base?.model ?? null;
   const heldThinking = branch?.thinking ?? base?.thinking ?? selected;
 
-  const { prompt, history, boundary, failuresLastTurn, contextTokens } = parseMessages(messages);
+  const { prompt, history, boundary, contextTokens, previousTurn } = parseMessages(
+    messages,
+    stuckBaseline,
+  );
 
   const cooldown = Math.max(0, (branch?.cooldown ?? 0) - 1);
   const task = boundary.route ? (branch?.task ?? 0) + 1 : (branch?.task ?? 1);
@@ -176,7 +179,8 @@ export async function planUserRouteTurn({
   const { judgeable } = judgeableTurn({
     prompt,
     boundary,
-    failuresLastTurn,
+    previousTurn,
+    baseline: stuckBaseline,
     attempts,
     cooldown,
   });

@@ -27,6 +27,9 @@ export function createShadowLogger({
   judge,
   notify,
   getShadowLogEnabled,
+  turnBaselinePath,
+  stuckBaselineForRepo,
+  gitRepoKey,
 }) {
   let shadowOverride = null;
   const shadowStates = new Map();
@@ -39,8 +42,7 @@ export function createShadowLogger({
   }
 
   function sessionKey(ctx) {
-    const id = ctx?.sessionId ?? ctx?.session?.id;
-    return typeof id === "string" && id.trim() ? id.trim() : "local";
+    return shadowSessionKey(ctx);
   }
 
   async function runShadowLogWork(event, ctx) {
@@ -82,6 +84,10 @@ export function createShadowLogger({
       judge,
       prefetched: null,
       clock,
+      stuckBaseline: stuckBaselineForRepo(
+        turnBaselinePath ?? path.join(path.dirname(configPath), "router-turn-baseline.json"),
+        gitRepoKey(ctx?.cwd),
+      ),
     });
     shadowStates.set(sid, nextState);
     appendShadowLine(shadowLogFile(), entry);
@@ -138,4 +144,20 @@ export function createShadowLogger({
   }
 
   return { runShadowLog, handleShadowCommand, resetShadowSession };
+}
+
+/** Resolve the shadow log session id from Pi's session manager, with legacy ctx fallbacks. */
+export function shadowSessionKey(ctx) {
+  let id;
+  try {
+    const fromManager = ctx?.sessionManager?.getSessionId?.();
+    if (typeof fromManager === "string" && fromManager.trim()) id = fromManager.trim();
+  } catch {
+    // A missing or broken session manager must not break shadow logging.
+  }
+  if (!id) {
+    const legacy = ctx?.sessionId ?? ctx?.session?.id;
+    if (typeof legacy === "string" && legacy.trim()) id = legacy.trim();
+  }
+  return id ?? "local";
 }
