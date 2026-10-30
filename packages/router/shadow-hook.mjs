@@ -27,6 +27,9 @@ export function createShadowLogger({
   judge,
   notify,
   getShadowLogEnabled,
+  turnBaselinePath,
+  stuckBaselineForRepo,
+  gitRepoKey,
 }) {
   let shadowOverride = null;
   const shadowStates = new Map();
@@ -82,6 +85,10 @@ export function createShadowLogger({
       judge,
       prefetched: null,
       clock,
+      stuckBaseline: stuckBaselineForRepo(
+        turnBaselinePath ?? path.join(path.dirname(configPath), "router-turn-baseline.json"),
+        gitRepoKey(ctx?.cwd),
+      ),
     });
     shadowStates.set(sid, nextState);
     appendShadowLine(shadowLogFile(), entry);

@@ -45,7 +45,7 @@ import {
 } from "./config.mjs";
 import { fitting } from "./decide.mjs";
 import { routingLadder } from "./ladder.mjs";
-import { gateTurn } from "./lib.mjs";
+import { gateTurn, stuckCheckDescription } from "./lib.mjs";
 import {
   classifyProviderError,
   createUsageCaps,
@@ -83,6 +83,12 @@ import {
 } from "./route-turn.mjs";
 import { createShadowLogger } from "./shadow-hook.mjs";
 import { parseTierOverridePrefix } from "./tier-override.mjs";
+import {
+  baselinePath,
+  gitRepoKey,
+  recordCompletedTurnBaseline,
+  stuckBaselineForRepo,
+} from "./turn-baseline.mjs";
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
@@ -142,7 +148,12 @@ function readState(value: unknown): RouterState | null {
 
 export default function piRouterExtension(
   pi: ExtensionAPI,
-  deps: { ask?: typeof askSystemOne; configPath?: string; now?: () => number } = {},
+  deps: {
+    ask?: typeof askSystemOne;
+    configPath?: string;
+    turnBaselinePath?: string;
+    now?: () => number;
+  } = {},
 ) {
   bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
@@ -163,6 +174,7 @@ export default function piRouterExtension(
     }
   };
   const configPath = deps.configPath ?? routerConfigPath();
+  const turnBaselinePath = deps.turnBaselinePath ?? baselinePath();
   // First run: leave a file with the built-in lists to open and edit.
   ensureRouterConfig(configPath);
   let cachedShadowLog = readRouterConfig(configPath).shadowLog ?? false;
@@ -210,6 +222,11 @@ export default function piRouterExtension(
   let pending: { prompt: string; answers: unknown } | null = null;
   let pendingForcedTier: RouteTier | null = null;
   let pendingForcedPrompt: string | null = null;
+
+  /** Baseline for stuck-turn detection in this cwd. */
+  function stuckBaseline(ctx: ExtensionContext) {
+    return stuckBaselineForRepo(turnBaselinePath, gitRepoKey(ctx?.cwd), process.env);
+  }
 
   const notify = (ctx: ExtensionContext, text: string, level = "info") => {
     try {
@@ -289,6 +306,9 @@ export default function piRouterExtension(
     judge,
     notify,
     getShadowLogEnabled: () => cachedShadowLog,
+    turnBaselinePath,
+    stuckBaselineForRepo,
+    gitRepoKey,
   });
 
   async function route(
@@ -433,6 +453,7 @@ export default function piRouterExtension(
       prefetchedAnswers,
       shouldAbortAfterJudge: () => !config.enabled || epoch !== generation,
       forcedTier: forcedTierOverride,
+      stuckBaseline: stuckBaseline(ctx),
     });
 
     if (planned.aborted) {
@@ -629,7 +650,11 @@ export default function piRouterExtension(
           ? turns.slice(0, -1)
           : turns
       ).slice(-WINDOW);
-      const boundary = gateTurn({ prompt, previousTurn: history[history.length - 1] ?? null });
+      const boundary = gateTurn({
+        prompt,
+        previousTurn: history[history.length - 1] ?? null,
+        baseline: stuckBaseline(ctx),
+      });
 
       if (boundary.route || playbook === undefined) {
         const routing =
@@ -679,8 +704,21 @@ export default function piRouterExtension(
     const cap = usageCapFromMessages(messages);
     if (cap) usageCaps.record(cap.key, cap.ms, clock());
   };
+  const noteTurnBaseline = (event, ctx: ExtensionContext) => {
+    try {
+      const messages = Array.isArray(event?.messages)
+        ? event.messages
+        : (ctx?.sessionManager?.getBranch?.() ?? []);
+      recordCompletedTurnBaseline({ file: turnBaselinePath, cwd: ctx?.cwd, messages });
+    } catch {
+      // Baseline learning must never disturb a session.
+    }
+  };
   pi.on("agent_end", noteUsageCap);
-  pi.on("turn_end", noteUsageCap);
+  pi.on("turn_end", (event, ctx) => {
+    noteUsageCap(event, ctx);
+    noteTurnBaseline(event, ctx);
+  });
 
   pi.on("session_start", (_event, ctx) => {
     counters.turns = 0;
@@ -756,6 +794,15 @@ export default function piRouterExtension(
       }
     }
 
+    const baseline = stuckBaseline(ctx);
+    const previewPrompt = judgePrompt || prompt;
+    const boundary = gateTurn({
+      prompt: previewPrompt,
+      previousTurn: history[history.length - 1] ?? null,
+      baseline,
+    });
+    const stuckLine = boundary.stuckCheck ?? stuckCheckDescription(baseline);
+
     const unknown = !decided || (decided.escalate === null && !decided.forced);
     const tier = decided?.forced
       ? decided.tier
@@ -776,6 +823,7 @@ export default function piRouterExtension(
       stale,
       ladder: ladder.line,
       warnings: ladder.warnings,
+      gate: { route: boundary.route, reason: boundary.reason, stuckCheck: stuckLine },
     };
     if (asJson) {
       notify(ctx, JSON.stringify(report));
@@ -798,6 +846,8 @@ export default function piRouterExtension(
       [
         "preview",
         difficulty,
+        `gate ${boundary.route ? "new task" : "continuation"} (${boundary.reason})`,
+        stuckLine,
         `pair ${pairLine}`,
         fitLine,
         `cooled down ${cooling.length ? cooling.join(", ") : "(none)"}`,

@@ -20,14 +20,35 @@ test("readBranchState rejects malformed routing state", () => {
 
 test("judgeableTurn matches the router budget rule", () => {
   const boundary = { route: false, reason: "looks like a continuation" };
+  const previous = { prompt: "x", toolCalls: [{ name: "bash", isError: true }] };
+  const cold = { adaptive: false, toolCallThreshold: 2 };
   assert.equal(
-    judgeableTurn({ prompt: "hi", boundary, failuresLastTurn: 0, attempts: 1, cooldown: 0 })
-      .judgeable,
+    judgeableTurn({
+      prompt: "hi",
+      boundary,
+      previousTurn: previous,
+      baseline: cold,
+      attempts: 1,
+      cooldown: 0,
+    }).judgeable,
     false,
   );
+  const stuckPrevious = {
+    prompt: "x",
+    toolCalls: [
+      { name: "bash", isError: true },
+      { name: "bash", isError: true },
+    ],
+  };
   assert.equal(
-    judgeableTurn({ prompt: "hi", boundary, failuresLastTurn: 2, attempts: 1, cooldown: 0 })
-      .judgeable,
+    judgeableTurn({
+      prompt: "hi",
+      boundary,
+      previousTurn: stuckPrevious,
+      baseline: cold,
+      attempts: 1,
+      cooldown: 0,
+    }).judgeable,
     true,
   );
 });

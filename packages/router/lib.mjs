@@ -194,11 +194,40 @@ export function overlapRatio(a, b) {
   return shared / Math.min(left.size, right.size);
 }
 
-/** Same threshold as `STUCK_FAILURES` in index.ts — previous turn had this many tool errors. */
-const STUCK_FAILURES = 2;
+/** Failed tool calls in a turn before it counts as stuck (cold start and floor). */
+export const STUCK_MIN_FAILURES = 2;
+/** Good turns per repo before length-aware stuck detection applies. */
+export const STUCK_BASELINE_MIN_GOOD_TURNS = 5;
+/** Good-turn median multiplier for the adaptive tool-call threshold. */
+export const STUCK_LENGTH_MULTIPLIER = 2.5;
+/** Good-turn samples kept per repository. */
+export const STUCK_BASELINE_MAX_GOOD_TURNS = 50;
 
 function failedCallsInTurn(turn) {
   return (turn?.toolCalls ?? []).filter((call) => call.isError).length;
+}
+
+/**
+ * Whether a turn counts as stuck for the gate and judgement budget.
+ *
+ * @param baseline snapshot from `stuckBaselineSnapshot` / `stuckBaselineForRepo`
+ */
+export function isStuckTurn(turn, baseline) {
+  const failures = failedCallsInTurn(turn);
+  if (failures < STUCK_MIN_FAILURES) return false;
+  if (!baseline?.adaptive) return true;
+  const toolCount = (turn?.toolCalls ?? []).length;
+  return toolCount >= baseline.toolCallThreshold;
+}
+
+export function stuckCheckDescription(baseline) {
+  if (!baseline?.enabled) {
+    return "stuck check: fixed rule (2+ failures)";
+  }
+  const count = baseline.goodTurnCount ?? 0;
+  const median = baseline.medianToolCalls ?? 0;
+  const threshold = baseline.toolCallThreshold ?? STUCK_MIN_FAILURES;
+  return `stuck check: baseline ${count} turns, median ${median} calls, threshold ${threshold}`;
 }
 
 /**
@@ -207,26 +236,28 @@ function failedCallsInTurn(turn) {
  * Deliberately cheap and dumb, because its job is not to be clever — it is to
  * keep the judged call off the common case.
  */
-export function gateTurn({ prompt, previousTurn } = {}) {
+export function gateTurn({ prompt, previousTurn, baseline } = {}) {
   const words = contentWords(prompt);
   if (!previousTurn) return { route: true, reason: "first turn", signals: { words: words.size } };
   const previousWords = contentWords(previousTurn.prompt);
   const overlap = overlapRatio(words, previousWords);
   const length = String(prompt ?? "").trim().length;
   const signals = { words: words.size, overlap, length };
+  const stuckCheck = stuckCheckDescription(baseline);
 
   // A long prompt is usually a new task description, not a follow-up.
-  if (length >= 200) return { route: true, reason: "long prompt", signals };
+  if (length >= 200) return { route: true, reason: "long prompt", signals, stuckCheck };
   // No vocabulary in common with the previous prompt: a different subject.
   if (words.size >= 3 && overlap < 0.2) {
-    if (failedCallsInTurn(previousTurn) >= STUCK_FAILURES) {
+    if (isStuckTurn(previousTurn, baseline)) {
       return {
         route: false,
         reason: "stuck continuation",
         signals: { ...signals, failuresLastTurn: failedCallsInTurn(previousTurn) },
+        stuckCheck,
       };
     }
-    return { route: true, reason: "topic shift", signals };
+    return { route: true, reason: "topic shift", signals, stuckCheck };
   }
-  return { route: false, reason: "looks like a continuation", signals };
+  return { route: false, reason: "looks like a continuation", signals, stuckCheck };
 }
