@@ -714,11 +714,11 @@ export default function piRouterExtension(
       // Baseline learning must never disturb a session.
     }
   };
-  pi.on("agent_end", noteUsageCap);
-  pi.on("turn_end", (event, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
     noteUsageCap(event, ctx);
     noteTurnBaseline(event, ctx);
   });
+  pi.on("turn_end", noteUsageCap);
 
   pi.on("session_start", (_event, ctx) => {
     counters.turns = 0;

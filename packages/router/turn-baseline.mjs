@@ -2,7 +2,7 @@
 //
 // Stored under the agent directory. No model calls: counts and medians only.
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -18,6 +18,13 @@ import { turnsFromMessages, WINDOW } from "./model-battery.mjs";
 
 const BASELINE_FILE = "router-turn-baseline.json";
 
+/** @param {Map<string, string>} cache */
+const gitRootCache = new Map();
+
+export function resetGitRepoKeyCache() {
+  gitRootCache.clear();
+}
+
 export function baselinePath(env = process.env) {
   return path.join(agentDir(env), BASELINE_FILE);
 }
@@ -30,16 +37,21 @@ export function formatRepoKey(raw) {
 }
 
 export function gitRepoKey(cwd, env = process.env) {
-  const dir = String(cwd ?? env?.PWD ?? process.cwd()).trim() || process.cwd();
+  const dir = path.resolve(String(cwd ?? env?.PWD ?? process.cwd()).trim() || process.cwd());
+  const cached = gitRootCache.get(dir);
+  if (cached) return cached;
+  let key;
   try {
-    const out = execSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+    const out = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return formatRepoKey(out.trim());
+    key = formatRepoKey(out.trim());
   } catch {
-    return formatRepoKey(dir);
+    key = formatRepoKey(dir);
   }
+  gitRootCache.set(dir, key);
+  return key;
 }
 
 export function readBaselineStore(file = baselinePath()) {
@@ -79,7 +91,7 @@ export function writeBaselineStoreAtomic(file, store) {
 
 export function turnEndedWell(turn) {
   const calls = turn?.toolCalls ?? [];
-  if (!calls.length) return true;
+  if (!calls.length) return false;
   return !calls[calls.length - 1]?.isError;
 }
 

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,8 +15,11 @@ import {
 import {
   baselinePath,
   formatRepoKey,
+  gitRepoKey,
   readBaselineStore,
+  recordCompletedTurnBaseline,
   recordGoodTurnLength,
+  resetGitRepoKeyCache,
   stuckBaselineSnapshot,
   turnEndedWell,
   writeBaselineStoreAtomic,
@@ -40,6 +44,24 @@ function turnWithFailures(prompt, failures, extraOk = 0) {
 
 const followUp = "still failing. third time. find the actual race";
 const frustratedPrevious = "fix the flaky CI on subagent spawn test, investigate the race";
+
+const baselineEnv = { PI_ROUTER_STUCK_BASELINE: "on" };
+
+function userTurnWithToolSteps(steps) {
+  const messages = [
+    { role: "user", content: [{ type: "text", text: "work through the refactor" }] },
+  ];
+  for (let i = 0; i < steps; i++) {
+    messages.push({
+      role: "assistant",
+      content: [
+        { type: "text", text: `assistant step ${i + 1}` },
+        { type: "toolCall", name: "read" },
+      ],
+    });
+  }
+  return messages;
+}
 
 test("isStuckTurn cold start matches the old two-failure rule", () => {
   const baseline = stuckBaselineSnapshot([4, 4, 4], { PI_ROUTER_STUCK_BASELINE: "on" });
@@ -68,7 +90,7 @@ test("isStuckTurn after five good turns requires length as well as failures", ()
 
 test("turnEndedWell excludes turns whose last tool call failed", () => {
   assert.equal(turnEndedWell({ toolCalls: [{ name: "read", isError: false }] }), true);
-  assert.equal(turnEndedWell({ toolCalls: [] }), true);
+  assert.equal(turnEndedWell({ toolCalls: [] }), false);
   assert.equal(
     turnEndedWell({
       toolCalls: [
@@ -191,4 +213,66 @@ test("baselinePath lives under the agent directory", () => {
 
 test("formatRepoKey normalises git roots", () => {
   assert.equal(formatRepoKey("/foo/bar/"), "/foo/bar");
+});
+
+test("gitRepoKey resolves a subdirectory to the repository root", () => {
+  resetGitRepoKeyCache();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "router-git-root-"));
+  try {
+    const git = (...args) =>
+      execFileSync("git", ["-C", root, "-c", "commit.gpgsign=false", ...args], {
+        stdio: "ignore",
+      });
+    git("init");
+    git("config", "user.email", "router@test");
+    git("config", "user.name", "router");
+    fs.writeFileSync(path.join(root, "README"), "x");
+    git("add", "README");
+    git("commit", "-m", "init");
+    const sub = path.join(root, "packages", "router");
+    fs.mkdirSync(sub, { recursive: true });
+    const expected = formatRepoKey(root);
+    assert.equal(gitRepoKey(root), expected);
+    assert.equal(gitRepoKey(sub), expected);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    resetGitRepoKeyCache();
+  }
+});
+
+test("recordCompletedTurnBaseline records one length after a multi-step user turn", () => {
+  const file = path.join(os.tmpdir(), `router-baseline-${process.pid}-agent-end.json`);
+  const repo = `/tmp/router-baseline-repo-${process.pid}`;
+  try {
+    recordCompletedTurnBaseline({
+      file,
+      cwd: repo,
+      messages: userTurnWithToolSteps(3),
+      env: baselineEnv,
+    });
+    const store = readBaselineStore(file);
+    assert.deepEqual(store.repos[formatRepoKey(repo)], [3]);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});
+
+test("turns with no tool calls are not recorded in the baseline", () => {
+  const file = path.join(os.tmpdir(), `router-baseline-${process.pid}-no-tools.json`);
+  const repo = `/tmp/router-baseline-empty-${process.pid}`;
+  try {
+    recordCompletedTurnBaseline({
+      file,
+      cwd: repo,
+      messages: [
+        { role: "user", content: [{ type: "text", text: "thanks" }] },
+        { role: "assistant", content: [{ type: "text", text: "you are welcome" }] },
+      ],
+      env: baselineEnv,
+    });
+    const store = readBaselineStore(file);
+    assert.equal(store.repos[formatRepoKey(repo)], undefined);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
 });
