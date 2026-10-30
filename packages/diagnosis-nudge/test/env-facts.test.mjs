@@ -262,7 +262,8 @@ test("createEnvFactsRuntime skips learning when the kill switch is off", async (
     exec: async () => ({ code: 1, stdout: "", stderr: "" }),
     env: { [ENV_FACTS_ENV]: "off" },
   });
-  await runtime.onSessionStart({ cwd: "/repo", sessionId: "s1" });
+  const ctx = { cwd: "/repo", sessionManager: { getSessionId: () => "s1" } };
+  await runtime.onSessionStart(ctx);
   runtime.onToolCall({ toolName: "write", input: { path: "a.js" } });
   const line = await runtime.onToolResult(
     {
@@ -272,14 +273,85 @@ test("createEnvFactsRuntime skips learning when the kill switch is off", async (
       content: [{ type: "text", text: "command not found" }],
       result: { structuredContent: { exit_code: 127 } },
     },
-    { sessionId: "s1" },
+    ctx,
   );
   assert.equal(line, null);
   assert.equal(runtime.getLedger().facts.length, 0);
 });
 
-test("sessionKey prefers ctx.sessionId", () => {
-  assert.equal(sessionKey({ sessionId: " abc " }), "abc");
-  assert.equal(sessionKey({ session: { id: "from-session" } }), "from-session");
-  assert.equal(sessionKey({}), "local");
+test("sessionKey uses sessionManager.getSessionId then getSessionFile", () => {
+  assert.equal(sessionKey({ sessionManager: { getSessionId: () => " id-1 " } }), "id-1");
+  assert.equal(
+    sessionKey({
+      sessionManager: {
+        getSessionId: () => {
+          throw new Error("unavailable");
+        },
+        getSessionFile: () => "/tmp/sessions/foo.jsonl",
+      },
+    }),
+    "/tmp/sessions/foo.jsonl",
+  );
+  assert.equal(sessionKey({}), null);
+  assert.equal(sessionKey({ sessionManager: { getSessionId: () => "  " } }), null);
+});
+
+test("createEnvFactsRuntime confirms across three distinct session ids", async (t) => {
+  const agentDir = mkdtempSync(join(tmpdir(), "env-facts-agent-"));
+  t.after(() => rmSync(agentDir, { recursive: true, force: true }));
+  const runtime = createEnvFactsRuntime({
+    getAgentDir: () => agentDir,
+    findRepoRoot: async (cwd) => ({ root: cwd, viaGit: false }),
+    exec: async () => ({ code: 1, stdout: "", stderr: "" }),
+    fs: { mkdir, readFile, writeFile, rename, rm },
+  });
+
+  async function learnPair(sessionId, editedPath) {
+    const ctx = { cwd: "/repo", sessionManager: { getSessionId: () => sessionId } };
+    await runtime.onSessionStart(ctx);
+    runtime.onToolCall({ toolName: "write", input: { path: editedPath } });
+    await runtime.onToolResult(
+      {
+        toolName: "bash",
+        isError: true,
+        input: { command: "pytest" },
+        content: [{ type: "text", text: "bash: pytest: command not found" }],
+        result: { structuredContent: { exit_code: 127 } },
+      },
+      ctx,
+    );
+    await runtime.onToolResult(
+      {
+        toolName: "bash",
+        isError: false,
+        input: { command: "python -m pytest" },
+        content: [{ type: "text", text: "ok" }],
+        result: { structuredContent: { exit_code: 0 } },
+      },
+      ctx,
+    );
+  }
+
+  await learnPair("sess-a", "a.js");
+  await learnPair("sess-b", "b.js");
+  await learnPair("sess-c", "c.js");
+
+  const fact = runtime.getLedger().facts[0];
+  assert.equal(fact.status, "confirmed");
+  assert.equal(fact.confirmations.length, 3);
+
+  const showCtx = { cwd: "/repo", sessionManager: { getSessionId: () => "sess-d" } };
+  await runtime.onSessionStart(showCtx);
+  const line = await runtime.onToolResult(
+    {
+      toolName: "bash",
+      isError: true,
+      input: { command: "pytest -q" },
+      content: [{ type: "text", text: "command not found" }],
+      result: { structuredContent: { exit_code: 127 } },
+    },
+    showCtx,
+  );
+  assert.match(line, /Repo fact/);
+  assert.match(line, /python -m pytest/);
 });

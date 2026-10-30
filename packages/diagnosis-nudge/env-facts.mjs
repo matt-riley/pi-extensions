@@ -25,9 +25,23 @@ export function envFactsEnabled(env = process.env) {
   return !flagOff(env?.[ENV_FACTS_ENV]);
 }
 
+/** @returns {string|null} Distinct session identity for ledger confirmations, or null if unknown. */
 export function sessionKey(ctx) {
-  const id = ctx?.sessionId ?? ctx?.session?.id;
-  return typeof id === "string" && id.trim() ? id.trim() : "local";
+  const manager = ctx?.sessionManager;
+  if (!manager) return null;
+  try {
+    const id = manager.getSessionId?.();
+    if (typeof id === "string" && id.trim()) return id.trim();
+  } catch {
+    // fall through to session file
+  }
+  try {
+    const file = manager.getSessionFile?.();
+    if (typeof file === "string" && file.trim()) return file.trim();
+  } catch {
+    // no stable session identity
+  }
+  return null;
 }
 
 export function agentDirForEnv(env = process.env) {
@@ -180,10 +194,7 @@ export function observeEnvFactsResult(session, event) {
   const exitCode = event.exitCode ?? event.result?.structuredContent?.exit_code;
   if (isNotFoundFailure({ isError: event.isError, output, exitCode })) {
     session.pendingFails.push({ command, output, exitCode });
-    return;
   }
-  if (event.isError === true) return;
-  recordSessionCandidate(session, event);
 }
 
 export function recordSessionCandidate(session, event) {
@@ -393,11 +404,9 @@ export function createEnvFactsRuntime({
   let session = createEnvFactsSession();
   let ledger = emptyLedger();
   let ledgerFile = "";
-  let sessionId = "local";
 
-  async function refreshLedger(cwd, ctx) {
+  async function refreshLedger(cwd, _ctx) {
     if (!envFactsEnabled(env)) return;
-    sessionId = sessionKey(ctx);
     const { root } = await findRepoRoot(cwd, exec);
     ledgerFile = ledgerPath(getAgentDir(), root);
     ledger = await loadLedger(ledgerFile, fs);
@@ -432,8 +441,11 @@ export function createEnvFactsRuntime({
       const pair = recordSessionCandidate(session, wrapped);
       let dirty = false;
       if (pair) {
-        confirmCandidate(ledger, pair, sessionKey(ctx) || sessionId, [...session.editedFiles]);
-        dirty = true;
+        const sid = sessionKey(ctx);
+        if (sid) {
+          confirmCandidate(ledger, pair, sid, [...session.editedFiles]);
+          dirty = true;
+        }
       }
       if (observeContradiction(ledger, wrapped)) dirty = true;
       if (dirty && ledgerFile) await saveLedger(ledgerFile, ledger, fs);

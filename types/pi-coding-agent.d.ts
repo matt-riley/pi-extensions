@@ -83,7 +83,11 @@ declare module "@earendil-works/pi-coding-agent" {
       find?: (provider: string, id: string) => unknown;
       getAvailable?: () => unknown[] | Promise<unknown[]>;
     };
-    sessionManager?: { getBranch?(): unknown[] };
+    sessionManager?: {
+      getBranch?(): unknown[];
+      getSessionId?(): string;
+      getSessionFile?(): string;
+    };
     signal?: AbortSignal;
     thinkingLevel?: string;
     shutdown(): void;
