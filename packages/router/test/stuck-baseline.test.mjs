@@ -231,7 +231,8 @@ test("gitRepoKey resolves a subdirectory to the repository root", () => {
     git("commit", "-m", "init");
     const sub = path.join(root, "packages", "router");
     fs.mkdirSync(sub, { recursive: true });
-    const expected = formatRepoKey(root);
+    // git rev-parse resolves the toplevel through symlinks (/var → /private/var on macOS).
+    const expected = formatRepoKey(fs.realpathSync(root));
     assert.equal(gitRepoKey(root), expected);
     assert.equal(gitRepoKey(sub), expected);
   } finally {
