@@ -39,7 +39,7 @@ export function createChildPolicyExtension({ allowlistBash = false, blockWriters
 // route() sees PI_SUBAGENT_CHILD: inheriting children get the base model without
 // judging; pinned or cross-family physical models are kept as-is.
 const CHILD_EXCLUDED =
-  /[\\/](?:extensions[\\/]lore|packages[\\/](?:prompt-coach|influencer|skill-select))[\\/]/;
+  /[\\/](?:extensions[\\/]lore|packages[\\/](?:prompt-coach|skill-select))[\\/]/;
 
 export function keepChildExtension(extension) {
   const where = `${extension?.resolvedPath ?? extension?.path ?? ""}`;

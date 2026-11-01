@@ -41,7 +41,6 @@
       "./packages/guardrail/index.ts",
       "./packages/router/index.ts",
       "./packages/prompt-coach/index.ts",
-      "./packages/influencer/index.ts",
       "./packages/diagnosis-nudge/index.ts",
       "./packages/done-gate/index.ts",
       "./packages/until/index.ts",

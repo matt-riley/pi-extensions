@@ -56,7 +56,7 @@ test("writers are blocked except the plan file tool", () => {
   assert.equal(planToolVerdict("self_compact", info("self_compact", LOCAL_DESTRUCTIVE)), "block");
   assert.equal(planToolVerdict("subagent", info("subagent", OPEN_DESTRUCTIVE)), "block");
   assert.equal(
-    planToolVerdict("influencer_save", info("influencer_save", LOCAL_DESTRUCTIVE, "deferred")),
+    planToolVerdict("terminal_send", info("terminal_send", LOCAL_DESTRUCTIVE, "deferred")),
     "block",
   );
   assert.equal(
@@ -67,7 +67,7 @@ test("writers are blocked except the plan file tool", () => {
 
 test("deferred readers other than plan mode's own tools stay out", () => {
   assert.equal(
-    planToolVerdict("influencer_show", info("influencer_show", LOCAL_READ, "deferred")),
+    planToolVerdict("terminal_read", info("terminal_read", LOCAL_READ, "deferred")),
     "block",
   );
   assert.equal(planToolVerdict("lint_change", info("lint_change", OPEN_READ, "deferred")), "block");
@@ -139,7 +139,7 @@ test("selectPlanTools follows annotations", () => {
     info("typesafe_ask", OPEN_READ),
     info("read_relevant", OPEN_READ),
     info("skill_select", LOCAL_READ),
-    info("influencer_show", LOCAL_READ, "deferred"),
+    info("terminal_read", LOCAL_READ, "deferred"),
     info("subagent", OPEN_DESTRUCTIVE),
     info("lint_change", OPEN_READ, "deferred"),
     info("verify_findings", OPEN_READ, "deferred"),
@@ -174,7 +174,7 @@ test("selectPlanTools follows annotations", () => {
     "typesafe_ask",
     "read_relevant",
     "self_compact",
-    "influencer_show",
+    "terminal_read",
     "subagent",
     "lint_change",
     "verify_findings",

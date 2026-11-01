@@ -79,7 +79,7 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
   so the model still sees only `read`/`bash` and the extension's declared tools.
   Add `--tools +codemode` (or `"defaultTools": ["+codemode"]` in the fixture
   settings). Without it, every deferred-tool row silently drives nothing.
-- Deferred tools (`plan_mode_*`, `find_code`, `influencer_*`,
+- Deferred tools (`plan_mode_*`, `find_code`,
   `diagnosis_checkpoint`, `measure_command`, `blast_radius`, `watch_pr`,
   `terminal_*`) stay out of the default tool list, so the model reaches them
   through codemode's `searchTools` (plan mode activates its own three). Drive
@@ -108,7 +108,7 @@ Offline coverage — run every row on every change:
 
 | Feature | Drive | Observe |
 | --- | --- | --- |
-| All 21 extensions load; `/plan`, `/subagents`, `/route`, `/guardrail`, `/safe-compact`, `/jobs`, `/ui`, `/footer` register | `npm run smoke` | `ok: real host loads 21 manifest extensions` |
+| All 20 extensions load; `/plan`, `/subagents`, `/route`, `/guardrail`, `/safe-compact`, `/jobs`, `/ui`, `/footer` register | `npm run smoke` | `ok: real host loads 20 manifest extensions` |
 | Owned skills and `/review`, `/pr`, `/test`, `/refactor`, `/design` prompts expand outside the repo | `npm run smoke` | `ok: owned skills and workflow prompts discover and expand outside the repo` |
 | Background jobs: real completion follow-up, real failure status, optional Jev watch on redacted evidence | `npm run smoke` | both `ok: real background …` / `ok: background tools …` lines |
 | TypeSafe `find_code` and injection warnings through nested codemode | `npm run smoke` | the two `ok: … semantic/MCP …` lines |
@@ -144,7 +144,6 @@ change touches it. `proven` means driven at the revision in **Last proven run**;
 | Guardrail deterministic and catastrophic refusal | live TUI: `rm -rf .git` in a scratch repo | `The guardrail refused this call (rm would destroy credentials or VCS internals)`, no dialog | real TTY | proven |
 | Router `router/auto` | live TUI: `/model` → `router/auto`, send a hard task | one escalation at task start, back to base next task | provider credentials with a frontier model | **unproven** (not driven this pass) |
 | `/improve` prompt coach | live TUI: `/improve fix the failing test` | a verified rewrite submitted as the next user message | Docker Model Runner with Gemma4 at `127.0.0.1:12434` + `TYPESAFE_API_KEY` (available on 2026-10-29) | **unproven** (not driven this pass) |
-| `/influencer` deferred tools and briefs | live TUI: `/influencer`, then build a character brief | tools activate; a brief is produced and saved | a provider | **unproven** (not driven this pass) |
 | `/plan check` comprehension | live TUI: `/plan`, then `/plan check` with `.pi/PLAN.md` present | `## Plan comprehension check` appended with the reader's restatement and Gaps, or `not run` with the reason | provider for the reader child + `TYPESAFE_API_KEY` for Jev | **unproven** — a scripted tmux drive left the TUI blank and never appended; no working harness exists yet |
 | `self_compact`, `/safe-compact-info`, `/safe-compact-plan` | live TUI, in a throwaway session | thresholds and the plan for the current context; handoff note survives compaction | automatic threshold needs a long context; `self_compact` compacts the session that calls it, so never drive it in the session holding the evidence | **unproven** |
 | `/diagnosis` (status and `/diagnosis reset`) | live TUI after a blocked fix | the block reason, or `Diagnosis checkpoint: no pending gate.` | real TTY | proven (`no pending gate` with no pending block) |

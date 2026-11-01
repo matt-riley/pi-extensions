@@ -46,10 +46,6 @@ export const OWNED_TOOL_NAMES = new Set([
   "plan_mode_question",
   "plan_fetch_url",
   "plan_mode_complete",
-  "influencer_save",
-  "influencer_show",
-  "influencer_list",
-  "influencer_prompt",
 ]);
 
 /**

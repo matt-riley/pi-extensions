@@ -331,6 +331,7 @@ export default function (pi) {
     "usage",
   ])
     assert.ok(names.has(name), `Missing command ${name}`);
+  assert.equal(names.has("influencer"), false, "extracted extension must not load here");
   assert.doesNotMatch(stderr, /failed to load|error loading/i);
   console.log(`ok: real host loads ${manifest.pi.extensions.length} manifest extensions`);
   const skillCommands = commands.commands.filter((command) => command.source === "skill");

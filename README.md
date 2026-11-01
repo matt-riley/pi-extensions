@@ -20,7 +20,6 @@ plain TypeScript loaded directly by pi.
 | [`pi-guardrail`](./packages/guardrail) | Stops destructive tool use before it runs: deterministic rules for the 97% that are obviously fine, a TypeSafe judgment for the ambiguous middle, and an Approve / Deny / Suggest-an-alternative dialog for the rest. Refuses the catastrophic set outright. |
 | [`pi-router`](./packages/router) | Rates how hard the current task is and escalates to a frontier model when it clears a threshold — once per task, never mid-task, and never downgrading a model you chose. Judged, because the rules measured 7% precision on this repo's own history. |
 | [`pi-prompt-coach`](./packages/prompt-coach) | On-demand `/improve`: probe the repo, rewrite locally with Gemma4, verify intent with TypeSafe, and submit the rewrite with original-prompt fallback. |
-| [`pi-influencer`](./packages/influencer) | Stores reusable AI influencer identities and builds recipe-driven image and Seedance 2.5 video-prompt briefs. |
 | [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
 | [`pi-review`](./packages/review) | On-demand review with judgment behind it: `lint_change` scores a diff against this repo's standing preferences and commit rules, `blast_radius` lists the callers outside a diff and the symbols no test mentions, `verify_findings` drops findings whose own quotation is not in the diff before asking whether the rest hold. |
 | [`pi-watch-pr`](./packages/watch-pr) | `watch_pr`: one read of a PR's checks on its head commit, merge state and unresolved threads, with a verdict (`needs-action` / `pending` / `ready` / `closed`). Read-only; `ready` is not a merge grant. |
@@ -72,7 +71,7 @@ renaming one can break another:
 
 `pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-until`, `pi-review`,
 `pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`, `pi-prompt-coach`,
-`pi-influencer`, `pi-watch-pr`, `pi-footer` and `pi-toasts` import no sibling package, only `shared/`.
+`pi-watch-pr`, `pi-footer` and `pi-toasts` import no sibling package, only `shared/`.
 `pi-done-gate` loads none at runtime, but its own tests load `pi-jobs`'s `Jobs`, so
 deleting that package still breaks it.
 

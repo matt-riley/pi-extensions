@@ -44,7 +44,7 @@ While plan mode is active, tool membership comes from annotations
   memory recall; if lore is unloaded the name matches nothing).
 - **Tools whose exposure is not `direct`** stay inactive, except the plan-mode
   trio. That covers deferred, model-only, codemode, and hidden, so the
-  influencer tools are not pulled into the planning prompt. Any other tool
+  background-job tools are not pulled into the planning prompt. Any other tool
   call is blocked, and the previous tool set is restored on exit.
   `view_context` is the one local reader newly available in the mode; it only
   reports context usage.

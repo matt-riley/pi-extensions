@@ -115,7 +115,7 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
   — never `isError`, so pi does not blindly auto-retry the same failing spawn.
 - Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
 - Children load host extensions except this package and the interactive-only ones
-  (`lore`, `prompt-coach`, `influencer`, `skill-select`), and never get `subagent`.
+  (`lore`, `prompt-coach`, `skill-select`), and never get `subagent`.
   The router loads on purpose so children that inherit `router/auto` still register
   the virtual model; pinned or cross-family children keep their physical model.
 - The orchestrator brief (roster + spawn rules) is appended to the system

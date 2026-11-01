@@ -12,7 +12,7 @@ import {
 import { loadRegistrations } from "./registration.mjs";
 
 // exposure "deferred" is the rare-tool set. Plan-mode tools are activated by
-// the mode; influencer tools by /influencer. Everything else stays direct:
+// the mode. Everything else stays direct unless explicitly listed below:
 // Pi registers tool_search inactive, so a deferred tool with no activator
 // would leave the prompt along with the guideline that tells the model to
 // use it. A tool missing from this map fails the check.
@@ -46,10 +46,6 @@ const EXPECTED = new Map([
   ["plan_mode_question", { annotations: OPEN_READ, deferred: true }],
   ["plan_fetch_url", { annotations: OPEN_READ, deferred: true }],
   ["plan_mode_complete", { annotations: OPEN_DESTRUCTIVE, deferred: true }],
-  ["influencer_save", { annotations: LOCAL_DESTRUCTIVE, deferred: true }],
-  ["influencer_show", { annotations: LOCAL_READ, deferred: true }],
-  ["influencer_list", { annotations: LOCAL_READ, deferred: true }],
-  ["influencer_prompt", { annotations: LOCAL_READ, deferred: true }],
 ]);
 
 test("every tool declares annotations and only rare tools are deferred", async () => {
