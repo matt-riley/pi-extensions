@@ -13,7 +13,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. `web_answer` returns only the passages that answer a question. |
 | [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
 | [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed questions; `read_relevant` selects exact source ranges; deferred `find_code` finds implementations by behavior. Advisory web/MCP injection warnings preserve structured results. Environment-only config (`TYPESAFE_API_KEY`). |
-| [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library — including roots pi never lists — and returns ranked matches with their `SKILL.md` paths, so the catalog costs no context until searched. `scripts/skill-search.mjs` is the same ranker as a command for other agents. |
+| [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library and returns ranked `SKILL.md` paths. `/skill-search <task>` offers offline human discovery and prepares a prompt; `scripts/skill-search.mjs` serves other agents. |
 | [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Nudges on tool failures; after two failed revised checks, blocks mutations until a revision-bound diagnostic observation runs. |
 | [`pi-done-gate`](./packages/done-gate) | Quietly nudges on unverified edits and leftover `[DEBUG-` tags; `measure_command` validates repeated, revision-bound benchmark/evaluation observations. |
 | [`pi-until`](./packages/until) | `/until <cmd>`: keeps the agent working until a shell predicate exits 0, re-checking at every settle, capped, with a TSV decision log per iteration. |
@@ -26,7 +26,7 @@ plain TypeScript loaded directly by pi.
 | [`pi-watch-pr`](./packages/watch-pr) | `watch_pr`: one read of a PR's checks on its head commit, merge state and unresolved threads, with a verdict (`needs-action` / `pending` / `ready` / `closed`). Read-only; `ready` is not a merge grant. |
 | [`pi-jobs`](./packages/jobs) | Pi-native `/jobs` live logs, background commands and optional PTYs, human takeover, revision-bound exit evidence and opt-in Jev attention watches. No herdr/tmux required. |
 | [`pi-workbench`](./packages/workbench) | Live-filtering `/ui` and `/files`, read-only `/changes` with retained review position and Neovim handoff, recoverable drafts and slash-command typo suggestions. |
-| [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals model accounting and extension statuses. |
+| [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals accounting/statuses, and `/usage [--json]` reports per-model active-branch tokens, caching, costs and tool failures. |
 | [`pi-toasts`](./packages/toasts) | Extension `notify` calls become short-lived top-right toasts in TUI mode instead of permanent transcript rows. |
 
 ### Package dependencies
@@ -77,6 +77,11 @@ renaming one can break another:
 deleting that package still breaks it.
 
 ## Install
+
+The [research application](./docs/research-application.md) maps the supplied
+workflow research onto these existing extensions. `/skill-search <task>` now
+offers local skill discovery with a reviewable prompt; `/workflow <task>` connects
+investigation, implementation, verification and review through existing tools.
 
 Clone the repo into pi's global extensions directory; pi auto-discovers the
 extensions from the `pi` key in `package.json`:

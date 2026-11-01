@@ -15,7 +15,8 @@ Run `npm run smoke` with `pi` 1.4.0 or later on PATH (or set
 `PI_SMOKE_BIN` to its executable path). This uses the actual pi RPC host, loads
 all manifest extensions, the owned workflow skills and prompt templates. It
 checks discovery and expansion of those resources from an unrelated working
-directory using the local provider, then enters plan mode, checks that
+directory using the local provider, including `/workflow`. It checks `/skill-search`
+and `/usage --json` in RPC without provider calls, then enters plan mode, checks that
 `plan_mode_question`, `plan_mode_complete`, and `plan_fetch_url` are offered to
 the model, attempts a harmless `touch smoke-blocked` command through real tool
 dispatch, verifies it was blocked and that the file does not exist, exits plan
@@ -72,6 +73,13 @@ credential there, and repeat `/plan start`, the harmless blocked bash command,
 `/plan exit`, `/subagents on`, and a child request. Record the actual tool result
 and child completion. Do not count a provider response or the registration stub
 as evidence that the blocked action or child execution worked.
+
+For the local discovery/accounting commands alone, run
+`node .pi/verify/local-commands.mjs`. It loads all extensions in an isolated real
+Pi RPC host and verifies skill-search results, empty-branch JSON accounting and
+`/workflow` discovery without a listener or model calls. It can run where loopback
+listeners are prohibited. It does not cover prompt expansion, numerical model
+usage (covered by unit tests), or interactive skill-picker rendering.
 
 ## Project recipe
 

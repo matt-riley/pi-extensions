@@ -21,11 +21,13 @@ import {
 } from "./library.mjs";
 import { selectSkills } from "./select.mjs";
 import { SKILL_SELECT_TOOLS } from "./tools.mjs";
+import { installSkillSearch } from "./command.mjs";
 
 const SELECT_TOOL = SKILL_SELECT_TOOLS[0];
 
 export default function piSkillSelectExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
+  installSkillSearch(pi);
   pi.registerTool({
     name: SELECT_TOOL,
     label: "skill_select",

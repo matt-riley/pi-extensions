@@ -10,6 +10,19 @@ skill_select(query?, limit?)
 Returns ranked matches — name, description, path — plus the reminder to read the
 chosen `SKILL.md`. With no query it browses the catalog alphabetically.
 
+## Interactive discovery
+
+`/skill-search <task>` searches the same roots with the offline lexical ranker
+and shows up to five matches. With no task it browses the first five alphabetically.
+Choose a skill to append its quoted path and task to your current editor draft;
+press Enter to submit when ready. Escape leaves the draft unchanged. This command
+does not run a model, read skill contents, install packages or enable subagents.
+The agent-facing `skill_select` tool retains its optional TypeSafe ranking.
+
+In RPC/headless mode, or when no matches exist, results appear as a displayed
+custom session message without starting a turn. Those explicit reports become
+part of the transcript/context; interactive browsing itself adds no message.
+
 ## The point: no context tax
 
 Pi lists every discovered skill (name + description) in the system prompt. That

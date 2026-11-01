@@ -320,7 +320,16 @@ export default function (pi) {
   await request("get_state");
   const commands = await request("get_commands");
   const names = new Set(commands.commands.map((command) => command.name));
-  for (const name of ["plan", "subagents", "route", "guardrail", "safe-compact", "jobs"])
+  for (const name of [
+    "plan",
+    "subagents",
+    "route",
+    "guardrail",
+    "safe-compact",
+    "jobs",
+    "skill-search",
+    "usage",
+  ])
     assert.ok(names.has(name), `Missing command ${name}`);
   assert.doesNotMatch(stderr, /failed to load|error loading/i);
   console.log(`ok: real host loads ${manifest.pi.extensions.length} manifest extensions`);
@@ -330,7 +339,7 @@ export default function (pi) {
     "skill:interface-design",
     "skill:test-driven-development",
   ]);
-  for (const name of ["review", "pr", "test", "refactor", "design"])
+  for (const name of ["review", "pr", "test", "refactor", "design", "workflow"])
     assert.ok(names.has(name), `Missing workflow prompt ${name}`);
   phase = "resources";
   const resourceCases = [
@@ -342,6 +351,10 @@ export default function (pi) {
     ["/test example.mjs", "test-driven-development"],
     ["/refactor example.mjs", "interface-design"],
     ["/design cache API", "cache API"],
+    [
+      "/workflow fix the retry bug",
+      "Complete this task using the existing repository workflow: fix the retry bug",
+    ],
   ];
   for (const [command, expected] of resourceCases) {
     const count = resourceRequests.length;
@@ -351,6 +364,26 @@ export default function (pi) {
     assert.ok(JSON.stringify(user?.content).includes(expected), `Did not expand ${command}`);
   }
   console.log("ok: owned skills and workflow prompts discover and expand outside the repo");
+  const beforeReports = requests;
+  await prompt("/skill-search review");
+  const searchMessages = await request("get_messages");
+  const searchReport = searchMessages.messages.findLast(
+    (message) => message.customType === "skill-search",
+  );
+  assert.match(searchReport?.content ?? "", /implementation-review/);
+  assert.match(searchReport.content, /SKILL.md/);
+  await prompt("/usage --json");
+  const usageMessages = await request("get_messages");
+  const usageReport = usageMessages.messages.findLast(
+    (message) => message.customType === "usage-report",
+  );
+  const usage = JSON.parse(usageReport?.content ?? "null");
+  assert.equal(usage.requests, resourceCases.length);
+  assert.ok(usage.models.some((model) => model.model === "smoke-local/fixture"));
+  assert.equal(requests, beforeReports, "Local discovery and accounting must not call a model");
+  console.log(
+    "ok: skill search and branch usage report run in the real host without model requests",
+  );
   const codeTool = (code) => ({ name: "codemode", arguments: { code } });
   phase = "jobs";
   scripted = [

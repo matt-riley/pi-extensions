@@ -15,6 +15,16 @@ Installed through the collection's root manifest; see the [root README](../../RE
 - `/footer` toggles between the personal and built-in footer.
 - `/footer details` shows token totals, cost and extension statuses on demand.
   Accounting stays out of the statusline; `/session` is still available.
+- `/usage` shows assistant requests by provider/model, fresh input, output,
+  cache reads/writes, reported cost and outer-session tool failures/pending calls.
+  `/usage --json` displays the same report as JSON. Reports are custom session
+  messages, visible in the transcript and subsequent context; neither command
+  starts an agent turn or sends telemetry. Usage is recomputed on each command
+  from the active branch, including retained pre-compaction entries. Other
+  branches, child-session usage, hidden nested calls and latency are excluded.
+  Missing/invalid costs remain unknown; zero-cost records are counted separately
+  and do not imply free usage. Token totals with missing fields are partial,
+  with the number of missing/invalid fields shown beside each model.
 
 Workspace and work state take priority over model/accounting information in
 narrow terminals. Layout measures terminal columns with pi-tui's own

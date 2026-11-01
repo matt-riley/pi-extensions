@@ -202,7 +202,7 @@ try {
   if (upgrade) {
     tmux("pipe-pane", "-t", "ui", "-o", "cat > '" + path.join(fixture, "terminal.log") + "'");
     await waitFor(/fixture/);
-    for (const name of ["index.ts", "workspace.mjs"]) {
+    for (const name of ["index.ts", "workspace.mjs", "usage.mjs"]) {
       await writeFile(
         path.join(path.dirname(footerPath), name),
         await readFile(path.join(root, "packages/footer", name)),
