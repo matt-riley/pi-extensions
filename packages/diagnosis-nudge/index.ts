@@ -85,6 +85,9 @@ export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
     if (outcome.nudge && outcome.text) {
       parts.push(outcome.text);
     }
+    if (outcome.stallText) {
+      parts.push(outcome.stallText);
+    }
 
     if (isError && triageEnabled()) {
       const output = messageText(event?.content);

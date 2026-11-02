@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import {
   DIAGNOSIS_TOOL,
   NUDGE_TEXT,
+  STALL_NUDGE_AT,
   appendNudge,
   createNudgeState,
   observeToolResult,
   resetNudgeState,
+  stallText,
 } from "../nudge.mjs";
 
 test("nudges once on a failure, then stays quiet until a diagnosis happens", () => {
@@ -67,7 +69,47 @@ test("resetNudgeState clears everything for a new session", () => {
   state.seen.add("a failure");
   state.judged = 3;
   resetNudgeState(state);
-  assert.deepEqual(state, { unaddressed: false, nudged: false, seen: new Set(), judged: 0 });
+  assert.deepEqual(state, {
+    unaddressed: false,
+    nudged: false,
+    seen: new Set(),
+    judged: 0,
+    readOnly: 0,
+    stalled: false,
+  });
+});
+
+test("an unbroken run of read-only calls nudges once, at the threshold", () => {
+  const state = createNudgeState();
+  for (let i = 1; i < STALL_NUDGE_AT; i += 1) {
+    const quiet = observeToolResult(state, { toolName: "read", isError: false });
+    assert.equal(quiet.stallText, undefined, `no reminder at ${i} reads`);
+  }
+
+  const atThreshold = observeToolResult(state, { toolName: "code_search", isError: false });
+  assert.equal(atThreshold.stallText, stallText(STALL_NUDGE_AT));
+  assert.equal(atThreshold.nudge, false, "reading a lot is not a failure");
+
+  const after = observeToolResult(state, { toolName: "read", isError: false });
+  assert.equal(after.stallText, undefined, "one reminder per run, not per read");
+});
+
+test("a mutating call ends the run and lets a later run nudge again", () => {
+  const state = createNudgeState();
+  for (let i = 0; i < STALL_NUDGE_AT - 1; i += 1) {
+    observeToolResult(state, { toolName: "read", isError: false });
+  }
+  observeToolResult(state, { toolName: "write", isError: false });
+  assert.equal(state.readOnly, 0, "writing resets the count");
+
+  const missed = observeToolResult(state, { toolName: "read", isError: false });
+  assert.equal(missed.stallText, undefined, "a single read after a change is not a stall");
+
+  for (let i = 1; i < STALL_NUDGE_AT - 1; i += 1) {
+    observeToolResult(state, { toolName: "read", isError: false });
+  }
+  const second = observeToolResult(state, { toolName: "read", isError: false });
+  assert.equal(second.stallText, stallText(STALL_NUDGE_AT), "a fresh run earns its own reminder");
 });
 
 test("appendNudge adds a block without touching the original content", () => {
