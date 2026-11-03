@@ -1,7 +1,7 @@
 {
   "name": "pi-router",
   "version": "0.1.0",
-  "description": "Task-aware virtual model routing for pi.",
+  "description": "Route tasks to models, with optional escalation for harder work.",
   "license": "MIT",
   "type": "module"
 }

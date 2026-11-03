@@ -1,7 +1,7 @@
 {
   "name": "pi-toasts",
   "version": "0.1.0",
-  "description": "Top-right timed toasts for extension ctx.ui.notify in TUI mode.",
+  "description": "Show extension notifications as temporary cards instead of permanent chat rows.",
   "license": "MIT",
   "type": "module"
 }

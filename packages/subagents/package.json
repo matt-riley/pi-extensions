@@ -1,7 +1,7 @@
 {
   "name": "pi-subagents",
   "version": "0.1.0",
-  "description": "In-process parallel subagents: off-by-default, named scout/reviewer/oracle/worker/researcher children with a live widget.",
+  "description": "Delegate separate tasks to child agents, with live progress and controls. Off by default.",
   "license": "MIT",
   "type": "module"
 }

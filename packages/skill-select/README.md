@@ -1,7 +1,12 @@
 # pi-skill-select — on-demand skill selection for pi
 
-One read-only tool that finds a skill by task and returns its `SKILL.md` path,
-so skill **name + description pairs never have to sit in the system prompt**.
+Find a local skill for the task at hand without keeping the whole library in
+the model's prompt. A skill is a `SKILL.md` file with instructions for a specific
+kind of work, such as reviewing a change or writing tests.
+
+For example, run `/skill-search review a staged diff`. Choose a result to prepare
+a prompt, then submit it when you're ready. The agent can search the same library
+with the read-only tool:
 
 ```
 skill_select(query?, limit?)
@@ -25,10 +30,9 @@ part of the transcript/context; interactive browsing itself adds no message.
 
 ## The point: no context tax
 
-Pi lists every discovered skill (name + description) in the system prompt. That
-is fine for a handful and expensive for a library. Put skills you want kept out
-of the prompt in a directory pi does not scan, and this tool finds them on
-demand:
+Pi normally lists discovered skill names and descriptions in the system prompt.
+Installing this extension does not remove those entries. To keep a larger
+library out of that prompt, place it in a directory pi does not scan:
 
 ```
 ~/.pi/agent/skill-library/<any-nested-layout>/SKILL.md

@@ -1,8 +1,28 @@
 # pi-safe-compact
 
-Safe self-compaction for pi, with Jev making the judgment calls. Inspired by
-[self-compact-pi-agent](https://github.com/disler/self-compact-pi-agent), but the
-handoff is assembled and verified rather than trusted to one note.
+Shorten a long session while carrying forward the instructions, decisions and
+open problems the agent still needs. TypeSafe's Jev model helps select and check
+the handoff; if that fails, pi's native compaction is the fallback.
+
+Use `/safe-compact-info` to inspect context usage, or `/safe-compact-plan` to
+preview a handoff without applying it. Jev needs a `TYPESAFE_API_KEY`; without
+one, compaction stays native. A preview still makes judgment requests when a key
+is available.
+
+This reduces context, not the need to check it. The retention limits measured in
+[Does the handoff hold up?](#does-the-handoff-hold-up) matter, especially in long
+sessions. The design was inspired by
+[self-compact-pi-agent](https://github.com/disler/self-compact-pi-agent).
+
+## Surface
+
+- Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
+- Commands: `/safe-compact [note]`, `/safe-compact-plan` (dry run, shows the handoff),
+  `/safe-compact-info`.
+- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`.
+- Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
+- `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
+  (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
 
 ## How it works
 
@@ -103,9 +123,11 @@ Run over the handoffs in `~/.pi/agent/sessions`:
 | 41k chars, 80 segments | 6 | 1 | 5 | 0 |
 | 49k chars, 116 segments | 3 | 0 | 0 of 12 (12 outside a 3% excerpt) | 0 |
 
-**3 of 11 instructions still in force were no longer conveyed; 0 of 11 checkable claims were
-contradicted.** The weak side is retention, not invention: the handoff never asserted something the
-session did not support, but the last three instructions in the third session — the newest asks,
+**The rows above show 3 of 11 active instructions conveyed, and 0 of 11 checkable
+claims contradicted.** Retention was the weak side in this small sample. No
+contradictions were found among the claims that could be checked; that is not a
+guarantee about claims outside the sample. The last three instructions in the
+third session—the newest asks,
 including one whose vocabulary does appear in the handoff — came back at mean p=0.13 and 0.29 on two
 runs of the same input. Those two runs kept the same count (0 of 3) while the mean moved 0.16, so
 read the counts, not the mean, and read them as a small sample: two to six instructions per session.
@@ -114,16 +136,6 @@ Claims outside the excerpt are counted but not scored — a 40k-character excerp
 a 138-150k-token session, so *not_in_excerpt* is a limit of the exam, not evidence of invention.
 A handoff past ~54k characters cannot ride in the state beside the fact it is being checked and is
 refused with its size; the exam is for handoffs that fit.
-
-## Surface
-
-- Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
-- Commands: `/safe-compact [note]`, `/safe-compact-plan` (dry run, shows the handoff),
-  `/safe-compact-info`.
-- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`.
-- Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
-- `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
-  (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
 
 ## Files
 

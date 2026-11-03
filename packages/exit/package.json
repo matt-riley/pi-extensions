@@ -1,7 +1,7 @@
 {
   "name": "pi-exit",
   "version": "0.1.0",
-  "description": "Adds /exit as an alias for pi's built-in /quit.",
+  "description": "Use /exit as an alias for /quit. Same graceful shutdown, different muscle memory.",
   "license": "MIT",
   "type": "module"
 }

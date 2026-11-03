@@ -1,10 +1,18 @@
 # pi-prompt-coach — on-demand prompt improvement
 
-Use `/improve` when a rough request would benefit from clearer structure:
+Turn a rough request into a clearer one before sending it to the agent. It uses
+a local Gemma4 model for the rewrite and TypeSafe to check whether the intent
+survived.
+
+For example:
 
 ```text
 /improve fix the failing workflow on main
 ```
+
+You need Gemma4 running through Docker Model Runner and TypeSafe credentials
+(see [pi-typesafe](../typesafe/README.md#configuration)). Without them, the original
+request is sent unchanged.
 
 The command:
 
@@ -12,7 +20,9 @@ The command:
    names, latest commit, and relevant CI status;
 2. asks the local Gemma4 model at Docker Model Runner to rewrite the request;
 3. asks TypeSafe whether the rewrite preserves the original intent; and
-4. submits the verified rewrite as the next real user message.
+4. submits the rewrite as the next user message if the intent check accepts it.
+
+The intent check is a model judgment, not a guarantee that the rewrite is equivalent.
 
 The rewrite is never shown in a separate editor and ordinary input is never
 intercepted. If Gemma4 is unavailable, the rewrite is malformed, TypeSafe

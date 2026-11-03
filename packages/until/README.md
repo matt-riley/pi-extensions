@@ -1,12 +1,16 @@
 # pi-until — keep going until the predicate passes
 
+Give the agent a finish line it can check: a shell command that exits 0. If the
+check fails when the agent tries to stop, its output sends the agent back to
+work. The loop still ends at its check limit, on error, or when you cancel it.
+
 ```
 /until [--max N] <command> [-- task]
 /until stop
 /until            # status
 ```
 
-State the exit condition as a command, and the agent cannot stop until it exits 0:
+For example, keep working on a test failure, or wait for a PR's checks:
 
 ```
 /until npm test -- fix the flaky date test

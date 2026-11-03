@@ -1,122 +1,65 @@
 # 🧩 pi-extensions
 
-Personal [Pi coding agent](https://pi.dev) extensions, built for my own use and
-made shareable. Zero build step, zero runtime dependencies — each extension is
-plain TypeScript loaded directly by pi.
+A personal collection of extensions for the [Pi coding agent](https://pi.dev).
+Plan changes before editing, find your way around code, run background jobs, and
+keep track of what the agent is doing. Built for my own use, shared for yours.
 
-## Extensions
+## Requirements
 
-| Package | Use it for |
-| --- | --- |
-| [`pi-exit`](./packages/exit) | `/exit` alias for pi's built-in `/quit`. |
-| [`pi-plan-mode`](./packages/plan-mode) | Codex-like read-only `/plan` mode that writes a Markdown plan you edit before implementation. |
-| [`pi-web-fetch`](./packages/web-fetch) | Browser-grade `web_fetch` / `batch_web_fetch` / `web_search`: clean markdown/HTML/text/JSON extraction, page metadata, GitHub URLs via `gh`, bounded-concurrency batches, keyless DuckDuckGo search. `web_answer` returns only the passages that answer a question. |
-| [`pi-code-search`](./packages/code-search) | Faster, more reliable code discovery: `repo_map` / `code_search` / `file_outline` / `find_definition` with a persistent mtime-invalidated symbol cache, gitignore-exact inventory, and import/alias/re-export resolution. |
-| [`pi-typesafe`](./packages/typesafe) | Calibrated judgments for the agent: `typesafe_ask` batches typed questions; `read_relevant` selects exact source ranges; deferred `find_code` finds implementations by behavior. Advisory web/MCP injection warnings preserve structured results. Environment-only config (`TYPESAFE_API_KEY`). |
-| [`pi-skill-select`](./packages/skill-select) | On-demand skill selection: `skill_select` searches the whole local skill library and returns ranked `SKILL.md` paths. `/skill-search <task>` offers offline human discovery and prepares a prompt; `scripts/skill-search.mjs` serves other agents. |
-| [`pi-diagnosis-nudge`](./packages/diagnosis-nudge) | Nudges on tool failures; after two failed revised checks, blocks mutations until a revision-bound diagnostic observation runs. |
-| [`pi-done-gate`](./packages/done-gate) | Quietly nudges on unverified edits and leftover `[DEBUG-` tags; `measure_command` validates repeated, revision-bound benchmark/evaluation observations. |
-| [`pi-until`](./packages/until) | `/until <cmd>`: keeps the agent working until a shell predicate exits 0, re-checking at every settle, capped, with a TSV decision log per iteration. |
-| [`pi-guardrail`](./packages/guardrail) | Stops destructive tool use before it runs: deterministic rules for the 97% that are obviously fine, a TypeSafe judgment for the ambiguous middle, and an Approve / Deny / Suggest-an-alternative dialog for the rest. Refuses the catastrophic set outright. |
-| [`pi-router`](./packages/router) | Rates how hard the current task is and escalates to a frontier model when it clears a threshold — once per task, never mid-task, and never downgrading a model you chose. Judged, because the rules measured 7% precision on this repo's own history. |
-| [`pi-prompt-coach`](./packages/prompt-coach) | On-demand `/improve`: probe the repo, rewrite locally with Gemma4, verify intent with TypeSafe, and submit the rewrite with original-prompt fallback. |
-| [`pi-subagents`](./packages/subagents) | Off-by-default in-process children: `/subagents on` to opt in, then the main session orchestrates `scout` / `reviewer` / `verifier` / `oracle` / `worker` / `researcher` (or custom `.md` types) and synthesizes. Live widget, `/subagents` to steer or stop. |
-| [`pi-review`](./packages/review) | On-demand review with judgment behind it: `lint_change` scores a diff against this repo's standing preferences and commit rules, `blast_radius` lists the callers outside a diff and the symbols no test mentions, `verify_findings` drops findings whose own quotation is not in the diff before asking whether the rest hold. |
-| [`pi-watch-pr`](./packages/watch-pr) | `watch_pr`: one read of a PR's checks on its head commit, merge state and unresolved threads, with a verdict (`needs-action` / `pending` / `ready` / `closed`). Read-only; `ready` is not a merge grant. |
-| [`pi-jobs`](./packages/jobs) | Pi-native `/jobs` live logs, background commands and optional PTYs, human takeover, revision-bound exit evidence and opt-in Jev attention watches. No herdr/tmux required. |
-| [`pi-workbench`](./packages/workbench) | Live-filtering `/ui` and `/files`, read-only `/changes` with retained review position and Neovim handoff, recoverable drafts and slash-command typo suggestions. |
-| [`pi-footer`](./packages/footer) | Workspace, branch and actual work state first; `/footer details` reveals accounting/statuses, and `/usage [--json]` reports per-model active-branch tokens, caching, costs and tool failures. |
-| [`pi-toasts`](./packages/toasts) | Extension `notify` calls become short-lived top-right toasts in TUI mode instead of permanent transcript rows. |
-
-### Package dependencies
-
-These packages are published as separate directories but are not fully
-independent — some import modules from their siblings, so deleting or
-renaming one can break another:
-
-- **`pi-workbench`** reuses **`pi-code-search`**'s Git-aware file inventory; its optional planning/subagent/footer actions appear only when those commands are loaded.
-- **`pi-jobs`** reuses **`pi-workbench`** text sanitization and **`pi-done-gate`** check detection; **`pi-diagnosis-nudge`** also reuses **`pi-done-gate`**'s check detection. Subagents, jobs and both gates bind evidence to the revision fingerprint in `shared/revision.mjs`, and consume the shared completed-job evidence adapter.
-- **`pi-typesafe`** reuses **`pi-code-search`**'s file inventory and **`pi-guardrail`**'s path policy (`policy-bash.mjs`, `policy-targets.mjs`) to decide what a file question may read.
-- **`pi-plan-mode`** imports `fetchSmart` / `formatWebFetchResult` /
-  `isKnownFormat` from **`pi-web-fetch`**'s `fetch.mjs` and `format.mjs`
-  (used to implement `plan_fetch_url`). Which other tools it allows is decided
-  from their annotations at runtime, not from a sibling name list.
-  `readOnlyHint: true` is trusted only for tools this repo registers.
-- **`pi-skill-select`**, **`pi-typesafe`**, **`pi-guardrail`**,
-  **`pi-router`**, **`pi-review`**, **`pi-done-gate`**, **`pi-diagnosis-nudge`**,
-  **`pi-plan-mode`**, **`pi-safe-compact`**, **`pi-web-fetch`**,
-  **`pi-prompt-coach`**, **`pi-subagents`**, **`pi-jobs`** and the `scripts/` classifiers all
-  import from the shared `shared/systemone.mjs` — `askSystemOne` for the
-  request, `usableNumber` for reading answers — and from its siblings
-  `systemone-config.mjs` (endpoint and key), `systemone-request.mjs`
-  (`validateRequest`, the state/question contract), `systemone-transport.mjs`
-  (deadline and transports) and `systemone-session.mjs` (the store that carries
-  Pi's context and token usage). One implementation of each, split by job, so a
-  file stays readable instead of duplicating transport. Inside Pi, that request
-  goes through `classify()` when a TypeSafe System One model is registered,
-  and stays on the direct HTTP transport otherwise. The `scripts/` classifiers
-  have no Pi model registry, so they stay on HTTP. Each call also appends a
-  local `jev-decision` session entry (model, question ids, answers, latency,
-  transport, outcome). State and question text stay out of that entry. See
-  `packages/typesafe/README.md`.
-- **`pi-plan-mode`** and **`pi-subagents`** both import the read-only bash
-  allowlist from `shared/bash-policy.mjs` at the repo root, and both
-  `pi-plan-mode` and **`pi-guardrail`** import the FIFO dialog serializer from
-  `shared/dialog-queue.mjs` — two dialogs open at once stack and hang the tool
-  batch.
-- **`pi-plan-mode`** and **`pi-guardrail`** parse commands with
-  `shared/shell-parse.mjs`, which is quote-aware and knows heredocs from shell:
-  one answers "is this provably read-only?", the other "what could this
-  destroy?", and both need to tell operators from literal text.
-
-`pi-exit`, `pi-web-fetch`, `pi-code-search`, `pi-skill-select`, `pi-until`, `pi-review`,
-`pi-subagents`, `pi-guardrail`, `pi-router`, `pi-safe-compact`, `pi-prompt-coach`,
-`pi-watch-pr`, `pi-footer` and `pi-toasts` import no sibling package, only `shared/`.
-`pi-done-gate` loads none at runtime, but its own tests load `pi-jobs`'s `Jobs`, so
-deleting that package still breaks it.
+- **Pi 1.4.0 or later.** The collection relies on that version's fixes for
+  concurrent extension dialogs. The smoke test rejects older hosts.
+- **Install the collection together.** Some extensions import helpers from their
+  neighbours. Removing individual package directories can break others; see
+  [Package dependencies](#package-dependencies).
+- Extensions are plain TypeScript loaded by pi, with no build step. Runtime
+  imports use Node built-ins, pi's `typebox` and, for subagents, the host SDK.
+  Local verification also needs the development dependencies installed below.
 
 ## Install
 
-The [research application](./docs/research-application.md) maps the supplied
-workflow research onto these existing extensions. `/skill-search <task>` now
-offers local skill discovery with a reviewable prompt; `/workflow <task>` connects
-investigation, implementation, verification and review through existing tools.
-
-Clone the repo into pi's global extensions directory; pi auto-discovers the
-extensions from the `pi` key in `package.json`:
+Clone into pi's global extensions directory and install the local tooling:
 
 ```sh
 git clone https://github.com/matt-riley/pi-extensions ~/.pi/agent/extensions/pi-extensions
 cd ~/.pi/agent/extensions/pi-extensions && npm install
 ```
 
-`npm install` is needed because several extensions import `typebox`. Without
-it, `npm run verify` reports `Cannot find package 'typebox'` for half the
-entrypoints.
+Run `/reload` in pi, or restart it. Pi discovers the extensions through the root
+`package.json`; you do not register each package separately.
 
-then `/reload` in pi (or restart it). To update later:
+`npm install` also makes `typebox` available to the local verifier. Without it,
+`npm run verify` cannot load several entrypoints outside the pi host.
+
+Try `/ui` to find commands, `/plan` to work through a change without editing, or
+`/files` to insert a file reference into your prompt. Subagents stay off until
+you explicitly enable them with `/subagents on`.
+
+To update:
 
 ```sh
 git -C ~/.pi/agent/extensions/pi-extensions pull
 npm --prefix ~/.pi/agent/extensions/pi-extensions install
 ```
 
-then `/reload` again.
+Then `/reload` again. Restart pi if an already-loaded helper remains cached.
 
-Check the tools are intact (loads the entrypoints through a stub pi, discovers
-the local skill library, reports whether a TypeSafe key is visible):
+To check local registration from the collection directory:
 
 ```sh
-npm run verify                 # offline
-npm run verify -- --live       # also makes one real TypeSafe call
+npm run verify                 # offline: entrypoints and local skills
+npm run verify -- --live       # also makes one real TypeSafe request
 ```
+
+The offline check uses a stub host: it proves registration, not that tools run
+correctly in pi. See [Verifying pi extensions](./docs/verification.md) for the
+full checks. Features backed by TypeSafe need credentials; their package pages
+explain setup and what happens without a key.
 
 ### Prompt templates and workflow skills
 
-pi auto-discovers **extensions** from `pi.extensions`, but does **not** load
-`pi.prompts` or `pi.skills` from auto-discovered extension directories. Those
-resources load from installed packages or explicit settings. Register both in
-`~/.pi/agent/settings.json`:
+The clone above loads **extensions**, but not their prompt templates or skills.
+To use commands such as `/review`, `/debug` and `/workflow`, merge these entries
+into `~/.pi/agent/settings.json` without replacing your other settings:
 
 ```json
 {
@@ -125,68 +68,112 @@ resources load from installed packages or explicit settings. Register both in
 }
 ```
 
-Without this, the slash-command prompts in [`prompts/`](./prompts) (`/commit`,
-`/review`, `/debug`, `/verify-setup`, `/mine`, `/triage`, `/garden`, `/upgrade`, `/migrate`, `/retro`, …) are
-silently unavailable. Installed Pi packages load the same resources through
-the root manifest instead.
+Reload pi after changing settings. Without these entries, the prompt commands
+are unavailable even though the extensions load. Installed Pi packages load
+these resources from the root manifest instead of explicit paths.
 
-Three owned, portable workflows live in [`.agents/skills/`](./.agents/skills):
+Three bundled skills support the prompt templates:
 
 | Skill | Entry points | Purpose |
 | --- | --- | --- |
-| `implementation-review` | `/review`, `/pr` | Read-only, defect-first review with grounded findings and test-quality checks |
-| `test-driven-development` | `/test`, feature/bug work | Behavior-focused tests, independent expectations and tested vertical slices |
-| `interface-design` | `/design`, `/refactor` | Small interfaces that hide complexity; `/design` proposes without editing |
+| `implementation-review` | `/review`, `/pr` | Find defects in a change without editing it. |
+| `test-driven-development` | `/test`, feature/bug work | Test observable behaviour, including failures and edge cases. |
+| `interface-design` | `/design`, `/refactor` | Simplify module boundaries; `/design` proposes without editing. |
 
-`skill_select` and `scripts/skill-search.mjs` also search these bundled skills
-from any working directory. Other applications' skill roots are **not** searched
-unless explicitly included with `PI_SKILL_LIBRARY` or `--root`. Keep project-specific
-skills under that project's `.agents/skills/`; do not import another harness's
-system collection as an implicit dependency. Prompt skill references are validated
-against this checkout on every `npm run check`, with no home-directory dependency.
+`/skill-search <task>` finds a local skill and prepares a prompt for you to
+review. `/workflow <task>` guides the agent through investigation, implementation,
+verification and review; it does not grant permission to push, publish or deploy.
 
-## Requirements
+`skill_select` and `scripts/skill-search.mjs` can also find the bundled skills
+from other working directories. Other applications' skill roots are searched
+only when explicitly included through `PI_SKILL_LIBRARY` or `--root`. Keep
+project-specific skills in that project's `.agents/skills/`.
 
-- **Pi 1.4.0 or later.** The extensions use the 1.2.0 `before_agent_start`
-  contract (`messageType`, `systemPromptOptions` sections) and rely on 1.4.0's
-  fixes, such as concurrent extension dialogs. `npm run smoke` refuses older
-  hosts; extensions themselves can't read the host version.
-- **No added npm dependencies.** Imports are pi's `typebox` built-in and
-  `node:` core modules. Most packages type-only-import `@earendil-works/pi-coding-agent`;
-  `pi-subagents` also imports the host SDK at runtime (`createAgentSession`).
+## Extensions
+
+| Package | Use it for |
+| --- | --- |
+| [`pi-exit`](./packages/exit/README.md) | Use `/exit` when your fingers insist on it. Same graceful shutdown as `/quit`. |
+| [`pi-plan-mode`](./packages/plan-mode/README.md) | Work through a change in read-only mode, with an editable plan before implementation. |
+| [`pi-web-fetch`](./packages/web-fetch/README.md) | Read web pages, search the web, and fetch GitHub content without opening a browser. |
+| [`pi-code-search`](./packages/code-search/README.md) | Map a codebase, search its contents, and follow symbols to their definitions. |
+| [`pi-typesafe`](./packages/typesafe/README.md) | Ask structured questions of TypeSafe's Jev model and get probabilities rather than prose. |
+| [`pi-skill-select`](./packages/skill-select/README.md) | Find a relevant local skill when you need it, rather than loading the whole catalogue. |
+| [`pi-diagnosis-nudge`](./packages/diagnosis-nudge/README.md) | Nudge the agent to check its diagnosis; pause edits after two failed revised checks. |
+| [`pi-done-gate`](./packages/done-gate/README.md) | Remind the agent to check unverified code changes before it calls the work done. |
+| [`pi-until`](./packages/until/README.md) | Keep the agent working until your check passes, within a limit you set. |
+| [`pi-guardrail`](./packages/guardrail/README.md) | Check risky tool calls, ask for approval when needed, and refuse catastrophic operations. |
+| [`pi-router`](./packages/router/README.md) | Route tasks to models, with optional escalation for harder work. |
+| [`pi-prompt-coach`](./packages/prompt-coach/README.md) | Rewrite a rough request with a local model, then check that it still asks for the same thing. |
+| [`pi-subagents`](./packages/subagents/README.md) | Delegate separate tasks to child agents, with live progress and controls. Off by default. |
+| [`pi-review`](./packages/review/README.md) | Review a diff, find affected callers, and check whether review findings are supported. |
+| [`pi-watch-pr`](./packages/watch-pr/README.md) | Check a pull request's CI, merge state and unresolved reviews in one report. |
+| [`pi-jobs`](./packages/jobs/README.md) | Run background commands, follow their logs, and take over an interactive terminal. |
+| [`pi-workbench`](./packages/workbench/README.md) | Find commands and files, browse changes, and recover a saved prompt draft. |
+| [`pi-footer`](./packages/footer/README.md) | See your project, branch and work state; inspect usage and costs on demand. |
+| [`pi-toasts`](./packages/toasts/README.md) | Show extension notifications as temporary cards instead of permanent chat rows. |
+| [`pi-safe-compact`](./packages/safe-compact/README.md) | Carry selected context into a shorter session, with native compaction as a fallback. |
 
 ## Development
 
-Dev tooling only — none of it ships with an extension:
+Run these from the repository root:
 
-| Command | Tool | What it guards |
-| --- | --- | --- |
-| `npm run lint` | [oxlint](https://oxc.rs) | correctness and suspicious patterns, warnings included |
-| `npm run format` | [oxfmt](https://oxc.rs) | code and JSON at 100 columns |
-| `npm run knip` | [knip](https://knip.dev) | unused files, exports and dependencies |
-| `npm run fallow` | [fallow](https://docs.fallow.tools) | dead code, cycles, dependency hygiene; `fallow:report` adds duplication and complexity |
-| `npm run coverage` | Node test runner | executable line/function/branch coverage and `coverage/lcov.info`, without an added dependency |
+| Command | What it checks |
+| --- | --- |
+| `npm run check` | Conventions, types, lint, formatting, unused code and the test suite. |
+| `npm run lint` | oxlint correctness rules; warnings fail too. |
+| `npm run format` | Format code and JSON with oxfmt. Markdown is excluded. |
+| `npm run knip` | Unused files, exports and dependencies. |
+| `npm run fallow` | Dead code, cycles and dependency hygiene. `fallow:report` also reports duplication and complexity. |
+| `npm run coverage` | Unit tests, registration checks and the real-Pi smoke under Node's LCOV reporter. Requires pi on PATH. |
 
-`npm run check` runs all four plus `tsc --noEmit` and the test suite. Every rule
-exception is written down in the config next to the rule it disables, so the gate
-stays honest instead of collecting suppress-comments.
+Tooling is development-only. Rule exceptions belong beside the rule they disable,
+with a reason. Prompt references to bundled skills are checked by
+`npm run check`, without relying on a home-directory skill installation.
+
+### Package dependencies
+
+Package directories are not independent installations. These are the main links
+between them:
+
+- **workbench** uses **code-search**'s file inventory. Its optional planning,
+  subagent and footer actions appear only when those commands are loaded.
+- **jobs** uses **workbench** text sanitization and **done-gate** check detection.
+  **diagnosis-nudge** also uses **done-gate** check detection. Jobs, subagents and
+  both gates share revision fingerprints and completed-job evidence adapters.
+- **typesafe** uses **code-search**'s inventory and **guardrail**'s path policy.
+- **plan-mode** uses **web-fetch** for `plan_fetch_url`. It retains tools by
+  runtime annotations, not a sibling-name list; `readOnlyHint: true` is trusted
+  only for tools registered by this collection.
+- TypeSafe-backed packages and the `scripts/` classifiers share the client in
+  `shared/systemone*.mjs`: configuration, validation, transport and session
+  accounting. In pi it uses `classify()` when a TypeSafe model is registered;
+  standalone scripts use HTTP. Local `jev-decision` entries record answers,
+  latency and outcome, not state or question text. See [pi-typesafe](./packages/typesafe/README.md).
+- **plan-mode** and **subagents** share the read-only bash policy.
+  **plan-mode** and **guardrail** share a quote-aware shell parser and a dialog
+  queue, so simultaneous approval dialogs do not stack and hang.
+- **done-gate** has no sibling runtime import, but its tests load **jobs**.
+
+The other packages import only their own files and `shared/`, not sibling
+packages. Most host SDK imports are type-only; subagents also loads the host's
+session APIs at runtime.
 
 ### Classifiers
 
-Three judgments that used to be made from memory in a prompt now live in
-`scripts/`, so the same input gets the same answer twice and every one is
-covered by `node --test`:
+These scripts return advice rather than applying changes. Tests inject a fake
+judge; a failed real request reports that it could not judge.
 
 | Script | What it decides |
 | --- | --- |
-| `scripts/ci-triage.mjs` | one CI failure → `flaky`, `regression`, `infra`, `configuration` or `dependency`, with its confidence. `/triage --ci` calls it. |
-| `scripts/promote-corrections.mjs` | a correction I gave more than once → the cheapest durable fix (`test`, `lint`, `guardrail`, `agents`, `prompt`, `none`) and how well existing guidance already covers it. `/mine` calls it. |
-| `scripts/memory-check.mjs` | a candidate lore memory → `duplicate`, `contradiction`, `refinement` or `new`, naming the memory to update. `/retro` calls it. |
-
-Each prints rather than applies, takes an injected `ask` in its tests, and says
-when it could not judge instead of inventing a verdict.
+| `scripts/ci-triage.mjs` | Classify a CI failure as flaky, regression, infra, configuration or dependency, with confidence. Used by `/triage --ci`. |
+| `scripts/promote-corrections.mjs` | Suggest a durable fix for a repeated correction: test, lint, guardrail, guidance, prompt or none. Used by `/mine`. |
+| `scripts/memory-check.mjs` | Check a proposed memory for duplicates, contradictions or refinements. Used by `/retro`. |
 
 ## Related
 
-- [matt-riley/lore](https://github.com/matt-riley/lore) — local-first memory
-  and continuity for the Copilot CLI *and* pi (installed separately).
+- [Verifying pi extensions](./docs/verification.md) — what each check proves and misses.
+- [Applying the Pi workflow research](./docs/research-application.md) — the design decisions behind discovery, usage and workflow commands.
+- [Pi's sandbox example and this collection](./docs/sandbox-integration.md) — what would be needed for OS-level isolation; not an enabled feature.
+- [Bounded workflow outcome pilot](./docs/workflow-evaluation.md) — a small recorded experiment, including its limits.
+- [matt-riley/lore](https://github.com/matt-riley/lore) — local-first memory for the Copilot CLI and pi, installed separately.

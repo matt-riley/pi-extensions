@@ -2,7 +2,7 @@
   "name": "pi-extensions",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal pi extension collection: /exit, /plan, ...",
+  "description": "Extensions for the Pi coding agent: plan changes, explore code, run background jobs, and keep track of the work.",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -1,10 +1,9 @@
-# pi-plan-mode — Codex-like Plan Mode for Pi
+# pi-plan-mode — plan before editing
 
-Adds a read-only `/plan` collaboration mode: the agent explores your repo,
-**grills you for the full scope** (design-tree rounds of decision questions,
-each with a recommended answer), and only then produces a **Markdown plan
-file you review and edit before implementation** — the same review-before-do
-loop Copilot CLI's plan mode gives you.
+Work through a change before the agent starts editing. In `/plan`, the agent
+explores the repository with read-only tools, asks you to settle open decisions,
+and writes a Markdown plan for you to review. You decide when implementation
+starts.
 
 ## Usage
 
@@ -26,82 +25,59 @@ ctrl+alt+e          edit the plan file (same as /plan edit)
 pi --plan           start pi already in plan mode
 ```
 
-While plan mode is active, tool membership comes from annotations
-(`packages/plan-mode/tool-policy.mjs`), not a name list:
+## What happens in plan mode
 
-- **Local readers this repo registers** (`readOnlyHint` and not
-  `openWorldHint`): the code-search tools, `skill_select`, and `view_context`.
-  `readOnlyHint: true` from any other tool is ignored. `readOnlyHint: false`
-  blocks, including a built-in that claims it.
-- **Plan mode's own tools**, activated even though they are deferred:
-  `plan_mode_question`, `plan_fetch_url`, and `plan_mode_complete` (the last
-  one writes only the plan file).
-- **`web_search`**, the open-world search tool the mode already used. Other
-  open-world readers (`web_fetch`, `typesafe_ask`, `read_relevant`) stay out,
-  so planning does not grow a second fetch path or a paid judgment call.
-- **Unannotated tools from other packages** that were already allowed:
-  `read`, `bash`, `grep`, `find`, `ls`, and `lore_recall` (lore's read-only
-  memory recall; if lore is unloaded the name matches nothing).
-- **Tools whose exposure is not `direct`** stay inactive, except the plan-mode
-  trio. That covers deferred, model-only, codemode, and hidden, so the
-  background-job tools are not pulled into the planning prompt. Any other tool
-  call is blocked, and the previous tool set is restored on exit.
-  `view_context` is the one local reader newly available in the mode; it only
-  reports context usage.
-- **Mutating tools are blocked** (`edit`, `write`, `update_plan` and anything
-  outside the plan toolset), and `bash` runs under a **fail-closed read-only
-  allowlist** (see `shared/bash-policy.mjs`, modeled on the reference plan-mode
-  extension): known mutators are blocked outright, only explicitly
-  allowlisted read-only commands pass (with per-command rules that forbid
-  dangerous flags such as `sed -i`, `find -exec/-delete`, `tar -x`,
-  `git push`, `npm install`), and anything else is blocked because it is not
-  known to be read-only. Redirects and command substitution are rejected. This
-  is a guardrail, not a sandbox: deliberately scripted mutations (e.g. an
-  `awk` program that writes a file) are out of scope.
-- **Read-only web access** via `plan_fetch_url` and `web_search`:
-  `plan_fetch_url` fetches an http(s) URL and returns clean readable content
-  — markdown by default with title/URL metadata, capped at 40k characters;
-  `web_search` runs a keyless web search (DuckDuckGo by default, or a
-  configured SearXNG instance) returning titles/URLs/snippets, up to
-  10 results). Both are powered by the same zero-dependency engine as
-  [`pi-web-fetch`](../web-fetch): browser-like headers, redirect following,
-  alternate-content fallback, and the `gh` CLI for GitHub URLs when
-  available. 20s timeout and an Esc-cancellable request (search uses
-  web-fetch's 15s default). These are the sanctioned network paths:
-  `curl`/`wget` stay blocked by the bash allowlist, so web research can't
-  double as a mutation or exfiltration vector. `web_search` resolves from the
-  pi-web-fetch extension — if that extension is unloaded, the name matches
-  nothing and the model is simply never offered the tool.
-- A **footer status** ("plan (read-only)") and a **widget** (mode + plan file
-  path) keep the state visible while active; both clear on exit.
-- The agent explores read-only, then **grills you for the full scope**: it
-  works the request as a design tree and asks each round's frontier questions
-  — numbered, with options and a recommended answer via `plan_mode_question`
-  — until every decision is settled and nothing is silently assumed. A
-  round's questions come back as one dialog at a time (they are serialized so
-  concurrent question calls never stack dialogs and hang the turn); answer
-  each and the agent gets the whole round back. Only
-  then does it finish with `plan_mode_complete({ plan })`, which:
+The footer shows `plan (read-only)`, and a widget shows the plan file path.
+The agent inspects the code and asks decision questions with options and a
+recommended answer. Questions appear one dialog at a time, even when the agent
+asks several together.
 
-  1. validates the plan,
-  2. asks TypeSafe whether each step names its verification and identifies the
-     callers or consumers it affects, and appends the answer as a
-     **Plan check** section (see below),
-  3. writes it to **`.pi/PLAN.md`** in the working directory (not repo-root
-     `PLAN.md` — that would collide with projects' own `PLAN.md` files and
-     force a per-project gitignore entry)
-     (revisions overwrite in place unless the file was edited — then they land
-     in `.pi/PLAN.md.2`, `.3`, … so your edits are never clobbered; writes are
-     atomic), and
-  4. ends the turn.
+When the plan is ready, `plan_mode_complete` validates it, optionally asks
+TypeSafe to check its steps, and writes **`.pi/PLAN.md`** in the current working
+directory. Writes are atomic. If you have edited the existing plan, revisions
+use `.pi/PLAN.md.2`, `.3`, and so on rather than overwriting your changes.
+The tool then ends the turn; it does not start implementation.
+
+Review the file directly or through `/plan edit`. Run `/plan approve` when you
+want the agent to implement it. That restores the previous tools and submits
+the plan for implementation; `/plan exit` leaves without doing so.
+
+### Available tools
+
+Tool access is enforced by `tool-policy.mjs`, not just instructions to the model:
+
+- Local read-only tools registered by this collection are allowed: code search,
+  `skill_select`, and `view_context`. Outside tools cannot grant themselves
+  access with `readOnlyHint: true`; `readOnlyHint: false` blocks access.
+- The mode activates its three deferred tools: `plan_mode_question`,
+  `plan_fetch_url`, and `plan_mode_complete`. Only the last can write, and only
+  to the plan file. Other tools whose exposure is not `direct` stay inactive.
+- `read`, `bash`, `grep`, `find`, `ls`, and `lore_recall` retain their existing
+  access. An unloaded extension's tool name grants nothing.
+- Web research uses `plan_fetch_url` and `web_search`. `web_fetch`,
+  `typesafe_ask` and `read_relevant` are not offered as alternate paths.
+- Other calls, including `edit`, `write` and `update_plan`, are blocked.
+
+Bash uses the shared **fail-closed read-only allowlist**. Unknown commands,
+redirects, command substitution and mutating flags are rejected, including
+`sed -i`, `find -exec/-delete`, `tar -x`, `git push` and `npm install`.
+This is a guardrail, not a sandbox: a deliberately file-writing `awk` program,
+for example, is outside its protection.
+
+`plan_fetch_url` returns readable HTTP(S) content with title/URL metadata,
+capped at 40,000 characters by default. It has a 20-second timeout and supports
+Escape cancellation. `web_search` returns up to ten titles, URLs and snippets,
+using web-fetch's 15-second default. Both use the
+[web-fetch engine](../web-fetch/README.md): browser-like headers, redirects,
+alternate content, and `gh` for GitHub URLs. Search requires that extension to
+be loaded. `curl` and `wget` stay blocked by the bash policy.
 
 ### The plan check
 
-The repo's AGENTS.md asks for a judgment before a plan is presented: does each
-step name how it will be verified, and are the callers it affects identified?
-That is per-step, so `plan-review.mjs` splits the plan into steps (list items
-first, then headings, then the plan as one step), asks both questions for every
-step in **one** request, and appends what falls short to the plan file:
+The optional TypeSafe review asks two questions about every step: how will it
+be verified, and which callers or consumers does it affect? `plan-review.mjs`
+splits the plan by list items, then headings, or treats the whole plan as one
+step. One request checks them all and appends any gaps:
 
 ```
 ## Plan check
@@ -161,8 +137,8 @@ so plan mode needs no in-memory plan retention.
   source of truth.
 - `/plan start` still exists as a no-prompt way to enter plan mode, but
   `/plan <prompt>` is the intended entry point.
-- No export/save/fresh-session handoff, settings file, or tool pre-selection
-  menu yet — say the word if you want any of them.
+- There is no export command, fresh-session handoff, settings file, or tool
+  pre-selection menu.
 - The bash guard is a **fail-closed read-only allowlist**: plan-mode bash is
   limited to inspection commands (see `shared/bash-policy.mjs`). Test runners
   (`npm test`, `go test`), script interpreters (`node`, `python3 -c`),
@@ -202,5 +178,5 @@ the dialog happens, never that a question is answered by nobody.
 
 ```sh
 npm test          # node --test against shared/bash-policy.mjs, plan-file.mjs, dialog-queue.mjs
-npm run check     # syntax-check entrypoints + tests
+npm run check     # conventions, types, lint, format, unused code, tests
 ```

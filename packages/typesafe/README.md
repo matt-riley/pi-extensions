@@ -1,8 +1,39 @@
 # pi-typesafe — TypeSafe System One judgments for pi
 
-Three tools plus optional advisory output screening. `typesafe_ask` turns `state` plus typed questions into calibrated judgments:
-probabilities and confidence instead of prose. Backed by
-[TypeSafe](https://docs.typesafe.ai)'s System One model, Jev.
+Ask a model a specific question and get a structured judgment back: yes/no
+probabilities, a choice, or a score. The answers come from
+[TypeSafe](https://docs.typesafe.ai)'s Jev model. They are useful signals for
+routing and review, not proof that a claim is true.
+
+The package provides three tools:
+
+| Tool | Use it to |
+| --- | --- |
+| `typesafe_ask` | Ask typed questions about text, JSON, local files or command output. |
+| `read_relevant` | Pick exact source ranges relevant to a question, instead of reading a whole file. |
+| `find_code` | Find likely implementations when you know the behaviour but not its name. |
+
+Requests send data to TypeSafe. Set `TYPESAFE_API_KEY` in pi's environment (or use
+an existing lore key); see [Configuration](#configuration) for the full lookup
+order and privacy controls. The package also adds optional advisory warnings
+to fetched web and MCP output.
+
+## Example
+
+```json
+{
+  "state": { "diff": "@@ -12,3 +12,9 @@ ..." },
+  "questions": {
+    "breaking": { "type": "noul", "instructions": "Does this change break existing callers?" },
+    "risk": { "type": "score", "instructions": "How risky is this change to merge unreviewed?", "criteria": ["Safe", "Needs review", "High risk"] }
+  }
+}
+```
+
+Answers come back with the same ids: `breaking: noul 0.88`,
+`risk: score 2.10 (confidence 0.79)` plus the level distribution.
+
+## Asking questions
 
 ```
 typesafe_ask(state, questions, model?)
@@ -16,8 +47,8 @@ typesafe_ask(state, questions, model?)
   - `score` — graded rating on ordered levels you describe.
 - `model` — optional override (default `TYPESAFE_MODEL` or `jev-1.13.0`).
 
-All questions are answered in **one request** and run in parallel, so batch
-independent questions rather than calling repeatedly.
+Independent questions are answered in **one request**, so batch them rather than
+calling repeatedly. This saves requests; it does not make the answers certain.
 
 A request that could not be answered as asked is refused before it is sent: a state past Jev's 60000
 characters, a state value JSON would drop (`undefined`, a function, a `Map` — the model sees the key
@@ -139,21 +170,6 @@ toward the session. A gate that is not a tool result or a compaction entry
 1.4 to record an extension `classify()` call, so those tokens stay out of the
 session total. The answers themselves stay in today's shape: `noul`, score
 probabilities, and `{ input_tokens, output_tokens }`.
-
-## Example
-
-```json
-{
-  "state": { "diff": "@@ -12,3 +12,9 @@ ..." },
-  "questions": {
-    "breaking": { "type": "noul", "instructions": "Does this change break existing callers?" },
-    "risk": { "type": "score", "instructions": "How risky is this change to merge unreviewed?", "criteria": ["Safe", "Needs review", "High risk"] }
-  }
-}
-```
-
-Answers come back with the same ids: `breaking: noul 0.88`,
-`risk: score 2.10 (confidence 0.79)` plus the level distribution.
 
 ## Design notes
 

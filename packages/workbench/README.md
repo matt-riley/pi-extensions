@@ -1,8 +1,10 @@
 # pi-workbench
 
-A personal front door to pi’s existing commands, project context and Git changes.
-Uses pi’s host-provided widgets: no installed runtime dependencies, model calls or
+Find commands, add file references to a prompt, and browse Git changes without
+leaving pi. It uses the host's existing widgets and makes no model calls or
 global keybinding changes.
+
+Start with `/ui` to find a command, or `/changes` to inspect your work.
 
 | Command | Shortcut | Purpose |
 | --- | --- | --- |
@@ -13,8 +15,8 @@ global keybinding changes.
 
 Type to filter immediately; arrows navigate, Enter chooses, Escape cancels.
 Search requires every word; name matches rank ahead of description matches.
-There is no 200-match cutoff. Empty results remain searchable. Native `Input`
-handles editing, paste and cursor focus; `SelectList` handles selection.
+All matches remain available, and you can keep typing when the list is empty.
+The native input handles editing, paste and cursor focus.
 Shortcuts depend on terminal modifier support; slash commands always work.
 
 ## Commands and drafts

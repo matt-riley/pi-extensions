@@ -1,56 +1,64 @@
 # pi-code-search
 
-Faster, more reliable code discovery for pi. Four always-on read-only tools
-that make finding code quicker (fewer round trips, cached inventory), easier
-(symbol-aware queries instead of regex guessing), and more reliable
-(gitignore-exact inventory, definition-first ranking, import/alias/re-export
-resolution).
+Find your way around a codebase: map files, search code, and follow symbols to
+their definitions. These four read-only tools are available to the agent without
+extra setup after you [install the collection](../../README.md#install).
 
-Zero runtime dependencies: node built-ins + pi's `typebox` only.
+For example, ask pi:
+
+> Find where retry delays are calculated, then show me the function and its callers.
+
+The agent can search for the name, inspect the surrounding code, and follow an
+import to the definition without reading whole files along the way.
 
 ## Tools
 
-| Tool | What it does |
+| Tool | Use it to |
 | --- | --- |
-| `repo_map(depth?)` | Compact gitignore-aware map of the repo in one call: header (root, branch, file count, size, languages), collapsed tree, key files (README, manifests, CI, test files), package.json highlights (scripts, entry, deps), and the newest + largest files. Call first on unfamiliar repos. |
-| `code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?)` | Content search with definition-first ranking and enclosing-function/class framing. Plain substring by default; `regex`, `wholeWord`, `caseSensitive`, and `path` scoping options. Comment-only matches rank last; zero hits suggest near symbol names. |
-| `file_outline(path)` | Symbol outline of one file sorted by line: functions, classes, methods, fields, interfaces, types, imports. Call before committing to a full read. |
-| `find_definition(symbol, fromFile?, kind?)` | Locate the definition of a symbol. With `fromFile`, the symbol's import/require/reexport is resolved (relative specifiers with extension/index probing, tsconfig/jsconfig `paths` aliases, workspace package names, re-export chains up to depth 8 with cycle guard). Without it, all definition candidates across the repo are listed, exported first. External packages are reported as `external: <pkg> — not indexed` (node_modules is never scanned). |
+| `repo_map(depth?)` | Get the layout of an unfamiliar repo: directories, languages, key files, package scripts, and recent or large files. |
+| `code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?)` | Search file contents. Results show the enclosing function or class, with definitions first and comment-only matches last. |
+| `file_outline(path)` | See a file's functions, classes, fields, types and imports in line order before deciding what to read. |
+| `find_definition(symbol, fromFile?, kind?)` | Find where a symbol is defined. Supply `fromFile` to follow its import; omit it to list matching definitions, exported ones first. |
+
+Search uses plain substrings by default. Set `regex`, `wholeWord`,
+`caseSensitive`, or `path` to narrow it. A search with no hits can suggest
+similar symbol names.
+
+`find_definition` follows relative imports, `require`, aliases, workspace
+packages and re-exports. It checks up to eight re-export links and stops cycles.
+External packages are reported as `external: <pkg> — not indexed`;
+`node_modules` is not scanned.
 
 ## How it works
 
-- **Git-aware inventory**: the repo root is `git rev-parse --show-toplevel`;
-  files come from `git ls-files --cached --others --exclude-standard`
-  (tracked + untracked, gitignore-exact). Falls back to a pure-node walker
-  with a hand-rolled gitignore matcher when git is unavailable.
-- **Persistent cache** at `<root>/.pi/cache/pi-code-search.json`: the file
-  inventory (paths, mtimes, sizes) plus per-file symbol tables. Survives
-  restarts; invalidated by mtime+size so only changed files are re-parsed;
-  written atomically; corrupt/version-mismatched files rebuild cleanly.
-- **TS/JS parser**: a pragmatic single-pass tokenizer (comments, strings,
-  template literals with nested interpolation, heuristic regex literals) with
-  brace-scope tracking. Extracts functions, classes, methods, getters/setters,
-  private fields, interfaces, type aliases, enums, const/let/var (incl.
-  arrows and destructuring), imports, and re-exports. Known approximations are
-  documented in `ts-tokenizer.mjs` (regex-literal heuristic) and
-  `ts-parser.mjs` (JSX as token soup, ASI ignored); the walker is split by
-  question — `ts-scanner.mjs`, `ts-declarations.mjs`, `ts-members.mjs` — over
-  one shared state object.
-- **Other languages**: line-based heuristics for Python, Go, Rust, Ruby, Java,
-  Kotlin, C/C++, and Markdown; a generic fallback catches `name(` patterns.
-- **Exclusions**: `node_modules`, `.git`, and `.pi/cache` are always excluded;
-  binary extensions and >1MB files are skipped by search but counted by the
-  map.
+**Files come from Git when available.** The inventory uses
+`git ls-files --cached --others --exclude-standard` at the repository root:
+tracked and untracked files, respecting Git's ignore rules. Without Git, a Node
+file walker and built-in ignore matcher provide a fallback.
+
+**The cache survives restarts.** `<root>/.pi/cache/pi-code-search.json` stores
+paths, modification times, sizes and symbol tables. Only files whose time or size
+changed are parsed again. Cache writes are atomic; a corrupt or outdated cache
+is rebuilt. No background watcher is needed.
+
+**Parsing is approximate, not a compiler.** The TypeScript/JavaScript tokenizer
+handles comments, strings, templates and brace scopes. It extracts declarations,
+methods, fields, types, imports and re-exports. Regex literals use a heuristic;
+JSX and automatic semicolon insertion are not fully parsed. See
+`ts-tokenizer.mjs` and `ts-parser.mjs` for those limits. The shared parser state
+is split across `ts-scanner.mjs`, `ts-declarations.mjs` and `ts-members.mjs`.
+Python, Go, Rust, Ruby, Java, Kotlin, C/C++ and Markdown use line-based heuristics;
+other files get a generic `name(` fallback.
 
 ## Plan mode
 
-The four tools are annotated read-only and local, so plan mode keeps them
-without a name list. `/plan` gets the same discovery power (read-only tools,
-no bash changes).
+All four tools are marked read-only and local, so `/plan` can use them too.
+They do not edit source files; their only write is the cache.
 
 ## Notes and non-goals
 
-- No semantic/embeddings search, no node_modules indexing, no nearest-tsconfig
-  resolution (root tsconfig/jsconfig only), no background watcher — the cache
-  builds lazily on first use.
-- The four tools never mutate files; the only write is the cache itself.
+- `node_modules`, `.git`, and `.pi/cache` are always excluded.
+- Binary files and files over 1 MB are skipped by search but counted in the map.
+- This is not semantic or embeddings search.
+- Alias resolution uses the root tsconfig/jsconfig, not the nearest nested config.
+- Runtime imports are Node built-ins and pi's `typebox`; no separate service is needed.

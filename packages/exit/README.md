@@ -1,14 +1,12 @@
 # pi-exit
 
-Adds `/exit` as an alias for pi's built-in `/quit`. Requests a graceful
-shutdown (emits `session_shutdown`, then exits) — exactly what `/quit` does,
-for people who type `/exit` out of habit.
+For people whose fingers type `/exit` out of habit. It does exactly what pi's
+built-in `/quit` does: emit `session_shutdown`, then exit gracefully.
 
 ## Install
 
-Installed as part of the `pi-extensions` collection (see the [root
-README](../../README.md)). Standalone registration comes later with npm
-publishing.
+Install it with the [pi-extensions collection](../../README.md#install).
+There is no separate setup.
 
 ## Usage
 
