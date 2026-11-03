@@ -1,10 +1,15 @@
-# pi-web-fetch — browser-grade web fetching & search for pi
+# pi-web-fetch — read and search the web
 
-Zero-dependency `web_fetch` / `batch_web_fetch` / `web_search` tools, plus
-`web_answer` when a TypeSafe key is present:
-browser-like request headers, clean readable extraction, page metadata,
-redirect handling, GitHub URLs via the `gh` CLI, bounded-concurrency batch
-fetching, and keyless web search via DuckDuckGo.
+Read web pages and search results without filling the conversation with navigation,
+ads and raw HTML. GitHub links use the authenticated `gh` CLI when available.
+
+For example, ask pi:
+
+> Read the release notes for this dependency and find the breaking changes since our version.
+
+Fetching and search need no API key. `web_answer`, which selects passages for a
+specific question, needs TypeSafe credentials. This is an HTTP reader, not a
+browser: pages that need JavaScript require a browser tool.
 
 ## Tools
 
@@ -57,8 +62,8 @@ Requirements and limits:
   pointing at `web_fetch` rather than fetching and failing later.
 - The page is cut at 45,000 characters before splitting and at 12 passages
   after, so the state stays inside Jev's limit; the reply says when it truncated.
-- It is a fetch plus a judgment, so it is slower than `web_fetch` and faster
-  than reading 40 KB of marketing copy. Use `web_fetch` when you want the page.
+- It adds a model judgment to the fetch and sends the sampled page text and
+  question to TypeSafe. Use `web_fetch` when you want the page itself.
 
 ## Output formats
 
@@ -203,7 +208,7 @@ Optional keys in `~/.pi/agent/settings.json` or `<project>/.pi/settings.json`
 
 ```sh
 npm test                          # node --test on packages/**/*.test.mjs
-npm run check                     # bun build --no-bundle entrypoints + tests
+npm run check                     # conventions, types, lint, format, unused code, tests
 ```
 
 The parsing/extraction/formatting logic lives in plain `.mjs` modules with

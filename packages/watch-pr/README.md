@@ -1,8 +1,11 @@
 # pi-watch-pr — where a pull request stands
 
-`watch_pr(pr?, wait_seconds?)` is one read through `gh` of a PR's checks on its
-**head commit**, merge state (conflicts, behind base), requested changes and
-unresolved review threads. It returns a verdict and the head SHA it applies to:
+See what still needs attention on a pull request: failed or running checks,
+conflicts, requested changes, and unresolved review threads. It needs an
+authenticated `gh` CLI and never changes the PR.
+
+The agent calls `watch_pr(pr?, wait_seconds?)`. Each read reports the PR's
+**head commit**, its SHA, and one of these verdicts:
 
 | Verdict | Meaning |
 | --- | --- |
@@ -15,11 +18,9 @@ A PR with no checks reported is flagged as a gap, never a pass. Outdated and
 resolved threads are not counted. With `wait_seconds` (max 600) it polls every
 20s while the verdict is `pending`, and stops early on anything else.
 
-Read-only: it never pushes, rebases, resolves a thread or merges. The fix, rebase
-and push loop stays with the agent; this is the looking.
-
-Needs an authenticated `gh`. Deferred tool, so it costs nothing in the prompt
-until searched for.
+It never pushes, rebases, resolves a thread or merges. A `ready` verdict is not
+permission to merge; that decision stays with you. The tool is deferred until
+found through tool search.
 
 ## Tests
 

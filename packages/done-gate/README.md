@@ -1,11 +1,11 @@
 # pi-done-gate — no "done" on faith
 
-When a run ends with code edits made after the last verification run, this
-gives the model one more turn. The reminder is `display: false`: the model
-reads it, the transcript does not, and it asks for the closing message to carry
-the explanation of the work rather than a report about the reminder.
+Reminds the agent to run checks when it tries to finish with unverified code
+changes. It gives the model one more turn to check its work or explain what it
+could not verify. It does not block tools or guarantee the code is correct.
 
-This is the text the model sees (you don't):
+There is nothing to configure after you [install the collection](../../README.md#install).
+The reminder goes to the model, not into your visible transcript. For example:
 
 ```
 Done check: 1 file(s) changed after the last verification run (pkg/foo/a.go).
@@ -15,18 +15,19 @@ verification does not apply. Then close with your explanation of the work plus
 one line of what the check proved, not a report about this reminder.
 ```
 
-When nothing in the change maps to a command, or the only signal is a closing
-claim, the middle sentence stays the generic one: run the repo's checks
-(`.pi/verify` if present). The TypeSafe sentence is unchanged, and it appears
-only when a claim judgment disagrees with what the run actually did. Without
-credentials the reminder stops after the commands.
+The reminder names checks for Go, TypeScript and Lua when it can find the right
+commands. Otherwise it asks for the repository checks (`.pi/verify` if present).
+It also flags leftover `[DEBUG-` tags. With TypeSafe credentials, it can add a
+warning when the closing message claims more than the recorded checks support.
+The basic reminder works without a key.
 
-No config or runtime dependencies.
+The sections below explain when it fires, which checks count, and where the
+evidence stops. For repeated local benchmarks, see [Controlled measurements](#controlled-measurements).
 
 ## What arms the gate
 
-The nudge asks for the repo's checks, so it only fires where those checks could
-apply.
+Only successful code edits in the current workspace can trigger the reminder.
+Documentation-only changes do not. More precisely:
 
 - **Inside the session cwd.** A write to `/tmp`, a home dotfile, or another
   repository never arms it. In a sample of 32 real nudges, 15 flagged only such
@@ -96,8 +97,9 @@ checks or by saying why they do not apply.
 
 ## The claim judgment
 
-The reminder cannot read the claim it is answering. When the gate fires and the
-run has a final assistant message, that message goes to TypeSafe's System One
+The basic reminder tracks edits and checks, not the meaning of the closing
+message. When it fires and the run has a final assistant message, that message
+also goes to TypeSafe's System One
 (`jev-1.13.0` unless `TYPESAFE_MODEL` says otherwise) as three typed questions:
 
 - **asserts_verified** — does the message claim the changed code was verified,
@@ -124,10 +126,9 @@ the network.
 
 ## Local evidence is not remote evidence
 
-A run that verified locally can still close with "CI is green". That is the same
-overclaim one layer out: the evidence in the session is a local test run, and
-the claim is about a runner. The shape of the run cannot see it, so the claim is
-read instead.
+Passing local tests does not prove that CI passed. The optional claim check
+looks for this distinction too: a closing message saying "CI is green" needs
+recorded evidence from that runner.
 
 - **Remote evidence** requires a standalone successful
   `gh pr view <pr> --json headRefOid,statusCheckRollup` (optionally through RTK).

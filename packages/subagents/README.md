@@ -1,11 +1,13 @@
 # pi-subagents
 
-**Off by default.** The `subagent` tool is inactive and no orchestrator text
-reaches the model until you opt in. When you do, the **main session is the
-orchestrator**: it decides which specialists to create, fires N concurrent
-`subagent({ agent, task })` calls, and synthesizes. Children never spawn
-children. Each child is a fresh `createAgentSession()` with its own context.
-Results come back truncated.
+Delegate separate pieces of work to child agents: one can explore the code while
+another reviews the tests. The main session assigns the tasks and brings their
+results together.
+
+**Off by default.** Until you opt in, the `subagent` tool stays inactive and its
+instructions stay out of the model's prompt. Each child starts with fresh context,
+not a copy of your conversation, and cannot spawn more children. Returned text
+is capped; full transcripts are saved for later inspection.
 
 ## Use it
 
@@ -16,7 +18,7 @@ Results come back truncated.
 ```
 
 ```text
-Use scout and reviewer in parallel: scout the auth flow, reviewer the tests.
+Use scout and reviewer in parallel: have the scout trace authentication and the reviewer inspect its tests.
 ```
 
 A status widget above the editor lists the fleet. It is display-only. While

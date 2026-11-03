@@ -1,41 +1,51 @@
 # pi-footer
 
-A work-oriented statusline: **project · branch · work state**, then model and
-context pressure and model/thinking level when there is room. It uses the current theme, not a new one.
+Keep the basics in view: **project · branch · work state**, with model, thinking
+level and context usage when there is room. It uses your current pi theme and
+needs no special font.
 
-States reflect actual pi activity: `ready`, `planning` (read-only mode), or
-`working`. `ready`
-means idle, **not verified**. A backed-up workbench draft remains visible as
-`draft saved`.
+The states are `ready`, `planning` (read-only mode), and `working`.
+**Ready means idle, not verified.** A backed-up prompt shows as `draft saved`.
 
 ## Usage
 
-Installed through the collection's root manifest; see the [root README](../../README.md).
+Install it with the [collection](../../README.md#install), then use:
 
-- `/footer` toggles between the personal and built-in footer.
-- `/footer details` shows token totals, cost and extension statuses on demand.
-  Accounting stays out of the statusline; `/session` is still available.
-- `/usage` shows assistant requests by provider/model, fresh input, output,
-  cache reads/writes, reported cost and outer-session tool failures/pending calls.
-  `/usage --json` displays the same report as JSON. Reports are custom session
-  messages, visible in the transcript and subsequent context; neither command
-  starts an agent turn or sends telemetry. Usage is recomputed on each command
-  from the active branch, including retained pre-compaction entries. Other
-  branches, child-session usage, hidden nested calls and latency are excluded.
-  Missing/invalid costs remain unknown; zero-cost records are counted separately
-  and do not imply free usage. Token totals with missing fields are partial,
-  with the number of missing/invalid fields shown beside each model.
+| Command | What it shows |
+| --- | --- |
+| `/footer` | Toggle between this footer and pi's built-in one. |
+| `/footer details` | Token totals, cost and extension statuses. `/session` is still available. |
+| `/usage` | Requests, tokens, reported costs and tool failures grouped by provider/model. |
+| `/usage --json` | The same usage report as JSON. |
 
-Workspace and work state take priority over model/accounting information in
-narrow terminals. Layout measures terminal columns with pi-tui's own
-`visibleWidth` and `truncateToWidth` (supplied by the pi host), so the footer
-agrees with pi's line-width check on CJK, emoji, Thai, Devanagari and anything
-else; names cannot inject terminal control sequences.
-No Nerd Font is required. The layout lives in a new `workspace.mjs` module so
-upgrading from the former footer through `/reload` does not hit pi's cached old
-helper exports. Later edits to an already-loaded helper may still need a pi restart.
+Accounting stays out of the statusline until you ask for it. Narrow terminals
+keep the workspace and work state before model details.
 
-The footer refreshes on session/branch, model/thinking, tool and agent lifecycle
-events. Planning status reads the existing plan-mode extension status.
-Token totals cover assistant messages on the active branch. Cost uses configured
-model pricing, not a billing-service quote. Nothing polls Git or calls a model.
+## What the usage report counts
+
+`/usage` reads the active session branch, including retained pre-compaction
+entries. It counts assistant requests, fresh input, output, cache reads/writes,
+reported cost, and outer-session tool failures or pending calls.
+
+Other branches, child-session usage, hidden nested calls and latency are not
+included. Missing or invalid costs stay unknown. Zero-cost records are counted
+separately; they do not prove usage was free. Partial token totals show how many
+fields are missing or invalid.
+
+Reports appear in the transcript and subsequent model context. The commands do
+not start an agent turn or send telemetry. Cost uses configured model pricing,
+not a billing-service quote.
+
+## Layout and updates
+
+The footer measures terminal columns with the host's `visibleWidth` and
+`truncateToWidth`, including wide and combining characters. Names cannot inject
+terminal control sequences.
+
+It refreshes on session, branch, model, thinking, tool and agent lifecycle events.
+Planning status comes from the plan-mode extension. Nothing polls Git or calls a
+model.
+
+The layout lives in `workspace.mjs` so `/reload` can upgrade from the older footer
+without reusing cached helper exports. Later edits to an already-loaded helper
+may still need a pi restart.

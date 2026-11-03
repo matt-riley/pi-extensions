@@ -1,45 +1,27 @@
-# pi-router — pick the model the task deserves
+# pi-router — model routing for each task
 
-A virtual model. Select `router/auto` in `/model`, and pi asks the router for a
-physical model and thinking level before every request. It judges how hard the
-current task is, escalates to the mid or frontier tier when the rating clears a
-threshold, and returns to the base at the next task.
+Let pi choose a model and thinking level for a task from three configured tiers:
+base, mid and frontier. Harder tasks can move up; a new task can return to base.
+Tool continuations keep the current pair rather than switching on every request.
 
-## Why it looks like this
+## Use it
 
-The shape is not taste, it is what measuring this repo's own 879-turn session
-corpus said. Three findings drove it:
+Select `router/auto` in pi's `/model` picker. Choose a physical model instead to
+stop routing. To inspect a decision without switching:
 
-| Finding | Number | Consequence here |
-| --- | --- | --- |
-| Cost is concentrated | 6% of turns carried 77% of spend | Worth routing at all |
-| Prompt features cannot tell hard from easy | frontier p50 61 chars vs mid 60 | Rules are out; judgement is in |
-| Sticky escalation without a way down | +1665% spend | Escalate per *task*, then release |
+```text
+/route preview explain how authentication works
+/route status
+```
 
-And the two instruments TypeSafe could give:
+Routing judgments need TypeSafe credentials. Missing or failed judgments leave
+the current model working. By default the judge receives the prompt, working
+directory and last four turns; see [What leaves your machine](#what-leaves-your-machine)
+for controls. Escalation can also send the conversation to a different provider.
 
-| Instrument | AUC | Verdict |
-| --- | --- | --- |
-| `difficulty` (score 0–3) | **0.70** | what the router uses |
-| `needs_frontier` (noul) | 0.55 | barely better than chance — rejected |
-
-At `difficulty >= 1.5` the rating is 77% precise at 48% recall on the judged
-sample and catches **7 of the 12** most expensive turns in it, including both
-that a rules-based chooser confidently downgraded (*"Right, one last chance. 4
-different prototypes, nothing like the original site, go and impress me."* at
-2.18/3, and *"Stick to the task yo"* at 1.02/3). Dropping the threshold to 1.0
-catches **12 of 12** at 65% precision, for roughly ten times the cost in wrong
-escalations.
-
-That 1.5 line was measured for "escalate at all", not for the size of the step.
-The split between the mid tier and the frontier tier at 2.5 is a curated design
-choice that has not been calibrated. The default mid list leads with
-`Astra@low`, then `Luna@xhigh`, so mid is a real step above the explicit
-`Luna@medium` base pair at the usual caps. Treat both boundaries as dials.
-
-An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
-the `needs_frontier` question, which the router does not use — the audit that
-caught it is summarised at the bottom of this file.
+The tiers and their order are configurable, not a promise that a particular
+model will produce a better answer. Start with [Models](#models) and
+[Configuration](#configuration); the detailed behaviour and historical evidence follow.
 
 ## Behaviour
 
@@ -284,6 +266,42 @@ for every run of that task, and the footer shows `playbook: <type>`.
 Unmeasured: whether the task-type answer is accurate on real prompts, and
 whether a playbook changes outcomes. Both need a pass over the session corpus
 before the types or the threshold are tuned.
+
+## Why it looks like this
+
+The shape is not taste, it is what measuring this repo's own 879-turn session
+corpus said. Three findings drove it:
+
+| Finding | Number | Consequence here |
+| --- | --- | --- |
+| Cost is concentrated | 6% of turns carried 77% of spend | Worth routing at all |
+| Prompt features cannot tell hard from easy | frontier p50 61 chars vs mid 60 | Rules are out; judgement is in |
+| Sticky escalation without a way down | +1665% spend | Escalate per *task*, then release |
+
+And the two instruments TypeSafe could give:
+
+| Instrument | AUC | Verdict |
+| --- | --- | --- |
+| `difficulty` (score 0–3) | **0.70** | what the router uses |
+| `needs_frontier` (noul) | 0.55 | barely better than chance — rejected |
+
+At `difficulty >= 1.5` the rating is 77% precise at 48% recall on the judged
+sample and catches **7 of the 12** most expensive turns in it, including both
+that a rules-based chooser confidently downgraded (*"Right, one last chance. 4
+different prototypes, nothing like the original site, go and impress me."* at
+2.18/3, and *"Stick to the task yo"* at 1.02/3). Dropping the threshold to 1.0
+catches **12 of 12** at 65% precision, for roughly ten times the cost in wrong
+escalations.
+
+That 1.5 line was measured for "escalate at all", not for the size of the step.
+The split between the mid tier and the frontier tier at 2.5 is a curated design
+choice that has not been calibrated. The default mid list leads with
+`Astra@low`, then `Luna@xhigh`, so mid is a real step above the explicit
+`Luna@medium` base pair at the usual caps. Treat both boundaries as dials.
+
+An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
+the `needs_frontier` question, which the router does not use — the audit that
+caught it is summarised at the bottom of this file.
 
 ## Knowing the threshold is set right
 

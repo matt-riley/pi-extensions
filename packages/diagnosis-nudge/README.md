@@ -1,15 +1,21 @@
 # pi-diagnosis-nudge — check the cause before writing the fix
 
-When a tool call fails, this appends one line to that result:
+Helps the agent stop guessing after a failure. Ordinary tool failures get a short
+reminder to check the diagnosis. If two revised versions of the code fail the
+same verification command, further edits pause until the agent runs a diagnostic
+observation.
+
+For an ordinary failure, the reminder looks like this:
 
 ```
 Diagnosis check: name the root cause in one line, then ask `typesafe_ask` whether the
 evidence you are about to cite actually supports it. Plausible is not the same as supported.
 ```
 
-Ordinary tool failures remain advisory. A separate, deterministic checkpoint
-now blocks further mutations after **two failed revised checks of the same
-exact command**. No config or new dependencies.
+No setup is needed beyond [installing the collection](../../README.md#install).
+The basic reminder and failed-fix checkpoint work without a TypeSafe key; a key
+adds optional failure classification. The checkpoint requires Git history and
+supported verification commands, as described below.
 
 ## Failed-fix checkpoint
 

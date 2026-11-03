@@ -2,6 +2,6 @@
   "name": "pi-jobs",
   "version": "0.1.0",
   "private": true,
-  "description": "Pi-native background jobs, live logs, optional PTYs and semantic attention watches.",
+  "description": "Run background commands, follow their logs, and take over an interactive terminal.",
   "type": "module"
 }

@@ -1,7 +1,7 @@
 {
   "name": "pi-review",
   "version": "0.1.0",
-  "description": "Semantic review tools for pi: lint_change judges a diff against the repository's stated preferences and Conventional Commit rules, verify_findings drops review findings whose quoted code is absent from the diff and ranks the rest. Zero runtime dependencies.",
+  "description": "Review a diff, find affected callers, and check whether review findings are supported.",
   "license": "MIT",
   "type": "module"
 }

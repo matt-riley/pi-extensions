@@ -1,14 +1,22 @@
 # pi-guardrail — stop destructive tool use before it runs
 
-A gate on `tool_call`. Four layers, cheapest first, so that the common case
-costs nothing and the rare dangerous case gets a real decision.
+Checks tool calls before they run. Routine work can pass; risky actions may need
+your approval, and catastrophic operations are refused outright. It is a
+second line of defence, not a sandbox.
+
+After installing the collection, use `/guardrail` to see status and counters.
+The checks run in four layers:
 
 | Layer | Decides | Cost |
 | --- | --- | --- |
-| Read-only fast path | `git status`, `rg`, `cat` — provably harmless | microseconds, reused from `shared/bash-policy.mjs` |
-| Deterministic rules (`policy.mjs`, with `policy-targets.mjs`, `policy-shapes.mjs`, `policy-bash.mjs`) | delete / overwrite / history-rewrite / privilege / remote-destroy / credential shapes, against regenerable, workspace, home, system and secret targets | microseconds, no I/O, no network |
-| TypeSafe judgment (`judge.mjs`) | the ambiguous band only: is this unrecoverable, beyond the request, how far would it reach, does it touch secrets | one batched `jev` request, 4 s deadline |
-| Human confirm | everything above that still matters | one dialog: **Approve** / **Deny** / **Suggest an alternative** |
+| Read-only fast path | Known inspection commands, with restricted flags. | Local rules; no network. |
+| Deterministic rules | Recognized deletions, overwrites, history rewrites, privilege changes, remote effects and credential access. | Local rules; no network. |
+| TypeSafe judgment | Ambiguous actions: recoverability, scope, intent and secrets. | One batched Jev request, with a 4-second deadline. |
+| Human confirmation | Actions that still require a decision. | Approve, Deny, or Suggest an alternative. |
+
+The policy lives in `policy*.mjs`; the optional judgment lives in `judge.mjs`.
+Without a usable judge, ambiguous calls need confirmation—or are blocked when
+there is no interactive UI.
 
 The catastrophic set is refused with no dialog at all — home and filesystem
 roots, `.git` internals, private keys, disk wipes, credentials piped to a
@@ -66,6 +74,81 @@ of the original.
 
 Dialogs share plan mode's FIFO queue (`shared/dialog-queue.mjs`): two flagged
 calls in one assistant message must not stack two prompts.
+
+## Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
+| `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
+| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone-config.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
+
+In-session: `/guardrail` for status and counters, `/guardrail off` and
+`/guardrail on` to disarm and re-arm; `/guardrail revoke` clears current grants.
+
+With no interactive UI (`-p`, JSON, or a host without dialogs) the flagged band
+is **refused**, never assumed: there is nobody to ask, so the safe answer is no.
+
+## What it does not cover
+
+This is a guardrail, not a sandbox. It reads what the model wrote, not what a
+binary or an obfuscated payload does.
+
+- One level of indirection is followed — heredoc bodies are treated as data,
+  `sh -c "…"` and `node -e "…"` payloads are classified as shell first and as
+  source second, `$(…)`, `eval` and `find -exec` bodies are evaluated as
+  commands, and a referenced script (`bash x.sh` or `./x.sh`) is read (bounded
+  to 64KB) and classified. Wrappers (`env`, `command`, `nohup`, `timeout`,
+  `xargs`, `/bin/rm`) are looked through to the command they run, and the
+  string arguments of `os.system`, `execSync`, `system(…)` and friends are
+  classified as the command lines they are. A payload that decodes or fetches
+  its real work at runtime (`curl … | sh`) cannot be read, so it is judged.
+- `readOnlyHint: false` from any tool is inspected, even when the name looks
+  read-only. `readOnlyHint: true` is trusted only for tools this repo
+  registers (`OWNED_TOOL_NAMES` in `shared/tool-annotations.mjs`). Pi copies
+  MCP servers' own hints and does not verify them, so an outside read-only
+  claim keeps the previous rule: a command-shaped argument runs the shell
+  rules, secret or system paths are refused, and names that look read-only
+  (`get_*`, `list_*`, `lore_*`, and pi's own discovery tools) are trusted.
+  A namespaced/MCP tool whose read-only hint is absent, or that declares
+  `destructiveHint: true`, still requires scoped human authorization.
+- **Subagents are covered.** `pi-subagents` builds children with
+  `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
+  `agentDir` is what makes pi load global extensions — so a child gets this
+  guardrail plus its own inline child policy. Child sessions have no UI, so the
+  flagged band *blocks* there instead of prompting: an unattended agent gets a
+  refusal, a human gets a dialog.
+- Catastrophic patterns are matched against source with string literals
+  blanked, so a test fixture full of `"rm -rf ~"` strings is not treated as
+  though it ran. The consequence is deliberate: `shutil.rmtree('/Users')` in an
+  inline payload becomes a judgment and a dialog rather than a refusal.
+
+## Known tradeoffs
+
+- **Ordinary location is not a signal.** Outside protected control files,
+  a write outside the session's cwd is allowed —
+  the guardrail does not care which repo you are in, only whether the target is
+  a secret, a system path, or a dotenv file. The rule that did care produced
+  eight prompts in one session, all legitimate config writes in a sibling repo.
+- **A script that discusses destructive commands may still be judged.** Quoted
+  text is blanked before matching, so a fixture or a comment mentioning
+  `rm -rf` is ignored; a file that *defines* those patterns (including this
+  guardrail's own source) can still be read as suspicious. The result is a
+  silent judgment, never a prompt.
+- **`rm src/app.ts` is allowed.** The judge scores it 0.46 destructive with
+  blast radius "this working directory, recoverable from version control".
+  Disagreeing costs one line (`THRESHOLDS.destructive = 0.45`) and buys a prompt
+  on every deliberate cleanup; the case is recorded in `scripts/validate-judge.mjs`
+  so the choice stays visible rather than accidental.
+- **No durable session allowlist.** Only deterministic authorization/control
+  scopes are reused within the current input. Other destructive confirmations
+  still ask each time. The historical dialog rate above does not cover these
+  new authorization rules.
+- **`PATH`-level classifiers are heuristics.** `dist`, `build`, `coverage`,
+  `node_modules`, `.cache`, `/tmp` and lock files count as regenerable: deleting
+  an irreplaceable file that happens to live in `dist/` would count as cheap.
+- **Judge failures fall back to a dialog, not to silence.** A slow or
+  unreachable judge delays the tool call by up to the deadline.
 
 ## Historical measured behaviour
 
@@ -148,81 +231,6 @@ the ledger kept.
 
 Both scripts are read-only and never execute what they read. Run them after
 touching thresholds, question wording, or the shape tables.
-
-## Configuration
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
-| `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
-| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone-config.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
-
-In-session: `/guardrail` for status and counters, `/guardrail off` and
-`/guardrail on` to disarm and re-arm; `/guardrail revoke` clears current grants.
-
-With no interactive UI (`-p`, JSON, or a host without dialogs) the flagged band
-is **refused**, never assumed: there is nobody to ask, so the safe answer is no.
-
-## What it does not cover
-
-This is a guardrail, not a sandbox. It reads what the model wrote, not what a
-binary or an obfuscated payload does.
-
-- One level of indirection is followed — heredoc bodies are treated as data,
-  `sh -c "…"` and `node -e "…"` payloads are classified as shell first and as
-  source second, `$(…)`, `eval` and `find -exec` bodies are evaluated as
-  commands, and a referenced script (`bash x.sh` or `./x.sh`) is read (bounded
-  to 64KB) and classified. Wrappers (`env`, `command`, `nohup`, `timeout`,
-  `xargs`, `/bin/rm`) are looked through to the command they run, and the
-  string arguments of `os.system`, `execSync`, `system(…)` and friends are
-  classified as the command lines they are. A payload that decodes or fetches
-  its real work at runtime (`curl … | sh`) cannot be read, so it is judged.
-- `readOnlyHint: false` from any tool is inspected, even when the name looks
-  read-only. `readOnlyHint: true` is trusted only for tools this repo
-  registers (`OWNED_TOOL_NAMES` in `shared/tool-annotations.mjs`). Pi copies
-  MCP servers' own hints and does not verify them, so an outside read-only
-  claim keeps the previous rule: a command-shaped argument runs the shell
-  rules, secret or system paths are refused, and names that look read-only
-  (`get_*`, `list_*`, `lore_*`, and pi's own discovery tools) are trusted.
-  A namespaced/MCP tool whose read-only hint is absent, or that declares
-  `destructiveHint: true`, still requires scoped human authorization.
-- **Subagents are covered.** `pi-subagents` builds children with
-  `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
-  `agentDir` is what makes pi load global extensions — so a child gets this
-  guardrail plus its own inline child policy. Child sessions have no UI, so the
-  flagged band *blocks* there instead of prompting: an unattended agent gets a
-  refusal, a human gets a dialog.
-- Catastrophic patterns are matched against source with string literals
-  blanked, so a test fixture full of `"rm -rf ~"` strings is not treated as
-  though it ran. The consequence is deliberate: `shutil.rmtree('/Users')` in an
-  inline payload becomes a judgment and a dialog rather than a refusal.
-
-## Known tradeoffs
-
-- **Ordinary location is not a signal.** Outside protected control files,
-  a write outside the session's cwd is allowed —
-  the guardrail does not care which repo you are in, only whether the target is
-  a secret, a system path, or a dotenv file. The rule that did care produced
-  eight prompts in one session, all legitimate config writes in a sibling repo.
-- **A script that discusses destructive commands may still be judged.** Quoted
-  text is blanked before matching, so a fixture or a comment mentioning
-  `rm -rf` is ignored; a file that *defines* those patterns (including this
-  guardrail's own source) can still be read as suspicious. The result is a
-  silent judgment, never a prompt.
-- **`rm src/app.ts` is allowed.** The judge scores it 0.46 destructive with
-  blast radius "this working directory, recoverable from version control".
-  Disagreeing costs one line (`THRESHOLDS.destructive = 0.45`) and buys a prompt
-  on every deliberate cleanup; the case is recorded in `scripts/validate-judge.mjs`
-  so the choice stays visible rather than accidental.
-- **No durable session allowlist.** Only deterministic authorization/control
-  scopes are reused within the current input. Other destructive confirmations
-  still ask each time. The historical dialog rate above does not cover these
-  new authorization rules.
-- **`PATH`-level classifiers are heuristics.** `dist`, `build`, `coverage`,
-  `node_modules`, `.cache`, `/tmp` and lock files count as regenerable: deleting
-  an irreplaceable file that happens to live in `dist/` would count as cheap.
-- **Judge failures fall back to a dialog, not to silence.** A slow or
-  unreachable judge delays the tool call by up to the deadline.
 
 ## Tests
 

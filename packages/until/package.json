@@ -1,7 +1,7 @@
 {
   "name": "pi-until",
   "version": "0.1.0",
-  "description": "/until <command>: keep the agent working until a shell predicate exits 0, re-checking at every settle and logging one TSV row per iteration.",
+  "description": "Keep the agent working until your check passes, within a limit you set.",
   "license": "MIT",
   "type": "module"
 }

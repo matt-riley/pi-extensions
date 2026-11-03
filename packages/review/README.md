@@ -1,13 +1,18 @@
 # pi-review — semantic review of a change
 
-Two on-demand tools for the part of review a linter cannot do. Both are
-advisory: they return text, and neither blocks a tool call. `lint_change` and
-`verify_findings` stay deferred until tool search loads them.
+Get a second look at a change: check it against the repository's preferences,
+find callers it might affect, and filter review findings that the diff does not
+support.
+
+There are three on-demand tools. `lint_change` and `verify_findings` use
+TypeSafe judgments; `blast_radius` searches locally without a model call. All
+three are deferred until tool search loads them, and none blocks a tool call.
 
 ## `lint_change`
 
-Judges the change against the preferences AGENTS.md states as prose, because
-`tsc`, oxlint, oxfmt, knip and fallow already own everything shape decides.
+Checks the diff against preferences written in AGENTS.md: unnecessary complexity,
+extra scope, weak tests and similar concerns. Ordinary linters and type checks
+still handle mechanical rules.
 
 | Rule | What it asks |
 | --- | --- |

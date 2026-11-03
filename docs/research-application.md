@@ -1,10 +1,21 @@
 # Applying the Pi workflow research
 
-The supplied 2026-11-01 “Executive Summary” and “Pasted text(1).txt” describe
-the same eight proposals. This application compares those proposals with this
-checkout at `69b0baa378e772fd8158e4476d7745d581ef9b7a`. The report did not inventory
-these implementations; its proposed commands, APIs, manifests and package
-statistics are not implementation specifications or verified ecosystem facts.
+This is a design record for three additions: `/skill-search` for finding local
+skills, `/usage` for inspecting session costs, and `/workflow` for guiding a
+coding task through investigation, implementation, verification and review.
+Most of the supporting tools already existed; the work connected them rather
+than adding another orchestration framework.
+
+For everyday setup, start with [Getting started](../README.md). For the new
+commands, see [Using the additions](#using-the-additions) below.
+
+## Research and scope
+
+The comparison was made against commit `69b0baa378e772fd8158e4476d7745d581ef9b7a`,
+using two supplied research documents dated 2026-11-01: “Executive Summary” and
+“Pasted text(1).txt”. You do not need those files to use the commands. Both made
+the same eight proposals, but neither inventoried this implementation. Their
+suggested APIs and package statistics were not verified specifications.
 The root `package.json` remains the only extension registration point.
 
 | Research proposal | Existing implementation | Application |
@@ -23,8 +34,9 @@ The root `package.json` remains the only extension registration point.
 After reloading extensions, run `/skill-search review a staged diff` to prepare
 a specialist prompt, or `/usage` to inspect the branch without a model request.
 `/workflow fix the retry bug` invokes a prompt template and starts normal coding
-work. Auto-discovered extension directories need the explicit `prompts` setting
-already documented in the root README; this change does not edit user settings.
+work. When the collection is cloned into an auto-discovered extension directory,
+register its prompts explicitly as shown in [Getting started](../README.md#prompt-templates-and-workflow-skills).
+Installing the extensions alone does not load those prompts.
 Restart Pi if an already-loaded sibling module remains cached after `/reload`.
 
 `/workflow` is guidance for the existing agent, not a persisted DAG executor.
@@ -52,5 +64,4 @@ and full smoke respectively.
 These checks establish wiring and deterministic behavior. They do not establish
 that the workflow prompt improves model decisions or productivity. Use the
 existing [outcome record](workflow-evaluation.md#lightweight-outcome-record) for
-a deliberately chosen experiment; no live model evaluation or external package
-installation is needed to load these additions.
+a deliberately chosen experiment; a live model evaluation is not required just to load these additions.

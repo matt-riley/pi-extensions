@@ -1,10 +1,20 @@
 # pi-jobs
 
-Pi-native background commands, live logs and optional interactive PTYs. No herdr,
-tmux or installed runtime dependency. Commands use Bash; PTYs additionally need
-the native `script` and `stty` utilities on macOS/Linux.
+Run a command in the background, follow its logs, and return to it without leaving
+pi. For interactive programs, open a pseudo-terminal (PTY) and take over the same
+running process when it needs your input.
+
+Commands use Bash. Interactive terminals also need the native `script` and
+`stty` utilities on macOS/Linux; neither tmux nor herdr is required.
 
 ## Human controls
+
+For example, run a project's tests and open the job list to follow the output:
+
+```text
+/jobs run npm test
+/jobs
+```
 
 - `/jobs run <command>` — start a pipe-based job without involving the model.
 - `/jobs pty <command>` — start an interactive terminal.

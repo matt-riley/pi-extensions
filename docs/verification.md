@@ -1,85 +1,86 @@
 # Verifying pi extensions
 
-The runnable recipe — target, launch, doctor, feature map, cleanup — is
-[`.pi/verify/SKILL.md`](../.pi/verify/SKILL.md). This file explains what each
-check covers and where its evidence stops.
+Start with the check that answers your question. A passing unit suite does not
+prove that pi loads an extension, and a registration stub does not prove that a
+tool works in the real host.
 
-Run `npm run check` for repository conventions, types, lint, formatting, unused
-code and tests. `npm run verify` loads every root-manifest extension through a
-registration stub and checks the local skill library. The stub captures
-registrations; it does not dispatch events or execute tools. Missing TypeSafe
-credentials are informational offline. `npm run verify -- --live` explicitly
-opts into an external TypeSafe request using your configured credentials.
+The full runnable recipe is [`.pi/verify/SKILL.md`](../.pi/verify/SKILL.md).
+It covers setup, host/UI drives, expected results and cleanup. This page explains
+what those checks establish—and where they stop.
 
-Run `npm run smoke` with `pi` 1.4.0 or later on PATH (or set
-`PI_SMOKE_BIN` to its executable path). This uses the actual pi RPC host, loads
-all manifest extensions, the owned workflow skills and prompt templates. It
-checks discovery and expansion of those resources from an unrelated working
-directory using the local provider, including `/workflow`. It checks `/skill-search`
-and `/usage --json` in RPC without provider calls, then enters plan mode, checks that
-`plan_mode_question`, `plan_mode_complete`, and `plan_fetch_url` are offered to
-the model, attempts a harmless `touch smoke-blocked` command through real tool
-dispatch, verifies it was blocked and that the file does not exist, exits plan
-mode, checks those three tools are no longer offered, explicitly enables
-subagents,
-and completes a scout child through the actual child-session implementation.
-It then has the fixture model write a file and stop, and checks that done-gate
-buys exactly one extra turn with its "Done check" message and keeps the reminder
-out of the transcript (`display: false`); checks that a write outside the
-workspace buys no turn; and runs `/until test -f smoke-done`, checking the agent
-is sent back until the file exists.
-The isolated host also loads built-in codemode explicitly. It runs controlled
-measurement trials and rejects empty work, then fails the same check after two
-distinct edits. It checks that native writes, shell writes and both nested
-variants are blocked with files absent, executes a real diagnostic observation,
-and checks that a subsequent write succeeds.
-It starts a real failed background job through deferred `terminal_*` tools,
-checks the actual exit status/output, proves one completion follow-up resumes the
-agent without steering, and drives an optional Jev attention watch
-against the redacted local fixture. The watch is inference, not verification;
-`notify: false` must not start another model turn.
-It also runs deferred `find_code` from codemode against a local TypeSafe
-fixture, checks URL-userinfo redaction at that HTTP boundary, and uses a
-structured MCP-shaped tool fixture (not an actual MCP transport) to check
-warning propagation to the outer codemode result without changing its schema.
-It fails on missing capabilities, failed assertions, or a 30-second RPC timeout.
+## Choose a check
 
-The smoke creates a temporary working directory and agent configuration, uses
-an allowlisted environment, disables discovery/MCP/startup networking, and
-serves scripted OpenAI-compatible responses on loopback only. It needs no
-provider credentials and incurs no external model cost. Child sessions use the
-same temporary agent directory. TypeSafe requests point at the local fixture:
-semantic-search and injection-screen phases receive scripted typed answers;
-other phases exercise the existing unavailable-judge fallback. An explicit base
-URL overrides the classifier's catalog host, so a registered TypeSafe model
-still does not call `api.typesafe.ai` during smoke. `scripts/` classifiers have
-no Pi registry and keep the direct HTTP transport against that same base URL.
-Normal user settings and sessions are not changed. The host, server and fixtures
-are cleaned up in `finally` on normal success or failure. Forced process
-termination can leave a `pi-smoke-*` directory in the system temporary directory.
+Run these from the repository root:
 
-`npm run coverage` runs the unit suite, offline registration verifier and real-Pi
-smoke under Node's built-in LCOV reporter, so it requires `pi` on PATH too. It
-works on Node 24+ without `--test-coverage-include-all` (which is Node 26-only). Generated coverage
-is ignored by Git. Run from a clean state on the CI runtime too; a local green
-result is not evidence of hosted CI success.
+| Command | What it proves | What it does not prove |
+| --- | --- | --- |
+| `npm run check` | Conventions, types, lint, formatting, unused-code gates and tests pass. | That the real pi host loads or runs the extensions. |
+| `npm run verify` | Every root-manifest extension registers through a stub; bundled skills are checked. | Event handling, tool execution or model behaviour. Missing TypeSafe credentials are informational offline. |
+| `npm run smoke` | Extensions and resources work through a real pi RPC host with scripted local responses. | Real model judgment, external providers or interactive rendering. |
+| `node .pi/verify/local-commands.mjs` | Skill search, empty-branch usage reports and `/workflow` discovery in the real host, without a listener or model calls. | Prompt expansion, nonzero usage accounting or the interactive skill picker. |
+| `npm run coverage` | Unit, registration and smoke coverage through Node's LCOV reporter. | Coverage of unsupported or unmatched files, or hosted CI success. |
 
-This smoke checks host integration and resource/extension wiring, not whether
-a model follows a skill well, model judgment,
-interactive rendering, external providers, or successful TypeSafe judgments.
-For an explicitly authorized live/UI check, start pi in a disposable directory
-with a separate `PI_CODING_AGENT_DIR`, provision only the intended provider
-credential there, and repeat `/plan start`, the harmless blocked bash command,
-`/plan exit`, `/subagents on`, and a child request. Record the actual tool result
-and child completion. Do not count a provider response or the registration stub
-as evidence that the blocked action or child execution worked.
+Smoke needs pi 1.4.0 or later on PATH (`PI_SMOKE_BIN` can name another executable).
+Coverage needs pi too and supports Node 24+; generated coverage files are ignored
+by Git. Run the final checks on the final revision, and distinguish local results
+from hosted CI.
 
-For the local discovery/accounting commands alone, run
-`node .pi/verify/local-commands.mjs`. It loads all extensions in an isolated real
-Pi RPC host and verifies skill-search results, empty-branch JSON accounting and
-`/workflow` discovery without a listener or model calls. It can run where loopback
-listeners are prohibited. It does not cover prompt expansion, numerical model
-usage (covered by unit tests), or interactive skill-picker rendering.
+`npm run verify -- --live` makes one real TypeSafe request with your configured
+credentials. It is opt-in, not part of the offline registration check.
+
+## What the smoke exercises
+
+The smoke loads all manifest extensions, bundled workflow skills and prompt
+templates from an unrelated working directory. A local scripted provider drives
+these paths:
+
+- **Resource discovery:** skill and prompt loading/expansion, including
+  `/workflow`; `/skill-search` and `/usage --json` without provider calls.
+- **Plan mode:** its three tools appear on entry and disappear on exit. A real
+  `touch smoke-blocked` tool call is denied, and the file remains absent.
+- **Subagents:** explicit opt-in and a completed scout through real child-session
+  construction, with execution completion kept separate from task verification.
+- **Completion:** done-gate gives one extra turn for an unverified workspace edit,
+  keeps its reminder out of the visible transcript, and ignores an outside write.
+  `/until` resumes work until its target file exists.
+- **Measurements and diagnosis:** controlled trials reject empty work. Two failed
+  revised checks block native, shell and nested writes; an executed diagnostic
+  observation releases the gate and a subsequent write succeeds.
+- **Background jobs:** a real failed job reports its exit status/output; completion
+  resumes the agent once without steering. The optional Jev watch uses redacted
+  fixtures, and `notify: false` must not start another turn.
+- **Semantic search and warnings:** deferred `find_code` runs through codemode;
+  URL credentials are redacted at the TypeSafe HTTP boundary. A structured
+  MCP-shaped fixture checks warning propagation without changing the schema.
+  It is not an actual MCP transport test.
+
+Missing capabilities, failed assertions and a 30-second RPC timeout fail the
+smoke. Scripted model answers prove wiring, not the accuracy of Jev or the main
+model. A watch hint is inference, not verification.
+
+## Isolation and cleanup
+
+Smoke creates a temporary workspace and agent configuration, disables discovery,
+MCP and startup networking, and serves scripted responses on loopback only.
+It needs no provider credentials and incurs no external model cost. Children
+use the same temporary agent directory. TypeSafe requests use the local fixture,
+even if a registered classifier has a different catalog host; standalone
+classifiers use HTTP against that same fixture.
+
+The fixture supplies typed answers for semantic search and injection screening.
+Other phases exercise the unavailable-judge fallback. Normal user settings and
+sessions are untouched. Processes, servers and files are removed in `finally`;
+forced termination can still leave a `pi-smoke-*` directory in the system temp
+directory, so check cleanup after an interrupted run.
+
+## When you need more than smoke
+
+For UI or native terminal changes, use the real-terminal drives in the recipe
+below. For an explicitly authorized live check, start pi in a disposable directory
+with a separate `PI_CODING_AGENT_DIR` and only the intended provider credential.
+Exercise the affected actions and record raw tool results and child completion,
+not just a model's summary. A provider response alone does not prove that a
+blocked write was blocked or a child actually ran.
 
 ## Project recipe
 
