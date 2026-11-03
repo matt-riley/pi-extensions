@@ -87,12 +87,18 @@ extensions from the `pi` key in `package.json`:
 
 ```sh
 git clone https://github.com/matt-riley/pi-extensions ~/.pi/agent/extensions/pi-extensions
+cd ~/.pi/agent/extensions/pi-extensions && npm install
 ```
+
+`npm install` is needed because several extensions import `typebox`. Without
+it, `npm run verify` reports `Cannot find package 'typebox'` for half the
+entrypoints.
 
 then `/reload` in pi (or restart it). To update later:
 
 ```sh
 git -C ~/.pi/agent/extensions/pi-extensions pull
+npm --prefix ~/.pi/agent/extensions/pi-extensions install
 ```
 
 then `/reload` again.
