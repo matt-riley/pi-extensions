@@ -133,6 +133,14 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
 - Recursion guard: `PI_SUBAGENT_CHILD=1` during child bind, plus
   `excludeTools: ["subagent"]`.
 
+## Stale-path check (no key needed)
+
+Before the TypeSafe preflight, a plain existence check looks at the file paths in the task
+(`src/loader.mjs`, `.github/workflows/ci.yml:12`, `/abs/path.txt`). If any no longer exist in the
+working directory, the task is rejected once and the missing paths are listed, so the parent
+can fix a renamed file instead of sending the child hunting. Resubmitting the identical task
+runs it. URLs, globs, directories and paths the task says to create are never flagged.
+
 ## TypeSafe judgments (optional)
 
 With a TypeSafe key (see `pi-typesafe`) three batched Jev judgments run; without one they

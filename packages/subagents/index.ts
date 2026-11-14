@@ -256,6 +256,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         agent: agent.name,
         task,
         writeCapable,
+        cwd,
         signal: abortSignal,
       });
       if (preflight.reject) {
