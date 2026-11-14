@@ -35,14 +35,15 @@ The command:
    names, latest commit, and relevant CI status;
 2. asks the hosted model to rewrite the request;
 3. asks TypeSafe whether the rewrite preserves the original intent; and
-4. submits the rewrite as the next user message if the intent check accepts it.
+4. puts the rewrite in Pi's input box if the intent check accepts it.
+
+Nothing is sent for you. Edit the text and press Enter yourself. Ordinary input
+is never intercepted. If the input box already holds a draft, the rewrite goes
+above it. If the model is unavailable, no key is set, the rewrite is malformed,
+TypeSafe cannot verify it, or intent confidence is below the threshold, the
+original prompt goes into the input box instead, with a warning saying why.
 
 The intent check is a model judgment, not a guarantee that the rewrite is equivalent.
-
-The rewrite is never shown in a separate editor and ordinary input is never
-intercepted. If the model is unavailable, no key is set, the rewrite is
-malformed, TypeSafe cannot verify it, or intent confidence is below the
-threshold, `/improve` sends the original prompt unchanged.
 
 With no argument, `/improve` uses the most recent user prompt in the session:
 

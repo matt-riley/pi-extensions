@@ -62,6 +62,8 @@ declare module "@earendil-works/pi-coding-agent" {
     setWidget?(id: string, lines: string[] | undefined): void;
     setFooter?(footer: FooterCallback | undefined): void;
     editor?(title: string, prefill?: string): Promise<string | undefined>;
+    getEditorText?(): string;
+    setEditorText?(text: string): void;
     select?(title: string, options: string[]): Promise<string | undefined>;
     input?(title: string, value?: string): Promise<string | undefined>;
     theme?: { fg?: (color: string, text: string) => string };
