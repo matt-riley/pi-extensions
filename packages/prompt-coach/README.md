@@ -29,6 +29,19 @@ two, so it is used when both keys are set. If only `DEEPSEEK_API_KEY` is set,
 DeepSeek is used. Thinking is switched off for both: this is a short rewrite
 and the 60-second deadline would not survive a long reasoning pass.
 
+## What the model can read
+
+The model may open files in the working directory to name real paths. It gets
+three read-only tools — `read_file`, `list_dir` and `search_text` — for at most
+six rounds. They are plain `node:fs` reads: there is no shell and no write tool,
+so it cannot run a command or change a file, and any other tool it asks for is
+refused. Paths are confined to the repository (symlinks that leave it are
+refused), `.git` and `node_modules` are skipped, and secret-looking files
+(`.env*`, `.npmrc`, `*.pem`, `*.key`, `id_*`, `auth.json`, …) are never opened.
+
+Whatever it reads is sent to the model provider. Set
+`PI_PROMPT_COACH_READ_FILES=0` to send only the prompt and the names-only probe.
+
 The command:
 
 1. probes the current repository for bounded facts such as branch, changed-file
@@ -60,11 +73,12 @@ With no argument, `/improve` uses the most recent user prompt in the session:
 | `PI_PROMPT_COACH_PROVIDER` | first provider with a key | `openai` or `deepseek`. |
 | `PI_PROMPT_COACH_MODEL` | provider default above | Rewrite model ID. |
 | `PI_PROMPT_COACH_BASE_URL` | provider default | OpenAI-compatible endpoint. |
-| `PI_PROMPT_COACH_TIMEOUT_MS` | `60000` | Rewrite deadline. |
+| `PI_PROMPT_COACH_READ_FILES` | on | `0`, `false`, `off` or `no` stops the model reading files. |
+| `PI_PROMPT_COACH_TIMEOUT_MS` | `60000` | Rewrite deadline, covering all tool rounds. |
 | `PI_PROMPT_COACH_INTENT_TIMEOUT_MS` | `2500` | TypeSafe verification deadline. |
 | `PI_PROMPT_COACH_INTENT_THRESHOLD` | `0.7` | Minimum intent-preservation probability. |
 
-The rewrite request sends the prompt, working directory, and names-only probe
-facts to the provider. TypeSafe receives the original prompt, the rewrite, and
-those same bounded facts. Decision entries are stored in the session but do not
+The rewrite request sends the prompt, working directory, names-only probe
+facts and any file the model reads to the provider. TypeSafe receives the
+original prompt, the rewrite, those probe facts and the names of the files read. Decision entries are stored in the session but do not
 enter LLM context.

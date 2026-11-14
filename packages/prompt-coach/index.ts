@@ -105,10 +105,11 @@ export default function piPromptCoachExtension(
       setStatus(ctx, "prompt-coach: improving");
       const probe = await collectProbe(run, original);
       let candidate = original;
+      let filesRead: string[] = [];
       let rewriteError: string | null = null;
 
       try {
-        candidate = await rewriteWithModel({
+        const rewrite = await rewriteWithModel({
           prompt: original,
           probe,
           cwd: ctx.cwd,
@@ -116,6 +117,8 @@ export default function piPromptCoachExtension(
           timeoutMs: rewriteTimeoutMs,
           fetchImpl,
         });
+        candidate = rewrite.text;
+        filesRead = rewrite.filesRead;
       } catch (error) {
         rewriteError = errorText(error);
       }
@@ -137,7 +140,7 @@ export default function piPromptCoachExtension(
             state: {
               original_prompt: original,
               rewritten_prompt: validation.text,
-              repository_probe: probe,
+              repository_probe: { ...probe, files_read: filesRead },
             },
             questions: buildCoachQuestions(),
             signal: AbortSignal.timeout(intentTimeoutMs),
@@ -165,6 +168,7 @@ export default function piPromptCoachExtension(
         intentProbability,
         intentError,
         rewriteError,
+        filesRead,
         probe,
       });
 

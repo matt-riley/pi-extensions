@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import piPromptCoachExtension from "../index.ts";
 
 const noul = (value) => ({ type: "noul", noul: value });
@@ -20,6 +24,8 @@ function harness({
   draft = "",
   inputBox = true,
   fetchFailure = false,
+  cwd = "/repo",
+  readFirst = null,
   env = { OPENAI_API_KEY: "test-key" },
 } = {}) {
   const commands = {};
@@ -40,7 +46,7 @@ function harness({
     exec: gitExec,
   };
   const ctx = {
-    cwd: "/repo",
+    cwd,
     sessionManager: {
       getBranch: () => [{ message: { role: "user", content: lastPrompt } }],
     },
@@ -62,6 +68,13 @@ function harness({
     fetchImpl: async (url, options) => {
       fetchCalls.push({ url, options });
       if (fetchFailure) throw new Error("model is offline");
+      if (readFirst && fetchCalls.length === 1) {
+        const call = {
+          id: "c1",
+          function: { name: "read_file", arguments: JSON.stringify({ path: readFirst }) },
+        };
+        return { ok: true, json: async () => ({ choices: [{ message: { tool_calls: [call] } }] }) };
+      }
       return {
         ok: true,
         json: async () => ({ choices: [{ message: { content: candidate } }] }),
@@ -162,4 +175,14 @@ test("the request carries the key in a header and never in the recorded decision
   await h.command("fix the workflow");
   assert.equal(h.fetchCalls[0].options.headers.authorization, "Bearer ds-secret");
   assert.equal(JSON.stringify(h.entries).includes("ds-secret"), false);
+});
+
+test("files the model read are shown to the intent check and recorded", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "coach-ext-"));
+  fs.writeFileSync(path.join(cwd, "loader.mjs"), "export const retries = 1;\n");
+  const h = harness({ cwd, readFirst: "loader.mjs", candidate: "Set retries in loader.mjs to 2." });
+  await h.command("make the loader retry twice");
+  assert.deepEqual(h.asks[0].state.repository_probe.files_read, ["loader.mjs"]);
+  assert.deepEqual(h.entries[0].data.filesRead, ["loader.mjs"]);
+  assert.equal(h.editor.text, "Set retries in loader.mjs to 2.");
 });
