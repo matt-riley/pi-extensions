@@ -9,6 +9,7 @@
 // "no opinion", never a blocked or altered spawn. Thresholds live in THRESHOLDS.
 
 import { askSystemOne } from "../../shared/systemone.mjs";
+import { findStalePaths } from "./stalepaths.mjs";
 
 const TIMEOUT_MS = "6000";
 const MAX_TASK_CHARS = 4000;
@@ -171,10 +172,23 @@ async function ask(questions, state, { signal, askImpl = askSystemOne } = {}) {
 
 const rejectedOnce = new Set();
 
+function staleReject(paths) {
+  return (
+    `Task rejected: ${paths.length === 1 ? "this path does" : "these paths do"} not exist in the working ` +
+    `directory: ${paths.join(", ")}. Fix ${paths.length === 1 ? "it" : "them"} (or say the child should ` +
+    "create it), then resubmit. If the path is right, resubmit unchanged and it will run."
+  );
+}
+
 /** Reject an unfit task once; an identical resubmission is trusted. */
-export async function preflightTask({ agent, task, writeCapable, signal, askImpl }) {
+export async function preflightTask({ agent, task, writeCapable, signal, askImpl, cwd }) {
   const key = `${agent}\0${task}`;
   if (rejectedOnce.has(key)) return { hints: [] };
+  const stale = cwd ? findStalePaths(task, cwd) : [];
+  if (stale.length) {
+    rejectedOnce.add(key);
+    return { reject: staleReject(stale), hints: [] };
+  }
   const answers = await ask(
     preflightQuestions({ writeCapable }),
     { agent, agent_can_edit_files: writeCapable, task: task.slice(0, MAX_TASK_CHARS) },
