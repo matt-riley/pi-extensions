@@ -1,7 +1,7 @@
-// index.ts — on-demand /improve: local rewrite, TypeSafe intent check, submit.
+// index.ts — on-demand /improve: hosted rewrite, TypeSafe intent check, submit.
 //
 // This deliberately does not intercept ordinary input. The user asks for an
-// improvement explicitly, Gemma4 writes locally, TypeSafe checks preservation,
+// improvement explicitly, a hosted model writes, TypeSafe checks preservation,
 // and pi receives exactly one real user message. Any failure sends the original
 // prompt instead of silently losing the task.
 
@@ -12,12 +12,7 @@ import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { buildCoachQuestions } from "./battery.mjs";
 import { extractLastUserPrompt, usableNoul, validateCandidate } from "./lib.mjs";
 import { collectProbe } from "./probe.mjs";
-import {
-  DEFAULT_BASE_URL,
-  DEFAULT_MODEL,
-  DEFAULT_TIMEOUT_MS,
-  rewriteWithLocalModel,
-} from "./rewrite.mjs";
+import { DEFAULT_TIMEOUT_MS, rewriteWithModel } from "./rewrite.mjs";
 
 const COMMAND = "improve";
 const STATUS_ID = "prompt-coach";
@@ -59,17 +54,23 @@ function errorText(error: unknown) {
 
 export default function piPromptCoachExtension(
   pi: ExtensionAPI,
-  deps: { ask?: typeof askSystemOne; exec?: CoachExec; fetchImpl?: CoachFetch } = {},
+  deps: {
+    ask?: typeof askSystemOne;
+    exec?: CoachExec;
+    fetchImpl?: CoachFetch;
+    env?: Record<string, string | undefined>;
+  } = {},
 ) {
   bindSystemOne(pi);
   const ask = deps.ask ?? askSystemOne;
   const run: CoachExec = deps.exec ?? ((cmd, args, opts) => pi.exec(cmd, args, opts));
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
+  const env = deps.env ?? process.env;
   const intentThreshold = Math.min(
     1,
     Math.max(0, envNumber("PI_PROMPT_COACH_INTENT_THRESHOLD", DEFAULT_INTENT_THRESHOLD)),
   );
-  const localTimeoutMs = envNumber("PI_PROMPT_COACH_LOCAL_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+  const rewriteTimeoutMs = envNumber("PI_PROMPT_COACH_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
   const intentTimeoutMs = envNumber("PI_PROMPT_COACH_INTENT_TIMEOUT_MS", DEFAULT_INTENT_TIMEOUT_MS);
 
   const record = (data: Record<string, unknown>) => {
@@ -81,7 +82,7 @@ export default function piPromptCoachExtension(
   };
 
   pi.registerCommand(COMMAND, {
-    description: "Improve a prompt locally with Gemma4, verify intent, and send it",
+    description: "Improve a prompt with a hosted model, verify intent, and send it",
     handler: async (args: string, ctx: ExtensionContext) => {
       if (ctx.isIdle && !ctx.isIdle()) {
         notify(ctx, "Prompt improvement waits until the agent is idle.", "warning");
@@ -102,13 +103,12 @@ export default function piPromptCoachExtension(
       let rewriteError: string | null = null;
 
       try {
-        candidate = await rewriteWithLocalModel({
+        candidate = await rewriteWithModel({
           prompt: original,
           probe,
           cwd: ctx.cwd,
-          baseUrl: process.env.PI_PROMPT_COACH_BASE_URL || DEFAULT_BASE_URL,
-          model: process.env.PI_PROMPT_COACH_MODEL || DEFAULT_MODEL,
-          timeoutMs: localTimeoutMs,
+          env,
+          timeoutMs: rewriteTimeoutMs,
           fetchImpl,
         });
       } catch (error) {

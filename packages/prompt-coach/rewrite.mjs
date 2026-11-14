@@ -1,12 +1,59 @@
-// rewrite.mjs — the local Gemma4 rewrite call.
+// rewrite.mjs — the hosted-model rewrite call.
 //
-// The local model writes; TypeSafe judges whether its output preserved intent.
-// Keeping those jobs separate makes a bad local response fail closed without
-// sending prompt text to another paid provider for generation.
+// A cheap hosted model writes; TypeSafe judges whether its output preserved
+// intent. Keeping those jobs separate makes a bad response fail closed.
+//
+// Prices checked 14 Nov 2026 (per 1M tokens, input / output):
+//   gpt-6-luna      $0.10 / $0.50  https://developers.openai.com/api/docs/pricing
+//   deepseek-flash  $0.15-$0.30 / $0.60-$1.20 (off-peak / peak)
+//                   https://api-docs.deepseek.com/quick_start/pricing
+// Luna is the cheaper of the two, so it is the default when both keys exist.
+// Keys come from the environment only.
 
-export const DEFAULT_BASE_URL = "http://127.0.0.1:12434/v1";
-export const DEFAULT_MODEL = "docker.io/ai/gemma4:latest";
-export const DEFAULT_TIMEOUT_MS = 20_000;
+export const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_MAX_TOKENS = 4_000;
+
+/** Both speak the OpenAI chat-completions shape; `extra` switches thinking off. */
+const PROVIDERS = {
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-6-luna",
+    keyVar: "OPENAI_API_KEY",
+    tokenParam: "max_completion_tokens",
+    extra: { reasoning_effort: "none" },
+  },
+  deepseek: {
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-flash",
+    keyVar: "DEEPSEEK_API_KEY",
+    tokenParam: "max_tokens",
+    extra: { thinking: { type: "disabled" } },
+  },
+};
+
+const NO_KEY = "Set OPENAI_API_KEY or DEEPSEEK_API_KEY to use /improve.";
+
+/** Pick the provider from the environment. Throws a plain message when nothing is usable. */
+export function resolveProvider(env = process.env) {
+  const wanted = String(env.PI_PROMPT_COACH_PROVIDER ?? "")
+    .trim()
+    .toLowerCase();
+  let name = wanted;
+  if (!name) name = Object.keys(PROVIDERS).find((key) => env[PROVIDERS[key].keyVar]);
+  if (!name) throw new Error(NO_KEY);
+  const provider = PROVIDERS[name];
+  if (!provider) throw new Error(`unknown provider "${wanted}" (use openai or deepseek)`);
+  const apiKey = env[provider.keyVar];
+  if (!apiKey) throw new Error(`Set ${provider.keyVar} to use the ${name} provider.`);
+  return {
+    name,
+    apiKey,
+    baseUrl: env.PI_PROMPT_COACH_BASE_URL || provider.baseUrl,
+    model: env.PI_PROMPT_COACH_MODEL || provider.model,
+    tokenParam: provider.tokenParam,
+    extra: provider.extra,
+  };
+}
 
 const SYSTEM_PROMPT = [
   "Rewrite the user's rough request for a coding agent.",
@@ -19,7 +66,7 @@ const SYSTEM_PROMPT = [
 ].join(" ");
 
 function endpoint(baseUrl) {
-  return `${String(baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "")}/chat/completions`;
+  return `${String(baseUrl).replace(/\/$/, "")}/chat/completions`;
 }
 
 function textFromContent(content) {
@@ -36,24 +83,27 @@ function stripFence(text) {
   return match ? match[1].trim() : text.trim();
 }
 
-export async function rewriteWithLocalModel({
+export async function rewriteWithModel({
   prompt,
   probe,
   cwd,
-  baseUrl = DEFAULT_BASE_URL,
-  model = DEFAULT_MODEL,
+  env = process.env,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
 } = {}) {
+  const provider = resolveProvider(env);
   if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
-  const response = await fetchImpl(endpoint(baseUrl), {
+  const response = await fetchImpl(endpoint(provider.baseUrl), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${provider.apiKey}`,
+    },
     body: JSON.stringify({
-      model,
+      model: provider.model,
       temperature: 0.1,
-      max_tokens: 1_000,
-      chat_template_kwargs: { enable_thinking: false },
+      [provider.tokenParam]: DEFAULT_MAX_TOKENS,
+      ...provider.extra,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -69,10 +119,10 @@ export async function rewriteWithLocalModel({
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response?.ok) {
-    throw new Error(`local rewrite failed with status ${response?.status ?? "unknown"}`);
+    throw new Error(`${provider.name} rewrite failed with status ${response?.status ?? "unknown"}`);
   }
   const payload = await response.json();
   const text = textFromContent(payload?.choices?.[0]?.message?.content);
-  if (!text.trim()) throw new Error("local rewrite returned no text");
+  if (!text.trim()) throw new Error(`${provider.name} rewrite returned no text`);
   return stripFence(text);
 }

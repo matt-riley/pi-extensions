@@ -19,6 +19,7 @@ function harness({
   lastPrompt = "previous prompt",
   idle = true,
   fetchFailure = false,
+  env = { OPENAI_API_KEY: "test-key" },
 } = {}) {
   const commands = {};
   const entries = [];
@@ -49,10 +50,11 @@ function harness({
   };
 
   piPromptCoachExtension(pi, {
+    env,
     exec: gitExec,
     fetchImpl: async (url, options) => {
       fetchCalls.push({ url, options });
-      if (fetchFailure) throw new Error("Gemma4 is offline");
+      if (fetchFailure) throw new Error("model is offline");
       return {
         ok: true,
         json: async () => ({ choices: [{ message: { content: candidate } }] }),
@@ -75,7 +77,7 @@ function harness({
   };
 }
 
-test("/improve rewrites locally, verifies intent, and sends the rewrite", async () => {
+test("/improve rewrites with the hosted model, verifies intent, and sends the rewrite", async () => {
   const h = harness({ candidate: "Fix the failing workflow on main and run npm run check." });
   await h.command("fix the failing workflow on main");
 
@@ -103,7 +105,7 @@ test("failed intent verification sends the original prompt", async () => {
   assert.equal(h.entries[0].data.action, "original-fallback");
 });
 
-test("local Gemma failure sends the original without calling TypeSafe", async () => {
+test("hosted model failure sends the original without calling TypeSafe", async () => {
   const h = harness({ fetchFailure: true });
   await h.command("fix the workflow");
   assert.deepEqual(h.sent, ["fix the workflow"]);
@@ -123,4 +125,20 @@ test("missing prompt reports usage", async () => {
   await h.command("");
   assert.deepEqual(h.sent, []);
   assert.match(h.notifications[0].title, /Usage: \/improve/);
+});
+
+test("missing API key sends the original and says which variables to set", async () => {
+  const h = harness({ env: {} });
+  await h.command("fix the workflow");
+  assert.deepEqual(h.sent, ["fix the workflow"]);
+  assert.equal(h.fetchCalls.length, 0);
+  assert.equal(h.asks.length, 0);
+  assert.match(h.entries[0].data.rewriteError, /OPENAI_API_KEY or DEEPSEEK_API_KEY/);
+});
+
+test("the request carries the key in a header and never in the recorded decision", async () => {
+  const h = harness({ env: { DEEPSEEK_API_KEY: "ds-secret" } });
+  await h.command("fix the workflow");
+  assert.equal(h.fetchCalls[0].options.headers.authorization, "Bearer ds-secret");
+  assert.equal(JSON.stringify(h.entries).includes("ds-secret"), false);
 });

@@ -1,7 +1,7 @@
 {
   "name": "pi-prompt-coach",
   "version": "0.1.0",
-  "description": "Rewrite a rough request with a local model, then check that it still asks for the same thing.",
+  "description": "Rewrite a rough request with a hosted model, then check that it still asks for the same thing.",
   "license": "MIT",
   "type": "module"
 }
