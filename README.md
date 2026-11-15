@@ -96,6 +96,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-agents`](./packages/agents/README.md) | `/agents`: create or improve an `AGENTS.md` in a directory, keeping the guidance already there. |
 | [`pi-affected`](./packages/affected/README.md) | `/affected`: name the test files that can reach your changes, with the gaps and a package-level fallback. Runs nothing. |
 | [`pi-architecture`](./packages/architecture/README.md) | `/architecture`: check directory-boundary rules from a JSON file and report import cycles, with coverage gaps listed. |
+| [`pi-docs-drift`](./packages/docs-drift/README.md) | `/docs-drift`: say which READMEs, docs and AGENTS.md files describe code that changed after their last commit, or "can't tell". Read-only. |
 | [`pi-doctor`](./packages/doctor/README.md) | `/doctor`: read-only report of Pi and Node versions, the tool registry, router.json and agent files. |
 | [`pi-exit`](./packages/exit/README.md) | `/exit`, with the same graceful shutdown as `/quit`. |
 | [`pi-plan-mode`](./packages/plan-mode/README.md) | Work through a change in read-only mode, with an editable plan before implementation. |

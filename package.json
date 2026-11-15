@@ -57,6 +57,7 @@
       "./packages/doctor/index.ts",
       "./packages/architecture/index.ts",
       "./packages/affected/index.ts",
+      "./packages/docs-drift/index.ts",
       "./packages/agents/index.ts"
     ],
     "skills": [

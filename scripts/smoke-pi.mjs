@@ -792,6 +792,16 @@ export default function (pi) {
   );
   assert.match(affectedNote, /Nothing was run|not a git|git .* failed/);
   console.log("ok: /affected answers from a live Pi without running anything");
+  const docsDriftStart = events.length;
+  await prompt("/docs-drift");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const docsDriftNote = JSON.stringify(events.slice(docsDriftStart));
+  assert.match(
+    docsDriftNote,
+    /docs-drift: no docs found/,
+    `/docs-drift produced no report: ${docsDriftNote.slice(0, 400)}`,
+  );
+  console.log("ok: /docs-drift answers from a live Pi without writing anything");
   await mkdir(path.join(cwd, "smoke-agents"), { recursive: true });
   await writeFile(
     path.join(cwd, "smoke-agents", "package.json"),
