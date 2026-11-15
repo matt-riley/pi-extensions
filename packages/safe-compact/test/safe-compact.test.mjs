@@ -14,6 +14,7 @@ import {
   buildBoundaryCompaction,
   classify,
   composeHandoff,
+  cacheWarmth,
   decideTrigger,
   fitBudget,
   memoizeAsk,
@@ -129,6 +130,69 @@ test("decideTrigger: below soft nothing, above hard always, between defers to th
   assert.equal(decideTrigger({ ...args, percent: 60, moment: { clean: true } }), "compact");
   assert.equal(decideTrigger({ ...args, percent: 60, moment: { clean: false } }), "wait");
   assert.equal(decideTrigger({ ...args, percent: 60 }), "wait");
+});
+
+const usageOf = (input, cacheRead, cacheWrite = 0) => ({ input, cacheRead, cacheWrite });
+const WARM = { minRatio: 0.7, maxAgeMs: 30 * 60_000, now: 1_000_000_000 };
+
+test("decideTrigger: a warm cache holds the soft band, never the hard threshold", () => {
+  const args = { soft: 50, hard: 70, warm: true };
+  assert.equal(decideTrigger({ ...args, percent: 40 }), "none");
+  assert.equal(decideTrigger({ ...args, percent: 60 }), "hold");
+  assert.equal(decideTrigger({ ...args, percent: 60, moment: { clean: true } }), "hold");
+  assert.equal(decideTrigger({ ...args, percent: 70, moment: { clean: false } }), "compact");
+  assert.equal(decideTrigger({ ...args, percent: 75 }), "compact");
+  assert.equal(
+    decideTrigger({ ...args, warm: false, percent: 60, moment: { clean: true } }),
+    "compact",
+  );
+});
+
+test("cacheWarmth: mostly cache reads in the last 30 minutes is warm; cold or stale is not", () => {
+  const recent = WARM.now - 2 * 60_000;
+  const warm = cacheWarmth(
+    { role: "assistant", timestamp: recent, usage: usageOf(1000, 9000) },
+    WARM,
+  );
+  assert.equal(warm.warm, true);
+  assert.equal(warm.ratio, 0.9);
+  assert.equal(warm.ageMs, 2 * 60_000);
+
+  // pi's `input` excludes cached tokens, so a cache write is uncached prompt too.
+  assert.equal(
+    cacheWarmth({ role: "assistant", timestamp: recent, usage: usageOf(0, 9000, 1000) }, WARM)
+      .ratio,
+    0.9,
+  );
+  assert.equal(
+    cacheWarmth({ role: "assistant", timestamp: recent, usage: usageOf(0, 6000, 4000) }, WARM).warm,
+    false,
+  );
+  assert.equal(
+    cacheWarmth({ role: "assistant", timestamp: recent, usage: usageOf(10000, 0) }, WARM).warm,
+    false,
+  );
+  assert.equal(
+    cacheWarmth({ role: "assistant", timestamp: recent, usage: usageOf(0, 0) }, WARM).warm,
+    false,
+  );
+
+  const old = WARM.now - 31 * 60_000;
+  assert.equal(
+    cacheWarmth({ role: "assistant", timestamp: old, usage: usageOf(1000, 9000) }, WARM).warm,
+    false,
+  );
+  // Age is measured from when the response ended, not when the request started.
+  const long = {
+    role: "assistant",
+    timestamp: old,
+    durationMs: 20 * 60_000,
+    usage: usageOf(1000, 9000),
+  };
+  assert.equal(cacheWarmth(long, WARM).warm, true);
+
+  assert.equal(cacheWarmth(undefined, WARM), null);
+  assert.equal(cacheWarmth({ role: "user", content: "hi" }, WARM), null);
 });
 
 test("judgeMoment: mid-flight or debugging is not clean, unknown is not clean", async () => {
@@ -426,7 +490,12 @@ test("the extension registers its tools, commands and flags", () => {
   });
   assert.deepEqual(seen.tools, ["self_compact", "view_context"]);
   assert.deepEqual(seen.commands, ["safe-compact", "safe-compact-plan", "safe-compact-info"]);
-  assert.deepEqual(seen.flags, ["compact-soft-at", "compact-at"]);
+  assert.deepEqual(seen.flags, [
+    "compact-soft-at",
+    "compact-at",
+    "compact-cache-at",
+    "compact-cache-for",
+  ]);
   assert.deepEqual(seen.events.sort(), [
     "agent_settled",
     "session_before_compact",
@@ -728,17 +797,18 @@ test("session_before_compact merges previous details into the handoff file lists
 });
 
 /** A stub pi whose snapshots land under a temp dir instead of the agent dir. */
-function wiring(ask = fakeAsk()) {
+function wiring(ask = fakeAsk(), flags = {}) {
   const handlers = new Map();
   const tools = new Map();
+  const commands = new Map();
   const notices = [];
   safeCompact(
     {
       registerTool: (definition) => tools.set(definition.name, definition),
-      registerCommand: () => {},
+      registerCommand: (name, definition) => commands.set(name, definition),
       registerFlag: () => {},
       on: (name, handler) => handlers.set(name, handler),
-      getFlag: () => undefined,
+      getFlag: (name) => flags[name],
       getSettings: () => ({ compaction: { keepRecentTokens: 20000 } }),
     },
     { ask },
@@ -760,6 +830,7 @@ function wiring(ask = fakeAsk()) {
   return {
     handlers,
     tools,
+    commands,
     ctx,
     notices,
     snapshots,
@@ -1004,5 +1075,161 @@ test("between soft and hard, a 'not yet' is not re-judged until the context has 
     assert.equal(asked, oneJudgment * 2, "10k more tokens earns another look");
   } finally {
     cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Cache-aware hold: the soft band leaves a warm prompt cache alone.
+
+/** Jev says every moment is clean, so only the cache can stop a soft-band compaction. */
+const cleanMomentAsk = () => {
+  const inner = fakeAsk();
+  const counts = { moments: 0 };
+  const ask = async (request) => {
+    if ("mid_flight" in request.questions) {
+      counts.moments++;
+      return {
+        answers: { mid_flight: noul(0.1), completed: noul(0.9), debugging: noul(0.1) },
+      };
+    }
+    return inner(request);
+  };
+  return { ask, counts };
+};
+
+const lastTurn = ({ ageMs = 60_000, input = 1000, cacheRead = 9000 } = {}) => ({
+  type: "message",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "done" }],
+    timestamp: Date.now() - ageMs,
+    usage: usageOf(input, cacheRead),
+  },
+});
+
+/** A wired session in the soft band (60%, soft 50, hard 70) with `turn` as its last reply. */
+function bandSession(turn, flags) {
+  const { ask, counts } = cleanMomentAsk();
+  const session = wiring(ask, flags);
+  session.counts = counts;
+  session.ctx.sessionManager = { getBranch: () => (turn ? [turn] : []) };
+  session.ctx.getContextUsage = () => ({ tokens: 24000, contextWindow: 40000, percent: 60 });
+  session.event = { entries: [], context: { contextEntries: largeEntries(30) }, toolResults: [] };
+  return session;
+}
+
+test("soft band: a warm, recent cache holds off compacting and says so once", async () => {
+  const { handlers, ctx, event, notices, counts, cleanup } = bandSession(lastTurn());
+  try {
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.equal(await handlers.get("turn_end")(event, ctx), undefined);
+    assert.equal(counts.moments, 0, "holding costs no Jev judgment");
+    const holds = notices.filter((n) => /holding off compacting/.test(n.title));
+    assert.equal(holds.length, 1, "one notice per hold, not one per turn");
+    assert.match(holds[0].title, /cache 90%/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("soft band: a cold cache compacts at a clean moment, as before", async () => {
+  const { handlers, ctx, event, notices, cleanup } = bandSession(
+    lastTurn({ input: 9000, cacheRead: 1000 }),
+  );
+  try {
+    const result = await handlers.get("turn_end")(event, ctx);
+    assert.equal(result.entries[0].type, "compaction");
+    assert.equal(notices.filter((n) => /holding off/.test(n.title)).length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("soft band: no usage on the last turn means no hold", async () => {
+  const { handlers, ctx, event, cleanup } = bandSession(null);
+  try {
+    assert.equal((await handlers.get("turn_end")(event, ctx)).entries[0].type, "compaction");
+  } finally {
+    cleanup();
+  }
+});
+
+test("soft band: a warm cache older than 30 minutes no longer holds", async () => {
+  const { handlers, ctx, event, cleanup } = bandSession(lastTurn({ ageMs: 31 * 60_000 }));
+  try {
+    assert.equal((await handlers.get("turn_end")(event, ctx)).entries[0].type, "compaction");
+  } finally {
+    cleanup();
+  }
+});
+
+test("soft band: the ratio and the window are flags", async () => {
+  const strict = bandSession(lastTurn({ input: 2000, cacheRead: 8000 }), {
+    "compact-cache-at": "95",
+  });
+  const short = bandSession(lastTurn({ ageMs: 10 * 60_000 }), { "compact-cache-for": "5" });
+  try {
+    for (const session of [strict, short]) {
+      const result = await session.handlers.get("turn_end")(session.event, session.ctx);
+      assert.equal(result.entries[0].type, "compaction");
+    }
+  } finally {
+    strict.cleanup();
+    short.cleanup();
+  }
+});
+
+test("a hold ends when the cache goes cold, and a later hold is announced again", async () => {
+  const { handlers, ctx, event, notices, cleanup } = bandSession(lastTurn());
+  try {
+    await handlers.get("turn_end")(event, ctx);
+    ctx.sessionManager = { getBranch: () => [lastTurn({ input: 9000, cacheRead: 0 })] };
+    ctx.getContextUsage = () => ({ tokens: 36000, contextWindow: 40000, percent: 60 });
+    assert.equal((await handlers.get("turn_end")(event, ctx)).entries[0].type, "compaction");
+    ctx.sessionManager = { getBranch: () => [lastTurn()] };
+    await handlers.get("turn_end")(event, ctx);
+    assert.equal(notices.filter((n) => /holding off/.test(n.title)).length, 2);
+  } finally {
+    cleanup();
+  }
+});
+
+test("at the hard threshold a warm cache does not hold", async () => {
+  const { handlers, ctx, event, notices, cleanup } = bandSession(lastTurn());
+  try {
+    ctx.getContextUsage = () => ({ tokens: 30000, contextWindow: 40000, percent: 80 });
+    assert.equal((await handlers.get("turn_end")(event, ctx)).entries[0].type, "compaction");
+    assert.equal(notices.filter((n) => /holding off/.test(n.title)).length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("self_compact and /safe-compact ignore a warm cache", async () => {
+  const { handlers, tools, commands, ctx, event, cleanup } = bandSession(lastTurn());
+  try {
+    await tools.get("self_compact").execute("id", { note: "go" }, undefined, undefined, ctx);
+    const result = await handlers.get("turn_end")(event, ctx);
+    assert.match(result.entries[0].summary, /go/);
+
+    assert.equal(ctx.compacted, false);
+    await commands.get("safe-compact").handler("", ctx);
+    assert.equal(ctx.compacted, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("/safe-compact-info reports whether the cache is warm", async () => {
+  const warm = bandSession(lastTurn());
+  const cold = bandSession(lastTurn({ input: 9000, cacheRead: 0 }));
+  try {
+    await warm.commands.get("safe-compact-info").handler("", warm.ctx);
+    assert.match(warm.notices.at(-1).title, /cache warm \(90% read, 1m ago\)/);
+    await cold.commands.get("safe-compact-info").handler("", cold.ctx);
+    assert.match(cold.notices.at(-1).title, /cache cold/);
+  } finally {
+    warm.cleanup();
+    cold.cleanup();
   }
 });

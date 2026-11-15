@@ -19,7 +19,8 @@ sessions. The design was inspired by
 - Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
 - Commands: `/safe-compact [note]`, `/safe-compact-plan` (dry run, shows the handoff),
   `/safe-compact-info`.
-- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`.
+- Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`, `--compact-cache-at <pct>`,
+  `--compact-cache-for <minutes>` (see [Cache-aware hold](#cache-aware-hold)).
 - Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
 - `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
   (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
@@ -32,6 +33,8 @@ sessions. The design was inspired by
    agent calls `self_compact`, it runs regardless.
    Percentages are of the context window capped at 300K tokens, so a 1M-token model compacts where
    a 272K one does instead of re-sending a half-million-token prefix every turn.
+   In the soft band a warm prompt cache also holds compaction off; see
+   [Cache-aware hold](#cache-aware-hold).
 2. **Commit at the boundary.** The handoff is appended as a compaction entry through pi's `turn_end`
    boundary, so the run is never aborted: a mid-task agent continues from the compacted context,
    and a finished turn stays finished. `ctx.compact()` (which aborts the current operation) is
@@ -76,6 +79,39 @@ sessions. The design was inspired by
 
 Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
 an overlapping span, pays only for messages it has not judged yet.
+
+## Cache-aware hold
+
+Compacting rewrites the start of the prompt, so the next request misses the prompt cache and
+re-bills the whole prefix at the uncached rate. While the cache is warm that is a bad trade
+below the hard threshold, so in the soft band safe-compact waits instead of compacting.
+
+The cache counts as warm when the last assistant message was mostly served from it **and** it
+finished less than 30 minutes ago:
+
+- Ratio: `cacheRead / (input + cacheRead + cacheWrite)` from that message's `usage`. pi's `input`
+  leaves out cached tokens, and pi's own cache stats sum the three fields the same way.
+- Age: now minus the message `timestamp` (request start) plus its `durationMs` (so a long
+  response is measured from when it ended).
+
+| flag | default | meaning |
+| --- | --- | --- |
+| `--compact-cache-at <pct>` | 70 | Cache-read % that counts as mostly cached |
+| `--compact-cache-for <minutes>` | 30 | How long after the last reply the cache still counts as warm |
+
+The defaults: turns in a live session are bimodal (about 90% read, or about 0 right after a miss), so
+70% separates the two without being fussy; 30 minutes is pi's own idle cache-warming limit, after
+which the entry is presumed gone.
+
+When it holds, it skips Jev's moment check (no judgment requests are spent), notifies once
+(`safe-compact: holding off compacting, cache 90% read 1m ago`), and checks again at the next
+turn. It stops holding as soon as the cache goes cold or old, and never past `--compact-at`.
+At the hard threshold, `self_compact` and `/safe-compact` behave exactly as before. A reply with no
+usage (an error, or a provider that reports no cache) is treated as cold. `/safe-compact-info` shows
+the current state (`cache warm (90% read, 1m ago)`, `cache cold`, or `cache unknown`).
+
+This does not touch pi's Cache Warming setting, which keeps the cache alive while idle; the two
+read the same usage numbers and neither writes to the other.
 
 ## What a compaction costs
 

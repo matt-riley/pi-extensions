@@ -3,7 +3,10 @@
 // Hybrid trigger: below --compact-soft-at nothing happens; between soft and
 // hard, Jev decides whether this turn boundary is a clean place to compact;
 // at --compact-at (or when the agent calls self_compact) it compacts at that
-// boundary. The summary itself is assembled by plan.mjs from spans Jev
+// boundary. In the soft band a warm prompt cache (the last reply was mostly
+// cache reads and recent) holds compaction off: it would throw the cache away.
+// The hard threshold, self_compact and /safe-compact never wait for it. The
+// summary itself is assembled by plan.mjs from spans Jev
 // selected and verified. Any failure returns nothing, so pi's native
 // compaction runs, and the manual `/safe-compact` command still uses
 // ctx.compact() for the idle case.
@@ -21,6 +24,7 @@ import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs
 import { judgeMoment } from "./judge.mjs";
 import {
   buildBoundaryCompaction,
+  cacheWarmth,
   composeHandoff,
   decideTrigger,
   fileListsFromDetails,
@@ -33,6 +37,15 @@ import { messageText } from "./segment.mjs";
 const DEFAULT_SOFT = 50;
 const DEFAULT_HARD = 70;
 const MAX_HARD = 90;
+/**
+ * A turn counts as warm when this share of its prompt was a cache read. Turns
+ * in a live session are bimodal (about 90% read, or about 0 after a miss), so
+ * the exact cut matters little; 70% leaves out turns a big tool result or a
+ * model switch mostly re-billed.
+ */
+const DEFAULT_CACHE_AT = 70;
+/** pi stops warming an idle session's cache after 30 minutes, so past this it is presumed gone. */
+const DEFAULT_CACHE_FOR_MIN = 30;
 const MOMENT_TIMEOUT_MS = 8000;
 /** The whole handoff, hard stop: a boundary must not wait on a slow API forever. */
 const HANDOFF_TIMEOUT_MS = 90_000;
@@ -113,6 +126,8 @@ const percentFlag = (raw: unknown, fallback: number) => {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
+const minutesAgo = (ageMs: number) => `${Math.floor(ageMs / 60_000)}m ago`;
+
 export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {}) {
   bindSystemOne(pi);
   // One memo per session: a retry or an overlapping span reuses old answers.
@@ -126,6 +141,14 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     description: `Context % where compaction happens regardless of moment (default ${DEFAULT_HARD}, max ${MAX_HARD})`,
     type: "string",
   });
+  pi.registerFlag("compact-cache-at", {
+    description: `Cache-read % of the last prompt that counts as a warm cache; a warm cache holds off soft-band compaction (default ${DEFAULT_CACHE_AT})`,
+    type: "string",
+  });
+  pi.registerFlag("compact-cache-for", {
+    description: `Minutes after the last reply that its cache still counts as warm (default ${DEFAULT_CACHE_FOR_MIN})`,
+    type: "string",
+  });
 
   let pendingNote: string | undefined;
   let requested = false;
@@ -135,6 +158,8 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   let rejectedAt: number | null = null;
   // Tokens when Jev last said "not yet": the moment is not re-judged every turn.
   let waitedAt: number | null = null;
+  /** A hold was announced; cleared when it ends, so the next hold is announced again. */
+  let holding = false;
   /** A handoff failed at the hard threshold: pi compacts once the run settles. */
   let fallback = false;
 
@@ -142,6 +167,15 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     const hard = Math.min(percentFlag(pi.getFlag("compact-at"), DEFAULT_HARD), MAX_HARD);
     const soft = Math.min(percentFlag(pi.getFlag("compact-soft-at"), DEFAULT_SOFT), hard - 1);
     return { soft, hard };
+  };
+
+  /** The last reply's cache state, or null when it has no usage to judge by. */
+  const lastCache = (ctx: ExtensionContext) => {
+    const message = branchMessages(ctx).findLast((m: any) => m?.role === "assistant");
+    return cacheWarmth(message, {
+      minRatio: Math.min(percentFlag(pi.getFlag("compact-cache-at"), DEFAULT_CACHE_AT), 100) / 100,
+      maxAgeMs: percentFlag(pi.getFlag("compact-cache-for"), DEFAULT_CACHE_FOR_MIN) * 60_000,
+    });
   };
 
   const branchMessages = (ctx: ExtensionContext) =>
@@ -271,6 +305,19 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
       if (rejectedAt !== null && tokens < rejectedAt + RETRY_GROWTH) return;
 
       if (percent < hard) {
+        const cache = lastCache(ctx);
+        if (cache && decideTrigger({ percent, soft, hard, warm: cache.warm }) === "hold") {
+          if (!holding) {
+            holding = true;
+            const read = Math.round(cache.ratio * 100);
+            ctx.ui?.notify?.(
+              `safe-compact: holding off compacting, cache ${read}% read ${minutesAgo(cache.ageMs)}`,
+              "info",
+            );
+          }
+          return;
+        }
+        holding = false;
         if (waitedAt !== null && tokens < waitedAt + RETRY_GROWTH) return;
         const messages = branchMessages(ctx);
         const lastUser = messages.findLastIndex((m: any) => m?.role === "user");
@@ -346,6 +393,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     }
     rejectedAt = null;
     waitedAt = null;
+    holding = false;
     pendingNote = undefined;
     ctx.ui?.notify?.("safe-compact: compacted at the turn boundary", "info");
     const drafts = event?.entries ?? [];
@@ -429,6 +477,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     compacting = false;
     rejectedAt = null;
     waitedAt = null;
+    holding = false;
     fallback = false;
   });
 
@@ -473,8 +522,12 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     handler: async (_args, ctx) => {
       const { soft, hard } = thresholds();
       const percent = usedPercent(ctx.getContextUsage?.());
+      const cache = lastCache(ctx);
+      const cacheText = !cache
+        ? "cache unknown"
+        : `cache ${cache.warm ? "warm" : "cold"} (${Math.round(cache.ratio * 100)}% read, ${minutesAgo(cache.ageMs)})`;
       ctx.ui?.notify?.(
-        `safe-compact: ${percent === null || percent === undefined ? "?" : Math.round(percent)}% used, soft ${soft}%, compact at ${hard}%`,
+        `safe-compact: ${percent === null || percent === undefined ? "?" : Math.round(percent)}% used, soft ${soft}%, compact at ${hard}%, ${cacheText}`,
         "info",
       );
     },
