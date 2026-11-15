@@ -231,3 +231,129 @@ test("a clean test change produces no flags", () => {
   ]);
   assert.deepEqual(findLoweredBar(clean), []);
 });
+
+test("a coverage floor lowered or a budget ceiling raised is a strong flag", () => {
+  const floor = diffOf("package.json", [
+    '   "c8": {',
+    '-    "lines": 90,',
+    '+    "lines": 70,',
+    "   }",
+  ]);
+  const found = findLoweredBar(floor);
+  assert.deepEqual(
+    found.map((item) => `${item.id}/${item.severity}`),
+    ["weaker-check/high"],
+  );
+  assert.match(found[0].excerpts[0], /^package\.json:\d+: lines: 90 -> 70/);
+  const cli = diffOf("package.json", [
+    '-  "cover": "c8 --check-coverage --lines 90 npm test",',
+    '+  "cover": "c8 --check-coverage --lines 80 npm test",',
+  ]);
+  assert.deepEqual(kinds(cli), ["weaker-check/high"]);
+  const budget = diffOf("bundle.config.json", ['-  "maxSize": 150,', '+  "maxSize": 400,']);
+  assert.deepEqual(kinds(budget), ["weaker-check/high"]);
+  const yaml = diffOf(".github/ci.yml", ["-  fail_under: 85", "+  fail_under: 60"]);
+  assert.deepEqual(kinds(yaml), ["weaker-check/high"]);
+});
+
+test("a threshold held, raised, or a ceiling lowered or unrelated number is not a flag", () => {
+  for (const [before, after] of [
+    ['"lines": 70,', '"lines": 90,'],
+    ['"maxSize": 400,', '"maxSize": 150,'],
+    ['"lines": 90,', '"lines": 90,'],
+    ['"timeout": 30,', '"timeout": 10,'],
+    ['"version": 9,', '"version": 2,'],
+  ])
+    assert.deepEqual(
+      kinds(diffOf("config.json", [`-  ${before}`, `+  ${after}`])),
+      [],
+      `${before} -> ${after}`,
+    );
+  const lowered = diffOf("src/limits.ts", ["-const lines = 90;", "+const lines = 70;"]);
+  assert.deepEqual(kinds(lowered), []);
+});
+
+test("a CI check removed from a workflow is a strong flag", () => {
+  const dropped = diffOf(".github/workflows/ci.yml", [
+    "     steps:",
+    "       - uses: actions/checkout@v4",
+    "-      - run: npm test",
+    "-      - run: npm run lint",
+    "       - run: npm run build",
+  ]);
+  const found = findLoweredBar(dropped);
+  assert.deepEqual(
+    found.map((item) => [item.id, item.severity, item.count]),
+    [["weaker-check", "high", 2]],
+  );
+  assert.match(found[0].excerpts[0], /^\.github\/workflows\/ci\.yml:\d+: removed: .*npm test/);
+  const scan = diffOf(".github/workflows/security.yml", [
+    "-      - uses: github/codeql-action/analyze@v3",
+  ]);
+  assert.deepEqual(kinds(scan), ["weaker-check/high"]);
+  const gone = diffOf(".github/workflows/test.yml", ["-      - run: go test ./..."], "deleted");
+  assert.deepEqual(kinds(gone), ["weaker-check/high"]);
+});
+
+test("a CI step that is reworded, moved or not a check is not a removed check", () => {
+  const bumped = diffOf(".github/workflows/ci.yml", [
+    "-      - uses: github/codeql-action/analyze@v3",
+    "+      - uses: github/codeql-action/analyze@v4",
+  ]);
+  assert.deepEqual(kinds(bumped), []);
+  const moved = [
+    diffOf(".github/workflows/ci.yml", ["-      - run: npm test"]),
+    diffOf(".github/workflows/test.yml", ["+      - run: npm test"]),
+  ].join("\n");
+  assert.deepEqual(kinds(moved), []);
+  const setup = diffOf(".github/workflows/ci.yml", [
+    "-      - uses: actions/setup-node@v4",
+    "-      - run: npm ci",
+  ]);
+  assert.deepEqual(kinds(setup), []);
+});
+
+test("a check that is told to pass whatever it finds is a strong flag", () => {
+  const soft = diffOf(".github/workflows/ci.yml", [
+    "       - run: npm run lint",
+    "+        continue-on-error: true",
+  ]);
+  assert.deepEqual(kinds(soft), ["weaker-check/high"]);
+  const masked = diffOf(".github/workflows/ci.yml", ["+      - run: npm test || true"]);
+  assert.deepEqual(kinds(masked), ["weaker-check/high"]);
+  const build = diffOf(".github/workflows/ci.yml", ["+      - run: npm run build || true"]);
+  assert.deepEqual(kinds(build), []);
+});
+
+test("a lint rule switched off in a config file is a strong flag", () => {
+  const cases = {
+    ".oxlintrc.json": ['+    "no-unused-vars": "off",', '+    "eqeqeq": 0,'],
+    "eslint.config.mjs": ["+  rules: { 'no-console': 'off' },"],
+    "tsconfig.json": ['+    "strict": false,', '+    "noImplicitAny": false,'],
+    "ruff.toml": ['+ignore = ["E501"]'],
+    "Cargo.toml": ['+unwrap_used = "allow"'],
+  };
+  for (const [file, lines] of Object.entries(cases))
+    for (const line of lines)
+      assert.deepEqual(kinds(diffOf(file, [line])), ["weaker-check/high"], `${file}: ${line}`);
+});
+
+test("a rule turned on, a flag in an unrelated file or a commented reason is handled", () => {
+  assert.deepEqual(kinds(diffOf(".oxlintrc.json", ['+    "no-debugger": "error",'])), []);
+  assert.deepEqual(kinds(diffOf("tsconfig.json", ['+    "declaration": false,'])), []);
+  assert.deepEqual(kinds(diffOf("src/settings.ts", ["+  mode: 'off',"])), []);
+  const reason = diffOf("eslint.config.mjs", [
+    "+  // the generated client trips this rule on every file",
+    "+  rules: { 'no-console': 'off' },",
+  ]);
+  assert.deepEqual(kinds(reason), ["weaker-check/low"]);
+});
+
+test("a clean config and workflow change produces no flags", () => {
+  const clean = [
+    diffOf("package.json", ['-    "lines": 70,', '+    "lines": 90,']),
+    diffOf(".github/workflows/ci.yml", ["+      - run: npm test", "+      - run: npm run lint"]),
+    diffOf(".oxlintrc.json", ['+    "no-debugger": "error",']),
+  ].join("\n");
+  assert.deepEqual(findLoweredBar(clean), []);
+});

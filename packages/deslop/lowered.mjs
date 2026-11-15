@@ -21,7 +21,8 @@ const SLASH_EXTENSIONS = new Set(
   "js mjs cjs jsx ts mts cts tsx jsonc go rs java kt c h cc cpp cs swift php".split(" "),
 );
 const HASH_EXTENSIONS = new Set("py sh bash yml yaml toml rb ini cfg".split(" "));
-const SKIPPED_PATH = /(?:^|\/)(?:node_modules|dist|build|vendor)\/|\.min\.|\.d\.ts$|\.lock$/;
+const SKIPPED_PATH =
+  /(?:^|\/)(?:node_modules|dist|build|vendor)\/|\.min\.|\.d\.ts$|\.lock$|(?:^|\/)package-lock\.json$/;
 
 const extensionOf = (path) => path.match(/\.([A-Za-z0-9]+)$/)?.[1]?.toLowerCase() ?? "";
 
@@ -276,6 +277,156 @@ const easierTests = (files) => [
   ...strippedAssertions(files),
 ];
 
+const CONFIG_FILE =
+  /\.(?:json|jsonc|ya?ml|toml|ini|cfg)$|(?:^|\/)\.[\w-]*rc(?:\.\w+)?$|\.config\.[cm]?[jt]s$/;
+const WORKFLOW_FILE =
+  /(?:^|\/)(?:\.github\/workflows\/[^/]+\.ya?ml|\.gitlab-ci\.ya?ml|\.circleci\/config\.ya?ml|azure-pipelines\.ya?ml)$/;
+const LINT_CONFIG =
+  /(?:^|\/)(?:eslint\.config\.[cm]?[jt]s|\.eslintrc(?:\.\w+)?|\.oxlintrc(?:\.jsonc?)?|oxlint\.jsonc?|biome\.jsonc?|\.golangci\.ya?ml|\.?ruff\.toml|\.flake8|\.pylintrc|clippy\.toml|\.rubocop\.yml|tsconfig[\w.-]*\.json|pyproject\.toml|Cargo\.toml|setup\.cfg|tox\.ini)$/;
+
+/** Numbers set by `key: 12`, `key = 12` or `"key": 12`, and by `--key 12` or `--key=12`. */
+const SETTINGS = [
+  /["']?([A-Za-z_][\w.-]*)["']?\s*[:=]\s*["']?(\d+(?:\.\d+)?)/g,
+  /(?:^|\s)--([A-Za-z][\w-]*)(?:=|\s+)["']?(\d+(?:\.\d+)?)/g,
+];
+/** A floor is a number that must be met (coverage); lowering it lowers the bar. */
+const FLOOR_KEY = /coverage|threshold|failunder|^(?:lines|branches|functions|statements)$|score/;
+/** A ceiling is a number that must not be passed (a size budget); raising it lowers the bar. */
+const CEILING_KEY =
+  /budget|^max(?:warnings|size|lines|bytes|complexity|length|errors|issues|depth)$|sizelimit|^limit$/;
+
+function settingsOf(text) {
+  return SETTINGS.flatMap((pattern) =>
+    [...text.matchAll(pattern)].map((found) => ({
+      key: found[1].toLowerCase().replace(/[-_.]/g, ""),
+      name: found[1],
+      value: Number(found[2]),
+    })),
+  );
+}
+
+/** Coverage floors lowered and size or warning budgets raised, within one hunk. */
+function weakerThresholds(files) {
+  const hits = [];
+  for (const file of files) {
+    if (file.deleted || !CONFIG_FILE.test(file.path)) continue;
+    const style = commentStyleOf(file.path);
+    for (const { lines } of file.hunks) {
+      const before = new Map();
+      for (const line of lines)
+        if (line.kind === "del")
+          for (const { key, value } of settingsOf(line.text))
+            before.set(key, [...(before.get(key) ?? []), value]);
+      for (const [at, line] of lines.entries()) {
+        if (line.kind !== "add") continue;
+        for (const { key, name, value } of settingsOf(line.text)) {
+          const old = before.get(key)?.shift();
+          const lowered =
+            old !== undefined &&
+            ((FLOOR_KEY.test(key) && value < old) || (CEILING_KEY.test(key) && value > old));
+          if (lowered)
+            hits.push({
+              path: file.path,
+              n: line.n,
+              text: `${name}: ${old} -> ${value}`,
+              weak: reasonNear(lines, at, style),
+            });
+        }
+      }
+    }
+  }
+  return hits;
+}
+
+/** Commands and actions that check the code, as opposed to setting it up or shipping it. */
+const CHECK_STEP =
+  /\b(?:tests?|lint\w*|checks?|typecheck|tsc|coverage|audit|scan|codeql|semgrep|gitleaks|trivy|verify|vet|clippy|pytest|jest|vitest|eslint|oxlint|mypy|ruff|golangci|staticcheck|fmt|sast|security)\b/i;
+
+/**
+ * What a workflow line runs: the value of `run:` or `uses:` (without an action's
+ * version), or a line of a multi-line script. Null for any other key.
+ */
+function stepOf(text) {
+  const line = text.trim().replace(/^-\s+/, "");
+  if (line === "" || line.startsWith("#")) return null;
+  const keyed = /^(run|uses):\s*(.*)$/.exec(line);
+  if (keyed) return keyed[1] === "uses" ? keyed[2].replace(/@\S*$/, "").trim() : keyed[2].trim();
+  return /^[\w-]+:(?:\s|$)/.test(line) ? null : line;
+}
+
+/**
+ * CI checks taken out of a workflow (or a whole workflow deleted) with nothing
+ * that runs them added anywhere in the diff, and checks told to pass regardless.
+ */
+function weakerWorkflows(files) {
+  const workflows = files.filter((file) => WORKFLOW_FILE.test(file.path));
+  const kept = new Set(
+    workflows.flatMap((file) =>
+      file.hunks.flatMap(({ lines }) =>
+        lines.filter((line) => line.kind === "add").map((line) => stepOf(line.text)),
+      ),
+    ),
+  );
+  const hits = [];
+  for (const file of workflows)
+    for (const { lines } of file.hunks)
+      for (const [at, line] of lines.entries()) {
+        const step = stepOf(line.text);
+        if (line.kind === "del" && step && CHECK_STEP.test(step) && !kept.has(step))
+          hits.push({
+            path: file.path,
+            n: line.n,
+            text: `removed: ${line.text.trim()}`,
+            weak: reasonNear(lines, at, "hash"),
+          });
+        else if (
+          line.kind === "add" &&
+          (/^\s*continue-on-error:\s*true\b/.test(line.text) ||
+            (step && CHECK_STEP.test(step) && /\|\|\s*true\s*$/.test(step)))
+        )
+          hits.push({
+            path: file.path,
+            n: line.n,
+            text: line.text,
+            weak: reasonNear(lines, at, "hash"),
+          });
+      }
+  return hits;
+}
+
+const RULE_OFF =
+  /["']?[\w@/.:-]+["']?\s*[:=]\s*(?:\[\s*)?["']?(?:off|allow|none|0)["']?\s*(?:[,\]}]|$)/;
+const STRICT_OFF =
+  /["']?(?:strict\w*|noImplicit\w+|noUnused\w+|noUnchecked\w+|exactOptional\w+|noFallthrough\w+|useUnknownInCatchVariables|alwaysStrict)["']?\s*:\s*false/;
+const IGNORE_LIST = /^\s*["']?(?:ignore|extend-ignore|disable|disable-all)["']?\s*[:=]/;
+
+/** Lint and compiler rules switched off, or ignore lists started, in the config that sets them. */
+function rulesOff(files) {
+  const hits = [];
+  for (const file of files) {
+    if (file.deleted || !LINT_CONFIG.test(file.path)) continue;
+    const style = commentStyleOf(file.path);
+    for (const { lines, at, line } of addedLines(file)) {
+      if (style && splitComment(line.text, style).code.trim() === "") continue;
+      if (![RULE_OFF, STRICT_OFF, IGNORE_LIST].some((pattern) => pattern.test(line.text))) continue;
+      hits.push({
+        path: file.path,
+        n: line.n,
+        text: line.text,
+        weak: reasonNear(lines, at, style),
+      });
+    }
+  }
+  return hits;
+}
+
+/** Every way a threshold or a check is weakened. */
+const weakerChecks = (files) => [
+  ...weakerThresholds(files),
+  ...weakerWorkflows(files),
+  ...rulesOff(files),
+];
+
 const CHECKS = [
   {
     id: "suppression",
@@ -288,6 +439,12 @@ const CHECKS = [
     label: "test skipped, deleted or stripped of assertions",
     fix: "make the test pass, or say why it can go",
     scan: easierTests,
+  },
+  {
+    id: "weaker-check",
+    label: "threshold lowered, CI check removed or lint rule switched off",
+    fix: "restore it, or record why the bar can drop",
+    scan: weakerChecks,
   },
 ];
 
