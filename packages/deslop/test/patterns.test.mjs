@@ -439,3 +439,23 @@ test("specific sentences are not generic docs", () => {
   ])
     assert.deepEqual(ids(text), [], text);
 });
+
+test("the newer patterns stay linear on large hostile input", () => {
+  const inputs = {
+    notBut: "is not a ".repeat(60_000),
+    notButFar: `is not a ${"word ".repeat(25_000)}`,
+    closer: ". ".repeat(60_000) + "That's it",
+    closerSpaces: `Done.${" ".repeat(150_000)}x`,
+    dashes: "a -- ".repeat(40_000) + "a--".repeat(40_000),
+    parens: "a (b c) ".repeat(25_000) + "a (".repeat(40_000),
+    triple: "fast, ".repeat(40_000) + "no x, ".repeat(30_000),
+    xNotY: `is a ${"w ".repeat(60_000)}, not`,
+    generic: "feel ".repeat(40_000) + "designed with ".repeat(10_000),
+    subjects: "The tool is here. The utility is here. ".repeat(4_000),
+  };
+  for (const [name, text] of Object.entries(inputs)) {
+    const start = performance.now();
+    findSlop(text);
+    assert.ok(performance.now() - start < 1_000, `${name} took longer than a second`);
+  }
+});
