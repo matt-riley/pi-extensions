@@ -27,6 +27,7 @@ function harness({
   cwd = "/repo",
   readFirst = null,
   env = { OPENAI_API_KEY: "test-key" },
+  askImpl = null,
 } = {}) {
   const commands = {};
   const entries = [];
@@ -82,6 +83,7 @@ function harness({
     },
     ask: async (request) => {
       asks.push(request);
+      if (askImpl) return askImpl(request);
       return { answers: { intent_preserved: noul(intent) } };
     },
   });
@@ -185,4 +187,46 @@ test("files the model read are shown to the intent check and recorded", async ()
   assert.deepEqual(h.asks[0].state.repository_probe.files_read, ["loader.mjs"]);
   assert.deepEqual(h.entries[0].data.filesRead, ["loader.mjs"]);
   assert.equal(h.editor.text, "Set retries in loader.mjs to 2.");
+});
+
+test("a failed intent check says why: the original is shown with the TypeSafe error", async () => {
+  const h = harness({
+    candidate: "Fix the failing workflow on main and run npm run check.",
+    askImpl: () => {
+      throw new Error("TYPESAFE_API_KEY is not set.");
+    },
+  });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.editor.text, "fix the failing workflow on main");
+  assert.equal(h.notifications[0].level, "warning");
+  assert.match(h.notifications[0].title, /intent check could not run/);
+  assert.match(h.notifications[0].title, /TYPESAFE_API_KEY is not set/);
+  assert.equal(h.entries[0].data.intentError, "TYPESAFE_API_KEY is not set.");
+});
+
+test("a low intent score is reported with the score and the threshold", async () => {
+  const h = harness({ candidate: "Do something unrelated.", intent: 0.2 });
+  await h.command("fix the failing workflow");
+  assert.match(h.notifications[0].title, /scored it 0\.20/);
+  assert.match(h.notifications[0].title, /0\.70/);
+});
+
+test("an unusable intent answer is reported as such", async () => {
+  const h = harness({
+    candidate: "Fix the failing workflow.",
+    askImpl: () => ({ answers: {} }),
+  });
+  await h.command("fix the workflow");
+  assert.equal(h.editor.text, "fix the workflow");
+  assert.match(h.notifications[0].title, /no usable answer/);
+});
+
+test("a model that returns the prompt as written is reported, not passed off silently", async () => {
+  const h = harness({ candidate: "fix the workflow" });
+  await h.command("fix the workflow");
+  assert.equal(h.editor.text, "fix the workflow");
+  assert.equal(h.asks.length, 0);
+  assert.equal(h.entries[0].data.action, "unchanged");
+  assert.equal(h.notifications[0].level, "warning");
+  assert.match(h.notifications[0].title, /returned your prompt as written/);
 });

@@ -5,15 +5,21 @@ export function buildCoachQuestions() {
     intent_preserved: {
       type: "noul",
       instructions:
-        "Does `rewritten_prompt` preserve the user's objective, scope, constraints, and requested " +
-        "deliverable from `original_prompt`? Answer no if it adds new features, deliverables, or " +
-        "requirements, changes the target, names files, commands, or tests that are not in " +
-        "`repository_probe` (including `files_read`), or omits important intent. A clearer " +
-        "structure is not drift, and naming files, commands, or a check is not drift when the " +
-        "task stays the same.",
+        "`rewritten_prompt` is a deeper version of `original_prompt` for a coding agent. Does it ask " +
+        "for the same task, with the same goal, target, scope, and constraints? " +
+        "Answer yes when it only makes the same task more thorough: it tells the agent to read " +
+        "files, logs, or test output first, names methods or commands, adds care inside the same " +
+        "task (such as checking callers), or ends with a check the agent can run, such as a test " +
+        "or command. " +
+        "Answer no when it adds a feature, deliverable, deadline, or requirement the user did not " +
+        "ask for, widens or narrows the scope, changes the target, or reverses a constraint. " +
+        "Answer no when it names a specific file path that appears neither in `original_prompt` " +
+        "nor in `repository_probe` (including `files_read`). Suggesting commands or tests to run, " +
+        "or telling the agent to find or locate something, is fine.",
       criteria: {
-        true: "The rewrite asks for the same work with the same scope and constraints, only clearer.",
-        false: "The rewrite changes, adds, omits, or invents something material.",
+        true: "Same task, same scope and constraints; the rewrite is only more thorough or clearer.",
+        false:
+          "The rewrite changes the task, widens the scope, adds a feature, deliverable, or requirement, or names a file that was never seen.",
       },
     },
   };

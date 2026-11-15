@@ -95,7 +95,10 @@ Nothing is sent for you. Edit the text and press Enter yourself. Ordinary input
 is never intercepted. If the input box already holds a draft, the rewrite goes
 above it. If the model is unavailable, there is no login or key, the rewrite is malformed,
 TypeSafe cannot verify it, or intent confidence is below the threshold, the
-original prompt goes into the input box instead, with a warning saying why.
+original prompt goes into the input box instead, with a warning saying why:
+the model error, "intent check could not run" with its error (for example no
+TypeSafe key, or the check timing out), "scored it 0.xx, below the threshold",
+or "returned your prompt as written" when the model changed nothing.
 
 The intent check is a model judgment, not a guarantee that the rewrite is equivalent.
 
