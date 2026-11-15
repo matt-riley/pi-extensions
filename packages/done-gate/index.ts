@@ -56,6 +56,7 @@ import {
 } from "./gate.mjs";
 import { formatRunReport, runChecks } from "./run-checks.mjs";
 import { resolveScopedChecks } from "./scoped.mjs";
+import { coverageForRun, isTestCommand } from "./coverage.mjs";
 import { claimGapLine, testClaimGap } from "./evidence.mjs";
 import { userBashEvidence } from "./user-bash.mjs";
 
@@ -108,6 +109,28 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       return null;
     }
     return [...tracked.split("\n"), ...untracked].filter(Boolean);
+  };
+
+  // Whether a passing unit-test run reached what was edited. Anything that is not a
+  // test run is left unjudged (undefined), which the gate counts as before.
+  const reach = async (command: string, output: string, cwd: string) => {
+    if (!isTestCommand(command)) return undefined;
+    try {
+      return await coverageForRun({
+        command,
+        log: output,
+        edited: [...state.edited],
+        cwd,
+        read: (path: string) => readFile(join(cwd, path), "utf8").catch(() => null),
+        listTests: async () => {
+          const tracked = await git(cwd, ["ls-files", "-z"]);
+          const untracked = await listUntracked(cwd);
+          return tracked === null ? null : [...tracked.split("\0"), ...(untracked ?? [])];
+        },
+      });
+    } catch {
+      return "unknown";
+    }
   };
 
   // Best effort: outside a git repo, or if git fails, there are simply no hits.
@@ -197,14 +220,26 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       const completed = completedJobCheck(event, ctx.cwd, await snapshot(ctx.cwd ?? process.cwd()));
       if (!completed || epoch !== generation) return;
       backgroundChecks.delete(id); // Reading an old result again cannot re-verify a later edit.
-      observeToolResult(state, completed);
+      const coverage = await reach(
+        completed.input.command,
+        completed.content[0].text,
+        ctx.cwd ?? process.cwd(),
+      );
+      if (epoch !== generation) return;
+      observeToolResult(state, { ...completed, coverage });
       return;
     }
     const check = checks.get(event.toolCallId);
     checks.delete(event.toolCallId);
     const after = check ? await snapshot(ctx.cwd ?? process.cwd()) : null;
     if (check && check.generation !== generation) return;
+    const coverage =
+      check && event?.toolName === "bash" && event?.isError === false
+        ? await reach(event.input?.command, messageText(event.content), ctx.cwd ?? process.cwd())
+        : undefined;
+    if (check && check.generation !== generation) return;
     observeToolResult(state, {
+      coverage,
       before: check?.before,
       after,
       content: event.content,
@@ -223,7 +258,10 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
         started: userRuns,
         current: await snapshot(ctx.cwd ?? process.cwd()),
       });
-      if (hit) observeUserCheck(state, hit.revision, hit);
+      if (hit) {
+        const coverage = await reach(hit.command, hit.output, ctx.cwd ?? process.cwd());
+        observeUserCheck(state, hit.revision, { ...hit, coverage });
+      }
     }
     if (state.verificationSeen || state.remoteVerificationSeen) {
       invalidateEvidence(state, await snapshot(ctx.cwd ?? process.cwd()));

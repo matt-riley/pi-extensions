@@ -49,6 +49,8 @@ A successful run of one of those commands, as its own bash call, after the
 last edit is a verification run, so the gate does not fire again. Run them
 separately: `go test ./pkg/foo && golangci-lint run ./pkg/foo` is still one
 compound shell, and those do not count.
+Redirecting a check's output (`npm run check 2>&1`, `> log 2>&1`) does not make it compound. A pipe
+(`| tail`) or a chain (`; echo done`, `|| true`) does, because it can hide the check's exit status.
 
 **`.pi/verify` wins.** If that path exists (a file or a directory), it is the
 only command named. The language mapping is not also listed.
@@ -107,9 +109,10 @@ A passing build says the code compiles. It does not say the changed code ran. So
 the checks it recognises into two kinds:
 
 - **Compile or lint:** `tsc`, `eslint`, `oxlint`, `ruff`, `mypy`, `golangci-lint`, `go vet`,
-  `cargo check`, `cargo clippy`, and `npm run lint` or `typecheck`.
-- **Everything else it recognises:** tests, `.pi/verify`, `npm run check`, `make test` and the
-  rest. `stylua --check` and `selene` are in this group because they are the only checks the gate
+  `cargo check`, `cargo clippy`, `deno check`, `deno lint`, and `npm run lint` or `typecheck`.
+- **Everything else it recognises:** tests, `.pi/verify`, `npm run check`, `npm run smoke`,
+  `./scripts/test.sh` (and other `scripts/test|check|verify|smoke` scripts), `make test`, `deno
+  test` and the rest. `stylua --check` and `selene` are in this group because they are the only checks the gate
   maps for Lua, so there is no test run to ask for instead.
 
 A compile or lint pass alone leaves a code edit unverified, and the reminder says so: "only compile
@@ -123,9 +126,42 @@ similar), because compiling is the change; or a check that runs the code already
 tree. A later edit starts again.
 
 The reminder also asks the closing message to name the check that reached the changed code and say
-what it showed. A passing test run still clears the edit: the repository's own checks are mostly
-tests, and the gate cannot tell which test reaches which file. It asks the question; it does not
-answer it.
+what it showed.
+
+### A unit-test run must reach the change
+
+A green test run says nothing about a file that no test touches. So a unit-test run clears an edit
+only when a test file it ran **imports or names** one of the changed files. The gate reads the test
+files as plain text and checks, for each one:
+
+- **Imports:** an `import`, `export ... from`, `import()` or `require()` specifier (or a Python
+  `import` or `from ... import`) that resolves to a changed file. Relative paths are resolved from
+  the test file, and the extension is ignored, so `./a.js` reaches `a.ts` and `../src` reaches
+  `src/index.ts`. A module name such as `pkg.mod` or `app/core` matches the end of a changed path.
+- **Names:** the test's text contains the changed path, or the file name with its extension
+  (`bin/tool.mjs`, `"gate.mjs"`). A file called `index.ts` must match with its parent folder.
+
+One covering file among those that ran is enough. A changed test file that ran counts too. There is
+no dependency graph: a test that reaches the change only through another module does not count, and
+the reminder then asks for a test that imports or names the code, or for the changed path itself.
+
+Which test files ran is worked out from the command and the log. Paths in the command are used,
+with directories and globs expanded against the repo's test files. A bare `node --test`, `pytest`,
+`vitest`, `jest`, `mocha` or `deno test` takes every test file. `npm test` (or `npm run test:unit`)
+is read through the script in `package.json`. Test files that the log prints (`PASS src/a.test.ts`)
+are added. `go test` is judged by package: a `_test.go` file in the same directory as the changed
+file counts, and a package with no tests does not.
+
+**When the files cannot be worked out** (`cargo test`, `make test`, `dotnet test`, an `npm test`
+script that is not a recognised runner, with no file names in the log), the run does not count, and
+the reminder says it could not tell which test files ran. That is the cautious choice. To keep it
+quiet, the reminder is still sent only once per user input, it asks for a command that names the test
+files (`node --test path/to/x.test.mjs`) rather than for more work, and the changed path itself is an
+accepted alternative. A test file that cannot be read gives the same answer, never a miss.
+
+Only edits to code are judged this way. Prose, JSON, YAML and other files that a test cannot import
+are cleared by any passing test run, as before. Scripts such as `.pi/verify`, `npm run check`,
+`npm run smoke` and `./scripts/test.sh` are whole-repo checks and are not read this way.
 
 ### A "tests passed" claim must match the log
 
@@ -137,9 +173,15 @@ adds one line to the reminder, or sends one if nothing else would:
 
 - No check that runs the code was recorded after the edits, or only compile and lint checks were.
 - The newest check that runs the code failed, or has no clean result on the final tree.
-- Its log reports failures (`# fail 2`, `1 failed`, a `FAIL` line) even though it exited 0.
-- Its log shows no tests ran (`# tests 0`, `collected 0 items`, `No tests found`).
-- The message names a count (`12 tests`) that the log never shows.
+- Its log reports failures even though it exited 0. Only the runner's summary lines count
+  (`# fail 2`, `Tests: 1 failed`, `test result: FAILED`, `--- FAIL`, `2 failing`, a line that
+  starts with `FAIL`). A test whose name mentions "3 failures" is not a failure report.
+- Its log shows no tests ran (`# tests 0`, `collected 0 items`, `No tests found`) and no part of the
+  log shows tests passing. A runner that ends on an empty section after a full one, such as cargo's
+  empty Doc-tests, is fine.
+- The message states the run's total (`all 12 tests pass`, `12/12`, `12 tests passed`) and the log
+  never shows that number. A count of what the work added or touched (`I added 3 tests`, `updated 2
+  test files`) is not compared.
 
 A sentence that hedges ("all tests pass except the timing ones", "I did not run the tests") is left
 alone, and so is a claim on a turn that changed no code and ran no check. The line is sent once per
