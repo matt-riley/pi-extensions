@@ -66,11 +66,30 @@ collection. Only the signs a regular expression can decide are checked here:
 | Severity | Signs |
 | --- | --- |
 | High | Filler phrases (W1), "not X, it is Y" contrasts (W2), marketing adjectives (W5), generic openings (W6), paired adjectives (W9), "excited to announce" (W15), "whether you're X or Y" (W16), throat-clearing pivots (W17), corporate and internet cliches (W21, W25, W36), runs of short punchy sentences (W34) |
-| Medium | Em dash asides (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3) |
-| Low | "very" (W20), curly quotes (W27), "quietly" (W45), unicode arrows (deslop rule 9) |
+| Medium | Em dash asides (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3), "X, not Y" contrasts (contrastive framing) |
+| Low | "very" (W20), curly quotes (W27), "quietly" (W45), unicode arrows (deslop rule 9), invented hyphenated labels |
 
 One high sign is enough for a report. Medium and low signs need company.
 Curly quotes need four occurrences and arrows need two before they count.
+The filler list covers `delve`, `leverage`, `utilize` and `it's worth noting`,
+including `delved`, `leveraged` and `utilized`; a longer word or a hyphenated
+name that merely contains one is left alone.
+
+Two newer signs come from the idea that a sentence should state the action
+directly:
+
+- **"X, not Y" contrast.** A copula, an article and a noun phrase followed by
+  `, not a …` or `—not a …`, such as `this is a library, not a framework`. A
+  plain correction (`pass the id, not the name`, `port 8080, not 80`) has no
+  article-led noun phrase and does not match. It counts from two occurrences,
+  because one such sentence is often a fair disambiguation.
+- **Invented hyphenated label.** A hyphenated pair in front of a generic head
+  noun (`checks`, `layout`, `gate`, `pass`, `flow`, `handoff` and a few more), as in
+  `exact-head checks`. Common compounds (`read-only`, `built-in`, `open-source`),
+  prefixed words (`non-`, `multi-`, `self-`) and anything in code are excluded,
+  and it counts from two occurrences. A regular expression cannot tell an
+  invented label from an ordinary one, so this sign is low severity and only
+  adds weight to a report that other signs already justify.
 The em dash threshold follows deslop-text's figures for internal documents:
 one in a title is fine and two in a paragraph are a finding.
 

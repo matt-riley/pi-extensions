@@ -35,6 +35,19 @@ function phrases(list) {
   return new RegExp(String.raw`(?<![\w-])(?:${body})(?![\w-])`, "gi");
 }
 
+/**
+ * "exact-head checks" and "editorial-row layouts": a made-up modifier stuck to a
+ * generic noun. A regex cannot tell invented from ordinary, so the shape is narrow
+ * (hyphenated pair, then one of these head nouns), well-known compounds are
+ * excluded, and the check needs two hits.
+ */
+const LABEL_HEADS =
+  "checks?|layouts?|gates?|passes|pass|flows?|lanes?|rails?|handoffs?|surfaces?|contracts?|posture|stance|story|moves?";
+const COMMON_COMPOUNDS =
+  "read-only|write-only|built-in|open-source|real-time|long-running|short-lived|high-level|low-level|top-level|first-class|full-text|command-line|case-sensitive|one-shot|fail-safe|dead-code|type-safe|run-time|build-time|two-step|single-line|error-prone";
+const COMPOUND_PREFIXES =
+  "non|multi|pre|post|re|co|anti|sub|semi|cross|inter|over|under|out|self|auto|pro";
+
 const CHECKS = [
   {
     id: "filler",
@@ -56,12 +69,15 @@ const CHECKS = [
       "the reality is",
       "delve",
       "delves",
+      "delved",
       "delving",
       "leverage",
       "leverages",
+      "leveraged",
       "leveraging",
       "utilize",
       "utilizes",
+      "utilized",
       "utilizing",
       "tapestry",
       "holistic",
@@ -278,6 +294,28 @@ const CHECKS = [
     label: 'hollow "quietly"',
     fix: "cut the word, or state the concrete change",
     pattern: phrases(["quietly"]),
+  },
+  {
+    id: "x-not-y",
+    sign: "contrastive framing",
+    severity: "medium",
+    label: '"X, not Y" contrast',
+    fix: "state what it is and drop the alternative nobody asked about",
+    min: 2,
+    pattern:
+      /\b(?:is|are|was|were|it['’]s|that['’]s|this['’]s)\s+(?:an?|the)\s+[\w-]+(?:\s+[\w-]+){0,3}\s*[,—–]\s*(?:and\s+)?not\s+(?:an?|the)\s+[\w-]+/gi,
+  },
+  {
+    id: "coined-label",
+    sign: "invented compound label",
+    severity: "low",
+    label: "invented hyphenated label",
+    fix: "say it with plain verbs and prepositions",
+    min: 2,
+    pattern: new RegExp(
+      String.raw`(?<![\w-])(?!(?:${COMMON_COMPOUNDS})\s)(?!(?:${COMPOUND_PREFIXES})-)[a-z]{3,}-[a-z]{3,}\s+(?:${LABEL_HEADS})(?![\w-])`,
+      "gi",
+    ),
   },
   {
     id: "very",

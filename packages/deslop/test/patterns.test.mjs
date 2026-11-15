@@ -173,3 +173,57 @@ test("documentation labels, table examples and prohibitions are not formula pros
   assert.deepEqual(ids("| Example | Meaning |\n| seamless | marketing |"), []);
   assert.deepEqual(ids("Do not edit files. Do not implement. Do not run commands."), []);
 });
+
+test("delve, leverage and utilize are found in every verb form, and only as words", () => {
+  for (const text of [
+    "We delve into the cache.",
+    "We delved into the cache.",
+    "The team leveraged the existing pool.",
+    "Teams leverage the pool, and leveraging it helps.",
+    "It utilized a pool.",
+    "It’s worth noting that the pool is shared.",
+  ])
+    assert.ok(ids(text).includes("filler"), text);
+  assert.deepEqual(ids("The delvers met the leveraged-buyout team and the utilizer."), []);
+});
+
+test("an invented compound label is found once it is used twice", () => {
+  const text = "Run the exact-head checks, then the editorial-row layout pass.";
+  const found = findSlop(text).find((item) => item.id === "coined-label");
+  assert.ok(found, text);
+  assert.equal(found.severity, "low");
+  assert.equal(found.count, 2);
+  assert.equal(worthReporting([found]), false, "low signs need company");
+});
+
+test("one coined label, or an ordinary compound, is not a finding", () => {
+  assert.deepEqual(ids("Run the exact-head checks before you merge."), []);
+  for (const text of [
+    "The read-only mode skips writes and the built-in path stays on.",
+    "A non-blocking gate and a multi-line flow share one open-source loop.",
+    "Use the state-of-the-art loop, then a long-running pass.",
+    "The dead-code check passes in every full-text mode.",
+    "Call `exact-head checks` and `editorial-row layout pass` by name.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a contrast framed as X, not Y is found when it repeats", () => {
+  const text = "This is a library, not a framework. The default is a helper, not a daemon.";
+  const found = findSlop(text).find((item) => item.id === "x-not-y");
+  assert.ok(found, text);
+  assert.equal(found.count, 2);
+  assert.equal(found.severity, "medium");
+  assert.equal(worthReporting([found]), false, "medium signs need company");
+  assert.ok(ids("It is a guide—not a spec. This is a tool—not a toy.").includes("x-not-y"));
+});
+
+test("a plain correction is not a contrast", () => {
+  for (const text of [
+    "Pass the id, not the name. Use the flag, not the env var.",
+    "The default is a number, not a string.",
+    "Use `read`, not `cat`, and a `flag`, not a `var`.",
+    "It runs on port 8080, not 80. It ships weekly, not daily.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
