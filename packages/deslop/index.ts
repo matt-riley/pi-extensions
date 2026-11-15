@@ -1,0 +1,58 @@
+// index.ts — pi extension: deslop.
+//
+// An agent that edits a README writes the way models write: "it's worth
+// noting", "powerful yet simple", a negation set up to be knocked down. This
+// reads the prose an `edit` or `write` just added and, when it carries those
+// patterns, appends one note to that tool's result so the agent rewrites the
+// sentences while the file is still in front of it.
+//
+// `tool_result` is the post-edit hook pi provides: a handler there cannot inject
+// a message, but it can patch the result the model is about to read.
+//
+// The pattern check is deterministic (patterns.mjs). TypeSafe verifies it twice
+// (verify.mjs): that the flagged patterns do make the text worse before the
+// agent is asked to rewrite anything, and that the rewrite still says what the
+// flagged text said. Prose files inside the session cwd only. It never blocks
+// a tool call and never edits a file itself.
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+import { flagOff } from "../../shared/env-flag.mjs";
+import { bindSystemOne } from "../../shared/systemone-session.mjs";
+import { createDeslopState, observeEdit, resetDeslopState } from "./deslop.mjs";
+
+/** `PI_DESLOP=0` turns the extension off. */
+export const DESLOP_ENV = "PI_DESLOP";
+/** `PI_DESLOP_VERIFY=0` keeps the pattern check and sends nothing to TypeSafe. */
+export const VERIFY_ENV = "PI_DESLOP_VERIFY";
+
+export default function piDeslopExtension(pi: ExtensionAPI) {
+  // Before any `on`: Jev's token usage has to land on the tool result it rode on.
+  bindSystemOne(pi);
+  const state = createDeslopState();
+
+  pi.on("session_start", async () => {
+    resetDeslopState(state);
+  });
+
+  // A new prompt is a new budget: the notes are per file, per request.
+  pi.on("input", async () => {
+    resetDeslopState(state);
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    if (flagOff(process.env[DESLOP_ENV])) return;
+    const note = await observeEdit(
+      state,
+      {
+        toolName: event?.toolName,
+        input: event?.input,
+        isError: event?.isError,
+        cwd: ctx?.cwd,
+      },
+      { verify: !flagOff(process.env[VERIFY_ENV]) },
+    );
+    if (!note || !Array.isArray(event?.content)) return;
+    return { content: [...event.content, { type: "text", text: note }] };
+  });
+}
