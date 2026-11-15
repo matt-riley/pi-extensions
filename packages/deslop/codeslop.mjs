@@ -95,17 +95,25 @@ const GO_ERR_OPEN = /^\s*if\s+err\s*!=\s*nil\s*\{\s*$/;
 const GO_QUIET_RETURN = /^\s*return\s+(?:nil|false|""|0)(?:,\s*nil)?\s*$/;
 const CLOSING_BRACE = /^\s*\}/;
 
-/** The lines after `at` in a hunk, up to the line that closes the block. */
+/** A quiet handler has at most this many lines; a longer block is real handling. */
+const QUIET_BODY_LINES = 1;
+
+/**
+ * The lines after `at` in a hunk, up to the line that closes the block, or null
+ * when the block is longer than a quiet handler can be. Stopping early keeps
+ * the scan short even when no line ever closes.
+ */
 function blockBody(lines, at, closes) {
   const body = [];
   for (let next = at + 1; next < lines.length; next++) {
     if (closes(lines[next].text)) return body;
+    if (body.length >= QUIET_BODY_LINES) return null;
     body.push(lines[next].text);
   }
   return null;
 }
 
-/** Errors dropped into false, null or an empty result, with no log and no reason. */
+/** Errors dropped into false, null or an empty value, with no log and no reason. */
 function swallowedErrors(files) {
   const hits = [];
   for (const file of files)
@@ -220,7 +228,7 @@ const NULLISH_CHAIN = new RegExp(
   String.raw`${CHAIN_OPERAND}\s*\?\?\s*${CHAIN_OPERAND}\s*\?\?\s*${CHAIN_OPERAND}`,
 );
 
-/** Defaults, guards and compatibility shims that a comment admits nobody requested. */
+/** Defaults, guards and compatibility shims that a comment admits no one wanted. */
 function unrequestedFallbacks(files) {
   const hits = [];
   for (const file of files) {
@@ -358,10 +366,21 @@ function forwarderAt(language, lines, at) {
   );
 }
 
-const implementersOf = (lines, name) =>
-  lines.filter(
-    (text) => IMPLEMENTS_OR_EXTENDS.test(text) && (text.match(IDENTIFIER) ?? []).includes(name),
-  ).length;
+/**
+ * How many lines with `implements` or `extends` name each identifier, counted
+ * in one pass so the cost does not grow with the number of interfaces. The
+ * name a line declares is not counted as implementing itself.
+ */
+function implementerCounts(lines) {
+  const counts = new Map();
+  for (const text of lines) {
+    if (!IMPLEMENTS_OR_EXTENDS.test(text)) continue;
+    const declaring = /\b(?:interface|class)\s+([A-Za-z_]\w*)/.exec(text)?.[1];
+    for (const word of new Set(text.match(IDENTIFIER) ?? []))
+      if (word !== declaring) counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return counts;
+}
 
 /**
  * Abstractions that add a name and nothing else: a type or interface the diff
@@ -374,6 +393,7 @@ function emptyAbstractions(files, everything) {
   const lines = everything.flatMap((file) =>
     file.hunks.flatMap(({ lines: hunk }) => hunk.map((line) => line.text)),
   );
+  const implementers = implementerCounts(lines);
   const oldNames = new Set(
     everything.flatMap((file) =>
       file.removed.flatMap((text) => {
@@ -389,7 +409,7 @@ function emptyAbstractions(files, everything) {
         if (line.kind !== "add") continue;
         const interfaceName = INTERFACE_DECLARATION.exec(line.text)?.[1];
         const empty = interfaceName
-          ? !oldNames.has(interfaceName) && implementersOf(lines, interfaceName) === 1
+          ? !oldNames.has(interfaceName) && (implementers.get(interfaceName) ?? 0) === 1
           : !oldNames.has(FORWARDER_NAME.exec(line.text)?.[1]) &&
             forwarderAt(file.language, hunk, at);
         if (empty) hits.push({ path: file.path, n: line.n, text: line.text });

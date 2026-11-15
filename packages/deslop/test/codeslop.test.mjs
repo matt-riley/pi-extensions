@@ -561,3 +561,51 @@ test("no finding wording echoes the idea source's own phrases", () => {
     /early return|one caller|one implementation|repeats? the code|only silence|silences? the type|swallow|nobody asked|flatten/i,
   );
 });
+
+test("an interface that a removed line also declares is an edit, not a new interface", () => {
+  const edited = diffOf("src/a.ts", [
+    "-interface Store {",
+    "+interface Store {",
+    "+  get(): void;",
+    "+}",
+    "+class Memory implements Store {",
+    "+}",
+  ]);
+  assert.equal(idsOf(edited).includes("single-use"), false);
+  const created = diffOf("src/a.ts", [
+    "+interface Store {",
+    "+}",
+    "+class Memory implements Store {",
+    "+}",
+  ]);
+  assert.equal(idsOf(created).includes("single-use"), true, "control: the same lines, all added");
+});
+
+test("interface counting stays linear in the number of interfaces and extends lines", () => {
+  const interfaces = Array.from({ length: 5_000 }, (_, at) => `interface Shape${at} {}`);
+  const implementers = Array.from(
+    { length: 5_000 },
+    (_, at) => `class Impl${at} implements Shape${at} {}`,
+  );
+  const extending = Array.from(
+    { length: 5_000 },
+    (_, at) => `interface Child${at} extends Base {}`,
+  );
+  const diff = added("src/shapes.ts", [...interfaces, ...implementers, ...extending].join("\n"));
+  const start = performance.now();
+  const found = findCodeSlop(diff).find((item) => item.id === "single-use");
+  assert.ok(performance.now() - start < 1_000, "interface counting took longer than a second");
+  assert.equal(found.count, 5_000, "each Shape has exactly one implementer");
+});
+
+test("an interface that extends another is not its own implementer", () => {
+  const diff = added("src/a.ts", "interface Child extends Base {}");
+  assert.equal(idsOf(diff).includes("single-use"), false);
+});
+
+test("an unclosed Go error block on every line is not rescanned to the end", () => {
+  const diff = added("run.go", "if err != nil {\n".repeat(40_000));
+  const start = performance.now();
+  findCodeSlop(diff);
+  assert.ok(performance.now() - start < 250, "the Go scan took longer than a quarter second");
+});
