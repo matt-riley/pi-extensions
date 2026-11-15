@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { trustedReadOnlyHint } from "../../shared/tool-annotations.mjs";
 
 import { worst } from "./policy-verdict.mjs";
-import { resolvedTarget, isEnvFile, classifyTarget } from "./policy-targets.mjs";
+import { resolvedTarget, isEnvFile, isPersistencePath, classifyTarget } from "./policy-targets.mjs";
 import { evaluateBashCommand } from "./policy-bash.mjs";
 
 const PATH_KEYS = new Set(["path", "file_path", "filePath", "target", "filename", "destination"]);
@@ -55,7 +55,10 @@ function evaluateFileTool(toolName, input, { cwd, resolvePath } = {}) {
     const klass = classifyTarget(target, cwd, cwd, resolvePath);
     evidence.targets.push(`${target} → ${klass}`);
     let targetVerdict = "allow";
-    if (klass === "secret") {
+    if (isPersistencePath(target, cwd, resolvePath)) {
+      targetVerdict = "block";
+      reason = `${toolName} would write ${target}, a persistence location (launch agents, systemd units and cron start programs on their own)`;
+    } else if (klass === "secret") {
       targetVerdict = "block";
       reason = `${toolName} would modify ${target} (credential or VCS internals)`;
     } else if (klass === "system") {

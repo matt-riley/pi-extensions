@@ -20,7 +20,28 @@ there is no interactive UI.
 
 The catastrophic set is refused with no dialog at all — home and filesystem
 roots, `.git` internals, private keys, disk wipes, credentials piped to a
-network command — because a tired `Enter` should not be able to wipe `~`.
+network command, and persistence (below) — because a tired `Enter` should not
+be able to wipe `~`.
+
+## Persistence is refused
+
+A job that outlives the session is not something a dialog can take back, so
+setting one up is a hard deny (`persistence` shape, no dialog, no grant). Listing
+and status commands still run.
+
+| Refused | Still allowed |
+| --- | --- |
+| `crontab -e`, `crontab file`, `… \| crontab -`, `crontab -r` | `crontab -l`, `crontab -V` |
+| `launchctl load`, `bootstrap`, `enable`, `submit` | `launchctl list`, `print`, `print-disabled`, `blame` |
+| `systemctl enable`, `reenable`, `link`, `preset`, `add-wants`, `add-requires`, `edit` (with or without `--user`), `loginctl enable-linger` | `systemctl status`, `is-enabled`, `is-active`, `list-units`, `cat`, `show` |
+| `at …`, `batch` | `atq`, `at -l`, `at -c` |
+| Writing, copying, moving or linking into `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `~/.config/systemd`, `~/.local/share/systemd`, `/etc/systemd`, `/usr/lib/systemd`, `/etc/cron*`, `/var/spool/cron` (shell redirects, `cp`, `mv`, `install`, `ln`, `rsync`, `tee`, `sed -i`, and the `write`/`edit` tools) | Reading those paths, and a same-named folder inside a repo (`dotfiles/Library/LaunchAgents/…`) |
+
+`sudo`/`doas` and `launchctl asuser` are looked through, and `sh -c "…"` payloads
+and scripts are classified as usual. The refusal stands even when the person
+asked for it: run those commands yourself, outside the agent. This is a rule,
+not a classifier — an unusual spelling can still slip past, as with the rest of
+the policy.
 
 ## Human authorization and control files
 
@@ -238,6 +259,8 @@ touching thresholds, question wording, or the shape tables.
 
 - `policy.test.mjs` — shapes, target classes, quoting, heredocs, chaining,
   indirection, file tools, unknown tools, annotation hints.
+- `persistence.test.mjs` — the persistence denies (cron, launchd, systemd, `at`,
+  unit and plist writes) and the read-only commands that stay allowed.
 - `judge.test.mjs` — question shape, state, thresholds and their boundaries,
   recommendations, and the failure paths (a `null` from the judge must never
   read as a confident zero).
