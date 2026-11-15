@@ -171,9 +171,13 @@ function suppressions(files) {
   return hits;
 }
 
-const TEST_PATH =
+const TEST_FILE =
   /(?:^|\/)(?:tests?|__tests__|specs?)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|_test\.(?:go|py|rs)$|(?:^|\/)test_[^/]*\.py$/;
-const isTest = (path) => TEST_PATH.test(path);
+
+/** Whether a path is a test: in a `test` directory, or named `.test.`, `_test` or `test_`. */
+function isTest(path) {
+  return TEST_FILE.test(path);
+}
 
 /** Calls that switch a test off. `arg` marks the ones whose string argument is a stated reason. */
 const SKIPS = [
@@ -309,35 +313,40 @@ function settingsOf(text) {
   );
 }
 
+/** The settings a hunk's added lines change: each with the number it replaced, paired by key. */
+function* changedSettings(lines) {
+  const before = new Map();
+  for (const line of lines)
+    if (line.kind === "del")
+      for (const { key, value } of settingsOf(line.text))
+        before.set(key, [...(before.get(key) ?? []), value]);
+  for (const [at, line] of lines.entries()) {
+    if (line.kind !== "add") continue;
+    for (const { key, name, value } of settingsOf(line.text)) {
+      const old = before.get(key)?.shift();
+      if (old !== undefined) yield { at, line, key, name, old, value };
+    }
+  }
+}
+
 /** Coverage floors lowered and size or warning budgets raised, within one hunk. */
 function weakerThresholds(files) {
   const hits = [];
   for (const file of files) {
     if (file.deleted || !CONFIG_FILE.test(file.path)) continue;
     const style = commentStyleOf(file.path);
-    for (const { lines } of file.hunks) {
-      const before = new Map();
-      for (const line of lines)
-        if (line.kind === "del")
-          for (const { key, value } of settingsOf(line.text))
-            before.set(key, [...(before.get(key) ?? []), value]);
-      for (const [at, line] of lines.entries()) {
-        if (line.kind !== "add") continue;
-        for (const { key, name, value } of settingsOf(line.text)) {
-          const old = before.get(key)?.shift();
-          const lowered =
-            old !== undefined &&
-            ((FLOOR_KEY.test(key) && value < old) || (CEILING_KEY.test(key) && value > old));
-          if (lowered)
-            hits.push({
-              path: file.path,
-              n: line.n,
-              text: `${name}: ${old} -> ${value}`,
-              weak: reasonNear(lines, at, style),
-            });
-        }
+    for (const { lines } of file.hunks)
+      for (const { at, line, key, name, old, value } of changedSettings(lines)) {
+        const lowered =
+          (FLOOR_KEY.test(key) && value < old) || (CEILING_KEY.test(key) && value > old);
+        if (lowered)
+          hits.push({
+            path: file.path,
+            n: line.n,
+            text: `${name}: ${old} -> ${value}`,
+            weak: reasonNear(lines, at, style),
+          });
       }
-    }
   }
   return hits;
 }
