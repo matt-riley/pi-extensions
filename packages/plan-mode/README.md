@@ -146,6 +146,15 @@ so plan mode needs no in-memory plan retention.
   them; use `plan_fetch_url` / `web_search` for web research instead. The model is
   additionally instructed not to mutate.
 
+## Asking outside plan mode
+
+`plan_mode_question` is not plan-only: its tool never reads the mode, so the
+same dialog (and the same check below) works while implementing. It is still
+deferred, so outside plan mode a short `ask_user` prompt section (about 100
+tokens, the same text every turn) tells the agent it exists, when to use it and
+that tool search loads it. Plan mode keeps its own prompt unchanged. The tool's
+label is now "Ask User Question"; its name is unchanged.
+
 ## Answering a question the context already settles
 
 `plan_mode_question` is where a discoverable question becomes a dialog, so it

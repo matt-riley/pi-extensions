@@ -37,6 +37,7 @@ import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
+import { QUESTION_DESCRIPTION, QUESTION_LABEL, promptSection } from "./question.mjs";
 import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
@@ -456,9 +457,10 @@ export default function planMode(pi: ExtensionAPI) {
   // would replace the whole prompt (and every other extension's sections).
   // Applies to custom-message runs too: plan mode restricts every run.
   pi.on("before_agent_start", (event) => {
-    if (!state.enabled) return;
-    activatePlanTools();
-    event.systemPromptOptions.sections.plan_mode = PLAN_MODE_PROMPT;
+    if (state.enabled) activatePlanTools();
+    // Outside plan mode the agent still gets a short note that it can ask.
+    const [name, text] = promptSection(state.enabled, PLAN_MODE_PROMPT);
+    event.systemPromptOptions.sections[name] = text;
   });
 
   // --- Tool-call blocking ----------------------------------------------------
@@ -493,13 +495,10 @@ export default function planMode(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: QUESTION_TOOL,
-    label: "Plan Mode Question",
+    label: QUESTION_LABEL,
     exposure: "deferred",
     annotations: OPEN_READ,
-    description:
-      "Ask the user a decision question with 2-4 meaningful options before finalizing the plan. " +
-      "Include a recommended answer when you have a sensible default. " +
-      "Use only for preferences, tradeoffs, or assumption locks that cannot be discovered by read-only exploration.",
+    description: QUESTION_DESCRIPTION,
     parameters: Type.Object({
       title: Type.Optional(
         Type.String({ description: "Short title for the question (grill format)" }),
