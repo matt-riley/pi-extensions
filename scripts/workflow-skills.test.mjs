@@ -86,5 +86,6 @@ test("the restate prompt asks for a plain restatement and forbids acting", async
   assert.match(text, /assumption/i);
   assert.match(text, /open questions/i);
   assert.match(text, /Do not edit files or run tools/);
+  assert.match(text, /\$@/, "the brief passed as arguments must reach the model");
   assert.doesNotMatch(text, /skill_select|the `\w+` skill/);
 });
