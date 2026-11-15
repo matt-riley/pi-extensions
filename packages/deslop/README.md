@@ -59,14 +59,17 @@ The list comes from two skills, read in full:
 [adamdunkels/deslop-text](https://github.com/adamdunkels/deslop-text/blob/main/skills/deslop-text/SKILL.md)
 (its numbered warning signs, cited as `W1` to `W53`) and
 [stephenturner/skills deslop](https://github.com/stephenturner/skills/blob/main/deslop/SKILL.md)
-(cited as `deslop rule N`). The detector phrase lists are derived from these
-MIT-licensed sources; the extension logic and advice are written for this
-collection. Only the signs a regular expression can decide are checked here:
+(cited as `deslop rule N`). A later pass also used the pattern categories in
+[petergyang/no-ai-slop](https://github.com/petergyang/no-ai-slop) (MIT). That
+source was used for ideas only: none of its wording, examples or code is copied
+here. The detector phrase lists are written for this collection, as is the
+extension logic and advice. Only the signs a regular expression can decide are
+checked here:
 
 | Severity | Signs |
 | --- | --- |
-| High (strong) | Filler phrases (W1), "not X, it is Y" and "not X but Y" contrasts (W2), marketing adjectives (W5), generic openings (W6), paired adjectives (W9), "excited to announce" (W15), "whether you're X or Y" (W16), throat-clearing pivots (W17), corporate and internet cliches (W21, W25, W36), runs of short punchy sentences (W34), one-line closers such as "that's it", parenthetical asides repeated three times |
-| Medium (weak) | Dash asides, em dash or double hyphen (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3), "X, not Y" contrasts (contrastive framing), one subject renamed with a new synonym each time |
+| High (strong) | Filler phrases (W1), "not X, it is Y" and "not X but Y" contrasts (W2), marketing adjectives (W5), generic openings (W6), paired adjectives (W9), "excited to announce" (W15), "whether you're X or Y" (W16), throat-clearing pivots (W17), corporate and internet cliches (W21, W25, W36), runs of short punchy sentences (W34), one-line closers such as "that's it", parenthetical asides repeated three times, faux-insight setups, dramatic fragments, rhetorical setups |
+| Medium (weak) | Dash asides, em dash or double hyphen (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3), "X, not Y" contrasts (contrastive framing), one subject renamed with a new synonym each time, colon reveals, superficial -ing analysis, importance puffery, weasel attribution, interpretive metadiscourse, negative listing |
 | Low (weak) | "very" (W20), curly quotes (W27), "quietly" (W45), unicode arrows (deslop rule 9), invented hyphenated labels, forced groups of three, sentences that fit any project's docs |
 
 A strong sign is enough for a report on its own. A weak sign counts only
@@ -116,6 +119,28 @@ a habit that models repeat.
   that names this project's own commands and numbers does not match.
 - **A longer verb for "is".** The phrases `serves as` and `stands as`, with their
   plural forms, where `is` says the same thing. Medium.
+- **Faux-insight setup.** A line that flatters the writer as the one who sees
+  the hidden point, such as `what nobody tells you` or `the part everyone misses`.
+  Strong. State the claim and drop the setup.
+- **Colon reveal.** A hype lead-in, a colon, then a lowercase punchline, as in
+  `The best part: the cache warms itself`. Weak. Ordinary labels (`Timeout: 15`),
+  headings, lists and code are left alone.
+- **Superficial -ing analysis.** A trailing `-ing` clause that pretends to
+  explain meaning, as in `highlighting the team's commitment to faster runs`.
+  Weak. "Highlighting" a log line does not match.
+- **Importance puffery.** Stock gravity, such as `a testament to` or
+  `pivotal moment`. Weak. State the fact and leave the judgment to the reader.
+- **Weasel attribution.** A nameless authority, such as `studies show` or
+  `experts agree`. Weak. Name the source or cut the claim.
+- **Dramatic fragment.** The two-beat sign-off `That's it. That's the whole thing.`
+  Strong. Use one complete sentence. The existing one-line closer still covers
+  a last-line `that's it` on its own.
+- **Rhetorical setup.** Openers such as `what if I told you` or `think about it:`
+  that delay the point. Strong.
+- **Interpretive metadiscourse.** An aside that tells the reader how to take
+  the sentence, such as `as you can see` or `the key point is`. Weak.
+- **Negative listing.** Two `Not a …` sentences in a row before saying what
+  the thing is. Weak. State what it is and drop the list.
 
 The dash threshold follows deslop-text's figures for internal documents: one in
 a title is fine and two in a paragraph are a finding.
