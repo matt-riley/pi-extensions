@@ -288,10 +288,62 @@ test("the first user message is pinned even when Jev would drop it", async () =>
   });
   assert.ok(result);
   assert.match(result.summary, /NOISE the very first thing the user asked for/);
-  assert.equal(result.details.safeCompact.pinned, 1);
+  // The task, plus the newest user message (carried one line, whatever Jev scored).
+  assert.equal(result.details.safeCompact.pinned, 2);
   // Pinned, not verification-forced: nothing was checked, so no rebuild.
   assert.equal(result.details.safeCompact.forced, 0);
   assert.equal(result.details.safeCompact.rounds, 1);
+});
+
+test("the newest user messages ride along word for word, whatever Jev scored", async () => {
+  // Jev would drop every NOISE message; the last 15 user messages are carried
+  // anyway, one line each, because the newest asks are what a handoff loses.
+  const messages = [user("GOALMARK first task")];
+  for (let i = 1; i <= 20; i++) {
+    messages.push(assistant(`NOISE working on it ${i}`), user(`NOISE request number ${i} please`));
+  }
+  const result = await composeHandoff({ messages, tokensBefore: 100000, ask: fakeAsk() });
+  assert.ok(result);
+  const section = result.summary.match(/## Recent user messages[^\n]*\n([\s\S]*?)(\n\n|$)/)?.[1];
+  assert.ok(section, "has a recent user messages section");
+  const lines = section.split("\n");
+  assert.equal(lines.length, 15);
+  assert.equal(lines[0], "- NOISE request number 6 please");
+  assert.equal(lines[14], "- NOISE request number 20 please");
+  assert.doesNotMatch(result.summary, /request number 5 please/);
+  // Verbatim copies are pinned: nothing cuts them to fit the budget.
+  assert.equal(result.details.safeCompact.pinned, 16); // first message + 15 recent
+});
+
+test("recent user messages are folded to one line and are not repeated", async () => {
+  const messages = [
+    user("GOALMARK first task"),
+    assistant("sure"),
+    user("NOISE first line\n\n   second   line\twith  gaps"),
+    user("ALWAYS use tabs, never spaces"),
+    user("NOISE last ask"),
+  ];
+  const result = await composeHandoff({ messages, tokensBefore: 100000, ask: fakeAsk() });
+  assert.ok(result);
+  assert.match(result.summary, /^- NOISE first line second line with gaps$/m);
+  // A constraint is already carried verbatim in its own section, once.
+  assert.equal(result.summary.match(/ALWAYS use tabs/g).length, 1);
+  // The pinned first message is not repeated either: goal + its own entry.
+  assert.equal(result.summary.match(/GOALMARK first task/g).length, 2);
+  assert.match(result.summary, /^- NOISE last ask$/m);
+});
+
+test("a very long recent user message is capped to one short line", async () => {
+  const long = `NOISE ${"word ".repeat(400)}`;
+  const result = await composeHandoff({
+    messages: [user("GOALMARK first task"), user(long), user("NOISE after")],
+    tokensBefore: 100000,
+    ask: fakeAsk(),
+  });
+  const line = result.summary.split("\n").find((l) => l.startsWith("- NOISE word word"));
+  assert.ok(line);
+  assert.ok(line.length <= 2 + 610, `capped, got ${line.length}`);
+  assert.match(line, / … /);
 });
 
 test("a failed segment request is counted, and what it lost is kept, not dropped", async () => {
