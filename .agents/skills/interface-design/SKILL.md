@@ -5,7 +5,7 @@ description: Design or refactor module boundaries and public interfaces to hide 
 
 # Interface design
 
-Start with the caller's problem. A good module removes more complexity from its callers than its interface introduces. A function or existing platform feature may be the whole solution.
+Start with the caller's problem. A good module removes more complexity from its callers than its interface introduces.
 
 1. Trace representative callers and a concrete success and failure scenario. Identify the complexity leaking out: call ordering, repeated validation, shared mutable state, configuration, resource lifetime or error translation.
 2. Check whether an existing helper, standard library, native platform feature or installed dependency already owns that responsibility. Reuse it before adding another layer.
