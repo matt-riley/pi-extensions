@@ -32,7 +32,7 @@ the report is unaffected. The first line is the verdict: `doctor: no problems`, 
 
 ## What it does not do
 
-No cache cleanup, no API-key checks, no edits to any config: it reads, and prints.
+No cache cleanup, no API-key checks, no edits to any config.
 
 `report.mjs` is pure and runs over an injected host, so it is tested with a fake
 one; `files.mjs` reads `router.json` and the agent files with the same loaders

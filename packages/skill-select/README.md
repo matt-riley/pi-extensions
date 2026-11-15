@@ -28,7 +28,7 @@ In RPC/headless mode, or when no matches exist, results appear as a displayed
 custom session message without starting a turn. Those explicit reports become
 part of the transcript/context; interactive browsing itself adds no message.
 
-## The point: no context tax
+## Keeping skills out of the prompt
 
 Pi normally lists discovered skill names and descriptions in the system prompt.
 Installing this extension does not remove those entries. To keep a larger

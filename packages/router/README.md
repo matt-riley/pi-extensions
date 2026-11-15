@@ -94,7 +94,7 @@ by the cap through the fallback entry), defaulting to Luna.
   routing stays inside that list rather than reaching for the whole catalogue.
 - **A missing judgement changes nothing.** Timeout, no key, unusable answer:
   the current model keeps working, and a failed judgement is counted and
-  cooling down rather than retried every turn. Never spend less by accident.
+  cooling down rather than retried every turn.
 - **Refuses a switch the target cannot hold.** The base model here reads 1M
   tokens while the Codex frontier models hold 272K, and this machine's p90
   request context is 452K. Escalating anyway would compact the session, losing
@@ -269,8 +269,8 @@ before the types or the threshold are tuned.
 
 ## Why it looks like this
 
-The shape is not taste, it is what measuring this repo's own 879-turn session
-corpus said. Three findings drove it:
+The shape comes from measuring this repo's own 879-turn session corpus. Three
+findings drove it:
 
 | Finding | Number | Consequence here |
 | --- | --- | --- |
@@ -326,11 +326,10 @@ order in `router.json`, not asserted by the router's measurement code.
 
 ## What leaves your machine
 
-Routing is a data-flow decision as much as a model one, so it is worth being
-explicit: the judgement sends the prompt, the working directory, and (by default)
-the last four turns (including assistant replies) to TypeSafe. An escalation
-then serves that conversation from a different provider than the one you were
-using. `PI_ROUTER_SHARE=prompt` omits recent conversation from both routing
+Routing is also a data-flow decision: the judgement sends the prompt, the
+working directory, and (by default) the last four turns (including assistant
+replies) to TypeSafe. An escalation then serves that conversation from a
+different provider than the one you were using. `PI_ROUTER_SHARE=prompt` omits recent conversation from both routing
 and playbook judgments (the current prompt and cwd still leave the machine).
 `/route off` or `PI_ROUTER=off` stops both judgment paths and their sharing.
 Provider escalation is avoided by staying off or not escalating; other
@@ -341,7 +340,7 @@ extensions and the selected physical provider retain their own data flows.
 - **No tool or skill scoping.** Measured and rejected: 810 turns show shell in
   78%, edit 43% and read 38%, so scoping the common groups risks a turn that
   cannot work, and scoping the rare ones (memory, plan) left a 15%
-  escape-hatch rate, which is worse than the disease. Measured with a tool-group scoring script since removed; see git history before `fix/review-findings`.
+  escape-hatch rate. Measured with a tool-group scoring script since removed; see git history before `fix/review-findings`.
 - **No per-turn switching.** It costs a full-context cache re-read (98.6% of
   everything this machine reads is a cache read) and buys nothing the task-level
   decision does not already get.
@@ -383,8 +382,8 @@ logging, children, capacity, live reload, and the kill switch.
 
 ## What an audit of this extension found
 
-The router once audited itself on a frontier model, and it was worth the $4: it
-found real defects. Fixed, each with a test:
+The router once audited itself on a frontier model for $4 and found real
+defects. Fixed, each with a test:
 
 | Finding | Was | Now |
 | --- | --- | --- |
@@ -432,7 +431,7 @@ Measured over 142 sessions, at the time of writing:
 | Estimated extra cost of those episodes | $82.85 (same tokens at the cheap rate; quality not compared) |
 | Cache share inside episodes | 79% (corpus-wide: 98.6%) |
 
-Two things this settled by measuring rather than arguing:
+Two things this settled by measuring:
 
 - **A switch is cheap and quickly amortised.** It pays full price for the prefix
   once (p50 38k tokens, three-quarters of a cent) and the next request is

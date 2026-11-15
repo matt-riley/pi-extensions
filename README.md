@@ -2,7 +2,7 @@
 
 A personal collection of extensions for the [Pi coding agent](https://pi.dev).
 Plan changes before editing, find your way around code, run background jobs, and
-keep track of what the agent is doing. Built for my own use, shared for yours.
+keep track of what the agent is doing.
 
 ## Requirements
 
@@ -96,12 +96,12 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-affected`](./packages/affected/README.md) | `/affected`: name the test files that can reach your changes, with the gaps and a package-level fallback. Runs nothing. |
 | [`pi-architecture`](./packages/architecture/README.md) | `/architecture`: check directory-boundary rules from a JSON file and report import cycles, with coverage gaps listed. |
 | [`pi-doctor`](./packages/doctor/README.md) | `/doctor`: read-only report of Pi and Node versions, the tool registry, router.json and agent files. |
-| [`pi-exit`](./packages/exit/README.md) | Use `/exit` when your fingers insist on it. Same graceful shutdown as `/quit`. |
+| [`pi-exit`](./packages/exit/README.md) | `/exit`, with the same graceful shutdown as `/quit`. |
 | [`pi-plan-mode`](./packages/plan-mode/README.md) | Work through a change in read-only mode, with an editable plan before implementation. |
 | [`pi-web-fetch`](./packages/web-fetch/README.md) | Read web pages, search the web, and fetch GitHub content without opening a browser. |
 | [`pi-code-search`](./packages/code-search/README.md) | Map a codebase, search its contents, and follow symbols to their definitions. |
 | [`pi-typesafe`](./packages/typesafe/README.md) | Ask structured questions of TypeSafe's Jev model and get probabilities rather than prose. |
-| [`pi-skill-select`](./packages/skill-select/README.md) | Find a relevant local skill when you need it, rather than loading the whole catalogue. |
+| [`pi-skill-select`](./packages/skill-select/README.md) | Find a relevant local skill without loading the whole catalogue. |
 | [`pi-diagnosis-nudge`](./packages/diagnosis-nudge/README.md) | Nudge the agent to check its diagnosis; pause edits after two failed revised checks. |
 | [`pi-done-gate`](./packages/done-gate/README.md) | Remind the agent to check unverified code changes before it calls the work done. |
 | [`pi-deslop`](./packages/deslop/README.md) | Flag machine-writing patterns in prose the agent just edited, and check the rewrite with TypeSafe. |

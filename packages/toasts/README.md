@@ -2,7 +2,7 @@
 
 Show extension notifications as small top-right cards that disappear on their
 own, rather than permanent rows in the chat. They do not take keyboard focus
-from your editor or dialogs. A little less transcript confetti.
+from your editor or dialogs.
 
 Pi's own status, warning and error lines are unchanged. This only affects
 extension calls to `ctx.ui.notify(...)` in the interactive terminal UI.

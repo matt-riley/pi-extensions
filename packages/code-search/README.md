@@ -9,7 +9,7 @@ For example, ask pi:
 > Find where retry delays are calculated, then show me the function and its callers.
 
 The agent can search for the name, inspect the surrounding code, and follow an
-import to the definition without reading whole files along the way.
+import to the definition without reading whole files.
 
 ## Tools
 
@@ -24,16 +24,16 @@ Search uses plain substrings by default. Set `regex`, `wholeWord`,
 `caseSensitive`, or `path` to narrow it. A search with no hits can suggest
 similar symbol names.
 
-A page shows at most five matches per file, the best-ranked ones: a file's matches are ranked
-before any are cut, so a definition late in a file still leads. When more remain, the result ends
-with a `cursor`; pass it back with the same `query` and options to get the next
-hits. Later pages reach both further files and further matches in the same file,
-and every match appears once. A cursor is tied to the workspace, query and
-filter options (`path`, `regex`, `wholeWord`, `caseSensitive`) and to the matched
-files' content, so a changed search or a changed file gets a clear error
-instead of silently skipped or repeated hits. `maxResults` may change between
-pages. Each call re-runs the same bounded search; nothing is stored between
-calls.
+A page shows at most five matches per file. A file's matches are ranked before
+any are cut, so a definition late in a file still leads. When more remain, the
+result ends with a `cursor`; pass it back with the same `query` and options to
+get the next hits. Later pages reach both further files and further matches in
+the same file, and every match appears once. A cursor is tied to the workspace,
+query and filter options (`path`, `regex`, `wholeWord`, `caseSensitive`) and to
+the matched files' content, so a changed search or a changed file gets a clear
+error instead of silently skipped or repeated hits. `maxResults` may change
+between pages. Each call re-runs the same bounded search; nothing is stored
+between calls.
 
 `find_definition` follows relative imports, `require`, aliases, workspace
 packages and re-exports. It checks up to eight re-export links and stops cycles.

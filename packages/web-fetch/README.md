@@ -75,7 +75,7 @@ Requirements and limits:
 | `json` | Structured: metadata fields + markdown content. |
 | `raw` | The unmodified response body (html/text), capped at 200k chars by default. |
 
-## What makes it "smart"
+## Fetching and extraction
 
 - **Browser-like headers**: realistic Chrome user agent, `accept`,
   `accept-language`, and `sec-fetch-*` navigation headers. Better success on

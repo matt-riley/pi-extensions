@@ -102,8 +102,8 @@ still asked to run the checks itself, or to say what the output shows.
 
 ## Your own `!` runs
 
-A check you run yourself with `!npm test` counts as the verification the gate wants, on
-conditions that keep it honest. Pi saves the run as a `bashExecution` message when it finishes;
+A check you run yourself with `!npm test` counts as the verification the gate
+wants. Pi saves the run as a `bashExecution` message when it finishes;
 that message is the only thing trusted. It counts when all of these hold:
 
 - the command is a recognised check (the same list as above),

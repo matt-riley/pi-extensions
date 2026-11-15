@@ -11,7 +11,7 @@ The agent calls `watch_pr(pr?, wait_seconds?)`. Each read reports the PR's
 | --- | --- |
 | `needs-action` | Something to fix, listed one per line: failed check, conflict, behind base, changes requested, unresolved thread, draft |
 | `pending` | Nothing to fix, but checks are still running |
-| `ready` | Nothing outstanding on this head. Not authority to merge |
+| `ready` | Nothing outstanding on this head |
 | `closed` | Merged or closed |
 
 A PR with no checks reported is flagged as a gap, never a pass. Outdated and

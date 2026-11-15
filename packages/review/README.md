@@ -33,9 +33,8 @@ letter after the colon, a trailing period and a `BREAKING CHANGE` footer with
 no `!` are reported by `conventionalProblems`.
 
 Thresholds live beside each rule in `rules.mjs`. A rule that needs a commit
-message, a task statement or test files is left out of the request rather than
-asked against null state, since a question answered from nothing comes back as a
-confident "no".
+message, a task statement or test files is left out of the request, since a
+question answered from nothing comes back as a confident "no".
 
 The diff is cut at 45,000 characters (the state limit is 60,000) and the output
 says when that happened, because a silent cut reads as a clean judgment.

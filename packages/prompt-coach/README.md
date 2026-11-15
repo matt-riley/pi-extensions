@@ -107,7 +107,7 @@ The command:
    rejects it (low score, error, or no usable answer), Pi shows you the rewrite
    next to your original with the reason, and asks you to confirm or deny.
 
-Nothing is sent for you. Edit the text and press Enter yourself. Ordinary input
+Nothing is sent for you: edit the text and press Enter yourself. Ordinary input
 is never intercepted. If the input box already holds a draft, the rewrite goes
 above it. If the model is unavailable, there is no login or key, or the rewrite is
 malformed, the original prompt goes into the input box instead, with a warning
