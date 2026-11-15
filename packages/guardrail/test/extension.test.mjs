@@ -464,7 +464,7 @@ test.after?.(() => {
 // ---------------------------------------------------------------------------
 // Secret masking on tool_result.
 
-const LEAKY = `ghp_${"A1b2".repeat(9)}`;
+const LEAKY = ["gh", "p_", "A1b2".repeat(9)].join(""); // built at runtime: no key-shaped literal in the repo
 const bashResult = { toolName: "bash", content: [{ type: "text", text: `token ${LEAKY}` }] };
 const allText = (event) => event.content.map((block) => block.text).join("\n");
 

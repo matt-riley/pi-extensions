@@ -4,9 +4,15 @@ import { readFileSync } from "node:fs";
 
 import { maskToolResult } from "../mask.mjs";
 
-const GITHUB = `ghp_${"A1b2".repeat(9)}`;
-const OPENAI = `sk-${"Zy9x".repeat(8)}`;
-const PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\ndef==\n-----END RSA PRIVATE KEY-----";
+// Fixtures are assembled at runtime so no key-shaped literal sits in the repository.
+const built = (...parts) => parts.join("");
+const GITHUB = built("gh", "p_", "A1b2".repeat(9));
+const OPENAI = built("s", "k-", "Zy9x".repeat(8));
+const PEM = [
+  "-----BEGIN ",
+  "RSA PRIVATE KEY-----\nMIIEabc\ndef==\n-----END ",
+  "RSA PRIVATE KEY-----",
+].join("");
 const text = (event) => event.content.map((block) => block.text).join("\n");
 const result = (toolName, ...lines) => ({
   toolName,

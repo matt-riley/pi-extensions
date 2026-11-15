@@ -592,8 +592,9 @@ export default function (pi) {
   console.log(
     "ok: two failed fixes block native, shell and nested mutations until a real checkpoint",
   );
-  const fakeGithub = `ghp_${"Q7w3".repeat(9)}`;
-  const fakeOpenai = `sk-${"Lm4n".repeat(8)}`;
+  // Built at runtime: no key-shaped literal in the repository.
+  const fakeGithub = ["gh", "p_", "Q7w3".repeat(9)].join("");
+  const fakeOpenai = ["s", "k-", "Lm4n".repeat(8)].join("");
   await writeFile(path.join(cwd, "smoke-secret.txt"), `token = "${fakeOpenai}"\nlabel = visible\n`);
   scripted = [
     { name: "bash", arguments: { command: `printf 'GITHUB_TOKEN=%s\\n' ${fakeGithub}` } },
