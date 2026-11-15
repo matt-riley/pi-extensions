@@ -1,0 +1,7 @@
+{
+  "name": "pi-deslop",
+  "version": "0.1.0",
+  "description": "Flag machine-writing patterns in prose the agent just edited, and check the rewrite with TypeSafe.",
+  "license": "MIT",
+  "type": "module"
+}
