@@ -100,6 +100,26 @@ run directly, not through a bash tool call, so the guardrail extension does not
 see them. A run by the gate is not recorded as a verification run: the agent is
 still asked to run the checks itself, or to say what the output shows.
 
+## Your own `!` runs
+
+A check you run yourself with `!npm test` counts as the verification the gate wants, on
+conditions that keep it honest. Pi saves the run as a `bashExecution` message when it finishes;
+that message is the only thing trusted. It counts when all of these hold:
+
+- the command is a recognised check (the same list as above),
+- it exited 0, was not cancelled, and its output was not truncated,
+- it was not `!!` (`excludeFromContext`): that output never reached the model,
+- and the working tree now is the tree it started on (the `shared/revision.mjs` fingerprint), so
+  neither an edit since nor the run itself changed the code.
+
+`user_bash` is used only to remember the tree when a run starts. It is never counted from, and the
+handler never intercepts the command. A saved run with no recorded start (after `/reload`) is not
+counted. The newest recognised run decides: a later failing `!` run undoes an earlier pass.
+
+Limit: the gate's state resets at each prompt, and Pi saves a `!` run typed during a run only after
+it ends, so this helps only when the run is saved before the run settles. It does not try to order
+your `!` runs against the agent's own check results; a pass from either counts.
+
 ## Why `agent_before_settle`
 
 A `tool_result` patch (how `pi-diagnosis-nudge` works) lands mid-run, before

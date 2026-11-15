@@ -226,6 +226,14 @@ export function observeToolResult(
   }
 }
 
+/** A check the user ran with `!` that passed cleanly on the tree as it is now. */
+export function observeUserCheck(state, revision) {
+  state.verificationStatus = "passed";
+  state.verificationSeen = true;
+  state.verificationRevision = revision;
+  state.dirty.clear();
+}
+
 /** Edits, shell writes and external changes after a check invalidate its evidence. */
 export function invalidateEvidence(state, revision) {
   if (state.verificationSeen && !sameRevision(state.verificationRevision, revision)) {

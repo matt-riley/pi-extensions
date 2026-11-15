@@ -49,17 +49,20 @@ import {
   isVerifyCommand,
   isRemoteVerifyCommand,
   observeToolResult,
+  observeUserCheck,
   observeToolStart,
   resetGateState,
   shouldNudge,
 } from "./gate.mjs";
 import { formatRunReport, runChecks } from "./run-checks.mjs";
 import { resolveScopedChecks } from "./scoped.mjs";
+import { userBashEvidence } from "./user-bash.mjs";
 
 const CUSTOM_TYPE = "done-gate";
 const GIT_TIMEOUT_MS = 5_000;
 const MAX_UNTRACKED_FILES = 200;
 const MAX_UNTRACKED_BYTES = 1_000_000;
+const MAX_USER_RUNS = 20;
 
 export default function piDoneGateExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
@@ -69,6 +72,9 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   let generation = 0;
   const checks = new Map<string, { before: any; generation: number }>();
   const backgroundChecks = new Map<string, number>();
+  // `!` checks Matt started, with the tree each started on. Only a start: whether
+  // the run passed comes from the message Pi saves when it finishes.
+  const userRuns: { command: string; at: number; before: any }[] = [];
 
   // null means git could not answer — no repo, no HEAD, git missing. That is
   // not the same as "nothing changed", so callers must not read it as one.
@@ -124,6 +130,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async () => {
     generation++;
+    userRuns.length = 0;
     checks.clear();
     backgroundChecks.clear();
     resetGateState(state);
@@ -148,6 +155,16 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     if (text) {
       lastClaim = text;
     }
+  });
+
+  // Never intercepts, never counts: it only remembers what the tree looked like
+  // when a check began, so the saved result can be tied to a revision.
+  pi.on("user_bash", async (event, ctx) => {
+    if (event?.excludeFromContext || !isVerifyCommand(event?.command)) return undefined;
+    const before = await snapshot(event.cwd ?? ctx?.cwd ?? process.cwd());
+    userRuns.push({ command: event.command, at: Date.now(), before });
+    if (userRuns.length > MAX_USER_RUNS) userRuns.shift();
+    return undefined;
   });
 
   pi.on("tool_call", async (event, ctx) => {
@@ -198,6 +215,15 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   });
 
   pi.on("agent_before_settle", async (event, ctx) => {
+    if (!state.verificationSeen && state.dirty.size > 0 && userRuns.length > 0) {
+      const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as any[];
+      const hit = userBashEvidence({
+        messages: branch.map((entry) => entry?.message),
+        started: userRuns,
+        current: await snapshot(ctx.cwd ?? process.cwd()),
+      });
+      if (hit) observeUserCheck(state, hit.revision);
+    }
     if (state.verificationSeen || state.remoteVerificationSeen) {
       invalidateEvidence(state, await snapshot(ctx.cwd ?? process.cwd()));
     }
