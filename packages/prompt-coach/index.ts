@@ -12,7 +12,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { buildCoachQuestions } from "./battery.mjs";
-import { extractLastUserPrompt, usableNoul, validateCandidate } from "./lib.mjs";
+import {
+  extractLastUserPrompt,
+  parseImproveArgs,
+  stripConciseStyle,
+  usableNoul,
+  validateCandidate,
+  withConciseStyle,
+} from "./lib.mjs";
 import { collectProbe } from "./probe.mjs";
 import { DEFAULT_TIMEOUT_MS, rewriteWithModel } from "./rewrite.mjs";
 
@@ -113,11 +120,14 @@ export default function piPromptCoachExtension(
   };
 
   pi.registerCommand(COMMAND, {
-    description: "Improve a prompt with a hosted model and put it in the input box to edit",
+    description:
+      "Improve a prompt with a hosted model and put it in the input box to edit (--concise adds a short-reply style)",
     handler: async (args: string, ctx: ExtensionContext) => {
-      const typed = String(args ?? "").trim();
+      const { concise, prompt: typed } = parseImproveArgs(args);
       const branch = ctx.sessionManager?.getBranch?.() ?? [];
-      const original = typed || extractLastUserPrompt(branch);
+      // The style is re-added last, so neither the model nor a second run sees an old copy.
+      const source = typed || extractLastUserPrompt(branch);
+      const original = concise ? stripConciseStyle(source) : source;
       if (!original) {
         notify(ctx, "Usage: /improve <rough prompt> (or run it after a user prompt)", "warning");
         return;
@@ -199,6 +209,10 @@ export default function piPromptCoachExtension(
         message = `No change: ${usedModel ?? "the model"} returned your prompt as written (it judged it already clear, or ignored the rewrite instructions); original is in the input box.`;
       }
 
+      // The style is the person's own opt-in and is applied last, so the model
+      // and the intent check judge the prompt without it.
+      if (concise) placed = withConciseStyle(placed);
+
       record({
         original,
         candidate: validation.ok ? validation.text : null,
@@ -211,6 +225,7 @@ export default function piPromptCoachExtension(
         probe,
         model: usedModel,
         subscription,
+        concise,
       });
 
       const usedRewrite = action === "rewritten" || action === "rewritten-confirmed";

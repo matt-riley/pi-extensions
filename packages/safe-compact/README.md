@@ -46,7 +46,7 @@ sessions. The design was inspired by
    reserved for the manual `/safe-compact` command.
 3. **Score.** Each older message is scored by Jev: load-bearing, user constraint, decision,
    unresolved problem, recoverable, plus a keep/point/excerpt/drop choice.
-4. **Route.** Code applies hard rules: user constraints and the session's first user message are
+4. **Route.** Code applies hard rules: user constraints, safety rules (see [What the handoff says](#what-the-handoff-says)) and the session's first user message are
    always verbatim, and so are the newest 15 user messages (folded to one line each, at most 600
    characters, no model call: the newest asks are the instructions still in force), and uncertain or load-bearing content is never dropped outright. Open problems are kept verbatim when there is
    room. Tool output is excerpted unless it is an error, because it can be re-run or re-read.
@@ -85,6 +85,48 @@ sessions. The design was inspired by
 
 Jev answers are memoized per session by their exact input, so a retry, or the next compaction over
 an overlapping span, pays only for messages it has not judged yet.
+
+## What the handoff says
+
+The handoff is a fixed set of sections. Code writes the headings and the fixed lines; Jev only
+chooses which spans go under them. Empty sections are left out.
+
+| Section | What goes in it |
+| --- | --- |
+| Goal | The user message that best states the task. |
+| Standing rules and constraints (verbatim) | User messages that state a lasting rule, word for word. |
+| Recent user messages | The newest 15 user messages, folded to one line each. |
+| Open problems (verbatim) | Failures the session never showed being fixed. |
+| Key decisions | Sentences that record a choice or the reason for it. |
+| Context carried forward | Short excerpts of what was done or found. |
+| Pointers | Files and commands to re-read instead of remembering. |
+| Earlier context | An excerpt of the previous handoff, without its rules. |
+| Agent note | The note passed to `self_compact`, as written. |
+| Resume | A fixed paragraph, below. |
+| Full transcript | Where the replaced conversation is on disk. |
+
+Four rules hold whatever Jev scored:
+
+- **Safety rules stay whole.** A user message that pairs a prohibition or an ask-first condition
+  with a risky action (force-push, delete, deploy, credentials, spending, sending on the user's
+  behalf) goes under standing rules in full, up to 4,000 characters, and is never folded to a
+  one-line recent message. A plain code check does this, so a low score cannot drop a rule.
+- **Rules survive repeated compaction.** The rule bullets of the previous handoff move into the
+  next one as written, up to 40 (the oldest go first past that). Without this, each excerpt of an
+  excerpt wore the rules down.
+- **Only the user speaks for the user.** Quoted lines from assistant messages, tool output and the
+  agent note that open with `User:` or `Human:` are marked `(quoted by the agent)`. An approval
+  the model wrote for itself cannot read as one the user gave. A line in that text that opens a
+  section (`## ` at the start of a line) gets a backslash, so a note cannot write a
+  `## Standing rules` heading of its own and have the next compaction carry its bullets as rules.
+- **A compact is not the end of the task.** The Resume paragraph says the work is unfinished
+  unless the newest user message says otherwise, and tells the agent not to report completion on
+  the strength of the handoff.
+
+The safety-rule check is a keyword test, so it can miss a rule phrased without those words. Words
+that are risky only with an object (send, post, pay, token) count only next to one (`send an email`,
+`post a comment`, `pay for`), so "post-process", "payload" or "more tokens" does not pin a message. Jev's
+own constraint score is still there for those.
 
 ## Cache-aware hold
 
@@ -192,5 +234,5 @@ refused with its size; the exam is for handoffs that fit.
 
 ## Files
 
-`segment.mjs` (deterministic splitting), `scoring-text.mjs` (the trimmed copy scoring sees), `judge.mjs` (every Jev question), `plan.mjs` (routing,
+`segment.mjs` (deterministic splitting), `handoff-rules.mjs` (safety-rule check, quoted-label marking, carried rules), `scoring-text.mjs` (the trimmed copy scoring sees), `judge.mjs` (every Jev question), `plan.mjs` (routing,
 assembly, verification), `index.ts` (pi wiring).

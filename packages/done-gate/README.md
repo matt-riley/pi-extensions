@@ -12,7 +12,8 @@ Done check: 1 file(s) changed after the last verification run (pkg/foo/a.go).
 Before reporting done, run `go test ./pkg/foo` and `golangci-lint run ./pkg/foo`
 as separate commands, and exercise the changed behavior, or say plainly why
 verification does not apply. Then close with your explanation of the work plus
-one line of what the check proved, not a report about this reminder.
+one line naming the check that reached the changed code and what it showed, not
+a report about this reminder.
 ```
 
 The reminder names checks for Go, TypeScript and Lua when it can find the right
@@ -48,6 +49,8 @@ A successful run of one of those commands, as its own bash call, after the
 last edit is a verification run, so the gate does not fire again. Run them
 separately: `go test ./pkg/foo && golangci-lint run ./pkg/foo` is still one
 compound shell, and those do not count.
+Redirecting a check's output (`npm run check 2>&1`, `> log 2>&1`) does not make it compound. A pipe
+(`| tail`) or a chain (`; echo done`, `|| true`) does, because it can hide the check's exit status.
 
 **`.pi/verify` wins.** If that path exists (a file or a directory), it is the
 only command named. The language mapping is not also listed.
@@ -100,10 +103,95 @@ run directly, not through a bash tool call, so the guardrail extension does not
 see them. A run by the gate is not recorded as a verification run: the agent is
 still asked to run the checks itself, or to say what the output shows.
 
+## Evidence that the changed path ran
+
+A passing build says the code compiles. It does not say the changed code ran. So the gate sorts
+the checks it recognises into two kinds:
+
+- **Compile or lint:** `tsc`, `eslint`, `oxlint`, `ruff`, `mypy`, `golangci-lint`, `go vet`,
+  `cargo check`, `cargo clippy`, `deno check`, `deno lint`, and `npm run lint` or `typecheck`.
+- **Everything else it recognises:** tests, `.pi/verify`, `npm run check`, `npm run smoke`,
+  `./scripts/test.sh` (and other `scripts/test|check|verify|smoke` scripts), `make test`, `deno
+  test` and the rest. `stylua --check` and `selene` are in this group because they are the only checks the gate
+  maps for Lua, so there is no test run to ask for instead.
+
+A compile or lint pass alone leaves a code edit unverified, and the reminder says so: "only compile
+or lint checks ran ... that shows the code builds, not that the changed path ran". It then asks for
+a test that reaches the changed code, or for the changed path itself (the command, request or
+screen it serves). It names only the checks that run code, since the typecheck is already done.
+
+A compile or lint pass does clear the edit in two cases: every changed file is a type declaration or
+compile or lint configuration (`*.d.ts`, `tsconfig*.json`, `.oxlintrc*`, `eslint.config.*` and
+similar), because compiling is the change; or a check that runs the code already passed on this
+tree. A later edit starts again.
+
+The reminder also asks the closing message to name the check that reached the changed code and say
+what it showed.
+
+### A unit-test run must reach the change
+
+A green test run says nothing about a file that no test touches. So a unit-test run clears an edit
+only when a test file it ran **imports or names** one of the changed files. The gate reads the test
+files as plain text and checks, for each one:
+
+- **Imports:** an `import`, `export ... from`, `import()` or `require()` specifier (or a Python
+  `import` or `from ... import`) that resolves to a changed file. Relative paths are resolved from
+  the test file, and the extension is ignored, so `./a.js` reaches `a.ts` and `../src` reaches
+  `src/index.ts`. A module name such as `pkg.mod` or `app/core` matches the end of a changed path.
+- **Names:** the test's text contains the changed path, or the file name with its extension
+  (`bin/tool.mjs`, `"gate.mjs"`). A file called `index.ts` must match with its parent folder.
+
+One covering file among those that ran is enough. A changed test file that ran counts too. There is
+no dependency graph: a test that reaches the change only through another module does not count, and
+the reminder then asks for a test that imports or names the code, or for the changed path itself.
+
+Which test files ran is worked out from the command and the log. Paths in the command are used,
+with directories and globs expanded against the repo's test files. A bare `node --test`, `pytest`,
+`vitest`, `jest`, `mocha` or `deno test` takes every test file. `npm test` (or `npm run test:unit`)
+is read through the script in `package.json`. Test files that the log prints (`PASS src/a.test.ts`)
+are added. `go test` is judged by package: a `_test.go` file in the same directory as the changed
+file counts, and a package with no tests does not.
+
+**When the files cannot be worked out** (`cargo test`, `make test`, `dotnet test`, an `npm test`
+script that is not a recognised runner, with no file names in the log), the run does not count, and
+the reminder says it could not tell which test files ran. That is the cautious choice. To keep it
+quiet, the reminder is still sent only once per user input, it asks for a command that names the test
+files (`node --test path/to/x.test.mjs`) rather than for more work, and the changed path itself is an
+accepted alternative. A test file that cannot be read gives the same answer, never a miss.
+
+Only edits to code are judged this way. Prose, JSON, YAML and other files that a test cannot import
+are cleared by any passing test run, as before. Scripts such as `.pi/verify`, `npm run check`,
+`npm run smoke` and `./scripts/test.sh` are whole-repo checks and are not read this way.
+
+### A "tests passed" claim must match the log
+
+The gate keeps each check it sees: the command, its kind, whether it passed on the final tree, and
+the last 4,000 characters of its log. That includes `!` runs, so this extends [your own `!`
+runs](#your-own--runs) rather than running beside them. When the closing message plainly says the
+tests passed, plain code (no key, no model request) compares it with those records. Any of these
+adds one line to the reminder, or sends one if nothing else would:
+
+- No check that runs the code was recorded after the edits, or only compile and lint checks were.
+- The newest check that runs the code failed, or has no clean result on the final tree.
+- Its log reports failures even though it exited 0. Only the runner's summary lines count
+  (`# fail 2`, `Tests: 1 failed`, `test result: FAILED`, `--- FAIL`, `2 failing`, a line that
+  starts with `FAIL`). A test whose name mentions "3 failures" is not a failure report.
+- Its log shows no tests ran (`# tests 0`, `collected 0 items`, `No tests found`) and no part of the
+  log shows tests passing. A runner that ends on an empty section after a full one, such as cargo's
+  empty Doc-tests, is fine.
+- The message states the run's total (`all 12 tests pass`, `12/12`, `12 tests passed`) and the log
+  never shows that number. A count of what the work added or touched (`I added 3 tests`, `updated 2
+  test files`) is not compared.
+
+A sentence that hedges ("all tests pass except the timing ones", "I did not run the tests") is left
+alone, and so is a claim on a turn that changed no code and ran no check. The line is sent once per
+user input. The log is only the tail of the output, and the check cannot read a number written as
+words, so it will miss some mismatches. It would rather stay quiet than guess.
+
 ## Your own `!` runs
 
 A check you run yourself with `!npm test` counts as the verification the gate
-wants. Pi saves the run as a `bashExecution` message when it finishes;
+wants, with the same compile-versus-run rule as above (`!npm run lint` alone does not). Pi saves the run as a `bashExecution` message when it finishes;
 that message is the only thing trusted. It counts when all of these hold:
 
 - the command is a recognised check (the same list as above),
@@ -283,7 +371,7 @@ pilot retains its own narrower protocol. The completion reminder is unchanged.
 
 ## Tests
 
-`node --test packages/done-gate/test/*.test.mjs`: command recognition
+`node --test packages/done-gate/test/*.test.mjs`: command recognition and kind (compile or lint versus runs the code), the evidence check on a tests-passed claim (failed run, failure and zero-test logs, count mismatch, hedged claims),
 (positive and negative, including `stylua --check` and `selene`), the
 dirty/verify state machine, cwd scoping and working-tree liveness, outcome
 gating, debug-tag line numbers against a real temporary git repo, the scoped

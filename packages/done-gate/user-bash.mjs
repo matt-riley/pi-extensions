@@ -21,7 +21,7 @@ const sameRevision = (before, after) =>
  * @param {{ messages: unknown[], started: Array<{ command: string, at: number, before: object | null }>, current: object | null }} input
  *   `messages` are the session's messages; `started` are the `user_bash` starts seen
  *   this process; `current` is the revision snapshot now.
- * @returns {{ revision: object } | null}
+ * @returns {{ revision: object, command: string, output: string } | null}
  */
 export function userBashEvidence({ messages, started, current }) {
   const runs = (messages ?? []).filter(
@@ -34,5 +34,7 @@ export function userBashEvidence({ messages, started, current }) {
   const start = (started ?? [])
     .filter((item) => item.command === run.command && item.at <= run.timestamp)
     .sort((a, b) => b.at - a.at)[0];
-  return start && sameRevision(start.before, current) ? { revision: current } : null;
+  return start && sameRevision(start.before, current)
+    ? { revision: current, command: run.command, output: String(run.output ?? "") }
+    : null;
 }
