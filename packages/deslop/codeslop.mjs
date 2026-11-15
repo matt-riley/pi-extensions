@@ -203,6 +203,81 @@ function silencedTypes(files) {
   return hits;
 }
 
+const FALLBACK_COMMENT =
+  /\b(?:fall\s?back|just in case|should(?:n['’]t| never)|can(?:not|['’]t) happen|backwards?[- ]compat\w*|legacy|defensive|for safety)\b/i;
+const NULLISH_CHAIN = /\?\?[^?]*\?\?/;
+
+/** Defaults, guards and compatibility shims that a comment admits nobody asked for. */
+function unrequestedFallbacks(files) {
+  const hits = [];
+  for (const file of files) {
+    const mark = COMMENT_MARK[file.language];
+    for (const { lines } of file.hunks)
+      for (const line of lines) {
+        if (line.kind !== "add") continue;
+        const code = line.text.replace(STRING_LITERAL, '""');
+        const at = code.indexOf(mark);
+        const chained =
+          file.language === "js" && NULLISH_CHAIN.test(at < 0 ? code : code.slice(0, at));
+        if (chained || (at >= 0 && FALLBACK_COMMENT.test(code.slice(at))))
+          hits.push({ path: file.path, n: line.n, text: line.text });
+      }
+  }
+  return hits;
+}
+
+const TAB_WIDTH = 4;
+const NESTING_DEPTH = 3;
+const BRACE_CONTROL =
+  /^\s*(?:\}\s*)?(?:if|else\s+if|else|for|while|switch|try|catch|do|match|loop|select)\b/;
+const PY_CONTROL = /^\s*(?:if|elif|else|for|while|try|except|finally|with)\b/;
+const BRANCHING = /^\s*(?:\}\s*)?(?:if|for|while|switch|try|match|loop|select|elif)\b/;
+const BRANCH_ELSE = /^\s*(?:\}\s*)?else\b/;
+const LEAVES_BLOCK = /^\s*(?:return|throw|raise|continue|break)\b/;
+
+const indentOf = (text) => text.match(/^\s*/)[0].replace(/\t/g, " ".repeat(TAB_WIDTH)).length;
+
+/** An `if` inside three other blocks, and an `else` after a block that already left. */
+function deepNesting(files) {
+  const hits = [];
+  for (const file of files) {
+    const python = file.language === "py";
+    const opens = python ? /:\s*$/ : /\{\s*$/;
+    const isControl = python ? PY_CONTROL : BRACE_CONTROL;
+    for (const { lines } of file.hunks) {
+      const stack = [];
+      let previous = "";
+      for (const line of lines) {
+        if (!line.text.trim()) continue;
+        const indent = indentOf(line.text);
+        while (stack.length > 0 && stack.at(-1).indent >= indent) stack.pop();
+        const control = isControl.test(line.text);
+        if (line.kind === "add") {
+          if (BRANCH_ELSE.test(line.text) && LEAVES_BLOCK.test(previous))
+            hits.push({ path: file.path, n: line.n, text: line.text });
+          else if (BRANCHING.test(line.text) && opens.test(line.text)) {
+            let depth = 0;
+            let reported = false;
+            for (let at = stack.length - 1; at >= 0 && stack[at].control; at--) {
+              depth++;
+              reported ||= stack[at].reported;
+            }
+            if (depth >= NESTING_DEPTH && !reported) {
+              hits.push({ path: file.path, n: line.n, text: line.text });
+              stack.push({ indent, control, reported: true });
+              previous = line.text;
+              continue;
+            }
+          }
+        }
+        if (opens.test(line.text)) stack.push({ indent, control, reported: false });
+        previous = line.text;
+      }
+    }
+  }
+  return hits;
+}
+
 const CHECKS = [
   {
     id: "swallowed",
@@ -221,6 +296,18 @@ const CHECKS = [
     label: "cast or suppression that only silences the type checker",
     fix: "fix the type, or narrow it with a guard and name the reason",
     scan: silencedTypes,
+  },
+  {
+    id: "fallback",
+    label: "fallback or guard nobody asked for",
+    fix: "remove it, or keep it and name the case it covers",
+    scan: unrequestedFallbacks,
+  },
+  {
+    id: "nesting",
+    label: "nesting that early returns would flatten",
+    fix: "return or continue early and keep the main path at one level",
+    scan: deepNesting,
   },
 ];
 

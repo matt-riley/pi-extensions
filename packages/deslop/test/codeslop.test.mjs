@@ -162,3 +162,74 @@ test("a typed cast, a reasoned suppression and a non-TypeScript file are left al
     assert.equal(idsOf(added("src/a.ts", text)).includes("silenced-type"), false, text);
   assert.deepEqual(idsOf(added("src/a.mjs", "const x = 1 as any;")), []);
 });
+
+test("a fallback or guard nobody asked for is found", () => {
+  for (const text of [
+    "// fallback in case the config is missing\nconst config = load() ?? {};",
+    "if (!user) {\n  // should never happen\n  return;\n}",
+    "// just in case the hook runs twice\nreset();",
+    "// backwards compatible with the old format\nconst id = row.id ?? row.legacyId;",
+    'const name = opts.name ?? env.NAME ?? "unknown";',
+  ]) {
+    const found = findCodeSlop(added("src/a.ts", text)).find((item) => item.id === "fallback");
+    assert.ok(found, text);
+  }
+});
+
+test("one default and plain comments are not an unrequested fallback", () => {
+  for (const text of [
+    "const limit = opts.limit ?? 10;",
+    "const name = opts.name || 'x';",
+    "// the parent directory is used when none is given\nreturn parent;",
+    "const fallbackModel = pick(models);",
+    "if (a || b || c) {\n  run();\n}",
+  ])
+    assert.equal(idsOf(added("src/a.ts", text)).includes("fallback"), false, text);
+});
+
+const deepIf = [
+  "function run(a) {",
+  "  if (a) {",
+  "    if (a.b) {",
+  "      for (const x of a.b) {",
+  "        if (x.ok) {",
+  "          use(x);",
+  "        }",
+  "      }",
+  "    }",
+  "  }",
+  "}",
+].join("\n");
+
+test("an if inside three other blocks, and an else after a return, are found", () => {
+  const deep = findCodeSlop(added("src/a.ts", deepIf)).find((item) => item.id === "nesting");
+  assert.ok(deep, "deep nesting");
+  assert.equal(deep.count, 1);
+  assert.match(deep.excerpts[0], /^src\/a\.ts:5: if \(x\.ok\) \{/);
+  for (const [file, text] of [
+    ["src/a.ts", "if (x) {\n  return 1;\n} else {\n  return 2;\n}"],
+    ["src/a.ts", "if (x) {\n  throw new Error('x');\n} else if (y) {\n  run();\n}"],
+    ["tool.py", "if x:\n    return 1\nelse:\n    return 2"],
+    [
+      "tool.py",
+      "def f(a):\n    if a:\n        for b in a:\n            while b:\n                if b.ok:\n                    use(b)",
+    ],
+  ])
+    assert.ok(idsOf(added(file, text)).includes("nesting"), text);
+});
+
+test("shallow blocks, a flat else and nesting in a new function are not flagged", () => {
+  for (const [file, text] of [
+    ["src/a.ts", "if (x) {\n  run();\n} else {\n  stop();\n}"],
+    [
+      "src/a.ts",
+      "function f(a) {\n  if (a) {\n    for (const x of a) {\n      use(x);\n    }\n  }\n}",
+    ],
+    [
+      "src/a.ts",
+      "if (a) {\n  if (b) {\n    run();\n  }\n}\nfunction g() {\n  if (c) {\n    if (d) {\n      use();\n    }\n  }\n}",
+    ],
+    ["tool.py", "if x:\n    run()\nelse:\n    stop()"],
+  ])
+    assert.equal(idsOf(added(file, text)).includes("nesting"), false, text);
+});
