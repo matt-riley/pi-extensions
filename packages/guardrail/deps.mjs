@@ -194,3 +194,54 @@ export function fileDependencyChanges({ path, input, before } = {}) {
   }
   return changes;
 }
+
+// ---------------------------------------------------------------------------
+// The confirmation the guardrail shows.
+
+const MAX_NAMES = 5;
+
+function listNames(names) {
+  const shown = names.slice(0, MAX_NAMES).join(", ");
+  return names.length > MAX_NAMES ? `${shown} and ${names.length - MAX_NAMES} more` : shown;
+}
+
+/** The file an edit or write call would change, when it is a package.json or go.mod; else null. */
+export function dependencyEditPath(toolName, input) {
+  const tool = String(toolName ?? "").toLowerCase();
+  const path = input?.path;
+  if ((tool !== "edit" && tool !== "write") || typeof path !== "string") return null;
+  return /(^|[\\/])(package\.json|go\.mod)$/.test(path) ? path : null;
+}
+
+/**
+ * Whether a tool call changes dependencies: null, or { reason, scopes } for the
+ * guardrail to ask about. `before` is the current text of the file an edit or
+ * write targets (see dependencyEditPath).
+ */
+export function dependencyConfirmation({ toolName, input, before } = {}) {
+  const tool = String(toolName ?? "").toLowerCase();
+  if (tool === "bash") {
+    const hits = bashDependencyInstalls(input?.command);
+    if (!hits.length) return null;
+    return {
+      reason: hits
+        .map(
+          (hit) => `${hit.manager} ${hit.verb} would add dependencies: ${listNames(hit.packages)}`,
+        )
+        .join("; "),
+      scopes: hits.flatMap((hit) =>
+        hit.packages.map((name) => `dependency:${hit.manager}:${name}`),
+      ),
+    };
+  }
+  const path = dependencyEditPath(tool, input);
+  if (!path) return null;
+  const changes = fileDependencyChanges({ path, input, before });
+  if (!changes.length) return null;
+  const label = (change) =>
+    `${change.name} ${change.from ? `${change.from} → ` : ""}${change.to} (${change.section})`;
+  return {
+    reason: `${tool} would change dependencies in ${changes[0].file}: ${listNames(changes.map(label))}`,
+    scopes: changes.map((c) => `dependency:${c.file}:${c.section}:${c.name}`),
+  };
+}
