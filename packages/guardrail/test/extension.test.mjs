@@ -23,6 +23,7 @@ const ENV_BACKUP = {
   TYPESAFE_BASE_URL: process.env.TYPESAFE_BASE_URL,
   LORE_CONFIG: process.env.LORE_CONFIG,
   PI_GUARDRAIL: process.env.PI_GUARDRAIL,
+  PI_GUARDRAIL_DEPS: process.env.PI_GUARDRAIL_DEPS,
 };
 
 beforeEach(() => {
@@ -32,6 +33,7 @@ beforeEach(() => {
   process.env.TYPESAFE_BASE_URL = "http://127.0.0.1:9/v1";
   process.env.LORE_CONFIG = join(tmpdir(), "guardrail-test-no-such-config.json");
   delete process.env.PI_GUARDRAIL;
+  delete process.env.PI_GUARDRAIL_DEPS;
 });
 
 function harness({
@@ -230,7 +232,8 @@ test("with no UI the flagged band is refused, never waved through", async () => 
   assert.equal(h.dialogs.length, 0);
 });
 
-test("the ambiguous band uses Pi classify when a TypeSafe classifier is registered", async () => {
+// A classifier that finds everything harmless, and records each call it was asked about.
+function harmlessClassifier() {
   const calls = [];
   const modelRegistry = {
     findOfType() {
@@ -270,6 +273,11 @@ test("the ambiguous band uses Pi classify when a TypeSafe classifier is register
       };
     },
   };
+  return { calls, modelRegistry };
+}
+
+test("the ambiguous band uses Pi classify when a TypeSafe classifier is registered", async () => {
+  const { calls, modelRegistry } = harmlessClassifier();
   const h = harness({ hasUI: false, modelRegistry });
   const result = await h.run("bash", { command: "rm src/app.ts" });
   assert.equal(calls.length, 1, "the guardrail did not call classify");
@@ -493,4 +501,163 @@ test("PI_GUARDRAIL=off and PI_GUARDRAIL_MASK=off turn masking off for the proces
     }
   }
   assert.ok(!allText(await h.result(bashResult)).includes(LEAKY));
+});
+
+// ---------------------------------------------------------------------------
+// The dependency sentinel: adding a package is a human decision.
+
+test("adding a package from bash asks, and approval lets it run", async () => {
+  const h = harness({ choices: [APPROVE] });
+  assert.equal(await h.run("bash", { command: "npm install left-pad" }), undefined);
+  assert.equal(h.dialogs.length, 1);
+  assert.match(h.dialogs[0].title, /npm install would add dependencies: left-pad/);
+  assert.deepEqual(h.dialogs[0].options, [APPROVE, DENY, SUGGEST]);
+});
+
+test("denying a package install blocks it with a reason the model can act on", async () => {
+  const h = harness({ choices: [DENY] });
+  const result = await h.run("bash", { command: "go get github.com/pkg/errors@v0.9.1" });
+  assert.equal(result.block, true);
+  assert.match(result.reason, /go get would add dependencies/);
+  assert.match(result.reason, /ask what they would prefer/);
+});
+
+test("restoring the lockfile never asks", async () => {
+  const h = harness();
+  for (const command of ["npm install", "npm ci", "pnpm install --frozen-lockfile", "bun install"])
+    assert.equal(await h.run("bash", { command }), undefined, command);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("with no UI a dependency install is refused, like the other confirmations", async () => {
+  const h = harness({ hasUI: false });
+  const result = await h.run("bash", { command: "yarn add left-pad" });
+  assert.equal(result.block, true);
+  assert.match(result.reason, /no interactive UI/);
+  assert.match(result.reason, /yarn add would add dependencies: left-pad/);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("an approved install is reused for the same command only", async () => {
+  const h = harness({ choices: [APPROVE, DENY] });
+  const command = "npm install left-pad";
+  assert.equal(await h.run("bash", { command }), undefined);
+  assert.equal(await h.run("bash", { command }), undefined);
+  assert.equal(h.dialogs.length, 1);
+  assert.equal((await h.run("bash", { command: "npm install other-pad" })).block, true);
+  assert.equal(h.dialogs.length, 2);
+  await h.input();
+  assert.equal((await h.run("bash", { command })).block, true, "new input revokes approvals");
+});
+
+test("an install chained after another confirmation is asked about once, naming both", async () => {
+  const h = harness({ choices: [APPROVE] });
+  assert.equal(
+    await h.run("bash", { command: "git push origin main && npm install left-pad" }),
+    undefined,
+  );
+  assert.equal(h.dialogs.length, 1);
+  assert.match(h.dialogs[0].title, /npm install would add dependencies: left-pad/);
+});
+
+test("the catastrophic set is still refused outright when an install rides along", async () => {
+  const h = harness();
+  const result = await h.run("bash", { command: "rm -rf ~ && npm install left-pad" });
+  assert.equal(result.block, true);
+  assert.equal(h.dialogs.length, 0);
+});
+
+test("editing dependencies in package.json asks; scripts and versions do not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "guardrail-deps-"));
+  try {
+    const path = join(dir, "package.json");
+    const before = JSON.stringify(
+      { name: "x", version: "1.0.0", scripts: { build: "tsc" }, dependencies: { zod: "^3.0.0" } },
+      null,
+      2,
+    );
+    writeFileSync(path, before);
+    const h = harness({ cwd: dir, choices: [APPROVE, DENY] });
+    const quiet = [
+      { path, edits: [{ oldText: '"tsc"', newText: '"tsc --noEmit"' }] },
+      { path, edits: [{ oldText: '"1.0.0"', newText: '"1.0.1"' }] },
+      { path: "package.json", edits: [{ oldText: '"x"', newText: '"y"' }] },
+    ];
+    for (const input of quiet) assert.equal(await h.run("edit", input), undefined);
+    assert.equal(h.dialogs.length, 0);
+
+    const add = {
+      path: "package.json",
+      edits: [{ oldText: '"zod"', newText: '"left-pad": "1", "zod"' }],
+    };
+    assert.equal(await h.run("edit", add), undefined);
+    assert.equal(h.dialogs.length, 1);
+    assert.match(
+      h.dialogs[0].title,
+      /edit would change dependencies in package.json: left-pad 1 \(dependencies\)/,
+    );
+
+    const content = JSON.stringify({ name: "x", dependencies: { evil: "1" } });
+    const refused = await h.run("write", { path, content });
+    assert.equal(refused.block, true);
+    assert.equal(h.dialogs.length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a new go.mod require line asks; a go directive change does not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "guardrail-deps-"));
+  try {
+    writeFileSync(
+      join(dir, "go.mod"),
+      "module example.com/app\n\ngo 1.23\n\nrequire a.com/x v1.0.0\n",
+    );
+    const h = harness({ cwd: dir, choices: [DENY] });
+    assert.equal(
+      await h.run("edit", { path: "go.mod", edits: [{ oldText: "go 1.23", newText: "go 1.24" }] }),
+      undefined,
+    );
+    assert.equal(h.dialogs.length, 0);
+    const result = await h.run("edit", {
+      path: "go.mod",
+      edits: [{ oldText: "a.com/x v1.0.0", newText: "a.com/x v1.0.0\nrequire b.com/y v0.1.0" }],
+    });
+    assert.equal(result.block, true);
+    assert.match(h.dialogs[0].title, /change dependencies in go.mod: b.com\/y v0.1.0 \(require\)/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a package.json that cannot be read is not a reason to stop the call", async () => {
+  const h = harness({ cwd: join(tmpdir(), "guardrail-deps-no-such-dir") });
+  const edits = [{ oldText: "a", newText: "b" }];
+  assert.equal(await h.run("edit", { path: "package.json", edits }), undefined);
+  const content = JSON.stringify({ dependencies: { a: "1" } });
+  const h2 = harness({ cwd: join(tmpdir(), "guardrail-deps-no-such-dir"), choices: [DENY] });
+  assert.equal((await h2.run("write", { path: "package.json", content })).block, true);
+});
+
+test("PI_GUARDRAIL_DEPS=off and /guardrail off silence the sentinel only", async () => {
+  process.env.PI_GUARDRAIL_DEPS = "off";
+  const h = harness();
+  assert.equal(await h.run("bash", { command: "npm install left-pad" }), undefined);
+  assert.equal(h.dialogs.length, 0);
+  assert.equal((await h.run("bash", { command: "rm -rf ~" })).block, true, "other rules stay on");
+  delete process.env.PI_GUARDRAIL_DEPS;
+
+  const off = harness();
+  await off.command("off");
+  assert.equal(await off.run("bash", { command: "npm install left-pad" }), undefined);
+  assert.equal(off.dialogs.length, 0);
+});
+
+test("a judge that finds the call harmless still cannot wave a new dependency through", async () => {
+  const { calls, modelRegistry } = harmlessClassifier();
+  const h = harness({ modelRegistry, choices: [DENY] });
+  const result = await h.run("bash", { command: "rm src/app.ts && npm install left-pad" });
+  assert.equal(calls.length, 1, "the judge should still be consulted");
+  assert.equal(result.block, true);
+  assert.match(h.dialogs[0].title, /npm install would add dependencies: left-pad/);
 });

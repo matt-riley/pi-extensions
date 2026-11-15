@@ -15,8 +15,13 @@
 // It also masks credentials in bash output and definite key shapes in file
 // reads, on tool_result (mask.mjs).
 //
+// The dependency sentinel (deps.mjs) turns an otherwise routine call into a
+// confirm when it adds a package: npm, pnpm, yarn, bun or go installs, and
+// edits of package.json dependency sections or go.mod require lines.
+//
 // Escape hatches, in order of blast radius: the deny button, `/guardrail off`
-// for the session, and PI_GUARDRAIL=off for a whole process.
+// for the session, PI_GUARDRAIL_DEPS=off for the sentinel alone, and
+// PI_GUARDRAIL=off for a whole process.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "node:fs";
@@ -28,6 +33,7 @@ import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
 import { maskToolResult } from "./mask.mjs";
+import { dependencyConfirmation, dependencyEditPath } from "./deps.mjs";
 import {
   DEFAULT_TIMEOUT_MS,
   extractUserRequest,
@@ -39,6 +45,7 @@ const COMMAND = "guardrail";
 const SCRIPT_READ_LIMIT = 64 * 1024;
 const MAX_SCRIPTS = 5;
 const MAX_ACTION_CHARS = 300;
+const DEPENDENCY_FILE_LIMIT = 1024 * 1024;
 
 const APPROVE = "✅ Approve";
 const DENY = "⛔ Deny";
@@ -84,6 +91,25 @@ function readScriptRefs(refs, cwd) {
     }
   }
   return { scriptTexts, unresolved };
+}
+
+/**
+ * Whether this call adds a dependency: null, or { reason, scopes }. An edit is
+ * judged against the file as it is now; an unreadable file counts as new.
+ */
+function dependencyGate(toolName: string, input: any, cwd: string) {
+  if (flagOff(process.env?.PI_GUARDRAIL_DEPS)) return null;
+  let before: string | undefined;
+  const path = dependencyEditPath(toolName, input);
+  if (path) {
+    try {
+      const full = isAbsolute(path) ? path : resolve(cwd, path);
+      if (statSync(full).size <= DEPENDENCY_FILE_LIMIT) before = readFileSync(full, "utf8");
+    } catch {
+      before = undefined;
+    }
+  }
+  return dependencyConfirmation({ toolName, input, before });
 }
 
 // Resolve the nearest existing ancestor too: a new file can be written through
@@ -182,6 +208,28 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       });
     }
 
+    // A new dependency is a human decision: it lifts an allow to a confirm, and
+    // joins the reason and scopes of a call that already needed one. A refusal
+    // stays a refusal.
+    const dependency = decision?.verdict === "block" ? null : dependencyGate(toolName, input, cwd);
+    if (dependency) {
+      const confirming = decision?.verdict === "confirm";
+      decision = {
+        ...decision,
+        verdict: decision?.verdict === "judge" ? "judge" : "confirm",
+        reason:
+          confirming && decision?.reason
+            ? `${decision.reason}; ${dependency.reason}`
+            : decision?.verdict === "judge"
+              ? decision.reason
+              : dependency.reason,
+        evidence: {
+          ...decision?.evidence,
+          approvalScopes: [...(decision?.evidence?.approvalScopes ?? []), ...dependency.scopes],
+        },
+      };
+    }
+
     const verdict = decision?.verdict ?? "allow";
     if (verdict === "allow") {
       state.allowed += 1;
@@ -223,6 +271,11 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       finalVerdict = judged.verdict ?? "confirm";
       reason = judged.reason ?? reason;
       signals = judged.signals ?? null;
+      // The judge never waves a new dependency through, and never hides it.
+      if (dependency && finalVerdict !== "block") {
+        reason = finalVerdict === "allow" ? dependency.reason : `${reason}; ${dependency.reason}`;
+        finalVerdict = "confirm";
+      }
     }
 
     if (finalVerdict === "allow") {

@@ -331,6 +331,13 @@ export default function (pi) {
       return;
     }
     events.push(event);
+    // The only dialog this smoke expects is the guardrail's: answer it with Deny.
+    if (event.type === "extension_ui_request" && event.method === "select") {
+      const answer = /Guardrail/.test(event.title ?? "") ? "⛔ Deny" : undefined;
+      child.stdin.write(
+        `${JSON.stringify({ type: "extension_ui_response", id: event.id, ...(answer ? { value: answer } : { cancelled: true }) })}\n`,
+      );
+    }
     const item = pending.get(event.id);
     if (event.type === "response" && item) {
       clearTimeout(item.timer);
@@ -614,6 +621,22 @@ export default function (pi) {
   console.log(
     "ok: guardrail masks bash output and key shapes in file reads before the model sees them",
   );
+  // A new dependency is a human decision: the live host asks before the install runs.
+  // --dry-run keeps the command harmless even if the sentinel ever failed open.
+  scripted = [{ name: "bash", arguments: { command: "npm install --dry-run smoke-dep-fixture" } }];
+  const depEvents = await prompt("SMOKE_DEPS: try to add a dependency.");
+  const depAsk = events.find(
+    (event) =>
+      event.type === "extension_ui_request" &&
+      /npm install would add dependencies: smoke-dep-fixture/.test(event.title ?? ""),
+  );
+  assert.ok(depAsk, "guardrail did not ask before a package install");
+  assert.match(
+    JSON.stringify(depEvents),
+    /Refused by the user/,
+    "a denied install must be refused",
+  );
+  console.log("ok: guardrail asks before a package install and refuses it when denied");
   scripted = undefined;
   phase = "blocked";
   await prompt("/plan start");

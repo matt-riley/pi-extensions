@@ -122,12 +122,57 @@ Limit: the live partial output Pi streams to the screen while a command runs is
 not a tool result and is not masked. A secret the model itself typed into a
 command is also not masked.
 
+## Dependency sentinel
+
+A new dependency is code from a stranger that runs with your permissions, so
+adding one needs your approval. The sentinel asks before the call runs, with the
+usual Approve / Deny / Suggest an alternative dialog and the package names in the
+reason. It works from the text of the call: no registry lookups, no network.
+
+It asks for:
+
+- **Shell installs** that name a package: `npm install`, `npm i`, `npm add`,
+  `pnpm add`, `pnpm install <pkg>`, `yarn add`, `bun add`, `bun install <pkg>`,
+  `go get <pkg>` and `go install <pkg>` (a remote package, not `./cmd/tool`).
+  Chained commands, `sudo`, `env` and `bash -c "…"` are looked through.
+- **`edit` and `write` of `package.json`** that add a package, or change the
+  version range of one, in `dependencies`, `devDependencies`,
+  `optionalDependencies` or `peerDependencies`.
+- **`edit` and `write` of `go.mod`** that add or re-version a `require` line.
+
+It does not ask for:
+
+- `npm install`, `npm ci`, `pnpm install`, `yarn`, `yarn install` or
+  `bun install` with no package name. They only restore the lockfile.
+- Removing a dependency, editing `scripts`, `version`, `name` or any other
+  field, or changing the `go`, `module` or `replace` lines.
+- `Cargo.toml` and `pyproject.toml`; they are not covered yet.
+
+An edit is judged against the file as it is on disk, with the edit applied in
+memory. If the result is not valid JSON, or the edit text is not in the file,
+the sentinel says nothing and the tool call fails or succeeds on its own.
+
+Approval works as for the other confirmations: it covers the same command (or
+the same file edit) until new user input, `/guardrail revoke` or a toggle. A call
+that already needed approval gets one dialog that names both reasons. With no
+interactive UI the call is **refused**. The judge cannot wave a dependency
+through. Catastrophic blocks stay blocks.
+
+Turn it off for the whole process with `PI_GUARDRAIL_DEPS=off`. `/guardrail off`
+turns it off for the session along with the rest of the gate.
+
+Limits: a package added by a script it runs (`npm run setup`), `npx`,
+`pnpm dlx`, `npm pkg set`, a lockfile edit, `overrides` or `resolutions`, a file written through
+a shell redirect, or a `go.mod` changed with `go mod edit` is not seen. Global
+installs (`npm install -g x`) are asked about like any other.
+
 ## Configuration
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
 | `PI_GUARDRAIL_MASK` | unset (on) | `off` / `0` / `false` turns off secret masking for the whole process |
+| `PI_GUARDRAIL_DEPS` | unset (on) | `off` / `0` / `false` turns off the dependency sentinel for the whole process |
 | `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
 | `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone-config.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
 
