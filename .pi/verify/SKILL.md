@@ -24,12 +24,9 @@ git ls-files -z --others --exclude-standard | xargs -0 -r cat | git hash-object 
 ```
 
 HEAD alone does not identify a dirty tree, and a commit hash does not identify
-uncommitted work. `node .pi/verify/doctor.mjs` prints HEAD and the changed-path
-count on every run; `node .pi/verify/workbench.mjs` ends with the HEAD it
-tested and `node .pi/verify/jobs.mjs` also prints the working-tree fingerprint.
-Any edit after a run
-invalidates that run's evidence — rerun from Doctor rather than reusing a line
-from an earlier revision.
+uncommitted work. The harnesses print HEAD (jobs also the tree fingerprint) with
+their result. Any edit after a run invalidates that run's evidence — rerun from
+Doctor rather than reusing a line from an earlier revision.
 
 ## Launch
 
@@ -53,10 +50,7 @@ Requirements: `pi` 1.4.0 or later on `PATH` (`PI_SMOKE_BIN` overrides the binary
 for smoke); `tmux`, `nvim` and `git` for the workbench and jobs drives; `docker`
 for `jobs-linux.sh` (it uses an already-cached `buildpack-deps:bookworm-scm` and
 never pulls); `gh` authenticated for `watch_pr`. The toasts drive needs only
-`pi` and `tmux`: it starts a fixture provider, so no credential is involved. Smoke sets `PI_OFFLINE=1`, a
-fixture `TYPESAFE_BASE_URL` and a temporary `PI_CODING_AGENT_DIR`; workbench and
-jobs start tmux with `env -i` plus temporary `HOME`, `XDG_CONFIG_HOME`,
-`PI_CODING_AGENT_DIR` and session dir.
+`pi` and `tmux`.
 
 For a live per-change drive (a real provider, disposable config):
 
@@ -95,12 +89,9 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
 node .pi/verify/doctor.mjs
 ```
 
-It checks `pi` (must be >= 1.4.0), `tmux`, `nvim` and `git`, reports whether
-`gh`, `docker` and `TYPESAFE_API_KEY` are available, and prints the target
-revision. Exit 0 means the offline gates and the terminal harnesses can run;
-exit 1 names each missing tool. It starts nothing, so run it before the first
-drive and again after anything surprising (a dead tmux server, a vanished `pi`,
-an auth error).
+Exit 0 means the offline gates and the terminal harnesses can run; exit 1 names
+each missing tool. It starts nothing, so run it before the first drive and again
+after anything surprising (a dead tmux server, a vanished `pi`, an auth error).
 
 ## Features
 
@@ -176,11 +167,8 @@ Findings from this run still worth knowing (the others are covered in Launch and
 
 ## Cleanup
 
-The harnesses clean up in `finally`: smoke closes the pi process, fixture server
-and temporary directory; workbench, jobs and toasts kill their tmux server, stop
-owned processes and remove their fixture; `jobs-linux.sh` removes its container on
-`EXIT`. None touches `~/.pi/agent`. A failure during setup, before the `try`
-block, skips that cleanup — and a drive killed from outside leaves a live pi
+Each harness cleans up in `finally` (`jobs-linux.sh` on `EXIT`), and none touches
+`~/.pi/agent`. A failure during setup, before the `try` block, skips that cleanup — and a drive killed from outside leaves a live pi
 inside a live tmux server, because the `finally` never ran. Finish it by hand:
 
 ```sh
