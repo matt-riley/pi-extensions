@@ -16,6 +16,8 @@ function harness(t) {
   git("config", "user.name", "test");
   git("config", "user.email", "test@example.com");
   writeFileSync(join(cwd, "a.js"), "export default 1;\n");
+  // A test that imports the edited file, so a run of it is evidence for edits to a.js.
+  writeFileSync(join(cwd, "a.test.js"), 'import "./a.js";\n');
   git("add", ".");
   git("commit", "-qm", "test: base");
   const handlers = {};
@@ -62,13 +64,20 @@ function harness(t) {
     write: (value) => writeFileSync(join(cwd, "a.js"), value),
     edit: () =>
       handlers.tool_result({ toolName: "edit", input: { path: "a.js" }, isError: false }, ctx),
-    check: async ({ command = "rtk npm test", failed = false, during } = {}) => {
+    check: async ({ command = "rtk node --test a.test.js", failed = false, during, log } = {}) => {
       const event = { toolName: "bash", toolCallId: String(++id), input: { command } };
       await handlers.tool_call(event, ctx);
       during?.();
-      await handlers.tool_result({ ...event, isError: failed, content: [] }, ctx);
+      const content = log === undefined ? [] : [{ type: "text", text: log }];
+      await handlers.tool_result({ ...event, isError: failed, content }, ctx);
     },
+    say: (text) =>
+      handlers.message_end(
+        { message: { role: "assistant", content: [{ type: "text", text }] } },
+        ctx,
+      ),
     settle: () => handlers.agent_before_settle({ outcome: "completed", entries: [] }, ctx),
+    handlersSettle: (event) => handlers.agent_before_settle(event, ctx),
     reset: () => handlers.input({}, ctx),
   };
 }
@@ -136,6 +145,7 @@ test("a settled Go edit names the package test, and that command clears the gate
   mkdirSync(join(cwd, "pkg/foo"), { recursive: true });
   writeFileSync(join(cwd, "go.mod"), "module example.com/app\n");
   writeFileSync(join(cwd, "pkg/foo/a.go"), "package foo\n");
+  writeFileSync(join(cwd, "pkg/foo/a_test.go"), "package foo\n");
   git("add", ".");
   git("commit", "-qm", "base");
   const handlers = {};
@@ -233,4 +243,140 @@ test("PI_DONE_GATE_EXEC=1: runs the named check and appends its output", async (
   assert.match(content, /Done check: 1 file\(s\) changed/);
   assert.match(content, /`\.pi\/verify` — failed \(exit 1/);
   assert.match(content, /VERIFY-OUTPUT/);
+});
+
+test("a typecheck alone leaves the edit unverified and says only compile or lint ran", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ command: "npx tsc --noEmit" });
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(result.entries[0].content, /only compile or lint checks ran/i);
+});
+
+test("a test run after the typecheck clears the edit", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ command: "npx tsc --noEmit" });
+  await h.check({ command: "rtk node --test a.test.js" });
+  assert.equal(await h.settle(), undefined);
+});
+
+const CLEAN_LOG = "# tests 5\n# pass 5\n# fail 0\n";
+
+test("a tests-passed claim the log contradicts is called out even though the run was clean", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: "# tests 5\n# pass 4\n# fail 1\n" });
+  await h.say("All 5 tests pass.");
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(
+    result.entries[0].content,
+    /says the tests passed, but the log of .* reports failures/,
+  );
+});
+
+test("a tests-passed claim a clean log backs adds nothing", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: CLEAN_LOG });
+  await h.say("All 5 tests pass.");
+  assert.equal(await h.settle(), undefined);
+});
+
+test("a test count the log does not show is named", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: CLEAN_LOG });
+  await h.say("All 12 tests pass.");
+  assert.match(
+    (await h.settle()).entries[0].content,
+    /says 12 tests, the log of .* does not show 12/,
+  );
+});
+
+test("the claim line rides on the verify nudge when edits had no check at all", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.say("Tests pass.");
+  const content = (await h.settle()).entries[0].content;
+  assert.match(content, /^Done check: 1 file\(s\) changed/);
+  assert.match(content, /says the tests passed, but no check was recorded/);
+});
+
+test("a tests-passed claim with no edits and no runs is left alone", async (t) => {
+  const h = harness(t);
+  await h.say("Tests pass.");
+  assert.equal(await h.settle(), undefined);
+});
+
+test("the claim is called out once per user input, and not after an abort", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: "# fail 2\n" });
+  await h.say("All tests pass.");
+  assert.equal(await h.handlersSettle?.({ outcome: "aborted", entries: [] }), undefined);
+  assert.equal((await h.settle()).continue, true);
+  assert.equal(await h.settle(), undefined);
+  await h.reset();
+  h.write("export default 3;\n");
+  await h.edit();
+  await h.check({ log: "# fail 2\n" });
+  await h.say("All tests pass.");
+  assert.equal((await h.settle()).continue, true);
+});
+
+// A test run counts only when a test file it ran imports or names an edited file.
+async function editedThenRan(t, files, command, log) {
+  const h = harness(t);
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(h.cwd, name), text);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ command, log });
+  return h;
+}
+
+test("a test run whose file imports the edited file clears the gate", async (t) => {
+  const h = await editedThenRan(t, {}, "node --test a.test.js");
+  assert.equal(await h.settle(), undefined);
+});
+
+test("a test run whose file only names the edited file clears the gate", async (t) => {
+  const h = await editedThenRan(
+    t,
+    { "names.test.js": 'import fs from "node:fs";\nfs.readFileSync("./a.js");\n' },
+    "node --test names.test.js",
+  );
+  assert.equal(await h.settle(), undefined);
+});
+
+test("a test run of unrelated files does not clear the gate", async (t) => {
+  const h = await editedThenRan(
+    t,
+    { "other.test.js": 'import "node:fs";\n' },
+    "node --test other.test.js",
+  );
+  const nudged = await h.settle();
+  assert.equal(nudged.continue, true);
+  assert.match(nudged.entries.at(-1).content, /no test file it ran imports or names/i);
+});
+
+test("a run whose test files cannot be told is nudged once, with that said", async (t) => {
+  const h = await editedThenRan(t, {}, "make test", "all fine\n");
+  const nudged = await h.settle();
+  assert.match(nudged.entries.at(-1).content, /could not tell which test files `make test` ran/i);
+  assert.equal(await h.settle(), undefined);
+});
+
+test("files the run's own log lists are enough to tell", async (t) => {
+  const h = await editedThenRan(t, {}, "make test", "PASS a.test.js (1 test)\n");
+  assert.equal(await h.settle(), undefined);
 });
