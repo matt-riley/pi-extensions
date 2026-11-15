@@ -1,0 +1,7 @@
+{
+  "name": "pi-architecture",
+  "version": "0.1.0",
+  "description": "Read-only architecture check: directory-boundary rules from a JSON file and import cycles, with an honest account of what it could not follow.",
+  "license": "MIT",
+  "type": "module"
+}
