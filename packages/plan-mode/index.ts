@@ -39,6 +39,7 @@ import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
 import { PLAN_MODE_PROMPT } from "./plan-prompt.mjs";
 import { createScoutSlots, runPlanScout } from "./plan-scout.mjs";
+import { planProblem } from "./plan-shape.mjs";
 import { QUESTION_DESCRIPTION, QUESTION_LABEL, promptSection } from "./question.mjs";
 import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
@@ -590,6 +591,12 @@ export default function planMode(pi: ExtensionAPI) {
             },
           ],
         };
+      }
+      // A plan that names no check is refused, in code: the plan review below
+      // can only point at a missing one, and needs a key to do even that.
+      const shape = planProblem(plan);
+      if (shape) {
+        return { content: [{ type: "text", text: `Rejected: ${shape}` }] };
       }
       // The plan review AGENTS.md asks for, in code rather than in a promise to
       // remember: each step is asked whether it names its verification and
