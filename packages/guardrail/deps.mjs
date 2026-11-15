@@ -13,12 +13,39 @@ import { cargoRequirements, pyprojectRequirements } from "./deps-toml.mjs";
 // Flags that take their value as the next word, per manager. A flag written as
 // --flag=value needs no entry. Wrong entries only cost a stray prompt or a
 // missed package name, so these stay short and specific.
+const flags = (...lines) => lines.join(" ").split(" ");
+const PIP_FLAGS = flags(
+  "-r --requirement -c --constraint -e --editable -i --index-url",
+  "--extra-index-url -f --find-links -t --target --prefix --root",
+  "--python --python-version --platform --implementation --abi --src",
+  "--upgrade-strategy --no-binary --only-binary --progress-bar --proxy",
+  "--retries --timeout --cert --client-cert --cache-dir --log -C",
+  "--config-settings --exists-action --trusted-host --report",
+);
+const UV_FLAGS = flags(
+  "--group --optional --extra --rev --tag --branch --index -p",
+  "--default-index --index-url --extra-index-url -f --find-links -r",
+  "--index-strategy --resolution --prerelease --link-mode --package",
+  "--project --directory --script --bounds --marker -m -c",
+  "--exclude-newer --requirements --constraints --config-file --python",
+  "--keyring-provider --refresh-package --reinstall-package -P --upgrade-package",
+);
 const VALUE_FLAGS = {
-  npm: ["--prefix", "-w", "--workspace", "--registry", "--tag", "--cache", "--omit", "--include"],
-  pnpm: ["--filter", "-F", "--dir", "-C", "--registry", "--workspace-root"],
-  yarn: ["--cwd", "--registry", "--modules-folder"],
-  bun: ["--cwd", "--registry", "--config", "-c"],
-  go: ["-C", "-tags", "-ldflags", "-gcflags", "-mod", "-modfile"],
+  npm: flags("--prefix -w --workspace --registry --tag --cache --omit --include"),
+  pnpm: flags("--filter -F --dir -C --registry --workspace-root"),
+  yarn: flags("--cwd --registry --modules-folder"),
+  bun: flags("--cwd --registry --config -c"),
+  go: flags("-C -tags -ldflags -gcflags -mod -modfile"),
+  cargo: flags(
+    "--features -F --rename --registry --manifest-path --package -p",
+    "--target --branch --tag --rev --path --git --version --vers",
+    "--root --index --jobs -j --target-dir --bin --example --profile",
+    "--message-format --config -Z --color",
+  ),
+  pip: PIP_FLAGS,
+  "uv pip": [...PIP_FLAGS, ...UV_FLAGS],
+  uv: UV_FLAGS,
+  poetry: flags("--group -G --extras -E --python --platform --source -C -P --directory --project"),
 };
 
 // The verbs that add packages. `npm i` is spelled many ways; the long tail of
@@ -30,43 +57,83 @@ const ADD_VERBS = {
   yarn: ["add", "install"],
   bun: ["add", "install", "i"],
   go: ["get", "install"],
+  cargo: ["add", "install"],
+  pip: ["install"],
+  "uv pip": ["install"],
+  uv: ["add"],
+  poetry: ["add"],
 };
+
+// Managers where a path argument means "this directory or file", not a download.
+const LOCAL_PATHS = new Set(["pip", "uv pip", "uv", "poetry"]);
 
 const SHELLS = new Set(["sh", "bash", "zsh"]);
 const ESCALATORS = new Set(["sudo", "doas"]);
 const MAX_DEPTH = 3;
 
-// Go arguments that mean "this directory", not a downloaded package.
-const isLocalGoTarget = (word) => /^(\.|\.\.|\/|~)(\/|$)/.test(word) || word === ".";
+// Arguments that mean "this directory", not a downloaded package.
+const isLocalPath = (word) => /^(\.|\.\.|\/|~)(\/|$)/.test(word) || word === ".";
 
-// Split a segment's arguments into the verb and the positional words after it.
-function verbAndWords(manager, args) {
+// Split a segment's arguments into the verb, the positional words after it and
+// the values of the flags that take one (by flag name, so --git=x and --git x agree).
+function readArgs(manager, args) {
   const valueFlags = VALUE_FLAGS[manager];
   const words = [];
+  const values = {};
+  const take = (flag, value) => (values[flag] ??= []).push(value);
   for (let i = 0; i < args.length; i++) {
     const word = args[i];
     if (word === "--") {
       words.push(...args.slice(i + 1));
       break;
     }
+    // `cargo +nightly add` names a toolchain, not a package.
+    if (word.startsWith("+") && words.length === 0) continue;
     if (word.startsWith("-") && word !== "-") {
-      if (!word.includes("=") && valueFlags.includes(word)) i++;
+      const eq = word.indexOf("=");
+      if (eq > 0) take(word.slice(0, eq), word.slice(eq + 1));
+      else if (valueFlags.includes(word)) take(word, args[++i] ?? "");
       continue;
     }
     words.push(word);
   }
-  return { verb: words[0], words: words.slice(1) };
+  return { verb: words[0], words: words.slice(1), values };
 }
 
-function installHit(head, args) {
-  if (!Object.hasOwn(ADD_VERBS, head ?? "")) return null;
-  const { verb, words } = verbAndWords(head, args);
-  if (!ADD_VERBS[head].includes(verb)) return null;
+// `pip3.12`, `python -m pip` and `uv pip` are all pip; `uv add` is uv's own.
+function managerOf(head, args) {
+  if (/^pip\d*(\.\d+)?$/.test(head ?? "")) return { manager: "pip", args };
+  if (/^python[\d.]*$/.test(head ?? "") && args[0] === "-m" && args[1] === "pip") {
+    return { manager: "pip", args: args.slice(2) };
+  }
+  if (head === "uv") {
+    const first = args.findIndex((word) => !word.startsWith("-"));
+    if (args[first] === "pip") return { manager: "uv pip", args: args.slice(first + 1) };
+  }
+  return { manager: head, args };
+}
+
+function installHit(head, allArgs) {
+  const { manager, args } = managerOf(head, allArgs);
+  if (!Object.hasOwn(ADD_VERBS, manager ?? "")) return null;
+  const { verb, words, values } = readArgs(manager, args);
+  if (!ADD_VERBS[manager].includes(verb)) return null;
+  let packages = words;
+  if (manager === "cargo") {
+    // --path is a crate on this disk; --git with no crate name is the url itself.
+    if (values["--path"]) return null;
+    if (!packages.length && values["--git"]) packages = values["--git"];
+  }
+  // `pip install -e git+https://…` is a download; `-e .` is this project.
+  if (manager === "pip" || manager === "uv pip") {
+    packages = [...packages, ...(values["-e"] ?? []), ...(values["--editable"] ?? [])];
+  }
   // `go install .` builds this module; `go get` always edits go.mod.
-  const packages =
-    head === "go" && verb === "install" ? words.filter((w) => !isLocalGoTarget(w)) : words;
+  if (LOCAL_PATHS.has(manager) || (manager === "go" && verb === "install")) {
+    packages = packages.filter((word) => !isLocalPath(word));
+  }
   if (!packages.length) return null;
-  return { manager: head, verb: head === "npm" && verb !== "add" ? "install" : verb, packages };
+  return { manager, verb: manager === "npm" && verb !== "add" ? "install" : verb, packages };
 }
 
 function segmentHits(segment, depth) {
