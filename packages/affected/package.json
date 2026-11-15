@@ -1,0 +1,7 @@
+{
+  "name": "pi-affected",
+  "version": "0.1.0",
+  "description": "Read-only test selection: which test files can reach a change, with the gaps and a package-level fallback. Runs nothing.",
+  "license": "MIT",
+  "type": "module"
+}

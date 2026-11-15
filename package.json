@@ -54,7 +54,8 @@
       "./packages/workbench/index.ts",
       "./packages/jobs/index.ts",
       "./packages/doctor/index.ts",
-      "./packages/architecture/index.ts"
+      "./packages/architecture/index.ts",
+      "./packages/affected/index.ts"
     ],
     "skills": [
       "./.agents/skills"
