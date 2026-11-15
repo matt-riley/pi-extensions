@@ -568,6 +568,7 @@ test("the extension registers its tools, commands and flags", () => {
   ]);
   assert.deepEqual(seen.events.sort(), [
     "agent_settled",
+    "before_agent_start",
     "session_before_compact",
     "session_compact",
     "turn_end",
@@ -1301,5 +1302,51 @@ test("/safe-compact-info reports whether the cache is warm", async () => {
   } finally {
     warm.cleanup();
     cold.cleanup();
+  }
+});
+
+test("view_context and /safe-compact-info show prompt section sizes and tool footprint as estimates", async () => {
+  const h = wiring();
+  try {
+    h.ctx.getContextUsage = () => ({ tokens: 1000, contextWindow: 40000, percent: 2.5 });
+    const sections = { plan_mode: "word ".repeat(400), router_playbook: "short" };
+    const event = { systemPromptOptions: { sections } };
+    await h.handlers.get("before_agent_start")(event, h.ctx);
+    // Observing the prompt must not change it.
+    assert.deepEqual(Object.keys(event.systemPromptOptions.sections), [
+      "plan_mode",
+      "router_playbook",
+    ]);
+    assert.equal(event.systemPromptOptions.sections.plan_mode, "word ".repeat(400));
+
+    const out = await h.tools.get("view_context").execute("id", {}, undefined, undefined, h.ctx);
+    const info = JSON.parse(out.content[0].text);
+    assert.equal(info.percent, 2.5);
+    assert.equal(info.prompt.estimate, true);
+    assert.equal(info.prompt.sections[0].name, "plan_mode");
+    assert.ok(info.prompt.sectionTokens > 0);
+
+    await h.commands.get("safe-compact-info").handler("", h.ctx);
+    assert.match(h.notices.at(-1).title, /prompt ≈ .*plan_mode \d+/);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("view_context before any request says the sections are not seen yet, and starts no request", async () => {
+  let asked = 0;
+  const h = wiring(async () => {
+    asked++;
+    throw new Error("must not ask");
+  });
+  try {
+    const out = await h.tools.get("view_context").execute("id", {}, undefined, undefined, h.ctx);
+    const info = JSON.parse(out.content[0].text);
+    assert.equal(info.prompt.sections, null);
+    await h.commands.get("safe-compact-info").handler("", h.ctx);
+    assert.match(h.notices.at(-1).title, /prompt sections: not seen yet/);
+    assert.equal(asked, 0);
+  } finally {
+    h.cleanup();
   }
 });
