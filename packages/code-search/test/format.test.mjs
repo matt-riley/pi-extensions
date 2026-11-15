@@ -234,3 +234,73 @@ test("formatDefinitions lists candidates with context and external notes", () =>
   assert.ok(ext.includes("external: react"));
   assert.ok(ext.includes("not indexed"));
 });
+
+test("formatSearchHits shows numbered context with the match marked, in the file's own text", () => {
+  const text = formatSearchHits({
+    query: "greet",
+    hits: [
+      {
+        rel: "src/a.ts",
+        lineNo: 9,
+        col: 3,
+        text: "  greet();",
+        entry: { symbols: [] },
+        around: [
+          { n: 8, text: "function run() {", match: false },
+          { n: 9, text: "  greet();", match: true },
+          { n: 10, text: "}", match: false },
+        ],
+      },
+    ],
+    total: 1,
+    truncated: false,
+    suggestion: [],
+  });
+  assert.ok(text.includes("src/a.ts:9:3"));
+  assert.match(text, /^ {4,} 8 \| function run\(\) \{$/m);
+  assert.match(text, /^ {2}> {1,2}9 \|   greet\(\);$/m);
+  assert.match(text, /^ {4,}10 \| \}$/m);
+  assert.ok(!text.includes("\n  greet();\n"), "the match is not printed a second time");
+});
+
+test("a line that repeats in its file says so, since an edit needs a unique anchor", () => {
+  const hit = (dupes) => ({
+    rel: "a.ts",
+    lineNo: 3,
+    col: 1,
+    text: "return null;",
+    dupes,
+    entry: { symbols: [] },
+  });
+  const many = formatSearchHits({ query: "null", hits: [hit(4)], total: 4, suggestion: [] });
+  assert.match(many, /this exact line appears 4 times in the file/);
+  const one = formatSearchHits({ query: "null", hits: [hit(1)], total: 1, suggestion: [] });
+  assert.doesNotMatch(one, /appears/);
+});
+
+test("the header names the options, so parallel searches stay apart", () => {
+  const head = (extra) =>
+    formatSearchHits({ query: "greet", hits: [], total: 0, suggestion: [], ...extra }).split(
+      "\n",
+    )[0];
+  assert.equal(head({}), '# code_search "greet" — 0 matches');
+  assert.equal(
+    head({ options: { path: "src/api", regex: true, context: 3 } }),
+    '# code_search "greet" [path=src/api, regex, context=3] — 0 matches',
+  );
+  assert.equal(
+    head({ options: { wholeWord: true, caseSensitive: true } }),
+    '# code_search "greet" [whole word, case-sensitive] — 0 matches',
+  );
+});
+
+test("hits whose context was cut for length are counted at the end", () => {
+  const text = formatSearchHits({
+    query: "greet",
+    hits: [{ rel: "a.ts", lineNo: 1, col: 1, text: "greet", entry: { symbols: [] } }],
+    total: 1,
+    suggestion: [],
+    contextOmitted: 3,
+  });
+  assert.match(text, /context left out for 3 hits/);
+});
