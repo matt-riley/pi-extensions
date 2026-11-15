@@ -32,26 +32,66 @@ export function claimsTestsPassed(claim) {
     .some((sentence) => SUBJECT.test(sentence) && PASSED.test(sentence) && !HEDGED.test(sentence));
 }
 
-const count = (text, pattern) => {
-  const found = pattern.exec(text);
-  return found ? Number(found[1]) : 0;
-};
+// Runner summary lines only. A test's own name can say "3 failures" or "2 failed attempts",
+// so a count is read only from a line that starts like a summary.
+const FAILURE_SUMMARIES = [
+  /^(?:#|ℹ)\s*fail (\d+)/gm, // node --test, TAP
+  /^\s*(?:Tests?|Test Files|Test Suites)\b[: ]+.*\b(\d+) failed\b/gim, // jest, vitest
+  /^[=\s-]*(?:.*,\s*)?(\d+) (?:failed|errors?)\b.*\bin [\d.]+s/gm, // pytest
+  /^\s*(\d+) failing\b/gm, // mocha
+];
 
 function logReportsFailures(log) {
   return (
-    count(log, /^# fail (\d+)/m) > 0 ||
-    count(log, /\b(\d+) (?:failed|failing|failures?)\b/i) > 0 ||
+    FAILURE_SUMMARIES.some((pattern) =>
+      [...log.matchAll(pattern)].some((match) => Number(match[1]) > 0),
+    ) ||
+    /^test result: FAILED\b/m.test(log) ||
+    /^\s*--- FAIL\b/m.test(log) ||
     /^\s*(?:FAIL|FAILED)\b/m.test(log)
   );
 }
 
 const NO_TESTS = [
-  /^# tests 0\b/m,
+  /^(?:#|ℹ)\s*tests 0\b/m,
   /\bRan 0 tests\b/i,
   /\bcollected 0 items\b/i,
   /\bno tests? (?:found|ran|to run)\b/i,
   /\b0 (?:passed|passing)\b/i,
 ];
+
+// Any section of the log with tests passing means tests ran: a runner can end on an empty
+// section (cargo's Doc-tests) after a full one.
+const SOME_PASSED = [
+  /^(?:#|ℹ)\s*(?:pass|tests) (\d+)/gm,
+  /\b(\d+) (?:passed|passing)\b/g,
+  /^Ran (\d+) tests?\b/gm,
+];
+
+const someTestsRan = (log) =>
+  SOME_PASSED.some((pattern) => [...log.matchAll(pattern)].some((match) => Number(match[1]) > 0)) ||
+  /^ok\s/m.test(log);
+
+// A sentence about what the work added or touched gives a count of those, not of the run.
+const AUTHORING =
+  /\b(?:add(?:ed|ing)?|new|wr[io]te|writing|written|updat\w*|fix(?:ed|ing)?|touch\w*|chang\w*|creat\w*|remov\w*|renam\w*|modif\w*|edit\w*)\b/i;
+const TOTALS = [
+  /\ball\s+(\d+)\s+(?:(?:unit|integration|e2e)\s+)?(?:tests?|specs?)\b/i,
+  /\b\d+\s*(?:\/|of|out of)\s*(\d+)\s+(?:(?:unit|integration|e2e)\s+)?(?:tests?|specs?)\b/i,
+  /\b(\d+)\s+(?:(?:unit|integration|e2e)\s+)?(?:tests?|specs?)\s+(?:all\s+)?pass(?:ed|es|ing)?\b/i,
+];
+
+/** The run total a claim states ("all 40 tests pass", "40/40"), or null when it gives none. */
+function claimedTotal(claim) {
+  for (const sentence of String(claim ?? "").split(/[.!?;\n]+/)) {
+    if (AUTHORING.test(sentence)) continue;
+    for (const pattern of TOTALS) {
+      const found = pattern.exec(sentence);
+      if (found) return found[1];
+    }
+  }
+  return null;
+}
 
 /**
  * Why the recorded runs do not back a "tests passed" claim, or null when they
@@ -71,10 +111,10 @@ export function testClaimGap({ claim, runs = [], edited = false } = {}) {
   const log = String(run.log ?? "");
   if (!log.trim()) return null;
   if (logReportsFailures(log)) return `the log of \`${run.command}\` reports failures`;
-  if (NO_TESTS.some((pattern) => pattern.test(log))) {
+  if (!someTestsRan(log) && NO_TESTS.some((pattern) => pattern.test(log))) {
     return `the log of \`${run.command}\` shows no tests ran`;
   }
-  const claimed = /\b(\d+)\s+(?:(?:unit|integration|e2e)\s+)?(?:tests?|specs?)\b/i.exec(claim)?.[1];
+  const claimed = claimedTotal(claim);
   if (claimed && !new RegExp(`\\b${claimed}\\b`).test(log)) {
     return `your message says ${claimed} tests, the log of \`${run.command}\` does not show ${claimed}`;
   }

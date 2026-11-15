@@ -137,3 +137,104 @@ test("logText joins the text parts of a tool result and keeps the tail", () => {
   assert.equal(logText(undefined), "");
   assert.equal(logText("raw output"), "raw output");
 });
+
+const BIG_LOG = `${"ok\n".repeat(3)}# tests 40\n# pass 40\n# fail 0\n`;
+
+test("a count of tests the work added or touched is not the run's total", () => {
+  for (const claim of [
+    "I added 3 tests and all pass.",
+    "Updated 2 test files, and the tests pass.",
+    "Wrote 3 new tests; they pass.",
+    "The 2 tests I fixed pass now.",
+    "I touched 4 specs and everything is green.",
+  ]) {
+    assert.equal(testClaimGap({ claim, runs: [run({ log: BIG_LOG })], edited: true }), null, claim);
+  }
+});
+
+test("a count that is given as the run's total is still checked against the log", () => {
+  for (const claim of [
+    "All 12 tests pass.",
+    "12 tests passed.",
+    "12/12 tests pass.",
+    "12 of 12 tests passed.",
+  ]) {
+    assert.match(
+      testClaimGap({ claim, runs: [run({ log: BIG_LOG })], edited: true }),
+      /does not show 12/,
+      claim,
+    );
+  }
+  for (const claim of ["All 40 tests pass.", "40 tests passed.", "40/40 tests pass."]) {
+    assert.equal(testClaimGap({ claim, runs: [run({ log: BIG_LOG })], edited: true }), null, claim);
+  }
+});
+
+const CARGO_LOG = `running 12 tests
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+   Doc-tests app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+`;
+
+test("a log with an empty section after a passing one still shows tests ran", () => {
+  for (const log of [
+    CARGO_LOG,
+    "# tests 0\n# pass 0\n# fail 0\n\n# tests 7\n# pass 7\n# fail 0\n",
+    "Ran 0 tests in 0.0s\n\nRan 4 tests in 0.2s\n\nOK\n",
+    "collected 0 items\n\ncollected 9 items\n\n9 passed in 0.3s\n",
+  ])
+    assert.equal(
+      testClaimGap({ claim: "Tests pass.", runs: [run({ log })], edited: true }),
+      null,
+      log,
+    );
+});
+
+test("a log where every section is empty still shows no tests ran", () => {
+  assert.match(
+    testClaimGap({
+      claim: "Tests pass.",
+      runs: [
+        run({
+          log: "running 0 tests\ntest result: ok. 0 passed; 0 failed\n\nrunning 0 tests\ntest result: ok. 0 passed; 0 failed\n",
+        }),
+      ],
+      edited: true,
+    }),
+    /no tests ran/,
+  );
+});
+
+test("a test name that mentions failures is not a failure report", () => {
+  for (const log of [
+    "✔ retries after 3 failures (0.4ms)\n# tests 5\n# pass 5\n# fail 0\n",
+    "ok 1 - gives up after 2 failed attempts\n# tests 1\n# pass 1\n# fail 0\n",
+    "  PASS src/retry.test.js\n    ✓ reports 3 failing hosts (2 ms)\nTests: 4 passed, 4 total\n",
+    "test retries_after_3_failures ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored\n",
+  ])
+    assert.equal(
+      testClaimGap({ claim: "Tests pass.", runs: [run({ log })], edited: true }),
+      null,
+      log,
+    );
+});
+
+test("runner summary lines for a failure still count as failures", () => {
+  for (const log of [
+    "ℹ tests 5\nℹ pass 4\nℹ fail 1\n",
+    "test result: FAILED. 3 passed; 1 failed; 0 ignored\n",
+    "=========== 1 failed, 3 passed in 0.12s ===========\n",
+    "--- FAIL: TestRetry (0.00s)\nFAIL\n",
+    "Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 8 passed (9)\n",
+    "  3 passing (10ms)\n  2 failing\n",
+  ])
+    assert.match(
+      testClaimGap({ claim: "Tests pass.", runs: [run({ log })], edited: true }),
+      /reports failures/,
+      log,
+    );
+});
