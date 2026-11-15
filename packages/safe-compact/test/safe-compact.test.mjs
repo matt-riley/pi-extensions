@@ -20,6 +20,7 @@ import {
   memoizeAsk,
   planBoundary,
 } from "../plan.mjs";
+import { validateRequest } from "../../../shared/systemone-request.mjs";
 import { estimateTokens, segmentMessages } from "../segment.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
@@ -68,6 +69,23 @@ const transcript = () => [
   assistant("NOISE ok sure, looking now"),
   assistant("Reading the client file."),
 ];
+
+test("every request composeHandoff sends passes the request validator, so none fails before Jev sees it", async () => {
+  // User and assistant segments carry no tool: that must reach Jev as null, not
+  // as a key JSON drops, or the validator rejects the request and every such
+  // segment silently falls back to "keep".
+  const ask = async (request) => {
+    validateRequest(request);
+    return fakeAsk()(request);
+  };
+  const result = await composeHandoff({
+    messages: [...transcript(), user("ALWAYS run prettier before committing")],
+    tokensBefore: 100000,
+    ask,
+  });
+  assert.ok(result);
+  assert.equal(result.details.safeCompact.judging.failed, 0);
+});
 
 test("segmentMessages pairs tool results with their call's path and offset", () => {
   const segments = segmentMessages([

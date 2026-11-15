@@ -69,7 +69,8 @@ function segmentState({ goal, segment, next }) {
     goal,
     segment: {
       role: segment.role,
-      tool: segment.tool,
+      // null for user and assistant text: an undefined tool is rejected before it is sent.
+      tool: segment.tool ?? null,
       // null, not undefined: JSON drops an undefined key, so the model would see
       // a segment with no way to tell "not a file" from "field missing".
       path: segment.path ?? null,
