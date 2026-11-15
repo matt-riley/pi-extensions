@@ -12,6 +12,9 @@
 // recommendation is offered when the judgment is clear and withheld when it
 // is not, because a recommendation people learn to click is not a guardrail.
 //
+// It also masks credentials in bash output and definite key shapes in file
+// reads, on tool_result (mask.mjs).
+//
 // Escape hatches, in order of blast radius: the deny button, `/guardrail off`
 // for the session, and PI_GUARDRAIL=off for a whole process.
 
@@ -24,6 +27,7 @@ import { flagOff } from "../../shared/env-flag.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
+import { maskToolResult } from "./mask.mjs";
 import {
   DEFAULT_TIMEOUT_MS,
   extractUserRequest,
@@ -328,6 +332,18 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       block: true,
       reason: `Refused by the user (${reason}). Do not retry it as-is — ask what they would prefer instead.`,
     };
+  });
+
+  // Secrets in tool output never reach the model or a compaction. This is not
+  // the approval gate: `/guardrail off` does not turn it off, only
+  // PI_GUARDRAIL=off or PI_GUARDRAIL_MASK=off for a whole process. It must run
+  // before every other tool_result consumer, so guardrail registers early in
+  // the root manifest (a test pins the order).
+  pi.on("tool_result", async (event) => {
+    if (flagOff(process.env?.PI_GUARDRAIL) || flagOff(process.env?.PI_GUARDRAIL_MASK)) {
+      return undefined;
+    }
+    return maskToolResult(event);
   });
 
   pi.registerCommand(COMMAND, {

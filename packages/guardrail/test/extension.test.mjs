@@ -81,6 +81,14 @@ function harness({
     dialogs,
     notifications,
     run: (toolName, input) => handlers.tool_call[0]({ toolName, input }, ctx),
+    result: async (event) => {
+      let current = { ...event };
+      for (const fn of handlers.tool_result ?? []) {
+        const patch = await fn(current, ctx);
+        if (patch?.content) current.content = patch.content;
+      }
+      return current;
+    },
     command: (args) => commands.guardrail.handler(args, ctx),
     input: async () => {
       for (const fn of handlers.input ?? []) await fn({}, ctx);
@@ -451,4 +459,38 @@ test.after?.(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Secret masking on tool_result.
+
+const LEAKY = ["gh", "p_", "A1b2".repeat(9)].join(""); // built at runtime: no key-shaped literal in the repo
+const bashResult = { toolName: "bash", content: [{ type: "text", text: `token ${LEAKY}` }] };
+const allText = (event) => event.content.map((block) => block.text).join("\n");
+
+test("bash output is masked through the registered tool_result handler", async () => {
+  const h = harness();
+  const out = await h.result(bashResult);
+  assert.ok(!allText(out).includes(LEAKY));
+  assert.match(allText(out), /guardrail masked 1 secret/);
+});
+
+test("`/guardrail off` turns off the gate but not the masking", async () => {
+  const h = harness();
+  await h.command("off");
+  const out = await h.result(bashResult);
+  assert.ok(!allText(out).includes(LEAKY));
+});
+
+test("PI_GUARDRAIL=off and PI_GUARDRAIL_MASK=off turn masking off for the process", async () => {
+  const h = harness();
+  for (const name of ["PI_GUARDRAIL", "PI_GUARDRAIL_MASK"]) {
+    process.env[name] = "off";
+    try {
+      assert.ok(allText(await h.result(bashResult)).includes(LEAKY), `${name}=off`);
+    } finally {
+      delete process.env[name];
+    }
+  }
+  assert.ok(!allText(await h.result(bashResult)).includes(LEAKY));
 });
