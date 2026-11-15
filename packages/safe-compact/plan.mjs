@@ -14,6 +14,7 @@ import {
   WINDOW_RELEVANCE,
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
+import { isStandingRule } from "./handoff-rules.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
 const MAX_SEGMENTS = 400;
@@ -71,15 +72,25 @@ export function cacheWarmth(message, { minRatio, maxAgeMs, now = Date.now() }) {
 }
 
 /**
+ * A user message that states a rule: Jev scored it as a lasting constraint, or
+ * code recognises a safety rule in it, which no score can talk down.
+ */
+function isUserRule(scores, segment) {
+  return (
+    segment.role === "user" &&
+    ((scores?.user_constraint ?? 0) >= KEEP_BELOW || isStandingRule(segment.text))
+  );
+}
+
+/**
  * Content the hard rules keep verbatim whatever the budget. Role-scoped:
  * constraints come from the user, and file contents are not an error report
  * even when they mention a bug.
  */
 function hardKeep(scores, segment) {
+  if (isUserRule(scores, segment)) return true;
   if (!scores) return false;
-  const constraint = segment.role === "user" && (scores.user_constraint ?? 0) >= KEEP_BELOW;
-  const problem = segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
-  return constraint || problem;
+  return segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
 }
 
 /** Tool output that names where it came from, so a pointer can stand in for it. */
@@ -216,7 +227,7 @@ async function buildEntries({
     // cheap. Open problems are not pinned: the judge sees one segment ahead,
     // so a fix a few turns later is invisible and it flagged 29% of a measured
     // span. They stay verbatim when there is room and are cut last.
-    const constraint = segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW;
+    const constraint = isUserRule(s, segment);
     const pinned = forced.has(segment.id) || constraint;
     // A recent user message that is not already carried verbatim above (a
     // constraint, the task, a forced copy) is pinned on one line, whatever Jev
@@ -362,7 +373,7 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
   const pointers = [...bySection("pointers"), ...files];
   const sections = [
     ["Goal", goal],
-    ["Constraints & preferences (verbatim)", bullets(bySection("constraints"))],
+    ["Standing rules and constraints (verbatim)", bullets(bySection("constraints"))],
     ["Recent user messages (verbatim, oldest first)", bullets(bySection("recent"))],
     ["Key decisions", bullets(bySection("decisions"))],
     ["Context carried forward", bullets(bySection("context"))],
