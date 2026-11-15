@@ -7,7 +7,7 @@ description: Write behavior-focused tests, regression tests for bugs, or impleme
 
 Use the repository's framework, conventions and existing test seams. Test the contract that callers rely on, not the current arrangement of private functions.
 
-1. Read the requirement, affected callers and existing tests. Choose a small observable behavior and derive the expected result from the requirement or an independent example, not by running or copying the implementation.
+1. Read the requirement, affected callers and existing tests. Choose a small observable behavior.
 2. For a bug or new behavior, write one focused test before changing production code. Run it and confirm it fails for the intended missing behavior, not a syntax error, bad fixture or missing dependency. If the reported bug cannot be reproduced at this seam, find the real seam before fixing it.
 3. Make the smallest change that passes that test. Complete one tested vertical slice at a time rather than writing a speculative batch of tests and a separate implementation batch.
 4. Refactor while green when it makes the code simpler. Preserve the behavior and rerun the focused test after each meaningful change. Routine names and internal structure do not need user approval; product ambiguity and compatibility changes do.
@@ -20,7 +20,7 @@ When adding tests for behavior that already works, start from the passing baseli
 
 - Exercise a public interface or stable boundary. Do not export private helpers merely to test them.
 - Prefer real local collaborators. Stub clocks, randomness, network or other nondeterministic boundaries; do not mock the behavior being tested. Avoid paid or live services by default.
-- Use independent expected values and assertions on meaningful effects. A test that calculates its expectation with the same algorithm can share the same bug.
+- Derive expected values from the requirement or an independent example, never by running or copying the implementation, and assert meaningful effects. An expectation calculated with the same algorithm can share its bug.
 - A count of what the implementation just built (`Object.keys(ADVICE).length, 5`, a criteria total) is not an independent expectation. Assert the mapping instead — every class is advised or `no_failure`, every criterion is a name the consumer routes — and let the count follow.
 - Assert item counts before comparisons, including zero-item cases when valid. A parser or parity check that compares nothing is not evidence of correctness.
 - Keep fixtures small and deterministic. Assert errors and cleanup as well as successful output when those are part of the contract.
