@@ -273,7 +273,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           : fallbackDescription(task);
       const maxTurns = resolveMaxTurns(agent.maxTurns, params?.max_turns);
       const timeoutMs = resolveTimeoutMs(agent.timeoutMs, params?.timeout_ms);
-      const { entry, ready } = pool.acquire(agent.name, { description, task, maxTurns });
+      const { entry, ready } = pool.acquire(agent.name, {
+        description,
+        task,
+        maxTurns,
+        write: writeCapable,
+      });
 
       const started = await ready;
       if (started.stoppedBeforeStart) {
@@ -383,12 +388,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             ? checkDiffScope({ task, diff: changes.diff, signal: abortSignal })
             : undefined,
         ]);
-        const shared =
-          pool.runningCount() > 1 ? " (shared worktree: may include parallel children)" : "";
         const note = [
           modelNote,
           triage ? `triage: ${triage}` : "",
-          changes.stat ? `changes${shared}:\n${changes.stat}` : "",
+          changes.stat ? `changes:\n${changes.stat}` : "",
           scopeWarning,
         ]
           .filter(Boolean)

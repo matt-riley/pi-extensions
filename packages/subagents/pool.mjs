@@ -1,4 +1,6 @@
-// pool.mjs — cap-4 running, queue the rest, incrementing type ids.
+// pool.mjs — cap-4 running, queue the rest, incrementing type ids. Children that
+// can write run one at a time (no worktrees): a writer's before/after diff is
+// then its own, while read-only children stay parallel.
 
 const MAX_CONCURRENT = 4;
 
@@ -29,6 +31,17 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
     return n;
   }
 
+  function writerRunning() {
+    for (const entry of entries.values())
+      if (entry.write && entry.status === "running") return true;
+    return false;
+  }
+
+  // A free slot, and for a writer, no other writer already running.
+  function canStart(entry) {
+    return runningCount() < maxConcurrent && !(entry.write && writerRunning());
+  }
+
   function promote(entry) {
     entry.status = "running";
     entry.startedAt = Date.now();
@@ -37,13 +50,13 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
     queued?.resolve(entry);
   }
 
+  // Oldest first. A queued writer blocked by the writer lane does not hold back
+  // the readers behind it, so keep going until nothing queued can start.
   function startNext() {
-    if (runningCount() >= maxConcurrent) return;
     for (const entry of entries.values()) {
-      if (entry.status === "queued" && entry._queued) {
+      if (entry.status === "queued" && entry._queued && canStart(entry)) {
         promote(entry);
         notify();
-        return;
       }
     }
   }
@@ -57,6 +70,7 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
       description: meta.description || "",
       task: meta.task || "",
       maxTurns: meta.maxTurns,
+      write: meta.write === true,
       startedAt: undefined,
       turns: 0,
       toolUses: 0,
@@ -69,7 +83,7 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
     entries.set(id, entry);
 
     let ready;
-    if (runningCount() < maxConcurrent) {
+    if (canStart(entry)) {
       promote(entry);
       ready = Promise.resolve(entry);
     } else {

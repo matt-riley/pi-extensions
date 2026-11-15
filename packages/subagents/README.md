@@ -103,7 +103,8 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
 
 ## Limits
 
-- Max 4 running; extras queue.
+- Max 4 running; extras queue. One write-capable child runs at a time (later writers wait their turn
+  in arrival order), so a writer's change list is its own; read-only children stay parallel. Still no worktrees.
 - 30 turns, wrap-up steer, then 2 grace turns, then abort; plus a 30-minute
   wall-clock timeout (frontmatter/`timeout_ms` can adjust) so a hung tool call
   cannot block the parent forever.
