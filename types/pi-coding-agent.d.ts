@@ -65,6 +65,7 @@ declare module "@earendil-works/pi-coding-agent" {
     getEditorText?(): string;
     setEditorText?(text: string): void;
     select?(title: string, options: string[]): Promise<string | undefined>;
+    confirm?(title: string, message: string): Promise<boolean>;
     input?(title: string, value?: string): Promise<string | undefined>;
     theme?: { fg?: (color: string, text: string) => string };
     [key: string]: unknown;

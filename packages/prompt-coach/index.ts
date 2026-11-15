@@ -4,7 +4,8 @@
 // improvement explicitly, a hosted model writes, TypeSafe checks preservation,
 // and the result lands in pi's input box. Nothing is sent: Matt edits the text
 // and presses Enter. Any failure puts the original prompt there instead of
-// silently losing the task.
+// silently losing the task. A rewrite the intent check rejects is shown to him
+// with the reason, and only goes in the box if he confirms it.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -91,6 +92,26 @@ export default function piPromptCoachExtension(
     return true;
   };
 
+  /** Ask Matt whether to use a rewrite the intent check rejected. No UI, or any dialog error, means no. */
+  const confirmRejected = async (
+    ctx: ExtensionContext,
+    original: string,
+    rewrite: string,
+    why: string,
+  ): Promise<boolean> => {
+    if (!ctx.hasUI || !ctx.ui?.confirm) return false;
+    try {
+      return (
+        (await ctx.ui.confirm(
+          "Use the rewrite the intent check rejected?",
+          `Rejected because ${why}.\n\nRewrite:\n${rewrite}\n\nYour original:\n${original}\n\nConfirm to put the rewrite in the input box, or deny to keep your original.`,
+        )) === true
+      );
+    } catch {
+      return false;
+    }
+  };
+
   pi.registerCommand(COMMAND, {
     description: "Improve a prompt with a hosted model and put it in the input box to edit",
     handler: async (args: string, ctx: ExtensionContext) => {
@@ -165,6 +186,13 @@ export default function piPromptCoachExtension(
               ? "the TypeSafe intent check gave no usable answer"
               : `the TypeSafe intent check scored it ${intentProbability.toFixed(2)}, below the ${intentThreshold.toFixed(2)} threshold`;
           message = `Rewrite not used: ${why}; original is in the input box.`;
+          if (await confirmRejected(ctx, original, validation.text, why)) {
+            placed = validation.text;
+            action = "rewritten-confirmed";
+            message = `Rewrite used at your confirmation (${why}): edit it and press Enter.`;
+          } else if (ctx.hasUI && ctx.ui?.confirm) {
+            action = "kept-original";
+          }
         }
       } else if (validation.ok && !rewriteError) {
         action = "unchanged";
@@ -185,12 +213,10 @@ export default function piPromptCoachExtension(
         subscription,
       });
 
-      const level = action === "rewritten" ? "info" : "warning";
+      const usedRewrite = action === "rewritten" || action === "rewritten-confirmed";
+      const level = usedRewrite ? "info" : "warning";
       if (place(ctx, placed)) {
-        setStatus(
-          ctx,
-          `prompt-coach: ${action === "rewritten" ? "rewrite ready" : "original kept"}`,
-        );
+        setStatus(ctx, `prompt-coach: ${usedRewrite ? "rewrite ready" : "original kept"}`);
         notify(ctx, message, level);
       } else {
         setStatus(ctx, "prompt-coach: no input box");
