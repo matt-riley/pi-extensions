@@ -174,3 +174,28 @@ test("a clean state reports zero, and a second pass adds nothing", () => {
   assert.equal(twice.count, 0, "a redacted marker is not a secret");
   assert.equal(twice.value.key, once.value.key);
 });
+
+test("`only` limits masking to the named key shapes and leaves everything else readable", () => {
+  const github = `ghp_${"a".repeat(36)}`;
+  const text = [
+    `token ${github}`,
+    "API_KEY=abcdefghijklmnopqrstuvwxyz0123",
+    "postgres://user:hunter2pw@db.example.com/app",
+    "Bearer abcdefghijklmnopqrstuvwxyz",
+    `jwt ${"eyJabcdefgh"}.${"abcdefghij"}.${"abcdef"}`,
+  ].join("\n");
+  const { value, count } = redactSecrets(text, { only: ["github", "pem"], homeDir: "" });
+  assert.equal(count, 1);
+  assert.match(value, /<REDACTED:github>/);
+  assert.match(value, /API_KEY=abcdefghijklmnopqrstuvwxyz0123/);
+  assert.match(value, /hunter2pw/);
+  assert.match(value, /Bearer abcdefghijklmnopqrstuvwxyz/);
+  assert.match(value, /eyJabcdefgh/);
+});
+
+test("without `only` every shape is still masked", () => {
+  const { count } = redactSecrets(`ghp_${"a".repeat(36)} API_KEY=abcdefghijklmnopqrstuvwxyz0123`, {
+    homeDir: "",
+  });
+  assert.equal(count, 2);
+});

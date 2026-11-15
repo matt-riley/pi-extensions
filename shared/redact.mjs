@@ -39,7 +39,7 @@ function isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
-function redactString(text, { literals, homeDir, maskEmails }, add, addPrivacy) {
+function redactString(text, { literals, homeDir, maskEmails, only }, add, addPrivacy) {
   let out = text;
   for (const literal of literals) {
     if (typeof literal !== "string" || literal.length < MIN_LITERAL) continue;
@@ -48,21 +48,26 @@ function redactString(text, { literals, homeDir, maskEmails }, add, addPrivacy) 
     add(parts.length - 1);
     out = parts.join(marker("key"));
   }
-  out = out.replace(URL_USERINFO, (_match, scheme) => {
-    add(1);
-    return `${scheme}${marker("url")}@`;
-  });
+  if (!only) {
+    out = out.replace(URL_USERINFO, (_match, scheme) => {
+      add(1);
+      return `${scheme}${marker("url")}@`;
+    });
+  }
   for (const [kind, pattern] of PATTERNS) {
+    if (only && !only.includes(kind)) continue;
     out = out.replace(pattern, () => {
       add(1);
       return marker(kind);
     });
   }
-  out = out.replace(ASSIGNMENT, (_match, prefix) => {
-    add(1);
-    return `${prefix}${marker("assignment")}`;
-  });
-  if (homeDir) {
+  if (!only) {
+    out = out.replace(ASSIGNMENT, (_match, prefix) => {
+      add(1);
+      return `${prefix}${marker("assignment")}`;
+    });
+  }
+  if (homeDir && !only) {
     out = out.replaceAll(homeDir, (match, offset, source) => {
       const suffix = source.slice(offset + match.length);
       if (suffix && !/^(?:[\\/\s"'(){}[\],;:!?<>`]|\.(?:\s|$))/.test(suffix)) return match;
@@ -70,7 +75,7 @@ function redactString(text, { literals, homeDir, maskEmails }, add, addPrivacy) 
       return marker("home");
     });
   }
-  if (maskEmails) {
+  if (maskEmails && !only) {
     out = out.replace(EMAIL, () => {
       addPrivacy(1);
       return marker("email");
@@ -83,12 +88,14 @@ function redactString(text, { literals, homeDir, maskEmails }, add, addPrivacy) 
  * Replace credentials in every string of `value`, keeping its shape.
  *
  * @param {unknown} value state of any shape
- * @param {{ literals?: string[], homeDir?: string, maskEmails?: boolean }} [opts] privacy options
+ * @param {{ literals?: string[], homeDir?: string, maskEmails?: boolean, only?: string[] }} [opts]
+ *   privacy options; `only` names key shapes (pem, jwt, aws, github, openai, slack, bearer) and
+ *   limits masking to those, leaving URLs, assignments, home paths and emails alone
  * @returns {{ value: unknown, count: number, privacyCount?: number }} credential and privacy counts; input untouched
  */
 export function redactSecrets(
   value,
-  { literals = [], homeDir = homedir(), maskEmails = false } = {},
+  { literals = [], homeDir = homedir(), maskEmails = false, only } = {},
 ) {
   // Do not interpret a root or an empty home as a prefix of every absolute path.
   homeDir = homeDir.replace(/[\\/]+$/, "");
@@ -102,7 +109,7 @@ export function redactSecrets(
   };
   const walk = (node) => {
     if (typeof node === "string")
-      return redactString(node, { literals, homeDir, maskEmails }, add, addPrivacy);
+      return redactString(node, { literals, homeDir, maskEmails, only }, add, addPrivacy);
     if (Array.isArray(node)) return node.map(walk);
     if (isPlainObject(node)) {
       const out = {};
