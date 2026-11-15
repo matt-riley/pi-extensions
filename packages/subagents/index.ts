@@ -15,7 +15,7 @@ import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
-import { orchestratorPrompt } from "./orchestrate.mjs";
+import { orchestratorPrompt, TASK_DESCRIPTION, TOOL_DESCRIPTION } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
 import { fallbackDescription, formatResult, resolveMaxTurns, resolveTimeoutMs } from "./result.mjs";
@@ -45,13 +45,6 @@ function pruneRuns(dir: string) {
     // no runs yet
   }
 }
-
-const TOOL_DESCRIPTION = [
-  "Spawn a specialist child with a complete, self-contained task: goal, concrete paths/symbols, constraints, the deliverable format, and a done-condition.",
-  "Fire multiple subagent calls in one turn to run them in parallel, then synthesize.",
-  "Built-in types: scout (recon), reviewer (code review), verifier (reproduces a change and reports observed evidence), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
-  "Custom types live in .pi/agents/*.md or ~/.pi/agent/agents/*.md. Children cannot spawn children.",
-].join(" ");
 
 interface UiCtx {
   hasUI?: boolean;
@@ -175,10 +168,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         description:
           "Agent type (scout, reviewer, verifier, oracle, worker, researcher, or a custom name)",
       }),
-      task: Type.String({
-        description:
-          "The full task for the child. It cannot see this conversation: give the goal, concrete paths/symbols, constraints, the output you want back, and when it is done.",
-      }),
+      task: Type.String({ description: TASK_DESCRIPTION }),
       acceptance: Type.Optional(
         Type.Array(
           Type.Object({
