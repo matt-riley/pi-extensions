@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "ignore": ["**/test/**", "**/*.test.mjs"],
+  "cycles": "report",
+  "rules": [
+    {
+      "name": "shared-is-a-leaf",
+      "from": "shared/**",
+      "forbid": ["packages/**", "scripts/**"],
+      "reason": "shared/ is the base layer; it cannot depend on packages or tooling"
+    },
+    {
+      "name": "packages-do-not-use-scripts",
+      "from": "packages/**",
+      "forbid": ["scripts/**"],
+      "reason": "scripts/ is repository tooling, not extension runtime code"
+    },
+    {
+      "name": "packages-are-islands",
+      "from": "packages/*/**",
+      "forbid": ["packages/**"],
+      "except": [
+        "packages/$1/**",
+        "packages/code-search/inventory.mjs",
+        "packages/code-search/ts-parser.mjs",
+        "packages/done-gate/gate.mjs",
+        "packages/guardrail/policy-bash.mjs",
+        "packages/guardrail/policy-targets.mjs",
+        "packages/router/config.mjs",
+        "packages/router/parent-physical.mjs",
+        "packages/subagents/cross-family.mjs",
+        "packages/subagents/discover.mjs",
+        "packages/subagents/spawn.mjs",
+        "packages/web-fetch/fetch.mjs",
+        "packages/web-fetch/format.mjs",
+        "packages/workbench/screens.mjs"
+      ],
+      "reason": "share code through shared/; the except list is the cross-package imports that already existed when this file was written, so move one into shared/ and delete its line, and do not add to it"
+    }
+  ]
+}
