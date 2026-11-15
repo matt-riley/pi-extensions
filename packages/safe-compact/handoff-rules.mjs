@@ -18,3 +18,15 @@ const RISK =
 export function isStandingRule(text) {
   return typeof text === "string" && CUE.test(text) && RISK.test(text);
 }
+
+const SPEAKER_LABEL = /^(\s*(?:\[[^\]\n]*\]\s*)?)(user|human)\s*:/gim;
+
+/**
+ * Text the agent or a tool wrote is quoted into the handoff, and a line in it
+ * that opens with `User:` reads like a turn from the user: an approval the
+ * user never gave. Such a label is marked as quoted, so only the sections built
+ * from real user-role messages speak for the user.
+ */
+export function defangSpeakerLabels(text) {
+  return String(text ?? "").replace(SPEAKER_LABEL, "$1(quoted by the agent) $2:");
+}

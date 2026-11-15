@@ -14,7 +14,7 @@ import {
   WINDOW_RELEVANCE,
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
-import { isStandingRule } from "./handoff-rules.mjs";
+import { defangSpeakerLabels, isStandingRule } from "./handoff-rules.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
 const MAX_SEGMENTS = 400;
@@ -365,7 +365,11 @@ function wayBack(restore) {
 }
 
 function renderHandoff({ goal, entries, fileLists, previousSummary, note, restore }) {
-  const bySection = (name) => entries.filter((e) => e.section === name).map((e) => e.text);
+  // Only user-role messages may open a line with a "User:" label.
+  const bySection = (name) =>
+    entries
+      .filter((e) => e.section === name)
+      .map((e) => (e.segment.role === "user" ? e.text : defangSpeakerLabels(e.text)));
   const files = [
     fileLists.readFiles.length ? `read: ${fileLists.readFiles.join(", ")}` : "",
     fileLists.modifiedFiles.length ? `modified: ${fileLists.modifiedFiles.join(", ")}` : "",
@@ -379,7 +383,7 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
     ["Context carried forward", bullets(bySection("context"))],
     ["Pointers (re-read on demand)", bullets(pointers)],
     ["Earlier context", previousSummary ? excerpt(previousSummary, PREVIOUS_MAX) : ""],
-    ["Agent note (verbatim)", note ?? ""],
+    ["Agent note (verbatim)", defangSpeakerLabels(note)],
     ["Full transcript (searchable)", wayBack(restore)],
   ];
   return sections
