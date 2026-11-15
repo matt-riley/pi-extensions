@@ -351,6 +351,16 @@ const CHECKS = [
     ),
   },
   {
+    id: "paren-aside",
+    sign: "dash aside swapped for parentheses",
+    severity: "high",
+    label: "parenthetical asides repeated across the text",
+    fix: "give the aside its own sentence or fold it into the clause",
+    min: 3,
+    pattern:
+      /(?<=[a-z]) \((?!(?:e\.g|i\.e|see|for|or|and|etc|cf|via|vs)\b)[a-z][a-z'’-]*(?: [a-z'’-]+){1,7}\)(?= [a-z])/g,
+  },
+  {
     id: "very",
     sign: "W20",
     severity: "low",
@@ -381,7 +391,8 @@ const CHECKS = [
 
 const EMPHASIS_EMOJI = /[\u{1F680}\u{1F525}\u{2728}\u{1F4A1}\u{2B50}\u{1F31F}\u{2705}\u{1F449}]/gu;
 const HEADING_EMOJI = /^#{1,6}[ \t]+\p{Extended_Pictographic}/gmu;
-const EM_DASH = /—/g;
+/** A dash aside: an em dash, or the double hyphen someone types in its place. */
+const ASIDE_DASH = /—|(?<=\w) -- (?=\w)|(?<=\w)--(?=\w)/g;
 /** A paragraph that is a list, a heading, a table or a quote is not running prose. */
 const STRUCTURED_LINE = /^\s*(?:[-*+>#|]|\d+[.)])\s?/m;
 const MACHINEGUN_MAX_WORDS = 6;
@@ -460,28 +471,26 @@ function passageAt(spans, offset) {
   return low;
 }
 
-/** W3: more than one em dash in a paragraph, or more than three in the text. */
+/** W3: more than one dash aside in a paragraph, or more than three in the text. */
 function emDashFinding(text, spans) {
-  const total = text.match(EM_DASH)?.length ?? 0;
-  const dashed = spans.flatMap((paragraph, index) =>
-    paragraph.text.includes("—") ? [{ paragraph, index }] : [],
-  );
-  const crowded = dashed.filter(
-    ({ paragraph }) => (paragraph.text.match(EM_DASH)?.length ?? 0) > 1,
-  );
+  const total = text.match(ASIDE_DASH)?.length ?? 0;
+  const dashed = spans.flatMap((paragraph, index) => {
+    const marks = [...paragraph.text.matchAll(ASIDE_DASH)];
+    return marks.length ? [{ paragraph, index, count: marks.length, at: marks[0].index }] : [];
+  });
+  const crowded = dashed.filter(({ count }) => count > 1);
   if (total <= 3 && crowded.length === 0) return null;
-  const sample = (crowded[0] ?? dashed[0]).paragraph;
-  const at = sample.text.indexOf("—");
+  const sample = crowded[0] ?? dashed[0];
   return finding(
     {
       id: "em-dash",
       sign: "W3",
       severity: "medium",
-      label: "em dash asides",
+      label: "dash asides (em dash or double hyphen)",
       fix: "give the aside its own sentence, use a comma, or cut it",
     },
     total,
-    [sentenceAround(sample.text, at, at + 1)],
+    [sentenceAround(sample.paragraph.text, sample.at, sample.at + 1)],
     dashed.map(({ index }) => index),
   );
 }

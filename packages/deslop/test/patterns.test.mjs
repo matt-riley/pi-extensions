@@ -307,3 +307,45 @@ test("a finding that carries no passages counts as one shared passage", () => {
   assert.equal(worthReporting([{ severity: "high" }]), true);
   assert.equal(worthReporting([{ severity: "medium" }]), false);
 });
+
+test("double-hyphen asides count as em dash asides", () => {
+  assert.deepEqual(ids("The cache -- once warm -- serves every read."), ["em-dash"]);
+  assert.deepEqual(ids("The cache--once warm--serves every read."), ["em-dash"]);
+  const mixed = findSlop("The cache — once warm -- serves every read.");
+  assert.equal(mixed[0].id, "em-dash");
+  assert.equal(mixed[0].count, 2);
+});
+
+test("a single double hyphen, or a flag, is not an aside", () => {
+  assert.deepEqual(ids("pi-drift -- notice edits made elsewhere."), []);
+  assert.deepEqual(ids("Pass --verbose or --quiet to change the output."), []);
+  assert.deepEqual(ids("Run it as git commit -m -- message."), []);
+});
+
+test("parenthetical asides are a finding only when the page repeats them", () => {
+  const three =
+    "The cache (once warm) serves every read. The index (built at startup) is small. " +
+    "The log (kept for a day) is plain text.";
+  const found = findSlop(three).find((item) => item.id === "paren-aside");
+  assert.ok(found, three);
+  assert.equal(found.count, 3);
+  assert.equal(found.severity, "high");
+  assert.equal(worthReporting([found]), true);
+  const two = "The cache (once warm) serves every read. The index (built at startup) is small.";
+  assert.deepEqual(ids(two), []);
+});
+
+test("ordinary parentheses are not asides", () => {
+  const sentences = [
+    "Pass the path (for example `src`) first, then use the flag (see below) next.",
+    "The limit (200) is fixed, and the call f(x) runs twice, and it is fast (really).",
+    "The mode is on by default (e.g. in CI), and the run ends (or fails) at the limit.",
+    "Set the key (and the value), then check v2 (beta) today.",
+  ];
+  const text = sentences.join(" ");
+  assert.equal(
+    findSlop(text).some((item) => item.id === "paren-aside"),
+    false,
+  );
+  assert.deepEqual(ids(text), []);
+});
