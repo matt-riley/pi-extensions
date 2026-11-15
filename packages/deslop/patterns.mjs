@@ -55,6 +55,9 @@ const COMPOUND_PREFIXES =
 const DATA_TERMS =
   "string|number|boolean|integer|float|array|object|list|map|file|directory|folder|path|url|id|name|flag|option|key|value|command|function|byte|char|character|int|bool";
 
+const STOCK_QUALITIES =
+  "fast|simple|reliable|secure|scalable|flexible|robust|clean|small|lightweight|powerful|easy|safe|predictable|maintainable|portable|readable|consistent|efficient|composable|extensible";
+
 const CHECKS = [
   {
     id: "filler",
@@ -361,6 +364,47 @@ const CHECKS = [
       /(?<=[a-z]) \((?!(?:e\.g|i\.e|see|for|or|and|etc|cf|via|vs)\b)[a-z][a-z'’-]*(?: [a-z'’-]+){1,7}\)(?= [a-z])/g,
   },
   {
+    id: "triplet",
+    sign: "forced group of three",
+    severity: "low",
+    label: "forced group of three",
+    fix: "keep the items that carry information and drop the rest",
+    pattern: new RegExp(
+      [
+        String.raw`\b(?:${STOCK_QUALITIES}),\s+(?:${STOCK_QUALITIES}),?\s+(?:and|or)\s+(?:${STOCK_QUALITIES})\b`,
+        String.raw`\b(?:no|zero)\s+[\w-]+,\s+(?:no|zero)\s+[\w-]+,?\s+(?:and\s+)?(?:no|zero)\s+[\w-]+`,
+      ].join("|"),
+      "gi",
+    ),
+  },
+  {
+    id: "generic-docs",
+    sign: "generic documentation sentence",
+    severity: "low",
+    label: "sentence that fits any project's docs",
+    fix: "say what this project does, with its own names and numbers",
+    pattern: new RegExp(
+      [
+        phrases([
+          "feel free to",
+          "contributions are welcome",
+          "pull requests are welcome",
+          "a wide range of",
+          "makes it easy to",
+          "make it easy to",
+          "easy to use",
+          "get up and running",
+          "follows best practices",
+          "of all skill levels",
+          "of all experience levels",
+          "aims to provide",
+        ]).source,
+        String.raw`\b(?:designed|built|crafted)\s+with\s+[\w-]+(?:\s+[\w-]+){0,2}\s+in\s+mind\b`,
+      ].join("|"),
+      "gi",
+    ),
+  },
+  {
     id: "very",
     sign: "W20",
     severity: "low",
@@ -587,6 +631,45 @@ function machinegunFinding(spans) {
   return null;
 }
 
+/** Words that name one thing in turn: three of a kind as subjects is a renaming. */
+const SUBJECT_SYNONYMS = [
+  "tool utility solution platform framework",
+  "library package module toolkit",
+  "project repository codebase",
+  "feature capability functionality",
+  "extension plugin addon",
+  "error failure problem issue",
+].map((group) => new Set(group.split(" ")));
+const SUBJECT_OPENER = /(?:^|[.!?]\s+)(?:the|this|that|our|your)\s+([a-z]+)\b/gi;
+const RENAMED_MIN = 3;
+
+/** A paragraph whose sentences open on three different names for one thing. */
+function renamedSubjectFinding(spans) {
+  for (const [index, { text: paragraph }] of spans.entries()) {
+    const subjects = [...paragraph.matchAll(SUBJECT_OPENER)].map((match) => ({
+      word: match[1].toLowerCase(),
+      at: match.index,
+    }));
+    for (const group of SUBJECT_SYNONYMS) {
+      const named = subjects.filter(({ word }) => group.has(word));
+      if (new Set(named.map(({ word }) => word)).size < RENAMED_MIN) continue;
+      return finding(
+        {
+          id: "renamed-subject",
+          sign: "elegant variation",
+          severity: "medium",
+          label: "one subject renamed with a new synonym each time",
+          fix: "pick one name and use it every time",
+        },
+        named.length,
+        [sentenceAround(paragraph, named[0].at, named[0].at + 1)],
+        [index],
+      );
+    }
+  }
+  return null;
+}
+
 const SEVERITY_ORDER = ["high", "medium", "low"];
 
 /**
@@ -620,6 +703,7 @@ export function findSlop(text) {
     exclamationFinding(prose, spans),
     emojiFinding(prose, spans),
     machinegunFinding(spans),
+    renamedSubjectFinding(spans),
   ]) {
     if (extra) findings.push(extra);
   }

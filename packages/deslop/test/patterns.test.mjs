@@ -349,3 +349,93 @@ test("ordinary parentheses are not asides", () => {
   );
   assert.deepEqual(ids(text), []);
 });
+
+test("a forced group of three stock qualities is a weak sign", () => {
+  for (const text of [
+    "The tool is fast, simple, and reliable.",
+    "It stays small, safe or predictable.",
+    "It ships with no config, no daemon, and no setup.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "triplet");
+    assert.ok(found, text);
+    assert.equal(found.severity, "low");
+    assert.equal(worthReporting([found]), false, "a low sign needs company");
+  }
+  const company = findSlop("Moreover, the tool is fast, simple, and reliable.");
+  assert.equal(worthReporting(company), true, "a triple and a transition in one paragraph");
+  const apart = findSlop("Moreover, the tool is plain.\n\nIt is fast, simple, and reliable.");
+  assert.equal(worthReporting(apart), false, "the same two signs in separate paragraphs");
+});
+
+test("an ordinary list of three is not a forced group", () => {
+  for (const text of [
+    "It lints, formats, and tests every file.",
+    "The tool is fast and simple.",
+    "Use read, write, and edit for changes.",
+    "It has no config and no daemon.",
+    "Keep it fast, then simple, then reliable.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test('"serves as" is a medium sign and a plain verb is left alone', () => {
+  for (const text of ["The tag serves as a fallback.", "Both files stand as the record."]) {
+    const found = findSlop(text).find((item) => item.id === "serves-as");
+    assert.ok(found, text);
+    assert.equal(found.severity, "medium");
+  }
+  for (const text of [
+    "The cache serves every read, and it serves assets from disk.",
+    "Observers see each file as it changes.",
+    "Call `serves as` by name.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a subject renamed with a new synonym each time is a weak sign", () => {
+  const text =
+    "The tool reads the config file from the project root. " +
+    "The utility parses it into a tree of nodes. " +
+    "The solution caches the result for later runs.";
+  const found = findSlop(text).find((item) => item.id === "renamed-subject");
+  assert.ok(found, text);
+  assert.equal(found.severity, "medium");
+  assert.equal(worthReporting([found]), false, "a medium sign needs company");
+  assert.equal(found.count, 3);
+});
+
+test("a repeated subject, unrelated subjects or two names are not a renaming", () => {
+  const first = "The tool reads the config file from the project root. ";
+  for (const text of [
+    `${first}The tool parses it into a tree of nodes. The tool caches the result for later runs.`,
+    `${first}The library parses it into a tree of nodes. The user caches the result for later runs.`,
+    `${first}The utility parses it into a tree of nodes.`,
+    `${first.trim()}\n\nThe utility parses it into a tree of nodes.\n\nThe solution caches the result for later runs.`,
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a sentence that fits any project's docs is a weak sign", () => {
+  for (const text of [
+    "Feel free to open an issue.",
+    "Contributions are welcome.",
+    "It supports a wide range of formats.",
+    "The library is designed with simplicity in mind.",
+    "It makes it easy to get up and running.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "generic-docs");
+    assert.ok(found, text);
+    assert.equal(found.severity, "low");
+    assert.equal(worthReporting([found]), false);
+  }
+});
+
+test("specific sentences are not generic docs", () => {
+  for (const text of [
+    "The cache holds 100 entries and drops the oldest first.",
+    "Open an issue with the failing command and its output.",
+    "A feeling of freedom is not a finding. The range of ports is 8000 to 8100.",
+    "It is designed to run on Node 20 with no network access.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
