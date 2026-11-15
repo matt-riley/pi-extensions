@@ -139,18 +139,21 @@ test("a comment that gives a reason, a number or a name is kept", () => {
     assert.equal(idsOf(added("src/a.ts", text)).includes("echo-comment"), false, text);
 });
 
-test("an any cast or a bare ts-ignore used to quiet the type checker is found", () => {
+test("an any cast used to quiet the type checker is found", () => {
   for (const text of [
     "const value = input as any;",
     "run(<any>input);",
     "const rows = data as unknown as Row[];",
-    "// @ts-ignore\nrun(input);",
-    "// @ts-expect-error\nrun(input);",
     "x.y = (z as any).w;",
   ]) {
     const found = findCodeSlop(added("src/a.ts", text)).find((item) => item.id === "silenced-type");
     assert.ok(found, text);
   }
+});
+
+test("a type-check suppression comment is reported by the lowered-bar pass, not as a cast", () => {
+  for (const text of ["// @ts-ignore\nrun(input);", "// @ts-expect-error\nrun(input);"])
+    assert.equal(idsOf(added("src/a.ts", text)).includes("silenced-type"), false, text);
 });
 
 test("a typed cast, a reasoned suppression and a non-TypeScript file are left alone", () => {

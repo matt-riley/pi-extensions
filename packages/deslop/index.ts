@@ -34,7 +34,7 @@ export default function piDeslopExtension(pi: ExtensionAPI) {
 
   pi.registerCommand("deslop", {
     description:
-      "Rewrite existing prose plainly: /deslop <file-or-directory>. Review a branch's code: /deslop code [base]",
+      "Rewrite existing prose plainly: /deslop <file-or-directory>. Review a branch's code and any lowered bar: /deslop code [base]",
     handler: async (args, ctx) => {
       if (flagOff(process.env[DESLOP_ENV])) {
         ctx.ui?.notify?.("deslop is disabled (PI_DESLOP).", "info");

@@ -7,6 +7,7 @@
 // shape formatFindings already prints. Every check is a heuristic: a hit is a
 // place to look, never a rewrite, and nothing here edits a file.
 
+import { findLoweredBar } from "./lowered.mjs";
 import { formatFindings } from "./patterns.mjs";
 
 /** Diffs past this are cut: a generated change is not worth judging line by line. */
@@ -15,6 +16,7 @@ const MAX_DIFF_CHARS = 400_000;
 const MAX_LINE_CHARS = 500;
 const MAX_EXCERPTS = 5;
 const MAX_EXCERPT_CHARS = 100;
+const MAX_COMMITS = 50;
 
 const CODE_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs)$/;
 const SKIPPED_PATH =
@@ -197,14 +199,9 @@ function echoComments(files) {
 }
 
 const STRING_LITERAL = /(["'`])(?:\\.|(?!\1)[^\\])*\1/g;
-const TYPE_SILENCERS = [
-  /\bas\s+any\b/,
-  /(?<![\w>])<any>/,
-  /\bas\s+unknown\s+as\b/,
-  /@ts-(?:ignore|expect-error)\s*$/,
-];
+const TYPE_SILENCERS = [/\bas\s+any\b/, /(?<![\w>])<any>/, /\bas\s+unknown\s+as\b/];
 
-/** `as any`, `as unknown as T` and a bare ts-ignore: the cast is there to make the error go away. */
+/** `as any` and `as unknown as T`: the cast is there to make the error go away. A ts-ignore comment is a suppression, which lowered.mjs reports. */
 function silencedTypes(files) {
   const hits = [];
   for (const file of files) {
@@ -512,6 +509,32 @@ async function defaultBase(exec, cwd) {
 /** Low findings are hints: they are shown only beside a medium one, never alone. */
 const reportable = (findings) => (findings.some((item) => item.severity !== "low") ? findings : []);
 
+/** The messages of the commits on this branch, or null when git cannot read them. */
+async function commitMessages(exec, cwd, mergeBase) {
+  if (!SAFE_REF.test(mergeBase)) return null;
+  const log = await git(exec, cwd, [
+    "log",
+    "--no-color",
+    "--no-show-signature",
+    "--format=%B%x1e",
+    "-n",
+    String(MAX_COMMITS),
+    `${mergeBase}..HEAD`,
+  ]);
+  return log === null ? null : log.split("\x1e");
+}
+
+/**
+ * The lowered-bar findings. Commit messages are read only when something
+ * strong turned up, because a message is how a strong flag becomes a weak one.
+ */
+async function loweredBar(exec, cwd, mergeBase, diff) {
+  const found = findLoweredBar(diff);
+  if (!found.some((item) => item.severity === "high")) return found;
+  const messages = await commitMessages(exec, cwd, mergeBase);
+  return messages ? findLoweredBar(diff, messages) : found;
+}
+
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
@@ -539,12 +562,15 @@ export async function reviewBranch(exec, cwd, base) {
   if (diff === null) return "deslop code: git diff failed.";
   if (!diff.trim()) return `deslop code: no changes since ${against}.`;
 
-  const findings = reportable(findCodeSlop(diff));
-  const examined = parseDiff(diff).filter((file) => !file.skipped).length;
+  const findings = reportable([
+    ...findCodeSlop(diff),
+    ...(await loweredBar(exec, cwd, mergeBase, diff)),
+  ]);
+  const changed = (diff.match(/^diff --git /gm) ?? []).length;
   const proposals = findings.reduce((sum, item) => sum + item.count, 0);
   const cut =
     diff.length > MAX_DIFF_CHARS ? ` The diff was cut at ${MAX_DIFF_CHARS} characters.` : "";
-  const where = `in ${plural(examined, "file")} changed since ${against}`;
+  const where = `in ${plural(changed, "file")} changed since ${against}`;
   if (proposals === 0) return `deslop code: no proposals ${where}.${cut}`;
   return [
     `deslop code: ${plural(proposals, "proposal")} ${where}.${cut}`,

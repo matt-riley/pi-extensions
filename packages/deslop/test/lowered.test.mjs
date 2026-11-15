@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import piDeslopExtension from "../index.ts";
+import { reviewBranch } from "../codeslop.mjs";
 import { findLoweredBar } from "../lowered.mjs";
+import { formatFindings } from "../patterns.mjs";
 
 /** A diff for one file. Lines start with "+" added, " " context or "-" removed. */
 function diffOf(file, lines, mode = "") {
@@ -461,4 +464,150 @@ test("a clean source change produces no flags", () => {
     added("main.go", "func Sync() error {", "\treturn push()", "}"),
   ].join("\n");
   assert.deepEqual(findLoweredBar(clean), []);
+});
+
+const TS_SUPPRESSION = added("src/a.ts", ["// @ts", "-ignore"].join(""));
+const SKIPPED_TEST = added("src/a.test.ts", "it.skip('adds', () => {});");
+const LOWERED_FLOOR = diffOf("package.json", ['-  "lines": 90,', '+  "lines": 70,']);
+const STUB = added("tool.py", "    raise NotImplementedError");
+
+test("a commit message that names the change and gives a reason downgrades that category", () => {
+  const cases = [
+    [
+      TS_SUPPRESSION,
+      "suppression",
+      "fix(api): suppress the type error because the generated client is wrong",
+    ],
+    [SKIPPED_TEST, "easier-test", "test: skip the timer test until the upstream fix lands"],
+    [
+      LOWERED_FLOOR,
+      "weaker-check",
+      "ci: lower the coverage threshold, generated code is tracked in #12",
+    ],
+    [STUB, "unfinished", "feat(sync): stub the parser for now, follow-up tracked in #7"],
+  ];
+  for (const [diff, id, message] of cases) {
+    assert.deepEqual(kinds(diff), [`${id}/high`]);
+    assert.deepEqual(kinds(diff, [message]), [`${id}/low`], message);
+  }
+});
+
+test("a commit message with no reason, or about something else, leaves the flag strong", () => {
+  assert.deepEqual(kinds(SKIPPED_TEST, ["test: skip the timer test"]), ["easier-test/high"]);
+  assert.deepEqual(kinds(SKIPPED_TEST, ["feat: add a retry because users asked for one"]), [
+    "easier-test/high",
+  ]);
+  assert.deepEqual(kinds(TS_SUPPRESSION, ["fix(api): skip the timer test until the fix lands"]), [
+    "suppression/high",
+  ]);
+  assert.deepEqual(kinds(TS_SUPPRESSION, []), ["suppression/high"]);
+});
+
+test("a message downgrades only the category it is about", () => {
+  const both = `${TS_SUPPRESSION}\n${SKIPPED_TEST}`;
+  const found = findLoweredBar(both, ["test: skip the timer test until the upstream fix lands"]);
+  assert.deepEqual(found.map((item) => `${item.id}/${item.severity}`).sort(), [
+    "easier-test/low",
+    "suppression/high",
+  ]);
+});
+
+test("findings print in the shape the other deslop passes use", () => {
+  const [found] = findLoweredBar(TS_SUPPRESSION);
+  assert.equal(
+    formatFindings([found]).startsWith(
+      '- new suppression of a lint, type or coverage check (lowered-bar, high): "src/a.ts:1: ',
+    ),
+    true,
+  );
+  assert.match(formatFindings([found]), /Fix: .+\.$/);
+  const [weak] = findLoweredBar(TS_SUPPRESSION, ["fix: suppress it because the client is wrong"]);
+  assert.match(formatFindings([weak]), /\(lowered-bar, low\)/);
+});
+
+/** A fake exec that answers git calls from a table of `subcommand` to stdout, or null for a failure. */
+function fakeGit(answers) {
+  const calls = [];
+  const exec = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    const sub = args.find((arg, at) => at > 0 && !arg.startsWith("-") && args[at - 1] !== "-C");
+    const out = answers[sub];
+    return out === null || out === undefined
+      ? { code: 1, stdout: "", stderr: "fatal" }
+      : { code: 0, stdout: out, stderr: "" };
+  };
+  return { exec, calls };
+}
+const review = (diff, log = "") =>
+  fakeGit({ "symbolic-ref": "origin/main", "merge-base": "abc123\n", diff, log });
+
+test("the branch review reports a lowered bar beside the code-slop findings", async () => {
+  const git = review(`${TS_SUPPRESSION}\n${SKIPPED_TEST}`);
+  const text = await reviewBranch(git.exec, "/repo");
+  assert.match(text, /^deslop code: 2 proposals in 2 files changed since origin\/main\./);
+  assert.match(text, /\(lowered-bar, high\)/);
+  assert.match(text, /Nothing was edited/);
+});
+
+test("the review reads commit messages only when something strong needs them, and read-only", async () => {
+  const quiet = review(added("src/a.ts", "export const total = 1;"));
+  await reviewBranch(quiet.exec, "/repo");
+  assert.equal(
+    quiet.calls.some((call) => call.includes("log")),
+    false,
+  );
+
+  const git = review(SKIPPED_TEST, "test: skip the timer test until the upstream fix lands\n\x1e");
+  const text = await reviewBranch(git.exec, "/repo");
+  const log = git.calls.find((call) => call.includes("log"));
+  assert.deepEqual(log.slice(0, 3), ["git", "-C", "/repo"]);
+  assert.ok(log.includes("abc123..HEAD"));
+  assert.ok(log.includes("--no-color"));
+  assert.match(text, /no proposals/, "a weak flag alone is not reported");
+
+  const strong = review(SKIPPED_TEST, "feat: add a thing\n\x1e");
+  assert.match(await reviewBranch(strong.exec, "/repo"), /\(lowered-bar, high\)/);
+  const unreadable = review(SKIPPED_TEST, null);
+  assert.match(await reviewBranch(unreadable.exec, "/repo"), /\(lowered-bar, high\)/);
+});
+
+test("a weak lowered-bar flag shows beside a strong one", async () => {
+  const git = review(
+    `${SKIPPED_TEST}\n${TS_SUPPRESSION}`,
+    "test: skip the timer test until the upstream fix lands\n\x1e",
+  );
+  const text = await reviewBranch(git.exec, "/repo");
+  assert.match(text, /\(lowered-bar, low\)/);
+  assert.match(text, /\(lowered-bar, high\)/);
+});
+
+test("/deslop code includes the lowered-bar pass and edits nothing", async () => {
+  const commands = {};
+  const messages = [];
+  const notices = [];
+  piDeslopExtension({
+    registerCommand: (name, command) => (commands[name] = command),
+    sendUserMessage: (...args) => messages.push(args),
+    on: () => {},
+    exec: review(LOWERED_FLOOR).exec,
+  });
+  const ctx = { cwd: "/repo", ui: { notify: (...args) => notices.push(args) } };
+  await commands.deslop.handler("code", ctx);
+  assert.equal(messages.length, 0);
+  assert.match(notices[0][0], /^deslop code: 1 proposal in 1 file changed since origin\/main\./);
+  assert.match(notices[0][0], /threshold lowered, CI check removed or lint rule switched off/);
+});
+
+test("the passes stay fast on a huge diff of long and repetitive lines", () => {
+  const catches = Array.from({ length: 4000 }, () => "} catch (error) {").join("\n");
+  const comments = Array.from({ length: 4000 }, () => "// ".concat("word ".repeat(40))).join("\n");
+  for (const diff of [
+    added("src/a.ts", catches),
+    added("src/b.ts", comments),
+    added("a.yml", comments),
+  ]) {
+    const start = performance.now();
+    findLoweredBar(diff);
+    assert.ok(performance.now() - start < 1_500, "a check took longer than a second and a half");
+  }
 });

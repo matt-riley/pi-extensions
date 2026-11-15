@@ -177,7 +177,7 @@ code.
 | --- | --- |
 | Failure turned into a normal-looking value | A `catch` whose whole body returns `null`, `false`, `undefined` or an empty value, an empty `catch`, `.catch(() => [])`, a Python `except` that only passes or returns nothing, a Go `if err != nil` that returns `nil`. Logging, rethrowing, a call or a comment in the body clears it. |
 | Comment saying what the next line already says | A one-line comment whose content words all occur in the line below, such as `// increment the counter` over `counter += 1`. A reason word, a colon, a digit or a lint directive clears it. |
-| Type escape hatch used to quiet the compiler | `as any`, `<any>`, `as unknown as T`, and a `@ts-ignore` or `@ts-expect-error` with no reason after it, in TypeScript files. |
+| Type escape hatch used to quiet the compiler | `as any`, `<any>` and `as unknown as T`, in TypeScript files. A `@ts-ignore` or `@ts-expect-error` comment is a suppression, which the [lowered-bar](#lowered-bar-checks) pass reports. |
 | Default or guard for a case nobody described | A real `a ?? b ?? c` chain, or a comment that says `fallback`, `just in case`, `should never happen`, `legacy` or `backwards compatible`. Two separate `??` on one line do not count. |
 | Logic buried under several levels of conditions | An `if`, `for` or `while` that sits inside three other blocks, and an `else` that follows a block which already returned, threw or continued. |
 | Interface with a single implementation, or wrapper that only forwards | An interface or abstract class the diff implements once, and a function whose body only passes its own parameters, in order, to one other function. |

@@ -539,27 +539,48 @@ const CHECKS = [
     id: "suppression",
     label: "new suppression of a lint, type or coverage check",
     fix: "fix what the check found, or write down why the suppression is safe",
+    topic: [
+      /\b(?:suppress\w*|ignor\w+|disabl\w+|silenc\w+|lint\w*|noqa|nolint|ts-ignore|ts-expect-error)\b/i,
+    ],
     scan: suppressions,
   },
   {
     id: "easier-test",
     label: "test skipped, deleted or stripped of assertions",
     fix: "make the test pass, or say why it can go",
+    topic: [
+      /\b(?:skip\w*|flak\w+|disabl\w+|remov\w+|delet\w+|drop\w*|ignor\w+|only)\b/i,
+      /\b(?:tests?|specs?|assert\w*)\b/i,
+    ],
     scan: easierTests,
   },
   {
     id: "weaker-check",
     label: "threshold lowered, CI check removed or lint rule switched off",
     fix: "restore it, or record why the bar can drop",
+    topic: [
+      /\b(?:lower\w*|reduc\w+|relax\w*|loosen\w*|drop\w*|remov\w+|delet\w+|disabl\w+|off|rais\w+)\b/i,
+      /\b(?:coverage|threshold|budget|lint\w*|ci|workflows?|checks?|rules?|steps?)\b/i,
+    ],
     scan: weakerChecks,
   },
   {
     id: "unfinished",
     label: "stub, empty error handler or TODO standing in for the code",
     fix: "write the missing code, or note what tracks it",
+    topic: [
+      /\b(?:stub\w*|todo|not implemented|unimplemented|placeholder|scaffold\w*|wip|empty|swallow\w*|ignor\w+)\b/i,
+    ],
     scan: unfinishedWork,
   },
 ];
+
+const REASON_IN_MESSAGE =
+  /\b(?:because|since|due to|so that|until|temporar\w+|workaround|flak\w+|upstream|follow-?up|tracked|for now|false positive|intentional\w*|deliberate\w*|obsolete|superseded)\b|#\d+/i;
+
+/** Whether one commit message is about this kind of change and says why it was made. */
+const messageGivesReason = (check, message) =>
+  REASON_IN_MESSAGE.test(message) && check.topic.every((pattern) => pattern.test(message));
 
 const excerptOf = (hit) =>
   `${hit.path}${hit.n ? `:${hit.n}` : ""}: ${hit.text.trim().slice(0, MAX_EXCERPT_CHARS)}`;
@@ -567,14 +588,17 @@ const excerptOf = (hit) =>
 /**
  * Proposals for a branch diff, as many findings as there are checks and
  * strengths: a strong one (severity "high") for hits with no reason, and a weak
- * one ("low") for hits that state one. The shape matches the code-slop
+ * one ("low") for hits that state one, on the line, in an adjacent comment or in
+ * a commit message about that kind of change (`messages`). The shape matches the code-slop
  * findings, so formatFindings prints both.
  */
-export function findLoweredBar(diff) {
+export function findLoweredBar(diff, messages = []) {
   const files = parseChanges(diff);
+  const said = [messages].flat().map(String);
   const findings = [];
   for (const check of CHECKS) {
-    const hits = check.scan(files);
+    const explained = said.some((message) => messageGivesReason(check, message));
+    const hits = check.scan(files).map((hit) => ({ ...hit, weak: hit.weak || explained }));
     for (const weak of [false, true]) {
       const group = hits.filter((hit) => Boolean(hit.weak) === weak);
       if (group.length === 0) continue;
