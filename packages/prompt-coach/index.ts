@@ -159,10 +159,16 @@ export default function piPromptCoachExtension(
           action = "rewritten";
           message = "Improved prompt is in the input box: edit it and press Enter.";
         } else {
-          message = "Prompt improvement was not verified; original is in the input box.";
+          const why = intentError
+            ? `the TypeSafe intent check could not run (${intentError})`
+            : intentProbability === null
+              ? "the TypeSafe intent check gave no usable answer"
+              : `the TypeSafe intent check scored it ${intentProbability.toFixed(2)}, below the ${intentThreshold.toFixed(2)} threshold`;
+          message = `Rewrite not used: ${why}; original is in the input box.`;
         }
       } else if (validation.ok && !rewriteError) {
         action = "unchanged";
+        message = `No change: ${usedModel ?? "the model"} returned your prompt as written (it judged it already clear, or ignored the rewrite instructions); original is in the input box.`;
       }
 
       record({
@@ -179,7 +185,7 @@ export default function piPromptCoachExtension(
         subscription,
       });
 
-      const level = action === "rewritten" || action === "unchanged" ? "info" : "warning";
+      const level = action === "rewritten" ? "info" : "warning";
       if (place(ctx, placed)) {
         setStatus(
           ctx,
