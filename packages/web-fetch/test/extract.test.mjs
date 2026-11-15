@@ -7,6 +7,7 @@ import {
   isHtmlContent,
   isTextMime,
   parseContentType,
+  sliceText,
   truncateText,
 } from "../extract.mjs";
 
@@ -64,9 +65,30 @@ test("truncateText: word boundary", () => {
   const text = "one two three four five six seven eight nine ten";
   const { text: cut, truncated } = truncateText(text, 20);
   assert.equal(truncated, true);
-  assert.ok(cut.endsWith("… [truncated]"));
-  assert.ok(!cut.slice(0, -14).endsWith(" ")); // not cut mid-word
+  assert.ok(!cut.includes("… [truncated]"));
+  assert.ok(!cut.endsWith(" ")); // not cut mid-word
   assert.equal(truncateText("short", DEFAULT_MAX_CHARS).truncated, false);
+});
+
+test("sliceText keeps the remainder reachable at the cut offset", () => {
+  const text = "one two three four five six seven eight nine ten";
+  const first = sliceText(text, 20, 0);
+  assert.equal(first.truncated, true);
+  assert.equal(first.total, text.length);
+  assert.equal(first.text, text.slice(first.start, first.end));
+  const second = sliceText(text, 20, first.end);
+  assert.equal(text.slice(0, first.end) + second.text + text.slice(second.end), text);
+  assert.equal(sliceText(text, 20, text.length).text, "");
+});
+
+test("extractPage keeps the full page when it is over the output budget", () => {
+  const paragraph = "This is the main content with a fair amount of readable text. ";
+  const body = `<!DOCTYPE html><html><body><article><p>${paragraph.repeat(80)}</p></article></body></html>`;
+  const out = extractPage({ contentType: "text/html", body, maxChars: 200 });
+  assert.equal(out.kind, "page");
+  assert.equal(out.truncated, true);
+  assert.ok(out.markdown.length > 200);
+  assert.ok(!out.markdown.includes("… [truncated]"));
 });
 
 test("content-type helpers", () => {

@@ -13,7 +13,6 @@ import {
   isBinaryMime,
   isHtmlContent,
   parseContentType,
-  truncateText,
   THIN_CONTENT_CHARS,
 } from "./extract.mjs";
 import { ghAvailable, isGithubUrl, parseGithubUrl, fetchGithub } from "./github.mjs";
@@ -420,33 +419,29 @@ function finalize(payload, { format, maxChars, includeImages, via }) {
   }
 
   if (payload.kind === "text") {
-    const capped = truncateText(
-      payload.body,
-      format === "raw" ? Math.max(maxChars, 100000) : maxChars,
-    );
+    const budget = format === "raw" ? Math.max(maxChars, 100000) : maxChars;
     return {
       kind: "text",
       finalUrl: payload.finalUrl,
       status: payload.status,
       statusText: payload.statusText,
       mime: payload.mime,
-      text: capped.text,
-      truncated: capped.truncated,
+      text: payload.body,
+      truncated: payload.body.length > budget,
       via,
     };
   }
 
   // html payload
   if (format === "raw") {
-    const capped = truncateText(payload.body, maxChars);
     return {
       kind: "raw",
       finalUrl: payload.finalUrl,
       status: payload.status,
       statusText: payload.statusText,
       mime: payload.mime,
-      text: capped.text,
-      truncated: capped.truncated,
+      text: payload.body,
+      truncated: payload.body.length > maxChars,
       via,
     };
   }

@@ -1,7 +1,7 @@
 // format.mjs — render fetch outcomes into the text the model receives.
 // Pure and unit-testable; index.ts only wires it to the tool execution.
 
-import { truncateText } from "./extract.mjs";
+import { sliceText } from "./extract.mjs";
 
 const FORMAT_LABELS = new Set(["markdown", "html", "text", "json", "raw"]);
 
@@ -22,28 +22,38 @@ function metadataHeader(outcome) {
   return lines;
 }
 
-export function formatWebFetchResult(outcome, { format = "markdown", maxChars } = {}) {
+export function formatWebFetchResult(outcome, { format = "markdown", maxChars, offset = 0 } = {}) {
   switch (outcome.kind) {
     case "binary":
       return formatBinary(outcome);
     case "text":
-      return formatTextPayload(outcome, format);
+      return formatTextPayload(outcome, format, maxChars, offset);
     case "raw":
-      return outcome.truncated
-        ? `${outcome.text}\n\n[truncated at ${maxChars ?? 200000} chars — raise maxChars for more]`
-        : outcome.text;
+      return formatCappedText(outcome.text, maxChars ?? 200000, offset);
     case "page":
-      return formatPage(outcome, format, maxChars);
+      return formatPage(outcome, format, maxChars, offset);
     default:
       return "Unknown fetch result.";
   }
 }
 
-function formatPage(outcome, format, maxChars) {
+function cutNote(window, label = "content") {
+  if (!window.truncated) return "";
+  return `\n\n[${label} truncated at ${window.end} of ${window.total} chars — use offset=${window.end} to continue]`;
+}
+
+function formatCappedText(text, maxChars, offset) {
+  const window = sliceText(text, maxChars, offset);
+  return `${window.text}${cutNote(window)}`;
+}
+
+function formatPage(outcome, format, maxChars, offset) {
   const header = metadataHeader(outcome);
+  const budget = maxChars ?? 60000;
 
   if (format === "json") {
-    const json = JSON.stringify(
+    const window = sliceText(outcome.markdown ?? "", budget, offset);
+    return JSON.stringify(
       {
         url: outcome.finalUrl,
         title: outcome.title,
@@ -54,14 +64,15 @@ function formatPage(outcome, format, maxChars) {
         lang: outcome.lang,
         canonical: outcome.canonical,
         via: outcome.via,
-        content: outcome.markdown,
-        truncated: outcome.truncated,
+        content: window.text,
+        truncated: window.truncated,
+        offset: window.start,
+        totalChars: window.total,
+        ...(window.truncated ? { nextOffset: window.end } : {}),
       },
       null,
       2,
     );
-    const capped = truncateText(json, maxChars ?? 60000);
-    return capped.text;
   }
 
   let body;
@@ -69,31 +80,34 @@ function formatPage(outcome, format, maxChars) {
   else if (format === "text") body = outcome.text;
   else body = outcome.markdown;
 
+  const window = sliceText(body ?? "", budget, offset);
   const head = header.length ? header.join("\n") : "";
-  const truncatedNote = outcome.truncated
-    ? `\n\n[content truncated at ${maxChars ?? 60000} chars — raise maxChars for more]`
-    : "";
-  return `${head}${head ? "\n\n" : ""}${body}${truncatedNote}`;
+  return `${head}${head ? "\n\n" : ""}${window.text}${cutNote(window)}`;
 }
 
-function formatTextPayload(outcome, format) {
+function formatTextPayload(outcome, format, maxChars, offset) {
   const header = metadataHeader(outcome);
+  const budget = maxChars ?? 60000;
+  const head = header.length ? header.join("\n") : "";
 
   if (format === "json") {
+    let source = outcome.text ?? "";
     try {
-      const parsed = JSON.parse(outcome.text);
-      return `${header.join("\n")}${header.length ? "\n\n" : ""}${JSON.stringify(parsed, null, 2)}`;
+      source = JSON.stringify(JSON.parse(source), null, 2);
     } catch {
-      return `${header.join("\n")}${header.length ? "\n\n" : ""}${outcome.text}`;
+      // keep the original text when it is not JSON
     }
+    const window = sliceText(source, budget, offset);
+    return `${head}${head ? "\n\n" : ""}${window.text}${cutNote(window)}`;
   }
 
-  let body = outcome.text;
+  const window = sliceText(outcome.text ?? "", budget, offset);
+  let body = window.text;
   if (format === "markdown" && !isPlainTextMime(outcome.mime)) {
-    const fence = outcome.text.includes("```") ? "~~~~" : "```";
-    body = `${fence}\n${outcome.text}\n${fence}`;
+    const fence = body.includes("```") ? "~~~~" : "```";
+    body = `${fence}\n${body}\n${fence}`;
   }
-  return `${header.join("\n")}${header.length ? "\n\n" : ""}${body}${outcome.truncated ? "\n\n[truncated]" : ""}`;
+  return `${head}${head ? "\n\n" : ""}${body}${cutNote(window)}`;
 }
 
 function isPlainTextMime(mime) {
@@ -143,6 +157,7 @@ export function formatBatchResult(items, { concurrency } = {}) {
         formatWebFetchResult(item.outcome, {
           format: item.request.format ?? "markdown",
           maxChars: item.cap ?? item.request.maxChars,
+          offset: item.request.offset ?? 0,
         }),
       );
     }
