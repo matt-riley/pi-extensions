@@ -20,3 +20,31 @@ When a decision is the user's to make (a preference, a tradeoff, an assumption y
 export function promptSection(enabled, planPrompt) {
   return enabled ? ["plan_mode", planPrompt] : ["ask_user", ASK_USER_PROMPT];
 }
+
+const APPROVAL_ASKS = [
+  /\bis (?:this|the|my) plan (?:ok|okay|good|fine|acceptable|alright)\b/i,
+  /\bhow (?:does|do) (?:this|the|that) plan look\b/i,
+  /\b(?:should|shall) i (?:proceed|go ahead|start|begin|implement)\b/i,
+  /\bany (?:changes|comments|feedback|concerns) before (?:we|i) (?:start|begin|proceed|implement|go)\b/i,
+  /\bready (?:to|for) (?:implement|implementation|proceed|start|go)\b/i,
+  /\bdo you approve\b|\bapprove (?:this|the) plan\b/i,
+  /\b(?:looks good|lgtm)\b[^.\n]*\bproceed\b/i,
+];
+
+/**
+ * Why a question may not be asked in plan mode, or null. Asking the user to
+ * approve the plan is the job of plan_mode_complete, which puts the plan in
+ * front of them; a question dialog for it is a second, unrecorded route to the
+ * same approval. Decisions still go through plan_mode_question.
+ */
+export function approvalQuestionProblem({ title, question, options } = {}) {
+  const parts = [title, question, ...(Array.isArray(options) ? options : [])].filter(
+    (part) => typeof part === "string",
+  );
+  if (!APPROVAL_ASKS.some((pattern) => pattern.test(parts.join("\n")))) return null;
+  return (
+    "Rejected: do not ask for approval of the plan with a question. plan_mode_question is for decisions. " +
+    "When the plan is decision-complete, call plan_mode_complete alone: it puts the plan in front of the user, " +
+    "who approves it with /plan approve."
+  );
+}

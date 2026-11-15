@@ -40,7 +40,12 @@ import { decideGate, judgeQuestion } from "./ask-gate.mjs";
 import { PLAN_MODE_PROMPT } from "./plan-prompt.mjs";
 import { createScoutSlots, runPlanScout } from "./plan-scout.mjs";
 import { planProblem } from "./plan-shape.mjs";
-import { QUESTION_DESCRIPTION, QUESTION_LABEL, promptSection } from "./question.mjs";
+import {
+  QUESTION_DESCRIPTION,
+  QUESTION_LABEL,
+  approvalQuestionProblem,
+  promptSection,
+} from "./question.mjs";
 import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
@@ -483,6 +488,12 @@ export default function planMode(pi: ExtensionAPI) {
             },
           ],
         };
+      }
+      // While planning, approval has one route (plan_mode_complete). Outside plan
+      // mode there is no plan to approve, so "should I proceed?" stays a fair question.
+      const refused = state.enabled ? approvalQuestionProblem({ title, question, options }) : null;
+      if (refused) {
+        return { content: [{ type: "text", text: refused }] };
       }
       // A question the context already settles does not deserve a dialog. The
       // judgment is deliberately conservative and silent on doubt: a
