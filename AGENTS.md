@@ -51,6 +51,11 @@ package is published to npm on its own.
 Use `docs/verification.md` for this project's setup, real-host fixture, expected
 behavior, target revision and cleanup.
 
+## Skills
+
+Keep skills lean: see `docs/skill-diet.md` before adding to or editing a
+`SKILL.md`.
+
 ## Commands
 
 - `npm test` — run the test suite (`node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'`).
