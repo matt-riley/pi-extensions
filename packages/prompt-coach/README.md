@@ -80,8 +80,22 @@ refused. Paths are confined to the repository (symlinks that leave it are
 refused), `.git` and `node_modules` are skipped, and secret-looking files
 (`.env*`, `.npmrc`, `*.pem`, `*.key`, `id_*`, `auth.json`, …) are never opened.
 
+When the probe names nothing but the repository (no changed files and no CI
+run), the model used to be left with no idea what the project holds, and could
+reply that it could not rewrite the request. In that case `/improve` first reads
+a small fixed set of key files itself, through the same read-only tools: the
+README, the `package.json` name, entry points and scripts (not its dependency
+lists), up to two entry files (the `main` field, then common names such as
+`src/main.ts` or `app/page.tsx`) and up to two tests. At most six files and
+12,000 characters go to the model, as `project_context`, and they are listed in
+`files_read`. It is a local read: no extra model call, no network, no write.
+If none of those files exist or can be read, the model gets the generic brief
+and is told to write the best rewrite it can and to tell the agent to find the
+files it needs, never to refuse.
+
 Whatever it reads is sent to the model provider. Set
-`PI_PROMPT_COACH_READ_FILES=0` to send only the prompt and the names-only probe.
+`PI_PROMPT_COACH_READ_FILES=0` to send only the prompt and the names-only probe
+(this also turns the key-file read off).
 
 The command:
 
