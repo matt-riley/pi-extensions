@@ -85,7 +85,7 @@ a habit that models repeat.
   article phrase, as in `this is not a bug but a feature`. Strong, because the
   sentence only exists to knock the first half down.
 - **One-line closer.** A last sentence that signs off, such as `that's it`,
-  `simple as that` or `no magic`. Strong when it ends a line.
+  `simple as that` or `no magic`. Strong when it ends a line with a full stop or an exclamation mark.
 - **"X, not Y" contrast.** A copula, an article and a noun phrase followed by
   `, not a …`, `—not a …` or `-- not a …`, as in
   `this is a library, not a framework`. A correction whose second half is a data
@@ -128,6 +128,50 @@ signs, which need TypeSafe confirmation before a note is shown.
 The signs that need judgment (habitual passive voice, a point restated in
 three sections, a product given human intent) have no regular expression. The
 second TypeSafe request reads the whole rewrite and covers some of that ground.
+
+## Code review pass: `/deslop code [base]`
+
+The prose checks above read text. This command reads code, as its own pass with
+its own list, and it runs only when you type it: `/deslop code` or
+`/deslop code <base>`. To clean a directory that is itself called `code`, write
+`./code`.
+
+**How it picks what to read.** It finds the commit where your branch left the
+base (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`, or
+the ref you pass) and diffs the working tree against it. Only lines the branch
+added are judged, with the few context lines git prints beside them so a check can
+see the line above or below. Test files, build output and anything that is not
+code are skipped, though tests still count when a check asks who uses a name.
+
+**What it does with the result.** It prints a list in the same format as the prose
+notes and stops there. The git calls are read-only and no file is touched, so
+whether to act on a line is a decision for you or the agent after reading the
+code.
+
+| Finding | Matches |
+| --- | --- |
+| Failure turned into a normal-looking value | A `catch` whose whole body returns `null`, `false`, `undefined` or an empty value, an empty `catch`, `.catch(() => [])`, a Python `except` that only passes or returns nothing, a Go `if err != nil` that returns `nil`. Logging, rethrowing, a call or a comment in the body clears it. |
+| Comment saying what the next line already says | A one-line comment whose content words all occur in the line below, such as `// increment the counter` over `counter += 1`. A reason word, a colon, a digit or a lint directive clears it. |
+| Type escape hatch used to quiet the compiler | `as any`, `<any>`, `as unknown as T`, and a `@ts-ignore` or `@ts-expect-error` with no reason after it, in TypeScript files. |
+| Default or guard for a case nobody described | A real `a ?? b ?? c` chain, or a comment that says `fallback`, `just in case`, `should never happen`, `legacy` or `backwards compatible`. Two separate `??` on one line do not count. |
+| Logic buried under several levels of conditions | An `if`, `for` or `while` that sits inside three other blocks, and an `else` that follows a block which already returned, threw or continued. |
+| Interface with a single implementation, or wrapper that only forwards | An interface or abstract class the diff implements once, and a function whose body only passes its own parameters, in order, to one other function. |
+
+The last row is a low finding. A low finding is listed only when a medium one is
+also present, so a diff with nothing but a forwarding wrapper reports no
+proposals. Private helpers that have a single caller are ordinary code and are
+not looked for at all.
+
+**Where it can be wrong.** Every check is a pattern over text with no parser.
+Nesting is read from indentation, so a hunk that begins deep inside a function
+sees fewer enclosing blocks than there are. A forwarding wrapper is sometimes
+the public name for an internal function. A `catch` that returns nothing is
+sometimes correct, which is why the finding says to record the reason.
+
+**Limits.** Files git does not track yet are absent from the diff. The diff is
+cut at 400,000 characters, and a line over 500 characters is skipped as
+minified. Wrapper detection covers JavaScript, TypeScript and Python. `PI_DESLOP=0`
+turns the command off along with the rest of the extension.
 
 ## Limits
 
