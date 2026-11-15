@@ -1,6 +1,7 @@
 // Personal footer: workspace and actual work state first; accounting on demand.
 // `piTui` is pi-tui's `{ visibleWidth, truncateToWidth }`, injected by index.ts.
 import { basename } from "node:path";
+import { summarizeUsage } from "./usage.mjs";
 import { fmtCost, fmtTokens, workLabel, workspaceLine } from "./workspace.mjs";
 
 export function installFooter(pi, piTui) {
@@ -27,15 +28,13 @@ export function installFooter(pi, piTui) {
     description: "Toggle the personal footer, or /footer details for usage and extension status",
     handler: async (args, ctx) => {
       if (args.trim() === "details") {
-        let input = 0,
-          output = 0,
-          cost = 0;
-        for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
-          if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-          input += entry.message.usage?.input ?? 0;
-          output += entry.message.usage?.output ?? 0;
-          cost += entry.message.usage?.cost?.total ?? 0;
-        }
+        // One definition of "usage" for /usage and /footer details: these are
+        // the per-model rows summarizeUsage already validated and grouped.
+        const report = summarizeUsage(ctx.sessionManager?.getBranch?.() ?? []);
+        const sumBy = (key) => report.models.reduce((total, row) => total + row[key], 0);
+        const input = sumBy("input");
+        const output = sumBy("output");
+        const cost = report.models.reduce((total, row) => total + (row.cost ?? 0), 0);
         const statuses = Array.from(readStatuses?.().values() ?? []).join(" · ");
         ctx.ui?.notify?.(
           "Usage: ↑" +
