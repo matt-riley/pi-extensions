@@ -70,6 +70,32 @@ CLI targets are the displayed invocation, not cryptographically pinned remote
 identities: changing CLI config or obfuscated/runtime-generated actions needs
 an actual sandbox or stronger service-side permissions.
 
+## Where an instruction came from
+
+Only you can approve a risky step. Text the agent read this turn (a fetched page,
+a file, a search result, another tool's output) is evidence about the task, never
+permission, however firmly it is worded. Two rules follow from that.
+
+**A copied command is flagged.** When a call that already needs a decision is a
+word-for-word copy of something a tool returned since your last message, the
+dialog says which tool and that tool output cannot authorise it, and it stops
+recommending Approve. A judge that finds the call harmless no longer lets it
+through: the call asks. With no UI it is refused, as for every other
+confirmation. The check stays quiet when you typed the command yourself, or when
+you named the file or page it came from ("follow the steps in RELEASING.md"),
+because you then chose to trust that source. A failed tool call and commands
+shorter than ten characters are ignored.
+
+This is a text match, not a taint tracker. A paraphrase gets past it, and a
+routine call that needs no decision is never slowed down by it.
+
+**One yes covers one step.** The judge compares a call with the last thing you
+asked for, and a bare "yes" or "go ahead" is not that: it approves what was
+proposed just before it, not a new step, so the judge keeps reading the earlier
+request. A dialog approval already covers only the same command (or the same
+file, for control files) until your next message, and a different or more
+destructive command asks again.
+
 ## The dialog
 
 ```
@@ -363,5 +389,6 @@ touching thresholds, question wording, or the shape tables.
 - `extension.test.mjs`: the whole path with a fake pi and a fake UI: approve,
   deny, suggest, cancelled dialog, no UI, kill switch, script reading, secret
   writes, annotation hints from `getAllTools`.
+- `provenance.test.mjs`: copied-command tracing (quoted, typed by you, pointed at, failed calls, short commands) and what counts as a bare yes.
 - `shell-parse.test.mjs`: the shared parser, including the two real bugs its
   callers hit: heredoc bodies parsed as shell, and quote desync inside `$( )`.

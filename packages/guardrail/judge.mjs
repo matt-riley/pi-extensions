@@ -14,6 +14,7 @@
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { usableNumber } from "../../shared/systemone.mjs";
 import { TUNED_MODEL } from "../../shared/jev-ledger.mjs";
+import { humanRequest } from "./provenance.mjs";
 
 /** Short on purpose: this sits between a tool call and its execution. */
 export const DEFAULT_TIMEOUT_MS = 4000;
@@ -111,26 +112,9 @@ export function buildQuestionSet() {
   };
 }
 
-/** Last user message in a session branch, however little of it can be read. */
+/** The last thing the user asked for, skipping a bare "yes" (see provenance.mjs). */
 export function extractUserRequest(branch) {
-  if (!Array.isArray(branch)) return null;
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const message = branch[i]?.message ?? branch[i];
-    if (message?.role !== "user") continue;
-    const content = message.content;
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter((block) => block?.type === "text" && typeof block.text === "string")
-              .map((block) => block.text)
-              .join("\n")
-          : "";
-    const trimmed = text.trim();
-    if (trimmed) return trimmed.slice(0, MAX_REQUEST_CHARS);
-  }
-  return null;
+  return humanRequest(branch, MAX_REQUEST_CHARS);
 }
 
 /**
