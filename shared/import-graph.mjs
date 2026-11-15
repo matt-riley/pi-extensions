@@ -122,14 +122,18 @@ function resolveSpecifier(spec, fromRel, { fileSet, tsconfig, workspaceMap }) {
 
   // Relative specifier
   if (raw.startsWith("./") || raw.startsWith("../")) {
-    const base = dirName(fromRel);
-    const parts = [];
+    // Walk from the importing file's directory: `..` climbs out of it.
+    const parts = dirName(fromRel).split("/").filter(Boolean);
     for (const seg of raw.split("/")) {
       if (seg === "." || seg === "") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
+      if (seg === "..") {
+        if (parts.length === 0) {
+          return { type: "unresolved", reason: `"${raw}" climbs above the repository root` };
+        }
+        parts.pop();
+      } else parts.push(seg);
     }
-    const joined = [...(base ? base.split("/") : []), ...parts].join("/");
+    const joined = parts.join("/");
     const hit = probe(joined);
     if (hit) return { type: "file", rel: hit };
     return { type: "unresolved", reason: `no local file for "${raw}" (probed from ${fromRel})` };

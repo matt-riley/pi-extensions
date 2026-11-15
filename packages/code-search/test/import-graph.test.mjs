@@ -115,3 +115,22 @@ test("the graph reports the file set it resolves against", async () => {
   const graph = await repo({ "a.ts": "", "b.ts": "" });
   assert.deepEqual([...graph.files].sort(), ["a.ts", "b.ts"]);
 });
+
+test("`..` climbs out of the importing file's directory", async () => {
+  const graph = await repo({
+    "src/b.ts": "",
+    "src/x/a.ts": "",
+    "src/x/c.ts": "",
+    "top.ts": "",
+    "src/x/y/deep.ts": "",
+  });
+  assert.deepEqual(graph.resolve("../b", "src/x/a.ts"), { type: "file", rel: "src/b.ts" });
+  assert.deepEqual(graph.resolve("../x/c", "src/x/a.ts"), { type: "file", rel: "src/x/c.ts" });
+  assert.deepEqual(graph.resolve("../../../top", "src/x/y/deep.ts"), {
+    type: "file",
+    rel: "top.ts",
+  });
+  assert.deepEqual(graph.resolve("../top", "src/a.ts"), { type: "file", rel: "top.ts" });
+  // Climbing past the repository root finds nothing rather than wrapping around.
+  assert.equal(graph.resolve("../../../../top", "src/x/a.ts").type, "unresolved");
+});
