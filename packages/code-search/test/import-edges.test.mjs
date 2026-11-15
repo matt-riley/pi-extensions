@@ -152,3 +152,24 @@ test("findCycles copes with a long chain and with no edges", () => {
   const [cycle] = findCycles(chain);
   assert.equal(cycle.length, 20_002);
 });
+
+test("a dynamic-import entry says whether it was literal and whether it resolved", async () => {
+  const { incomplete } = await scan({
+    "src/a.ts": [
+      'import("./here");',
+      'import("./gone");',
+      'import("node:fs");',
+      'import("./pages/" + name);',
+    ].join("\n"),
+    "src/here.ts": "",
+  });
+  assert.deepEqual(
+    incomplete.map(({ kind, line, literal, resolved }) => [kind, line, literal, resolved]),
+    [
+      ["dynamic-import", 1, true, true],
+      ["dynamic-import", 2, true, false],
+      ["dynamic-import", 3, true, true],
+      ["dynamic-import", 4, false, false],
+    ],
+  );
+});

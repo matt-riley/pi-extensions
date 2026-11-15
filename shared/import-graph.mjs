@@ -239,7 +239,8 @@ const DEFAULT_MAX_BYTES = 1_000_000;
  * `{ from, to, kind, line }` with kind `static`, `type` (import type), `reexport`
  * or `dynamic` (a literal `import("./x")`). Bare packages are external and not
  * listed. `incomplete` entries are `{ kind, file, line, detail }`, kind one of
- * `dynamic-import` (every `import()`, literal or computed), `unresolved`,
+ * `dynamic-import` (every `import()`; `literal` and `resolved` say whether it named a
+ * file and whether that file was found), `unresolved`,
  * `unreadable`, `too-large`, `unparseable`, `file-cap`.
  *
  * Output order depends only on the file names and contents.
@@ -310,11 +311,14 @@ export async function collectEdges({
     }
     for (const dynamic of parsed.dynamicImports ?? []) {
       if (dynamic.specifier) follow(dynamic.specifier, "dynamic", dynamic.line);
+      const target = dynamic.specifier ? graph.resolve(dynamic.specifier, file) : null;
       found.push({
         gap: {
           kind: "dynamic-import",
           file,
           line: dynamic.line,
+          literal: Boolean(dynamic.specifier),
+          resolved: target !== null && target.type !== "unresolved",
           detail: dynamic.specifier
             ? `import("${dynamic.specifier}")`
             : "import() with a computed argument",
