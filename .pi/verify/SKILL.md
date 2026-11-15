@@ -24,12 +24,9 @@ git ls-files -z --others --exclude-standard | xargs -0 -r cat | git hash-object 
 ```
 
 HEAD alone does not identify a dirty tree, and a commit hash does not identify
-uncommitted work. `node .pi/verify/doctor.mjs` prints HEAD and the changed-path
-count on every run; `node .pi/verify/workbench.mjs` ends with the HEAD it
-tested and `node .pi/verify/jobs.mjs` also prints the working-tree fingerprint.
-Any edit after a run
-invalidates that run's evidence — rerun from Doctor rather than reusing a line
-from an earlier revision.
+uncommitted work. The harnesses print HEAD (jobs also the tree fingerprint) with
+their result. Any edit after a run invalidates that run's evidence — rerun from
+Doctor rather than reusing a line from an earlier revision.
 
 ## Launch
 
@@ -53,10 +50,7 @@ Requirements: `pi` 1.4.0 or later on `PATH` (`PI_SMOKE_BIN` overrides the binary
 for smoke); `tmux`, `nvim` and `git` for the workbench and jobs drives; `docker`
 for `jobs-linux.sh` (it uses an already-cached `buildpack-deps:bookworm-scm` and
 never pulls); `gh` authenticated for `watch_pr`. The toasts drive needs only
-`pi` and `tmux`: it starts a fixture provider, so no credential is involved. Smoke sets `PI_OFFLINE=1`, a
-fixture `TYPESAFE_BASE_URL` and a temporary `PI_CODING_AGENT_DIR`; workbench and
-jobs start tmux with `env -i` plus temporary `HOME`, `XDG_CONFIG_HOME`,
-`PI_CODING_AGENT_DIR` and session dir.
+`pi` and `tmux`.
 
 For a live per-change drive (a real provider, disposable config):
 
@@ -95,12 +89,9 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
 node .pi/verify/doctor.mjs
 ```
 
-It checks `pi` (must be >= 1.4.0), `tmux`, `nvim` and `git`, reports whether
-`gh`, `docker` and `TYPESAFE_API_KEY` are available, and prints the target
-revision. Exit 0 means the offline gates and the terminal harnesses can run;
-exit 1 names each missing tool. It starts nothing, so run it before the first
-drive and again after anything surprising (a dead tmux server, a vanished `pi`,
-an auth error).
+Exit 0 means the offline gates and the terminal harnesses can run; exit 1 names
+each missing tool. It starts nothing, so run it before the first drive and again
+after anything surprising (a dead tmux server, a vanished `pi`, an auth error).
 
 ## Features
 
@@ -165,130 +156,8 @@ re-run at this revision; live rows were driven in isolated sessions with
 `--api-key "$(pi auth print-bearer-token --provider github-copilot)"`, so the
 model turns were real and billable.
 
-```text
-$ node .pi/verify/doctor.mjs
-ok      pi    1.4.0
-ok      tmux  3.8
-ok      nvim  0.13.0
-ok      git   2.56.0
-ok      gh ready
-ok      docker ready
-target  dfbbda1, 2 changed path(s) in the working tree
-ok      TYPESAFE_API_KEY set — live judgment and web_answer drives are available
-doctor: ready for npm run check, npm run verify, npm run smoke and the workbench drive
-```
+Findings from this run still worth knowing (the others are covered in Launch and the table above):
 
-`npm run check` used to be intermittently red here (9 of 18 full-suite runs):
-the teardown of `packages/done-gate/test/extension.test.mjs:89` failed with
-`Error: kill EPERM` from `Jobs.#kill`, because `shutdown` (`jobs.mjs:342`)
-awaits `Promise.all` over `stop` and `#kill` rethrew everything except
-`ESRCH`. Measured cause: the job's group leader had exited but not been reaped,
-and macOS refuses to signal a zombie group with `EPERM`. `#kill` now treats
-`EPERM` like `ESRCH` — the process is gone, and the close-time SIGKILL sweep
-still reaps surviving descendants. Verified at the fix by instrumenting
-`process.kill`: the window still hit 3 of 18 parallel `done-gate` runs with 0
-test failures, and 3 consecutive `npm run check` runs passed (1301 tests).
-
-```text
-$ npm run verify
-25/25 checks passed
-
-$ npm run verify -- --live
-ok    live TypeSafe call — jev-1.13.0 (noul=0.27)
-26/26 checks passed
-
-$ npm run smoke
-ok: real host loads 21 manifest extensions
-ok: owned skills and workflow prompts discover and expand outside the repo
-ok: real background completion resumes the agent once with a follow-up, not steering
-ok: background tools preserve real failure status; optional Jev watches use redacted fixture evidence
-ok: nested semantic search works and URL credentials never reach the fixture judge
-ok: structured MCP-shaped nested result keeps its schema and warns the model through codemode
-ok: controlled measurement executes nested trials and rejects empty work
-ok: two failed fixes block native, shell and nested mutations until a real checkpoint
-ok: plan mode blocks harmless fixture write through real tool dispatch
-ok: plan mode offers plan_mode_question, plan_mode_complete, and plan_fetch_url
-ok: plan tools are gone after /plan exit
-ok: leave plan mode, explicitly enable subagents, complete child with unknown task outcome
-ok: actual child command evidence reports verified separately from execution completion
-ok: actual child command evidence reports failed separately from execution completion
-ok: done-gate continues once after an unverified edit
-ok: done-gate ignores edits outside the session cwd
-ok: /until sends the agent back until the predicate exits 0
-Offline host smoke passed; model reasoning, UI and external providers were not tested.
-
-$ node .pi/verify/workbench.mjs --regular
-ok: live command intent filtering, cancellation, built-in preparation and draft recovery
-ok: native file picker preserves draft and inserts a reference, not contents
-ok: non-editable staged/unstaged diffs, next/previous files, retained query/selection/scroll and Neovim return; no file/index/model changes
-ok: /eixt restored with /exit suggestion; no execution or model request; valid commands still dispatch
-ok: narrow resize, Unicode file reference, actual working → ready lifecycle (regular)
-Local real-TUI acceptance passed at HEAD dfbbda1 plus working tree.
-
-$ node .pi/verify/workbench.mjs --upgrade
-ok: prior HEAD footer upgrades through actual /reload
-… (same workbench lines, fullscreen lifecycle)
-Local real-TUI acceptance passed at HEAD dfbbda1 plus working tree.
-
-$ node .pi/verify/jobs.mjs
-ok: real Pi live logs follow, scroll, resize and cancel without model calls
-ok: same PTY accepts native input, resize, detach/reattach and preserves exit 7
-ok: Ctrl+C reaches the foreground PTY program and returns to a live Pi
-ok: explicit human line input reaches the owned pipe job
-ok: reload, session changes and shutdown stop owned processes without model calls
-Local real-TUI jobs acceptance passed at HEAD dfbbda1 plus working tree <fingerprint>.
-# <fingerprint> is the working-tree hash from `revisionSnapshot`; editing this
-# file changes it, so compare the run's line against the tree you tested.
-
-$ bash .pi/verify/jobs-linux.sh
-native
-25 90
-got:native
-script exit status: 9; PTY identity: /dev/pts/0 14
-ok: GNU PTY input, dimensions, group identity and exit 9 with input still open
-
-$ node .pi/verify/toasts.mjs
-ok: extension notify shows as a top-right toast in the real TUI
-ok: the toast clears itself after PI_TOAST_TIMEOUT_INFO and leaves no row
-ok: PI_TOAST_CAPTURE=0 leaves pi's own notify row in place
-Local real-TUI toasts acceptance passed at HEAD dfbbda1.
-
-$ node scripts/judges-live.mjs --only review
-ok   review lint — scope_creep 0.87
-ok   review findings — 1 kept, 1 dropped (quoted text is not in the diff)
-ok   plan review — 2 step(s) without verification, 0 without callers
-all 3 judgments reached their judge
-
-$ # real TUI, isolated agent dir, github-copilot/haiku; /footer details then /diagnosis
-ok: /footer details — Usage: ↑0 ↓0 $0.000
-ok: /diagnosis — Diagnosis checkpoint: no pending gate.
-
-$ # real TUI, scratch repo; guardrail
-ok: a force-push opens the Approve / Deny / Suggest dialog
-ok: Deny refuses the call and records the refusal
-ok: a .git wipe is refused with a reason and no dialog — The guardrail refused this call (rm would destroy credentials or VCS internals).
-```
-
-Live rows proven in the same run, in isolated sessions with a real provider:
-`repo_map` (`files: 425 · symbols indexed: 9046`), `code_search`
-(`# code_search "revisionSnapshot" — 30 matches`, definition first),
-`file_outline` (`L11 function revisionSnapshot (cwd)`), `find_definition`
-(`shared/revision.mjs:11 function revisionSnapshot (exported)`), `skill_select`
-(`implementation-review (p 1.00)`, `1 of 5`), `web_fetch` (`title: Example Domain`),
-`batch_web_fetch` (`2 URLs — 2 ok, 0 failed`), `web_answer`
-(`[passage 1 · 0.77]`), `web_search` (3 ranked results with URLs),
-`blast_radius` (`selectMain …: 1 caller file(s) outside the diff` →
-`packages/web-fetch/extract.mjs`), `watch_pr` (`closed`, `PR #63 head 5b0a8318`,
-`state: MERGED`), `view_context` (`{"tokens":3519,…,"percent":1.7595}`).
-
-Findings from this run, reported rather than smoothed over:
-
-- `-e builtin:codemode` loads the extension but leaves the tool inactive, so the
-  first deferred-tool drive reported `codemode` as unavailable. `--tools +codemode`
-  is required; the Launch section now says so.
-- `/plan check` has no working drive: a scripted tmux run with `.pi/PLAN.md`
-  present left the TUI blank, never appended `## Plan comprehension check`, and
-  had to be killed by hand. Harness gap, listed as unproven above.
 - `rm -rf ./scratch` in a scratch workspace ran with **no** dialog: a regenerable
   target below the cwd is allowed by design. The dialog row needs a call the rules
   escalate (`git push --force`), not merely a destructive-looking one.
@@ -298,11 +167,8 @@ Findings from this run, reported rather than smoothed over:
 
 ## Cleanup
 
-The harnesses clean up in `finally`: smoke closes the pi process, fixture server
-and temporary directory; workbench, jobs and toasts kill their tmux server, stop
-owned processes and remove their fixture; `jobs-linux.sh` removes its container on
-`EXIT`. None touches `~/.pi/agent`. A failure during setup, before the `try`
-block, skips that cleanup — and a drive killed from outside leaves a live pi
+Each harness cleans up in `finally` (`jobs-linux.sh` on `EXIT`), and none touches
+`~/.pi/agent`. A failure during setup, before the `try` block, skips that cleanup — and a drive killed from outside leaves a live pi
 inside a live tmux server, because the `finally` never ran. Finish it by hand:
 
 ```sh
