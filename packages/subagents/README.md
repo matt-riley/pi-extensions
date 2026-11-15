@@ -128,7 +128,8 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
 
 - `/plan` is unchanged. Subagents do work; plan-mode decides work. While plan
   mode is active the `subagent` tool is not callable (its read-only toolset
-  excludes it).
+  excludes it). Plan mode has its own narrower `plan_scout` for read-only recon (see
+  [plan mode](../plan-mode/README.md#scouts)).
 - In-process spawn uses the host SDK (`createAgentSession`). That is not a
   new npm dependency.
 - Recursion guard: `PI_SUBAGENT_CHILD=1` during child bind, plus
