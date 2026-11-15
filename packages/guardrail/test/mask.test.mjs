@@ -6,6 +6,7 @@ import { maskToolResult } from "../mask.mjs";
 
 // Fixtures are assembled at runtime so no key-shaped literal sits in the repository.
 const built = (...parts) => parts.join("");
+const BEARER = built("Bearer ", "abcdefghij", "klmnopqrstuvwxyz");
 const GITHUB = built("gh", "p_", "A1b2".repeat(9));
 const OPENAI = built("s", "k-", "Zy9x".repeat(8));
 const PEM = [
@@ -27,7 +28,7 @@ test("bash output is fully masked: key shapes, assignments, URL credentials, bea
       `GITHUB_TOKEN=${GITHUB}`,
       "DB_PASSWORD=correcthorsebatterystaple",
       "postgres://admin:hunter2pw@db.internal/app",
-      "Authorization: Bearer abcdefghijklmnopqrstuvwxyz",
+      `Authorization: ${BEARER}`,
     ),
   );
   const out = text(patch);
@@ -63,7 +64,7 @@ test("file reads keep everything that only looks secret-ish: names, assignments,
     'const apiKey = "abcdefghijklmnopqrstuvwxyz0123456789";',
     "PASSWORD_FIELD=thisislongenoughtobeaone",
     "https://user:pw@example.com/path",
-    "Authorization: Bearer abcdefghijklmnopqrstuvwxyz",
+    `Authorization: ${BEARER}`,
     "const token = process.env.TOKEN;",
   ];
   assert.equal(maskToolResult(result("read", ...source)), undefined);

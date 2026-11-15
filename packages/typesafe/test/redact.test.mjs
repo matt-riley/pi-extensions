@@ -176,12 +176,13 @@ test("a clean state reports zero, and a second pass adds nothing", () => {
 });
 
 test("`only` limits masking to the named key shapes and leaves everything else readable", () => {
+  const bearer = ["Bearer ", "abcdefghij", "klmnopqrstuvwxyz"].join("");
   const github = ["gh", "p_", "a".repeat(36)].join(""); // runtime-built fixture
   const text = [
     `token ${github}`,
     "API_KEY=abcdefghijklmnopqrstuvwxyz0123",
     "postgres://user:hunter2pw@db.example.com/app",
-    "Bearer abcdefghijklmnopqrstuvwxyz",
+    bearer,
     `jwt ${["ey", "Jabcdefgh"].join("")}.${"abcdefghij"}.${"abcdef"}`,
   ].join("\n");
   const { value, count } = redactSecrets(text, { only: ["github", "pem"], homeDir: "" });
@@ -189,7 +190,7 @@ test("`only` limits masking to the named key shapes and leaves everything else r
   assert.match(value, /<REDACTED:github>/);
   assert.match(value, /API_KEY=abcdefghijklmnopqrstuvwxyz0123/);
   assert.match(value, /hunter2pw/);
-  assert.match(value, /Bearer abcdefghijklmnopqrstuvwxyz/);
+  assert.ok(value.includes(bearer));
   assert.match(value, /ey\x4aabcdefgh/);
 });
 
