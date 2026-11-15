@@ -214,3 +214,104 @@ test("PI_PROMPT_COACH_READ_FILES=0 sends no tools at all", async () => {
   });
   assert.equal("tools" in requests[0], false);
 });
+
+function tmpProject() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "coach-ctx-"));
+  fs.writeFileSync(
+    path.join(root, "README.md"),
+    "# Gallery\nA photo gallery site. Pages live in site/.\n",
+  );
+  fs.writeFileSync(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "gallery", scripts: { build: "vite build", test: "node --test" } }),
+  );
+  fs.mkdirSync(path.join(root, "src"));
+  fs.writeFileSync(path.join(root, "src", "main.ts"), "export const slideshowDelayMs = 4000;\n");
+  fs.mkdirSync(path.join(root, "test"));
+  fs.writeFileSync(path.join(root, "test", "gallery.test.mjs"), "// covers the slideshow\n");
+  return root;
+}
+
+const identityOnly = { branch: "main", commit: "abc1234 initial", dirty: null, ci: null };
+const refusal =
+  "I can’t rewrite this request yet because the probe only identifies the repository, not what the site contains.";
+
+/** A model that refuses unless the request carries the project's own text. */
+function pickyModel() {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push(body);
+    const payload = JSON.parse(body.messages[1].content);
+    const text = JSON.stringify(payload.project_context ?? []);
+    const content = text.includes("slideshowDelayMs")
+      ? "Make the slideshow in src/main.ts advance faster, then run npm test and npm run build."
+      : refusal;
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  return { requests, fetchImpl };
+}
+
+test("an identity-only probe still gets a rewrite built from the project's own files", async () => {
+  const { requests, fetchImpl } = pickyModel();
+  const result = await rewriteWithModel({
+    prompt: "make the slideshow faster",
+    probe: identityOnly,
+    cwd: tmpProject(),
+    env,
+    fetchImpl,
+  });
+  assert.match(result.text, /src\/main\.ts/);
+  assert.equal(requests.length, 1, "no extra model call");
+  const context = JSON.parse(requests[0].messages[1].content).project_context;
+  assert.deepEqual(
+    context.map((entry) => entry.file),
+    ["README.md", "package.json", "src/main.ts", "test/gallery.test.mjs"],
+  );
+  assert.deepEqual(result.filesRead, [
+    "README.md",
+    "package.json",
+    "src/main.ts",
+    "test/gallery.test.mjs",
+  ]);
+});
+
+test("with nothing readable the request falls back to the generic brief and never refuses", async () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "coach-empty-"));
+  const { requests, fetchImpl } = pickyModel();
+  const result = await rewriteWithModel({
+    prompt: "make the slideshow faster",
+    probe: identityOnly,
+    cwd: empty,
+    env,
+    fetchImpl,
+  });
+  assert.equal(requests.length, 1);
+  assert.deepEqual(JSON.parse(requests[0].messages[1].content).project_context, []);
+  assert.match(requests[0].messages[0].content, /never refuse/i);
+  assert.deepEqual(result.filesRead, []);
+});
+
+test("a probe that names changed files skips the key-file reads", async () => {
+  const { requests, fetchImpl } = pickyModel();
+  await rewriteWithModel({
+    prompt: "make the slideshow faster",
+    probe: { ...identityOnly, dirty: { count: 1, files: ["src/main.ts"] } },
+    cwd: tmpProject(),
+    env,
+    fetchImpl,
+  });
+  assert.equal("project_context" in JSON.parse(requests[0].messages[1].content), false);
+});
+
+test("PI_PROMPT_COACH_READ_FILES=0 reads no key files either", async () => {
+  const { requests, fetchImpl } = pickyModel();
+  await rewriteWithModel({
+    prompt: "make the slideshow faster",
+    probe: identityOnly,
+    cwd: tmpProject(),
+    env: { ...env, PI_PROMPT_COACH_READ_FILES: "0" },
+    fetchImpl,
+  });
+  assert.equal("project_context" in JSON.parse(requests[0].messages[1].content), false);
+});
