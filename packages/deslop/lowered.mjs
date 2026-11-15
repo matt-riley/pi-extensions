@@ -163,12 +163,118 @@ function suppressions(files) {
         path: file.path,
         n: line.n,
         text: line.text,
-        reasoned: reasonNear(lines, at, style),
+        weak: reasonNear(lines, at, style),
       });
     }
   }
   return hits;
 }
+
+const TEST_PATH =
+  /(?:^|\/)(?:tests?|__tests__|specs?)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|_test\.(?:go|py|rs)$|(?:^|\/)test_[^/]*\.py$/;
+const isTest = (path) => TEST_PATH.test(path);
+
+/** Calls that switch a test off. `arg` marks the ones whose string argument is a stated reason. */
+const SKIPS = [
+  { pattern: /\b(?:it|test|describe|context|suite|specify)\.(?:skip|only)\b/ },
+  { pattern: /\b(?:xit|xdescribe|xtest|fit|fdescribe)\s*\(/ },
+  { pattern: /\bt\.(?:Skip|Skipf|SkipNow|skip)\s*\(/, arg: true },
+  { pattern: /\bpytest\.(?:skip\s*\(|mark\.(?:skip|xfail)\b)/, arg: true },
+  { pattern: /\bunittest\.skip(?:If|Unless)?\b/, arg: true },
+  { pattern: /\bskip\s*:\s*(?:true|"")/, arg: true },
+];
+const RUST_IGNORE = /#\[\s*ignore\b/;
+const STRING_ARGUMENT = /(["'`])((?:\\.|(?!\1).)*)\1/;
+
+/** Whether a string argument after a skip call is a sentence of reason words, not a test name. */
+function skipArgumentGivesReason(raw, from) {
+  const text = STRING_ARGUMENT.exec(raw.slice(from))?.[2] ?? "";
+  return (
+    text.split(/\s+/).filter((word) => /^[A-Za-z']{2,}[.,;!?]?$/.test(word)).length >= REASON_WORDS
+  );
+}
+
+/** Skipped or focused tests, `#[ignore]`, and test files deleted with nothing left to test. */
+function skippedTests(files) {
+  const hits = [];
+  for (const file of files) {
+    const style = commentStyleOf(file.path);
+    const rust = extensionOf(file.path) === "rs";
+    if (!style || file.deleted || (!isTest(file.path) && !rust)) continue;
+    for (const { lines, at, line } of addedLines(file)) {
+      const code = splitComment(line.text, style).code;
+      const call = isTest(file.path) ? SKIPS.find(({ pattern }) => pattern.test(code)) : undefined;
+      if (!call && !(rust && RUST_IGNORE.test(code))) continue;
+      const argument =
+        (call?.arg || rust) && skipArgumentGivesReason(line.text, line.text.search(/skip|ignore/i));
+      hits.push({
+        path: file.path,
+        n: line.n,
+        text: line.text,
+        weak: argument || reasonNear(lines, at, style),
+      });
+    }
+  }
+  return hits;
+}
+
+const stemOf = (path) =>
+  path
+    .split("/")
+    .pop()
+    .replace(/\.[^.]+$/, "")
+    .replace(/(?:[._]test|[._]spec)$|^test_/, "");
+
+/** A test file the diff deletes, when the file it tests is not deleted with it. */
+function deletedTests(files) {
+  const goneWithSource = new Set(
+    files.filter((file) => file.deleted && !isTest(file.path)).map((file) => stemOf(file.path)),
+  );
+  return files
+    .filter((file) => file.deleted && isTest(file.path) && !goneWithSource.has(stemOf(file.path)))
+    .map((file) => ({ path: file.path, n: 0, text: "test file deleted" }));
+}
+
+const ASSERTION =
+  /\b(?:assert(?:\.\w+)?|expect|require\.\w+|t\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)|self\.assert\w+)\s*\(|\b(?:assert|assert_eq|assert_ne|debug_assert\w*)!\s*\(|^\s*assert\s/;
+const TEST_CASE =
+  /^\s*(?:(?:it|test|describe)\s*\(|func\s+Test|(?:async\s+)?def\s+test_|#\[test\])/;
+
+/**
+ * Test files that keep existing but hold fewer assertions than before. A pair of
+ * removed and added assertions cancels, so rewording one is fine. Strong when
+ * assertions left tests that stayed; weak when a whole test case left too.
+ */
+function strippedAssertions(files) {
+  const hits = [];
+  for (const file of files) {
+    const style = commentStyleOf(file.path);
+    if (!style || file.deleted || !isTest(file.path)) continue;
+    const all = file.hunks.flatMap(({ lines }) => lines);
+    const asserts = (kind) =>
+      all.filter(
+        (line) => line.kind === kind && ASSERTION.test(splitComment(line.text, style).code),
+      );
+    const gone = asserts("del");
+    const fewer = gone.length - asserts("add").length;
+    if (fewer <= 0) continue;
+    const cases = all.filter((line) => line.kind === "del" && TEST_CASE.test(line.text)).length;
+    hits.push({
+      path: file.path,
+      n: gone[0].n,
+      text: `${fewer} fewer assertion${fewer === 1 ? "" : "s"}: ${gone[0].text.trim()}`,
+      weak: cases > 0,
+    });
+  }
+  return hits;
+}
+
+/** Every way a test is made easier to pass. */
+const easierTests = (files) => [
+  ...skippedTests(files),
+  ...deletedTests(files),
+  ...strippedAssertions(files),
+];
 
 const CHECKS = [
   {
@@ -176,6 +282,12 @@ const CHECKS = [
     label: "new suppression of a lint, type or coverage check",
     fix: "fix what the check found, or write down why the suppression is safe",
     scan: suppressions,
+  },
+  {
+    id: "easier-test",
+    label: "test skipped, deleted or stripped of assertions",
+    fix: "make the test pass, or say why it can go",
+    scan: easierTests,
   },
 ];
 
@@ -193,14 +305,14 @@ export function findLoweredBar(diff) {
   const findings = [];
   for (const check of CHECKS) {
     const hits = check.scan(files);
-    for (const reasoned of [false, true]) {
-      const group = hits.filter((hit) => Boolean(hit.reasoned) === reasoned);
+    for (const weak of [false, true]) {
+      const group = hits.filter((hit) => Boolean(hit.weak) === weak);
       if (group.length === 0) continue;
-      const base = reasoned ? `${check.label}, with a reason given` : check.label;
+      const base = weak ? `${check.label}, weak sign` : check.label;
       findings.push({
         id: check.id,
         sign: "lowered-bar",
-        severity: reasoned ? "low" : "high",
+        severity: weak ? "low" : "high",
         label: group.length > MAX_EXCERPTS ? `${base}, ${group.length} in all` : base,
         fix: check.fix,
         count: group.length,

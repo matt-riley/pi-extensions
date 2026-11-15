@@ -22,6 +22,11 @@ const added = (file, ...lines) =>
     file,
     lines.map((line) => `+${line}`),
   );
+const removed = (file, ...lines) =>
+  diffOf(
+    file,
+    lines.map((line) => `-${line}`),
+  );
 /** The findings of one diff as "id/severity" pairs. */
 const kinds = (diff, messages) =>
   findLoweredBar(diff, messages).map((item) => `${item.id}/${item.severity}`);
@@ -114,4 +119,115 @@ test("a clean diff produces no flags", () => {
   assert.deepEqual(findLoweredBar(clean), []);
   assert.deepEqual(findLoweredBar(""), []);
   assert.deepEqual(findLoweredBar(undefined), []);
+});
+
+test("a skipped or focused test is a strong flag in each language", () => {
+  const cases = {
+    "src/a.test.ts": [
+      "it.skip('adds', () => {});",
+      "describe.only('suite', () => {});",
+      "xit('adds', () => {});",
+      "xdescribe('suite', () => {});",
+      "test.skip('adds', () => {});",
+    ],
+    "test/b.test.mjs": ["test('adds', { skip: true }, () => {});", "  t.skip();"],
+    "pkg/c_test.go": ["\tt.Skip()", "\tt.SkipNow()"],
+    "src/lib.rs": ["#[ignore]", '    #[ignore = "slow"]'],
+    "tests/test_d.py": ["@pytest.mark.skip", "    pytest.skip()"],
+  };
+  for (const [file, lines] of Object.entries(cases))
+    for (const line of lines)
+      assert.deepEqual(kinds(added(file, line)), ["easier-test/high"], `${file}: ${line}`);
+});
+
+test("a skip with a stated reason is weak, and a test name is not a reason", () => {
+  assert.deepEqual(kinds(added("pkg/c_test.go", '\tt.Skip("flaky on the shared CI runners")')), [
+    "easier-test/low",
+  ]);
+  assert.deepEqual(kinds(added("pkg/c_test.go", '\tt.Skip("flaky")')), ["easier-test/high"]);
+  assert.deepEqual(
+    kinds(added("src/a.test.ts", "it.skip('handles an empty list with no items', () => {});")),
+    ["easier-test/high"],
+  );
+  const commented = added(
+    "src/a.test.ts",
+    "// waits on the upstream fix for the timer mock",
+    "it.skip('adds', () => {});",
+  );
+  assert.deepEqual(kinds(commented), ["easier-test/low"]);
+});
+
+test("a skip call outside a test file, in a string or in a comment is not flagged", () => {
+  assert.deepEqual(kinds(added("src/queue.ts", "queue.skip(count);")), []);
+  assert.deepEqual(kinds(added("src/a.test.ts", "const fixture = \"it.skip('x')\";")), []);
+  assert.deepEqual(kinds(added("src/a.test.ts", "// never use it.skip here")), []);
+  assert.deepEqual(kinds(removed("src/a.test.ts", "it.skip('adds', () => {});")), []);
+});
+
+test("a deleted test file is a strong flag, unless the code it tests went with it", () => {
+  const gone = diffOf("src/parse.test.ts", ["-assert.equal(parse('1'), 1);"], "deleted");
+  assert.deepEqual(kinds(gone), ["easier-test/high"]);
+  const goneGo = diffOf("pkg/parse_test.go", ["-func TestParse(t *testing.T) {}"], "deleted");
+  assert.deepEqual(kinds(goneGo), ["easier-test/high"]);
+  const source = diffOf("src/parse.ts", ["-export const parse = () => 1;"], "deleted");
+  assert.deepEqual(kinds(`${gone}\n${source}`), []);
+  const other = diffOf("src/other.ts", ["-export const other = 1;"], "deleted");
+  assert.deepEqual(kinds(`${gone}\n${other}`), ["easier-test/high"]);
+});
+
+test("assertions removed from a test file that stays are a strong flag", () => {
+  const stripped = diffOf("src/a.test.ts", [
+    " test('adds', () => {",
+    "-  assert.equal(add(1, 2), 3);",
+    "-  assert.equal(add(2, 2), 4);",
+    "+  add(1, 2);",
+    " });",
+  ]);
+  const found = findLoweredBar(stripped);
+  assert.deepEqual(
+    found.map((item) => `${item.id}/${item.severity}`),
+    ["easier-test/high"],
+  );
+  assert.match(found[0].excerpts[0], /^src\/a\.test\.ts:\d+: .*assert/);
+  const pytest = diffOf("tests/test_a.py", [
+    " def test_add():",
+    "-    assert add(1, 2) == 3",
+    "+    add(1, 2)",
+  ]);
+  assert.deepEqual(kinds(pytest), ["easier-test/high"]);
+});
+
+test("an assertion reworded, moved or traded one for one is not removed", () => {
+  const reworded = diffOf("src/a.test.ts", [
+    "-  assert.equal(add(1, 2), 3);",
+    "+  assert.deepEqual(add(1, 2), 3);",
+  ]);
+  assert.deepEqual(kinds(reworded), []);
+  const grown = diffOf("src/a.test.ts", [
+    "-  assert.equal(add(1, 2), 3);",
+    "+  assert.equal(add(1, 2), 3);",
+    "+  assert.equal(add(2, 2), 4);",
+  ]);
+  assert.deepEqual(kinds(grown), []);
+});
+
+test("a whole test case removed with its assertions is weak, not strong", () => {
+  const dropped = diffOf("src/a.test.ts", [
+    "-test('adds', () => {",
+    "-  assert.equal(add(1, 2), 3);",
+    "-});",
+    " test('keeps', () => {",
+    "   assert.ok(true);",
+    " });",
+  ]);
+  assert.deepEqual(kinds(dropped), ["easier-test/low"]);
+});
+
+test("a clean test change produces no flags", () => {
+  const clean = diffOf("src/a.test.ts", [
+    "+test('subtracts', () => {",
+    "+  assert.equal(sub(3, 1), 2);",
+    "+});",
+  ]);
+  assert.deepEqual(findLoweredBar(clean), []);
 });
