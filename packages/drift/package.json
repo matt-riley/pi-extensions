@@ -1,0 +1,7 @@
+{
+  "name": "pi-drift",
+  "version": "0.1.0",
+  "description": "Tell the agent which files changed outside the session since its last run.",
+  "license": "MIT",
+  "type": "module"
+}
