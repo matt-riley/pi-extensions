@@ -25,6 +25,31 @@ export function isTsFile(relPath) {
   return TS_EXTENSIONS.has(ext) || relPath.endsWith(".d.ts");
 }
 
+/**
+ * Every `import(...)` call. The declaration parsers swallow whole statements, so
+ * these are read in their own pass over the tokens. `specifier` is the literal
+ * when the argument is one string (or a template without `${}`), else null:
+ * computed, and not resolvable to a file.
+ */
+function findDynamicImports(tokens) {
+  const found = [];
+  for (let i = 0; i + 1 < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type !== "id" || tok.value !== "import") continue;
+    if (tokens[i + 1].type !== "punct" || tokens[i + 1].value !== "(") continue;
+    // `obj.import(...)` is a method call, not the import expression.
+    if (tokens[i - 1]?.type === "punct" && tokens[i - 1].value === ".") continue;
+    const arg = tokens[i + 2];
+    const end = tokens[i + 3];
+    const literal =
+      arg?.type === "str" &&
+      !(arg.value.startsWith("`") && arg.value.includes("${")) &&
+      (end?.value === ")" || end?.value === ",");
+    found.push({ specifier: literal ? String(arg.value).slice(1, -1) : null, line: tok.line });
+  }
+  return found;
+}
+
 export function parseTsSource(source) {
   const tokens = tokenizeTs(source);
   const symbols = [];
@@ -196,5 +221,5 @@ export function parseTsSource(source) {
     i++;
   }
 
-  return { symbols, imports, reexports };
+  return { symbols, imports, reexports, dynamicImports: findDynamicImports(tokens) };
 }

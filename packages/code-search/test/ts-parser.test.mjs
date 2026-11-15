@@ -294,3 +294,39 @@ test("nested functions inside functions", () => {
   assert.equal(outer.endLine, 4);
   assert.equal(inner.endLine, 2);
 });
+
+test("dynamic import() calls are reported with their specifier, or null when computed", () => {
+  const { dynamicImports } = parseTsSource(
+    [
+      "const a = await import('./lazy.js');",
+      "const b = import(`./tpl`);",
+      "const c = import(`./pages/${name}.js`);",
+      "const d = import(variable);",
+      "const e = import('./a' + suffix);",
+      "const f = import('./attr.json', { with: { type: 'json' } });",
+      "export const url = import.meta.url;",
+      "loader.import('./method-call.js');",
+      "// import('./in-a-comment.js');",
+      "const s = \"import('./in-a-string.js')\";",
+    ].join("\n"),
+  );
+  assert.deepEqual(dynamicImports, [
+    { specifier: "./lazy.js", line: 1 },
+    { specifier: "./tpl", line: 2 },
+    { specifier: null, line: 3 },
+    { specifier: null, line: 4 },
+    { specifier: null, line: 5 },
+    { specifier: "./attr.json", line: 6 },
+  ]);
+});
+
+test("static imports and require calls are unaffected by dynamic import detection", () => {
+  const { imports, dynamicImports } = parseTsSource(
+    'import x from "./x";\nconst y = require("./y");\n',
+  );
+  assert.deepEqual(
+    imports.map((entry) => entry.source),
+    ["./x", "./y"],
+  );
+  assert.deepEqual(dynamicImports, []);
+});
