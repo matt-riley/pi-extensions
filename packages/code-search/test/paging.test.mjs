@@ -135,6 +135,33 @@ for (const mode of ["scan", "git"]) {
     );
   });
 
+  test(`${mode}: a definition after five comment matches ranks ahead of them`, async () => {
+    const contents = {
+      "a.ts": [
+        ...Array.from({ length: 5 }, (_, i) => `// greet note ${i + 1}`),
+        "function greet() {}",
+        "// greet note 7",
+      ].join("\n"),
+    };
+    const files = {
+      "a.ts": entry(100, 1, [
+        { name: "greet", kind: "function", startLine: 6, endLine: 6, signature: "" },
+      ]),
+    };
+    const run = runners(contents, files)[mode];
+    const first = await run({});
+    assert.equal(first.total, 7);
+    assert.equal(first.hits[0].lineNo, 6);
+    assert.equal(first.hits[0].score, 100);
+    assert.equal(first.hits.length, 5);
+    assert.equal(first.truncated, true);
+    // The two comments that missed the first page are on the next one.
+    const pages = await pageAll(run);
+    const all = pages.flatMap((p) => p.hits.map((h) => h.lineNo));
+    assert.deepEqual(all.slice(0, 5), [6, 1, 2, 3, 4]);
+    assert.deepEqual(all.slice(5), [5, 7]);
+  });
+
   test(`${mode}: a cursor from another search is rejected`, async () => {
     const contents = { "a.ts": lines(12), "b.ts": lines(12) };
     const run = runners(contents, { "a.ts": entry(), "b.ts": entry() })[mode];

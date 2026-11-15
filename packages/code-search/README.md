@@ -24,7 +24,8 @@ Search uses plain substrings by default. Set `regex`, `wholeWord`,
 `caseSensitive`, or `path` to narrow it. A search with no hits can suggest
 similar symbol names.
 
-A page shows at most five matches per file. When more remain, the result ends
+A page shows at most five matches per file, the best-ranked ones: a file's matches are ranked
+before any are cut, so a definition late in a file still leads. When more remain, the result ends
 with a `cursor`; pass it back with the same `query` and options to get the next
 hits. Later pages reach both further files and further matches in the same file,
 and every match appears once. A cursor is tied to the workspace, query and

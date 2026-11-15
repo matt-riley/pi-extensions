@@ -13,8 +13,8 @@
 //   definition hit (+100) > word-boundary exact match (+50) >
 //   substring (+10) > comment-only line (0)
 //
-// Paging: each file contributes its matches in line order, PER_FILE_CAP at a
-// time. Round 0 is the first page every search returns; round 1 holds each
+// Paging: each file contributes its matches best-first (score, then line),
+// PER_FILE_CAP at a time. Round 0 is the first page every search returns; round 1 holds each
 // file's next PER_FILE_CAP matches, and so on. A page is a slice of one round
 // (ranked by score, file, line), and `nextCursor` points at the next slice, so
 // later files and later matches in the same file are all reachable. Every
@@ -286,24 +286,32 @@ function keepFor(cursor) {
 
 /**
  * One file's working set: every match is scored and digested (for the cursor's
- * content identity), but only the first `keep` matches, in line order, are kept.
+ * content identity) and ranked best-first (score, then line) before anything is
+ * cut, so a definition late in a file is never lost behind earlier comments.
+ * Only the first `keep` ranked matches are kept.
  */
 function collectFile({ rel, entry, matches, query, opts, keep }) {
   const digest = createHash("sha1");
-  const kept = [];
-  for (const m of matches) {
+  const ranked = matches.map((m) => {
     const score = scoreLine(m.text, m.lineNo, query, entry, opts);
     digest.update(`${m.lineNo}:${score}\n`);
-    if (kept.length < keep) kept.push({ rel, ...m, score, entry });
-  }
-  return { rel, entry, count: matches.length, kept, digest: digest.digest("hex") };
+    return { rel, ...m, score, entry };
+  });
+  ranked.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
+  return {
+    rel,
+    entry,
+    count: ranked.length,
+    kept: ranked.slice(0, keep),
+    digest: digest.digest("hex"),
+  };
 }
 
 const byRank = (a, b) => b.score - a.score || a.rel.localeCompare(b.rel) || a.lineNo - b.lineNo;
 
 /**
- * Pick the requested page. Round r is every file's matches r*cap … r*cap+cap-1
- * in line order; within a round hits rank by score, file, line. Round 0 is the
+ * Pick the requested page. Round r is every file's matches ranked r*cap … r*cap+cap-1
+ * within the file; within a round hits rank by score, file, line. Round 0 is the
  * same compact first page the search always returned.
  */
 function rankPage({ perFile, opts, paging }) {
