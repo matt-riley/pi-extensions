@@ -2,6 +2,7 @@
 // authorization, privilege, delete, overwrite. Shapes are facts, not verdicts.
 
 import { findHead, redirectTargets, tokenize } from "../../shared/shell-parse.mjs";
+import { persistenceShape } from "./policy-persistence.mjs";
 
 export const CLASS_VERDICT = {
   regenerable: "allow",
@@ -33,6 +34,7 @@ export const SHAPE_DEFAULT = {
   privilege: "confirm", // sudo, chmod -R, process kills: disruptive, not silent
   wipe: "block", // mkfs, fdisk, diskutil erase: no judgment makes this fine
   move: "allow", // mv sources: a rename in the workspace is work; out of home asks by class
+  persistence: "block", // cron, launchd, systemd, at: a job that outlives the session
 };
 
 export const READ_HEADS = new Set([
@@ -297,21 +299,31 @@ function overwriteShape(head, args, segment) {
   return null;
 }
 
+/** Where a segment writes, for the persistence check: overwrite targets plus ln and rsync. */
+function writeTargets(head, args, overwrite) {
+  const linked = head === "ln" || head === "rsync" ? [copyArgs(args).dest] : [];
+  return [...(overwrite?.targets ?? []), ...linked].filter(Boolean);
+}
+
 /** One segment's shapes: a segment can both overwrite and delete. */
-export function detectShapes(segment) {
+export function detectShapes(segment, context = {}) {
   const tokens = tokenize(segment);
   if (!tokens.length) return [];
   const { head, args } = findHead(tokens);
   if (!head) return [];
   const whole = ` ${segment} `;
+  const overwrite = overwriteShape(head, args, segment);
+  // Last, so that its reason is the one reported: cp into a LaunchAgents folder
+  // is also an overwrite, but "persistence" is what the model can act on.
   const found = [
     gitShape(head, args),
     deleteShape(head, args, whole),
-    overwriteShape(head, args, segment),
+    overwrite,
     moveShape(head, args),
     privilegeShape(head, args, whole),
     remoteShape(head, whole),
     authorizationShape(head, args),
+    persistenceShape(head, args, writeTargets(head, args, overwrite), context),
   ].filter(Boolean);
   return found;
 }

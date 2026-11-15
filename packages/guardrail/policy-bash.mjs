@@ -472,7 +472,7 @@ export function evaluateBashCommand(command, options = {}) {
       }
       continue;
     }
-    for (const shape of detectShapes(segment)) {
+    for (const shape of detectShapes(segment, { cwd: effectiveCwd, resolvePath })) {
       evidence.shapes.push(`${shape.id}: ${shape.detail}`);
       if (shape.scope)
         evidence.approvalScopes.push(

@@ -54,6 +54,19 @@ const SYSTEM_PREFIXES = [
   "/private/var",
 ];
 
+// Places that start a program on their own: launch agents and daemons, cron,
+// systemd units. Matched on the absolute path with the home directory written as
+// `~`, so a `Library/LaunchAgents` folder inside a dotfiles repo is not one.
+const PERSISTENCE = [
+  /^\/Library\/Launch(Agents|Daemons)(\/|$)/,
+  /^~\/Library\/LaunchAgents(\/|$)/,
+  /^\/etc\/(cron|anacron)/,
+  /^\/var\/spool\/(cron|anacron|at)(\/|$)/,
+  /^\/var\/at\/tabs(\/|$)/,
+  /^\/(etc|usr\/lib|usr\/local\/lib|lib|run)\/systemd(\/|$)/,
+  /^~\/\.(config|local\/share)\/systemd(\/|$)/,
+];
+
 const HOME_PREFIXES = [
   /^~(\/|$)/,
   /^\$HOME(\/|$)/,
@@ -65,6 +78,17 @@ const HOME_PREFIXES = [
 export function resolvedTarget(raw, cwd, resolvePath = (value) => value) {
   const expanded = String(raw).replace(/^(~|\$HOME|\$\{HOME\})(?=\/|$)/, homedir());
   return resolvePath(path.resolve(cwd || process.cwd(), expanded));
+}
+
+/** Whether writing here would schedule or enable something to run later. */
+export function isPersistencePath(raw, cwd, resolvePath) {
+  const home = homedir();
+  const absolute = resolvedTarget(raw, cwd, resolvePath).replace(/^\/private(?=\/(etc|var)\/)/, "");
+  const normal =
+    absolute === home || absolute.startsWith(home + "/")
+      ? "~" + absolute.slice(home.length)
+      : absolute.replace(/^\/(Users|home)\/[^/]+(?=\/|$)/, "~");
+  return PERSISTENCE.some((re) => re.test(normal));
 }
 
 function isControlPlanePath(raw, cwd, resolvePath, inNestedWorkspace) {
