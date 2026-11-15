@@ -19,6 +19,13 @@ import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segm
 const MAX_SEGMENTS = 400;
 const VERBATIM_MAX = 4000;
 const EXCERPT_MAX = 300;
+/**
+ * The newest user messages are always carried as written, one line each, with
+ * no model call: the newest asks are the instructions still in force, and
+ * measured retention lost them first. Capped so a pasted log cannot pin a page.
+ */
+const RECENT_USER_MESSAGES = 15;
+const RECENT_USER_MAX = 600;
 const PREVIOUS_MAX = 6000;
 /** A handoff this close to the transcript it replaces frees nothing. */
 const MAX_SIZE_RATIO = 0.6;
@@ -194,7 +201,14 @@ function selector({ goal, ask, signal, deadlineAt }) {
 }
 
 /** Build the entries for one round. `forced` segments are pinned to verbatim. */
-async function buildEntries({ segments, scores, forced, pointed = new Set(), select }) {
+async function buildEntries({
+  segments,
+  scores,
+  forced,
+  pointed = new Set(),
+  recent = new Set(),
+  select,
+}) {
   const entries = [];
   await mapPool(segments, async (segment, index) => {
     const s = scores[index];
@@ -204,6 +218,24 @@ async function buildEntries({ segments, scores, forced, pointed = new Set(), sel
     // span. They stay verbatim when there is room and are cut last.
     const constraint = segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW;
     const pinned = forced.has(segment.id) || constraint;
+    // A recent user message that is not already carried verbatim above (a
+    // constraint, the task, a forced copy) is pinned on one line, whatever Jev
+    // scored it. Pinned, so the budget never cuts it.
+    if (recent.has(segment.id) && !pinned) {
+      const oneLine = segment.text.replace(/\s+/g, " ").trim();
+      const text = excerpt(oneLine, RECENT_USER_MAX);
+      entries.push({
+        segment,
+        disposition: "keep_verbatim",
+        index,
+        pinned: true,
+        weight: 1 + (s?.load_bearing ?? 1),
+        section: "recent",
+        text,
+        lossy: text !== oneLine,
+      });
+      return;
+    }
     const disposition = pinned
       ? "keep_verbatim"
       : pointed.has(segment.id)
@@ -331,6 +363,7 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
   const sections = [
     ["Goal", goal],
     ["Constraints & preferences (verbatim)", bullets(bySection("constraints"))],
+    ["Recent user messages (verbatim, oldest first)", bullets(bySection("recent"))],
     ["Key decisions", bullets(bySection("decisions"))],
     ["Context carried forward", bullets(bySection("context"))],
     ["Pointers (re-read on demand)", bullets(pointers)],
@@ -401,6 +434,12 @@ export async function composeHandoff({
   // measures what verification forced.
   const taskPin = task ? 1 : 0;
   const forced = new Set(task ? [task.id] : []);
+  const recent = new Set(
+    segments
+      .filter((segment) => segment.role === "user")
+      .slice(-RECENT_USER_MESSAGES)
+      .map((segment) => segment.id),
+  );
 
   // One verification pass, then a rebuild with every flagged segment verbatim.
   // Checking again would re-ask questions already answered: forced segments
@@ -413,7 +452,7 @@ export async function composeHandoff({
   );
   const budget = Math.min(tokensBefore * TARGET_RATIO, MAX_HANDOFF_TOKENS) - overhead;
   // Fitting comes before verification, so what is verified is what ships.
-  let entries = fitBudget(await buildEntries({ segments, scores, forced, select }), budget);
+  let entries = fitBudget(await buildEntries({ segments, scores, forced, recent, select }), budget);
   let summary = renderHandoff({ goal, entries, fileLists, previousSummary, note, restore });
 
   // Faithfulness is judged on entries that restate their source. A verbatim
@@ -454,7 +493,10 @@ export async function composeHandoff({
     else forced.add(segment.id);
   });
   if (failed.size > 0) {
-    entries = fitBudget(await buildEntries({ segments, scores, forced, pointed, select }), budget);
+    entries = fitBudget(
+      await buildEntries({ segments, scores, forced, pointed, recent, select }),
+      budget,
+    );
     summary = renderHandoff({ goal, entries, fileLists, previousSummary, note, restore });
   }
 
