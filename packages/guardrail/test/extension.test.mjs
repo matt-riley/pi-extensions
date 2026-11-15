@@ -661,3 +661,69 @@ test("a judge that finds the call harmless still cannot wave a new dependency th
   assert.equal(result.block, true);
   assert.match(h.dialogs[0].title, /npm install would add dependencies: left-pad/);
 });
+
+test("cargo, pip, uv and poetry adds ask; their restore commands do not", async () => {
+  const h = harness({ choices: [DENY, DENY, DENY, DENY] });
+  for (const command of [
+    "cargo add serde",
+    "pip install requests",
+    "uv add httpx",
+    "poetry add requests",
+  ])
+    assert.equal((await h.run("bash", { command })).block, true, command);
+  assert.equal(h.dialogs.length, 4);
+  assert.match(h.dialogs[0].title, /cargo add would add dependencies: serde/);
+  const quiet = h.dialogs.length;
+  for (const command of [
+    "cargo build",
+    "cargo fetch",
+    "pip install -r requirements.txt",
+    "uv sync",
+    "poetry install",
+  ])
+    assert.equal(await h.run("bash", { command }), undefined, command);
+  assert.equal(h.dialogs.length, quiet);
+});
+
+test("a new crate in Cargo.toml and a new requirement in pyproject.toml ask", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "guardrail-deps-"));
+  try {
+    writeFileSync(
+      join(dir, "Cargo.toml"),
+      '[package]\nname = "a"\n\n[dependencies]\nserde = "1"\n',
+    );
+    writeFileSync(
+      join(dir, "pyproject.toml"),
+      '[project]\nname = "a"\ndependencies = [\n  "requests",\n]\n',
+    );
+    const h = harness({ cwd: dir, choices: [DENY, DENY] });
+    assert.equal(
+      await h.run("edit", {
+        path: "Cargo.toml",
+        edits: [{ oldText: 'name = "a"', newText: 'name = "b"' }],
+      }),
+      undefined,
+    );
+    assert.equal(h.dialogs.length, 0);
+    const crate = await h.run("edit", {
+      path: "Cargo.toml",
+      edits: [{ oldText: 'serde = "1"', newText: 'serde = "1"\nleft-pad = "1"' }],
+    });
+    assert.equal(crate.block, true);
+    assert.match(
+      h.dialogs[0].title,
+      /change dependencies in Cargo.toml: left-pad 1 \(dependencies\)/,
+    );
+    const python = await h.run("edit", {
+      path: "pyproject.toml",
+      edits: [{ oldText: '"requests",', newText: '"requests",\n  "left-pad",' }],
+    });
+    assert.equal(python.block, true);
+    assert.match(
+      h.dialogs[1].title,
+      /change dependencies in pyproject.toml: left-pad \* \(project.dependencies\)/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
