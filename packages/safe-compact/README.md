@@ -123,10 +123,11 @@ Four rules hold whatever Jev scored:
   unless the newest user message says otherwise, and tells the agent not to report completion on
   the strength of the handoff.
 
-The safety-rule check is a keyword test, so it can miss a rule phrased without those words. Words
-that are risky only with an object (send, post, pay, token) count only next to one (`send an email`,
-`post a comment`, `pay for`), so "post-process", "payload" or "more tokens" does not pin a message. Jev's
-own constraint score is still there for those.
+The safety-rule check is a keyword test, so it can miss a rule phrased without those words. In a
+prohibition or ask-first line, send, post, pay, token and bare "prod" count even without a specific
+object, so "Never post to Slack" or "don't touch prod" is pinned. The noisy lookalikes stay out:
+"post-process", "send me the long version", "payload", "more tokens", and "prod" as a verb. Jev's
+own constraint score is still there for rules this check misses.
 
 ## Cache-aware hold
 

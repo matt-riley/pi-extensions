@@ -13,6 +13,14 @@ const CUE =
 const RISK =
   /\b(?:force[- ]?push|default branch|(?:push(?:ing)? to|commit to) (?:main|master)|delet\w*|remov\w*|rm -rf|drop (?:table|database)|reset --hard|rewrit\w*|secrets?|credentials?|api[- ]?keys?|token|(?:access|auth|api|bearer) tokens?|passwords?|production|deploy\w*|publish\w*|releas\w*|(?:send|sent|post|posted|posting)(?: an?| the| any)? (?:e-?mails?|messages?|dms?|tweets?|comments?|reviews?)|e-?mail\w*|spend\w*|purchas\w*|buy(?:ing)? (?:anything|things)|payments?|pay(?:ing)? for|on my behalf|destructive|overwrit\w*)\b/i;
 
+// In a prohibition or ask-first line, send, post, pay, token and bare "prod"
+// count even without a specific object. Spaces and tabs only: `\s*` next to
+// other repeats can turn linear input quadratic. The noisy uses stay out: a
+// hyphenated "post-...", "send me", "payload", "more tokens", and "prod" used
+// as a verb ("don't prod the maintainers").
+const RULE_VERB =
+  /\b(?:send|sent)\b(?![ \t]+me\b)|\b(?:post|posted|posting)\b(?!-)|\bpay(?:ing)?\b|(?<!more[ \t])\btokens?\b|(?:touch|use|to|in|on|from|of|the|into|off)[ \t]+prod\b|\bprod[ \t]*[.!?]?$/i;
+
 /**
  * Whether a user message states a standing safety rule: a prohibition or an
  * ask-first condition that sits next to a risky action. Deliberately narrow: a
@@ -20,7 +28,7 @@ const RISK =
  * mistake only costs one more verbatim line.
  */
 export function isStandingRule(text) {
-  return typeof text === "string" && CUE.test(text) && RISK.test(text);
+  return typeof text === "string" && CUE.test(text) && (RISK.test(text) || RULE_VERB.test(text));
 }
 
 // Spaces and tabs only: `\s*` also crosses newlines, so a run of blank lines made
