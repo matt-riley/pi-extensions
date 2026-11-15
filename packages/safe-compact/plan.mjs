@@ -14,6 +14,14 @@ import {
   WINDOW_RELEVANCE,
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
+import {
+  carriedRules,
+  defangSpeakerLabels,
+  escapeSectionHeadings,
+  isStandingRule,
+  MAX_CARRIED_RULES,
+  withoutRules,
+} from "./handoff-rules.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
 const MAX_SEGMENTS = 400;
@@ -71,15 +79,28 @@ export function cacheWarmth(message, { minRatio, maxAgeMs, now = Date.now() }) {
 }
 
 /**
+ * A user message that states a rule: Jev scored it as a lasting constraint, or
+ * code recognises a safety rule in it, which no score can talk down.
+ */
+function isUserRule(scores, segment) {
+  return (
+    segment.role === "user" &&
+    ((scores?.user_constraint ?? 0) >= KEEP_BELOW || isStandingRule(segment.text))
+  );
+}
+
+/**
  * Content the hard rules keep verbatim whatever the budget. Role-scoped:
  * constraints come from the user, and file contents are not an error report
  * even when they mention a bug.
  */
 function hardKeep(scores, segment) {
-  if (!scores) return false;
-  const constraint = segment.role === "user" && (scores.user_constraint ?? 0) >= KEEP_BELOW;
-  const problem = segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
-  return constraint || problem;
+  return isUserRule(scores, segment) || isOpenProblem(scores, segment);
+}
+
+/** A reported failure the next segment does not show being fixed. File contents never count. */
+function isOpenProblem(scores, segment) {
+  return Boolean(scores) && segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
 }
 
 /** Tool output that names where it came from, so a pointer can stand in for it. */
@@ -216,7 +237,7 @@ async function buildEntries({
     // cheap. Open problems are not pinned: the judge sees one segment ahead,
     // so a fix a few turns later is invisible and it flagged 29% of a measured
     // span. They stay verbatim when there is room and are cut last.
-    const constraint = segment.role === "user" && (s?.user_constraint ?? 0) >= KEEP_BELOW;
+    const constraint = isUserRule(s, segment);
     const pinned = forced.has(segment.id) || constraint;
     // A recent user message that is not already carried verbatim above (a
     // constraint, the task, a forced copy) is pinned on one line, whatever Jev
@@ -247,7 +268,11 @@ async function buildEntries({
     if (disposition === "drop") return;
     if (disposition === "keep_verbatim") {
       const text = excerpt(segment.text, VERBATIM_MAX);
-      const section = constraint ? "constraints" : "context";
+      const section = constraint
+        ? "constraints"
+        : isOpenProblem(s, segment)
+          ? "problems"
+          : "context";
       entries.push({ ...base, section, text, lossy: text !== segment.text });
     } else if (disposition === "point" && !segment.path) {
       // Command output: name the command, never tell the reader to re-run it
@@ -335,6 +360,15 @@ export function memoizeAsk(ask, max = 2000) {
   };
 }
 
+/**
+ * Fixed text, never written by a model. A summary of finished steps reads like
+ * a finished task, and an agent that believes that stops; this says otherwise.
+ */
+const RESUME =
+  "This handoff is a pause, not a conclusion. The work above is unfinished unless the newest user " +
+  "message says otherwise. Carry on from that message and the open problems, and do not report " +
+  "the task as complete, or this summary as a result, on the strength of this handoff alone.";
+
 const bullets = (items) => items.map((text) => `- ${text.replace(/\n/g, "\n  ")}`).join("\n");
 
 /**
@@ -354,21 +388,38 @@ function wayBack(restore) {
 }
 
 function renderHandoff({ goal, entries, fileLists, previousSummary, note, restore }) {
-  const bySection = (name) => entries.filter((e) => e.section === name).map((e) => e.text);
+  // Only user-role messages may open a line with a "User:" label.
+  const bySection = (name) =>
+    entries
+      .filter((e) => e.section === name)
+      .map((e) =>
+        e.segment.role === "user" ? e.text : escapeSectionHeadings(defangSpeakerLabels(e.text)),
+      );
   const files = [
     fileLists.readFiles.length ? `read: ${fileLists.readFiles.join(", ")}` : "",
     fileLists.modifiedFiles.length ? `modified: ${fileLists.modifiedFiles.join(", ")}` : "",
   ].filter(Boolean);
   const pointers = [...bySection("pointers"), ...files];
+  // Earlier handoffs' rules first, then this span's; one already restated is kept once.
+  const fresh = bySection("constraints");
+  const rules = [
+    ...carriedRules(previousSummary).filter((rule) => !fresh.includes(rule)),
+    ...fresh,
+  ].slice(-MAX_CARRIED_RULES);
   const sections = [
     ["Goal", goal],
-    ["Constraints & preferences (verbatim)", bullets(bySection("constraints"))],
+    ["Standing rules and constraints (verbatim)", bullets(rules)],
     ["Recent user messages (verbatim, oldest first)", bullets(bySection("recent"))],
+    ["Open problems (verbatim)", bullets(bySection("problems"))],
     ["Key decisions", bullets(bySection("decisions"))],
     ["Context carried forward", bullets(bySection("context"))],
     ["Pointers (re-read on demand)", bullets(pointers)],
-    ["Earlier context", previousSummary ? excerpt(previousSummary, PREVIOUS_MAX) : ""],
-    ["Agent note (verbatim)", note ?? ""],
+    [
+      "Earlier context",
+      previousSummary ? excerpt(withoutRules(previousSummary), PREVIOUS_MAX) : "",
+    ],
+    ["Agent note (verbatim)", escapeSectionHeadings(defangSpeakerLabels(note))],
+    ["Resume", RESUME],
     ["Full transcript (searchable)", wayBack(restore)],
   ];
   return sections
