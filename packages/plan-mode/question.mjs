@@ -25,20 +25,60 @@ export function promptSection(enabled, planPrompt) {
 // implementing with nothing else to choose. The "begin" verbs only count when
 // the sentence ends there: "Should I start with the API or the UI?" is a
 // decision, "Should I start?" is not.
+//
+// The question text is written by the model, so nothing here may backtrack: the
+// patterns find the begin verb and take the rest of the sentence as plain text,
+// and the words after the verb are then read one at a time in code.
 const END = String.raw`(?=\s*(?:[?.!,;:]|$))`;
-const BEGIN = String.raw`(?:go ahead|get going|get started|proceed|start|begin|implement|build)`;
-const OBJECT = String.raw`(?:\s+(?:it|this|that|now|here|the plan|this plan|my plan|implementing|implementation|building|and (?:start|begin|get started)(?: implementing| building)?|with (?:it|this|that|the plan|this plan|my plan|implementation)))*`;
+const BEGIN = String.raw`(?:go ahead|get going|get started|proceed|start|begin|implement|build)(?![\w'-])`;
+const TAIL = String.raw`([^?.!,;:]*)`;
+
+// Words that may follow the begin verb without naming anything else to decide.
+const FILLER = new Set([
+  "it",
+  "this",
+  "that",
+  "now",
+  "here",
+  "implementing",
+  "implementation",
+  "building",
+]);
+const PLAN = new Set(["the plan", "this plan", "my plan"]);
+
+/** True when `tail` is only filler: "it", "the plan", "and start implementing", "with this plan". */
+function isOnlyFiller(tail) {
+  const words = tail.toLowerCase().split(/\s+/).filter(Boolean);
+  let at = 0;
+  while (at < words.length) {
+    const pair = `${words[at]} ${words[at + 1]}`;
+    if (words[at] === "and" && ["start", "begin"].includes(words[at + 1])) at += 2;
+    else if (words[at] === "and" && pair === "and get" && words[at + 2] === "started") at += 3;
+    else if (
+      words[at] === "with" &&
+      (FILLER.has(words[at + 1]) || PLAN.has(`${words[at + 1]} ${words[at + 2]}`))
+    )
+      at += PLAN.has(`${words[at + 1]} ${words[at + 2]}`) ? 3 : 2;
+    else if (PLAN.has(pair)) at += 2;
+    else if (FILLER.has(words[at])) at += 1;
+    else return false;
+  }
+  return true;
+}
+
+// A begin ask: the lead-in, a begin verb, and nothing after it but filler.
+const beginAsk = (lead) => {
+  const pattern = new RegExp(String.raw`${lead}${BEGIN}${TAIL}`, "gi");
+  return (text) => [...text.matchAll(pattern)].some((match) => isOnlyFiller(match[1]));
+};
 
 const APPROVAL_ASKS = [
   /\b(?:is|does|do) (?:this|the|that|my) plan (?:ok|okay|good|fine|acceptable|alright|work|look|sound|seem)\b/i,
   /\bhow (?:does|do) (?:this|the|that|my) plan (?:look|sound|seem)\b/i,
-  new RegExp(String.raw`\b(?:should|shall|can|may) i ${BEGIN}${OBJECT}${END}`, "i"),
-  new RegExp(String.raw`\b(?:want|like) me to ${BEGIN}${OBJECT}${END}`, "i"),
-  new RegExp(
-    String.raw`\b(?:happy|ok|okay|good|fine|clear) (?:for me )?to ${BEGIN}${OBJECT}${END}`,
-    "i",
-  ),
-  new RegExp(String.raw`\bready (?:to|for(?: me to)?) ${BEGIN}${OBJECT}${END}`, "i"),
+  beginAsk(String.raw`\b(?:should|shall|can|may) i `),
+  beginAsk(String.raw`\b(?:want|like) me to `),
+  beginAsk(String.raw`\b(?:happy|ok|okay|good|fine|clear) (?:for me )?to `),
+  beginAsk(String.raw`\bready (?:to|for(?: me to)?) `),
   /\b(?:any|anything)\b[^.?!\n]*\bbefore (?:we|i) (?:start|begin|proceed|implement|go)\b/i,
   /\bkick (?:this|it) off\b/i,
   new RegExp(
@@ -60,7 +100,12 @@ export function approvalQuestionProblem({ title, question, options } = {}) {
     (part) => typeof part === "string",
   );
   // Each part alone: a question's words and an option's words must not combine into an ask.
-  if (!parts.some((part) => APPROVAL_ASKS.some((pattern) => pattern.test(part)))) return null;
+  if (
+    !parts.some((part) =>
+      APPROVAL_ASKS.some((ask) => (typeof ask === "function" ? ask(part) : ask.test(part))),
+    )
+  )
+    return null;
   return (
     "Rejected: do not ask for approval of the plan with a question. plan_mode_question is for decisions. " +
     "When the plan is decision-complete, call plan_mode_complete alone: it puts the plan in front of the user, " +

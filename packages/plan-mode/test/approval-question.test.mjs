@@ -52,3 +52,39 @@ test("an empty or odd call is not an approval question", () => {
   assert.equal(approvalQuestionProblem(undefined), null);
   assert.equal(approvalQuestionProblem({ question: 42, options: "yes" }), null);
 });
+
+test("model-written text cannot make the approval check slow", () => {
+  const hostile = [
+    `Should I start${" and start implementing".repeat(200)}`,
+    `Should I start${" and start implementing".repeat(200)} but wait`,
+    `Ready to${" implementing".repeat(300)}x`,
+    `Shall I go ahead${" with it and begin building".repeat(150)} later, or not?`,
+    `Want me to ${"start ".repeat(400)}?`,
+  ];
+  for (const question of hostile) {
+    const started = performance.now();
+    approvalQuestionProblem({ question });
+    const took = performance.now() - started;
+    assert.ok(took < 100, `${took.toFixed(1)} ms for ${question.slice(0, 40)}`);
+  }
+});
+
+test("a long run of begin-words is still an approval ask when it ends the sentence", () => {
+  assert.match(
+    approvalQuestionProblem({
+      question: `Should I start${" and start implementing".repeat(50)}?`,
+    }) ?? "",
+    /plan_mode_complete/,
+  );
+});
+
+test("a ready-to-start question about something other than the plan is a decision", () => {
+  for (const question of [
+    "Are you ready to start the migration window on Friday?",
+    "Is the team ready to begin the rollout in staging first?",
+    "Should I start with the API or the UI?",
+    "Want me to build the cache layer or the queue first?",
+    "Ready to begin the migration?",
+  ])
+    assert.equal(approvalQuestionProblem({ question }), null, question);
+});
