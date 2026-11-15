@@ -47,7 +47,7 @@ test("the star in a paths target can sit mid-path, and a `$&` in the specifier s
     type: "file",
     rel: "src/feature/index.ts",
   });
-  assert.equal(graph.resolve("#fea$&ture", "a.ts").type, "external");
+  assert.equal(graph.resolve("#fea$&ture", "a.ts").type, "unresolved");
 });
 
 test("jsconfig.json is used when there is no tsconfig.json, and a broken one is ignored", async () => {
@@ -114,4 +114,33 @@ test("a workspace manifest that cannot be read or parsed is skipped", async () =
 test("the graph reports the file set it resolves against", async () => {
   const graph = await repo({ "a.ts": "", "b.ts": "" });
   assert.deepEqual([...graph.files].sort(), ["a.ts", "b.ts"]);
+});
+
+test("an alias that matches a paths pattern but names no file is unresolved, not external", async () => {
+  const graph = await repo({
+    "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "@/*": ["src/*"] } } }),
+    "src/real.ts": "",
+  });
+  assert.deepEqual(graph.resolve("@/real", "src/a.ts"), { type: "file", rel: "src/real.ts" });
+  assert.equal(graph.resolve("@/missing", "src/a.ts").type, "unresolved");
+  assert.deepEqual(graph.resolve("react", "src/a.ts"), { type: "external", pkg: "react" });
+});
+
+test("`..` climbs out of the importing file's directory", async () => {
+  const graph = await repo({
+    "src/b.ts": "",
+    "src/x/a.ts": "",
+    "src/x/c.ts": "",
+    "top.ts": "",
+    "src/x/y/deep.ts": "",
+  });
+  assert.deepEqual(graph.resolve("../b", "src/x/a.ts"), { type: "file", rel: "src/b.ts" });
+  assert.deepEqual(graph.resolve("../x/c", "src/x/a.ts"), { type: "file", rel: "src/x/c.ts" });
+  assert.deepEqual(graph.resolve("../../../top", "src/x/y/deep.ts"), {
+    type: "file",
+    rel: "top.ts",
+  });
+  assert.deepEqual(graph.resolve("../top", "src/a.ts"), { type: "file", rel: "top.ts" });
+  // Climbing past the repository root finds nothing rather than wrapping around.
+  assert.equal(graph.resolve("../../../../top", "src/x/a.ts").type, "unresolved");
 });

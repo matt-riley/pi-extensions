@@ -688,6 +688,30 @@ export default function (pi) {
   assert.match(doctorNote, /tools: \d+ registered/);
   assert.ok(doctorNote.includes(`pi ${piVersion} `), "the report names Pi's version");
   console.log("ok: /doctor reports versions and the tool registry from a live Pi");
+  await mkdir(path.join(cwd, ".pi"), { recursive: true });
+  await mkdir(path.join(cwd, "arch", "shared"), { recursive: true });
+  await mkdir(path.join(cwd, "arch", "packages", "a"), { recursive: true });
+  await writeFile(
+    path.join(cwd, ".pi", "architecture.json"),
+    JSON.stringify({
+      rules: [{ name: "smoke-leaf", from: "arch/shared/**", forbid: ["arch/packages/**"] }],
+    }),
+  );
+  await writeFile(path.join(cwd, "arch", "packages", "a", "x.ts"), "export const x = 1;\n");
+  await writeFile(
+    path.join(cwd, "arch", "shared", "leak.mjs"),
+    'import { x } from "../packages/a/x";\nexport const y = x;\n',
+  );
+  const architectureStart = events.length;
+  await prompt("/architecture");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const architectureNote = JSON.stringify(events.slice(architectureStart));
+  assert.match(
+    architectureNote,
+    /smoke-leaf: arch\/shared\/leak\.mjs:1 -> arch\/packages\/a\/x\.ts/,
+    `/architecture produced no violation: ${architectureNote.slice(0, 400)}`,
+  );
+  console.log("ok: /architecture reports a boundary violation from a live Pi");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );
