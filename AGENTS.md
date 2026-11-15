@@ -10,6 +10,15 @@ README. The **root `package.json` is the single registration point**: its
 registration if pi's extension scanner recursed, so they stay out until each
 package is published to npm on its own.
 
+Repository layout: `shared/` holds helpers used by more than one package,
+`prompts/` and `.agents/skills/` hold the bundled prompt templates and skills
+(both registered in the root manifest), `scripts/` holds repository tooling that
+never loads at runtime, `types/` holds the ambient stubs `tsc` uses, and
+`.pi/verify/` holds the real-host verification recipe. Packages load as one
+collection, not independent installs: a few import neighbours, as listed under
+"Package dependencies" in the README. A new package also needs a row in the
+README's extension table, which indexes every package.
+
 ## Conventions
 
 - Zero installed runtime dependencies. Extension runtime imports are local modules,
@@ -25,12 +34,22 @@ package is published to npm on its own.
   These widgets are injected into its plain `.mjs` logic; no runtime package is installed.
   The footer entrypoint likewise imports only `visibleWidth` and `truncateToWidth` and
   injects them into `extension.mjs`/`workspace.mjs`; its tests use `test/tui-fixture.mjs`.
+- `.pi/architecture.json` is live, not documentation:
+  `packages/architecture/test/repo-rules.test.mjs` checks this repository during
+  `npm test`. `shared/` is a leaf, packages must not import `scripts/` or each
+  other, and import cycles fail. Existing cross-package imports sit in the
+  rules' `except` list: move one into `shared/` and delete its line rather than
+  adding an entry.
 - The real `@earendil-works/pi-coding-agent` npm types are not used for
   `tsc`. See `types/pi-coding-agent.d.ts` for why (its published types are
   stricter than what pi's runtime actually enforces), and keep that stub's
   exports in sync with what `packages/*/index.ts` import. `types/mjs-modules.d.ts`
   types every sibling `.mjs` import as `any`; those modules keep their own
   correctness contract via `node --test`, not `tsc`.
+- Runtime imports are allowlisted: `scripts/check-conventions.mjs` accepts
+  `node:` modules, relative paths, `typebox`, and only the host exports named in
+  its per-file `HOST_EXPORTS` map. A new runtime SDK or TUI import needs an entry
+  there, or `npm run check` fails; other host imports stay type-only.
 - The minimum supported pi is **1.4.0** (README "Requirements"). In
   `before_agent_start`, add text through `event.systemPromptOptions.sections`
   rather than returning `systemPrompt` (that replaces the whole prompt), and
@@ -42,14 +61,24 @@ package is published to npm on its own.
 - Nontrivial logic (policies, parsers, state machines) goes in a plain `.mjs`
   module so `node --test` can cover it without a TS loader, with tests beside
   it in `test/*.test.mjs`.
+- Non-test `.ts`/`.mjs` files under `packages/` and `shared/` stay under 1000
+  lines (800+ is printed as a growth warning), and a helper that already lives
+  in `shared/` is imported rather than re-typed: the conventions check names
+  `usableNumber` and off-flag parsing explicitly. `npm run conventions` runs
+  that checker alone when you want a fast answer.
+- `prompts/*.md` may only name skills that exist under `.agents/skills/`; the
+  conventions check validates those references against skill frontmatter.
 - `npm run check` must pass before pushing: type-check with `tsc --noEmit`
   (its tsconfig `include` covers every `packages/**/*.ts` entrypoint, so new
   packages are checked with no script edits) and run the test suite.
 
 ## Verification recipe
 
-Use `docs/verification.md` for this project's setup, real-host fixture, expected
-behavior, target revision and cleanup.
+Use `docs/verification.md` for what each check proves and misses, and
+`.pi/verify/SKILL.md` for the runnable setup, fixtures and cleanup. Default
+order: `npm run check`, then `npm run verify`, then `npm run smoke`; UI or
+native terminal changes also need the real-terminal drives
+(`.pi/verify/workbench.mjs`, `.pi/verify/jobs.mjs`).
 
 ## Skills
 
@@ -58,7 +87,11 @@ Keep skills lean: see `docs/skill-diet.md` before adding to or editing a
 
 ## Commands
 
+Run these from the repository root after `npm install` (the tooling is
+development-only).
+
 - `npm test`: run the test suite (`node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'`).
+  For one package, `node --test packages/<name>` runs just its `test/*.test.mjs`.
 - `npm run check`: the full gate, in order: repository conventions, `tsc --noEmit`, `oxlint
   --deny-warnings`, `oxfmt --check`, `knip`, `fallow dead-code`, then the tests.
   This is what has to pass before pushing.
@@ -72,10 +105,14 @@ Keep skills lean: see `docs/skill-diet.md` before adding to or editing a
   `npm run fallow:report` adds duplication and complexity: reported, not gated,
   because both are judgement calls rather than pass/fail.
 - `npm run verify`: checks all manifest extension registrations against a stub pi.
+  `-- --live` adds one real TypeSafe request and needs credentials.
 - `npm run smoke`: exercises the real pi host with isolated fixtures and a local
-  scripted provider; see `docs/verification.md` for scope and limitations.
+  scripted provider; needs pi 1.4.0 or later on `PATH` (`PI_SMOKE_BIN` names
+  another executable). See `docs/verification.md` for scope and limitations.
+- `npm run coverage`: tests plus registration and smoke, written to
+  `coverage/lcov.info`; needs pi and Node 24+.
 
-Fixing beats suppressing: the only rule exceptions are the five in
+Fixing beats suppressing: the only rule exceptions are the six in
 `.oxlintrc.json`, each with its reason next to it. `fallow fix` can remove unused
 exports automatically, but it edited re-exports without their imports once, so run
 the tests after any auto-fix.
@@ -83,4 +120,6 @@ the tests after any auto-fix.
 ## Commits
 
 Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, …), imperative
-subjects, focused diffs.
+subjects, focused diffs. CI runs the same `npm run check` gate through a
+reusable `matt-riley-ci` workflow on pull requests and pushes to `main`; run it
+locally before pushing instead of waiting for the run.
