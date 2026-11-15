@@ -35,7 +35,7 @@ test("a clean pass on an unchanged tree counts", () => {
     started: [started()],
     current: rev("f1"),
   });
-  assert.deepEqual(hit, { revision: rev("f1") });
+  assert.deepEqual(hit, { revision: rev("f1"), command: "npm test", output: "ok" });
 });
 
 test("each of these leaves the run uncounted", () => {
@@ -98,6 +98,8 @@ function harness(t) {
   git("config", "user.name", "test");
   git("config", "user.email", "test@example.com");
   writeFileSync(join(cwd, "a.js"), "export default 1;\n");
+  writeFileSync(join(cwd, "a.test.js"), 'import "./a.js";\n');
+  writeFileSync(join(cwd, "b.test.js"), "// unrelated\n");
   git("add", ".");
   git("commit", "-qm", "test: base");
   const handlers = {};
@@ -120,7 +122,7 @@ function harness(t) {
       handlers.tool_result({ toolName: "edit", input: { path: "a.js" }, isError: false }, ctx),
     /** The user types `!command`: the host fires user_bash, runs it, then saves the message. */
     bang: async ({
-      command = "npm test",
+      command = "node --test a.test.js",
       start = true,
       save = true,
       event = {},
@@ -198,4 +200,24 @@ test("a run saved without a recorded start (e.g. after /reload) is not counted",
   await h.edit();
   await h.bang({ start: false });
   assert.equal((await h.settle())?.continue, true);
+});
+
+test("a clean `!npm run lint` is compile-only evidence: the edit still needs a run that executes it", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.bang({ command: "npm run lint" });
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(result.entries[0].content, /only compile or lint checks ran/i);
+});
+
+test("a `!` test run that reached none of the edited files leaves the reminder", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.bang({ command: "node --test b.test.js" });
+  const nudged = await h.settle();
+  assert.equal(nudged.continue, true);
+  assert.match(nudged.entries.at(-1).content, /no test file it ran imports or names the changed/i);
 });

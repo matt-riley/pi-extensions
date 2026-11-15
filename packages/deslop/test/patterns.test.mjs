@@ -173,3 +173,289 @@ test("documentation labels, table examples and prohibitions are not formula pros
   assert.deepEqual(ids("| Example | Meaning |\n| seamless | marketing |"), []);
   assert.deepEqual(ids("Do not edit files. Do not implement. Do not run commands."), []);
 });
+
+test("delve, leverage and utilize are found in every verb form, and only as words", () => {
+  for (const text of [
+    "We delve into the cache.",
+    "We delved into the cache.",
+    "The team leveraged the existing pool.",
+    "Teams leverage the pool, and leveraging it helps.",
+    "It utilized a pool.",
+    "It’s worth noting that the pool is shared.",
+  ])
+    assert.ok(ids(text).includes("filler"), text);
+  assert.deepEqual(ids("The delvers met the leveraged-buyout team and the utilizer."), []);
+});
+
+test("an invented compound label is found once it is used twice", () => {
+  const text = "Run the stale-branch checks, then the merge-order gate.";
+  const found = findSlop(text).find((item) => item.id === "coined-label");
+  assert.ok(found, text);
+  assert.equal(found.severity, "low");
+  assert.equal(found.count, 2);
+  assert.equal(worthReporting([found]), false, "low signs need company");
+});
+
+test("one coined label, or an ordinary compound, is not a finding", () => {
+  assert.deepEqual(ids("Run the stale-branch checks before you merge."), []);
+  for (const text of [
+    "The read-only mode skips writes and the built-in path stays on.",
+    "A non-blocking gate and a multi-line flow share one open-source loop.",
+    "Use the state-of-the-art loop, then a long-running pass.",
+    "The dead-code check passes in every full-text mode.",
+    "Call `stale-branch checks` and `merge-order gate` by name.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a contrast framed as X, not Y stays weak and counts from two sightings", () => {
+  const one = findSlop("This is a library, not a framework.");
+  assert.deepEqual(one, [], "one such sentence is often a fair scope statement");
+  const text = "This is a library, not a framework. The default is a helper -- not a daemon.";
+  const found = findSlop(text).find((item) => item.id === "x-not-y");
+  assert.ok(found, text);
+  assert.equal(found.count, 2);
+  assert.equal(found.severity, "medium");
+  assert.equal(worthReporting([found]), false, "medium signs need company");
+});
+
+test("not X but Y is a strong contrast on one sighting", () => {
+  for (const text of [
+    "This is not a bug but a feature.",
+    "It isn't a cache, but a registry.",
+    "The gate is not the author but the reader.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "contrast");
+    assert.ok(found, text);
+    assert.equal(found.severity, "high");
+  }
+});
+
+test("a but clause that is not a contrast is left alone", () => {
+  for (const text of [
+    "It is not set, but the default applies.",
+    "This is not documented, but it works.",
+    "The flag is not required but is recommended.",
+    "He does not like the cache but uses it.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a one-line closer ends a paragraph on a sign-off", () => {
+  for (const text of [
+    "The parser reads each file once and caches the tree. That's it.",
+    "We removed the lock.\n\nSimple as that.",
+    "Run the check before every push. No magic.",
+    "It reads the config and exits. And that's the point!",
+    "That is the whole story.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "closer");
+    assert.ok(found, text);
+    assert.equal(found.severity, "high");
+    assert.equal(worthReporting([found]), true);
+  }
+});
+
+test("a closing phrase inside a sentence or code is not a closer", () => {
+  for (const text of [
+    "That's it for the cache, so the parser runs next.",
+    "The no magic mode is off. Run it twice.",
+    "Print `That's it.` when the run ends.",
+    "The result is the whole story of the run, read from disk.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a plain correction is not a contrast, even when it repeats", () => {
+  for (const text of [
+    "Pass the id, not the name. Use the flag, not the env var.",
+    "The default is a number, not a string. The key is a path, not a url.",
+    "Use `read`, not `cat`, and a `flag`, not a `var`.",
+    "It runs on port 8080, not 80. It ships weekly, not daily.",
+  ])
+    assert.equal(
+      findSlop(text).some((item) => item.id === "x-not-y"),
+      false,
+      text,
+    );
+});
+
+test("weak signs only count when they share a paragraph", () => {
+  const apart = findSlop(
+    "The cache — once warm — serves every read.\n\nThis is very fast and very small.",
+  );
+  assert.deepEqual(
+    apart.map((item) => item.id),
+    ["em-dash", "very"],
+  );
+  assert.equal(worthReporting(apart), false, "a medium and a low sign in different paragraphs");
+  const together = findSlop(
+    "The cache — once warm — serves every read. This is very fast and very small.",
+  );
+  assert.equal(worthReporting(together), true, "the same two signs in one paragraph");
+});
+
+test("a strong sign is reported on its own, wherever it sits", () => {
+  const text = "Plain opening paragraph.\n\nThe second paragraph is a seamless upgrade.";
+  const found = findSlop(text);
+  assert.equal(worthReporting(found), true);
+  assert.deepEqual(found[0].passages, [1]);
+});
+
+test("a finding that carries no passages counts as one shared passage", () => {
+  assert.equal(worthReporting([{ severity: "medium" }, { severity: "low" }]), true);
+  assert.equal(worthReporting([{ severity: "high" }]), true);
+  assert.equal(worthReporting([{ severity: "medium" }]), false);
+});
+
+test("double-hyphen asides count as em dash asides", () => {
+  assert.deepEqual(ids("The cache -- once warm -- serves every read."), ["em-dash"]);
+  assert.deepEqual(ids("The cache--once warm--serves every read."), ["em-dash"]);
+  const mixed = findSlop("The cache — once warm -- serves every read.");
+  assert.equal(mixed[0].id, "em-dash");
+  assert.equal(mixed[0].count, 2);
+});
+
+test("a single double hyphen, or a flag, is not an aside", () => {
+  assert.deepEqual(ids("pi-drift -- notice edits made elsewhere."), []);
+  assert.deepEqual(ids("Pass --verbose or --quiet to change the output."), []);
+  assert.deepEqual(ids("Run it as git commit -m -- message."), []);
+});
+
+test("parenthetical asides are a finding only when the page repeats them", () => {
+  const three =
+    "The cache (once warm) serves every read. The index (built at startup) is small. " +
+    "The log (kept for a day) is plain text.";
+  const found = findSlop(three).find((item) => item.id === "paren-aside");
+  assert.ok(found, three);
+  assert.equal(found.count, 3);
+  assert.equal(found.severity, "high");
+  assert.equal(worthReporting([found]), true);
+  const two = "The cache (once warm) serves every read. The index (built at startup) is small.";
+  assert.deepEqual(ids(two), []);
+});
+
+test("ordinary parentheses are not asides", () => {
+  const sentences = [
+    "Pass the path (for example `src`) first, then use the flag (see below) next.",
+    "The limit (200) is fixed, and the call f(x) runs twice, and it is fast (really).",
+    "The mode is on by default (e.g. in CI), and the run ends (or fails) at the limit.",
+    "Set the key (and the value), then check v2 (beta) today.",
+  ];
+  const text = sentences.join(" ");
+  assert.equal(
+    findSlop(text).some((item) => item.id === "paren-aside"),
+    false,
+  );
+  assert.deepEqual(ids(text), []);
+});
+
+test("a forced group of three stock qualities is a weak sign", () => {
+  for (const text of [
+    "The tool is fast, simple, and reliable.",
+    "It stays small, safe or predictable.",
+    "It ships with no config, no daemon, and no setup.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "triplet");
+    assert.ok(found, text);
+    assert.equal(found.severity, "low");
+    assert.equal(worthReporting([found]), false, "a low sign needs company");
+  }
+  const company = findSlop("Moreover, the tool is fast, simple, and reliable.");
+  assert.equal(worthReporting(company), true, "a triple and a transition in one paragraph");
+  const apart = findSlop("Moreover, the tool is plain.\n\nIt is fast, simple, and reliable.");
+  assert.equal(worthReporting(apart), false, "the same two signs in separate paragraphs");
+});
+
+test("an ordinary list of three is not a forced group", () => {
+  for (const text of [
+    "It lints, formats, and tests every file.",
+    "The tool is fast and simple.",
+    "Use read, write, and edit for changes.",
+    "It has no config and no daemon.",
+    "Keep it fast, then simple, then reliable.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test('"serves as" is a medium sign and a plain verb is left alone', () => {
+  for (const text of ["The tag serves as a fallback.", "Both files stand as the record."]) {
+    const found = findSlop(text).find((item) => item.id === "serves-as");
+    assert.ok(found, text);
+    assert.equal(found.severity, "medium");
+  }
+  for (const text of [
+    "The cache serves every read, and it serves assets from disk.",
+    "Observers see each file as it changes.",
+    "Call `serves as` by name.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a subject renamed with a new synonym each time is a weak sign", () => {
+  const text =
+    "The tool reads the config file from the project root. " +
+    "The utility parses it into a tree of nodes. " +
+    "The solution caches the result for later runs.";
+  const found = findSlop(text).find((item) => item.id === "renamed-subject");
+  assert.ok(found, text);
+  assert.equal(found.severity, "medium");
+  assert.equal(worthReporting([found]), false, "a medium sign needs company");
+  assert.equal(found.count, 3);
+});
+
+test("a repeated subject, unrelated subjects or two names are not a renaming", () => {
+  const first = "The tool reads the config file from the project root. ";
+  for (const text of [
+    `${first}The tool parses it into a tree of nodes. The tool caches the result for later runs.`,
+    `${first}The library parses it into a tree of nodes. The user caches the result for later runs.`,
+    `${first}The utility parses it into a tree of nodes.`,
+    `${first.trim()}\n\nThe utility parses it into a tree of nodes.\n\nThe solution caches the result for later runs.`,
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a sentence that fits any project's docs is a weak sign", () => {
+  for (const text of [
+    "Feel free to open an issue.",
+    "Contributions are welcome.",
+    "It supports a wide range of formats.",
+    "The library is designed with simplicity in mind.",
+    "It makes it easy to get up and running.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "generic-docs");
+    assert.ok(found, text);
+    assert.equal(found.severity, "low");
+    assert.equal(worthReporting([found]), false);
+  }
+});
+
+test("specific sentences are not generic docs", () => {
+  for (const text of [
+    "The cache holds 100 entries and drops the oldest first.",
+    "Open an issue with the failing command and its output.",
+    "A feeling of freedom is not a finding. The range of ports is 8000 to 8100.",
+    "It is designed to run on Node 20 with no network access.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("the newer patterns stay linear on large hostile input", () => {
+  const inputs = {
+    notBut: "is not a ".repeat(60_000),
+    notButFar: `is not a ${"word ".repeat(25_000)}`,
+    closer: ". ".repeat(60_000) + "That's it",
+    closerSpaces: `Done.${" ".repeat(150_000)}x`,
+    dashes: "a -- ".repeat(40_000) + "a--".repeat(40_000),
+    parens: "a (b c) ".repeat(25_000) + "a (".repeat(40_000),
+    triple: "fast, ".repeat(40_000) + "no x, ".repeat(30_000),
+    xNotY: `is a ${"w ".repeat(60_000)}, not`,
+    generic: "feel ".repeat(40_000) + "designed with ".repeat(10_000),
+    subjects: "The tool is here. The utility is here. ".repeat(4_000),
+  };
+  for (const [name, text] of Object.entries(inputs)) {
+    const start = performance.now();
+    findSlop(text);
+    assert.ok(performance.now() - start < 1_000, `${name} took longer than a second`);
+  }
+});

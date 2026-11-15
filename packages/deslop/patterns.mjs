@@ -9,17 +9,17 @@
 // (passive voice as habit, repeated thematic points, personification) are left
 // to the TypeSafe questions in verify.mjs, which read the whole text.
 //
-// Severity follows deslop-text: high signs are instant tells, medium ones weaken
-// the writing, low ones only matter in aggregate. Thresholds are that skill's
-// figures for internal documents, because this runs on docs an agent edits in a
-// repository and not on customer-facing copy.
+// Severity follows deslop-text: high signs are strong tells that stand alone,
+// medium and low ones are weak and only count when other signs sit in the same
+// paragraph. Thresholds are that skill's figures for internal documents, because
+// this runs on docs an agent edits in a repository and not on customer-facing copy.
 
 /** Text past this is not scanned: a generated file is not prose worth judging. */
 const MAX_SCAN_CHARS = 200_000;
 const MAX_EXCERPTS = 2;
 const MAX_EXCERPT_CHARS = 140;
 const SEVERITY_WEIGHT = { high: 3, medium: 2, low: 1 };
-/** One high sign, or a medium with company, or three low ones in aggregate. */
+/** One high sign, or a medium and a low, or three lows, all in one paragraph. */
 const REPORT_WEIGHT = 3;
 
 /** Phrases to a global, case-insensitive regex: any apostrophe, any whitespace. */
@@ -34,6 +34,29 @@ function phrases(list) {
     .join("|");
   return new RegExp(String.raw`(?<![\w-])(?:${body})(?![\w-])`, "gi");
 }
+
+/**
+ * "stale-branch checks" and "merge-order gate": a made-up modifier stuck to a
+ * generic noun. A regex cannot tell invented from ordinary, so the shape is narrow
+ * (hyphenated pair, then one of these head nouns), well-known compounds are
+ * excluded, and the check needs two hits.
+ */
+const LABEL_HEADS =
+  "checks?|layouts?|gates?|passes|pass|flows?|lanes?|rails?|handoffs?|surfaces?|contracts?|posture|stance|story|moves?";
+const COMMON_COMPOUNDS =
+  "read-only|write-only|built-in|open-source|real-time|long-running|short-lived|high-level|low-level|top-level|first-class|full-text|command-line|case-sensitive|one-shot|fail-safe|dead-code|type-safe|run-time|build-time|two-step|single-line|error-prone";
+const COMPOUND_PREFIXES =
+  "non|multi|pre|post|re|co|anti|sub|semi|cross|inter|over|under|out|self|auto|pro";
+
+/**
+ * A foil that names a data type or an interface word makes "X, not Y" a plain
+ * correction ("the default is a number, not a string"), not a rhetorical contrast.
+ */
+const DATA_TERMS =
+  "string|number|boolean|integer|float|array|object|list|map|file|directory|folder|path|url|id|name|flag|option|key|value|command|function|byte|char|character|int|bool";
+
+const STOCK_QUALITIES =
+  "fast|simple|reliable|secure|scalable|flexible|robust|clean|small|lightweight|powerful|easy|safe|predictable|maintainable|portable|readable|consistent|efficient|composable|extensible";
 
 const CHECKS = [
   {
@@ -56,12 +79,15 @@ const CHECKS = [
       "the reality is",
       "delve",
       "delves",
+      "delved",
       "delving",
       "leverage",
       "leverages",
+      "leveraged",
       "leveraging",
       "utilize",
       "utilizes",
+      "utilized",
       "utilizing",
       "tapestry",
       "holistic",
@@ -72,7 +98,7 @@ const CHECKS = [
     id: "contrast",
     sign: "W2",
     severity: "high",
-    label: '"not X, it is Y" contrast',
+    label: '"not X, it is Y" or "not X but Y" contrast',
     fix: "state Y directly and cut the negation",
     pattern: new RegExp(
       [
@@ -80,6 +106,7 @@ const CHECKS = [
         String.raw`\bnot\s+(?:only|just)\b[^.!?\n]{0,80}\bbut\s+also\b`,
         String.raw`\bless\s+about\b[^.!?\n]{0,60}\bmore\s+about\b`,
         String.raw`\bnot\s+because\b[^.!?\n]{0,80}[.,]\s*(?:but\s+)?because\b`,
+        String.raw`\b(?:(?:is|are|was|were)\s+not|(?:is|are|was|were)n['’]t)\s+(?:an?|the)\b[^.!?\n]{0,60}?\bbut\s+(?:rather\s+)?(?:an?|the)\b`,
       ].join("|"),
       "gi",
     ),
@@ -280,6 +307,104 @@ const CHECKS = [
     pattern: phrases(["quietly"]),
   },
   {
+    id: "x-not-y",
+    sign: "contrastive framing",
+    severity: "medium",
+    label: '"X, not Y" contrast',
+    fix: "state what it is and drop the alternative nobody asked about",
+    min: 2,
+    pattern: new RegExp(
+      String.raw`\b(?:is|are|was|were|it['’]s|that['’]s|this['’]s)\s+(?:an?|the)\s+[\w-]+(?:\s+[\w-]+){0,3}\s*(?:[,—–]|--)\s*(?:and\s+)?not\s+(?:an?|the)\s+(?!(?:${DATA_TERMS})\b)[\w-]+`,
+      "gi",
+    ),
+  },
+  {
+    id: "closer",
+    sign: "one-line closer",
+    severity: "high",
+    label: "one-line closer",
+    fix: "end on the last fact and cut the sign-off",
+    pattern: new RegExp(
+      String.raw`(?:^|[.!?]\s+)(?:` +
+        [
+          String.raw`(?:and\s+)?that(?:['’]s|\s+is)\s+(?:it|all|okay|fine)`,
+          String.raw`(?:and\s+)?that(?:['’]s|\s+is)\s+the\s+(?:whole\s+)?(?:point|story|idea)`,
+          String.raw`simple\s+as\s+that`,
+          String.raw`plain\s+and\s+simple`,
+          String.raw`no\s+(?:magic|surprises)`,
+          String.raw`nothing\s+(?:more|else)`,
+          String.raw`end\s+of\s+story`,
+          String.raw`full\s+stop`,
+          String.raw`period`,
+        ].join("|") +
+        String.raw`)[.!]?[ \t]*$`,
+      "gim",
+    ),
+  },
+  {
+    id: "coined-label",
+    sign: "invented compound label",
+    severity: "low",
+    label: "invented hyphenated label",
+    fix: "name the thing with an ordinary noun phrase, or describe what it does",
+    min: 2,
+    pattern: new RegExp(
+      String.raw`(?<![\w-])(?!(?:${COMMON_COMPOUNDS})\s)(?!(?:${COMPOUND_PREFIXES})-)[a-z]{3,}-[a-z]{3,}\s+(?:${LABEL_HEADS})(?![\w-])`,
+      "gi",
+    ),
+  },
+  {
+    id: "paren-aside",
+    sign: "dash aside swapped for parentheses",
+    severity: "high",
+    label: "parenthetical asides repeated across the text",
+    fix: "give the aside its own sentence or fold it into the clause",
+    min: 3,
+    pattern:
+      /(?<=[a-z]) \((?!(?:e\.g|i\.e|see|for|or|and|etc|cf|via|vs)\b)[a-z][a-z'’-]*(?: [a-z'’-]+){1,7}\)(?= [a-z])/g,
+  },
+  {
+    id: "triplet",
+    sign: "forced group of three",
+    severity: "low",
+    label: "forced group of three",
+    fix: "keep the items that carry information and drop the rest",
+    pattern: new RegExp(
+      [
+        String.raw`\b(?:${STOCK_QUALITIES}),\s+(?:${STOCK_QUALITIES}),?\s+(?:and|or)\s+(?:${STOCK_QUALITIES})\b`,
+        String.raw`\b(?:no|zero)\s+[\w-]+,\s+(?:no|zero)\s+[\w-]+,?\s+(?:and\s+)?(?:no|zero)\s+[\w-]+`,
+      ].join("|"),
+      "gi",
+    ),
+  },
+  {
+    id: "generic-docs",
+    sign: "generic documentation sentence",
+    severity: "low",
+    label: "sentence that fits any project's docs",
+    fix: "say what this project does, with its own names and numbers",
+    pattern: new RegExp(
+      [
+        phrases([
+          "feel free to",
+          "contributions are welcome",
+          "pull requests are welcome",
+          "a wide range of",
+          "makes it easy to",
+          "make it easy to",
+          "easy to use",
+          "get up and running",
+          "follows best practices",
+          "of all skill levels",
+          "of all experience levels",
+          "aims to provide",
+        ]).source,
+        String.raw`\b(?:designed|built|crafted)\s+with\s+[\w-]+(?:\s+[\w-]+){0,2}\s+in\s+mind\b`,
+      ].join("|"),
+      "gi",
+    ),
+  },
+  {
     id: "very",
     sign: "W20",
     severity: "low",
@@ -310,7 +435,8 @@ const CHECKS = [
 
 const EMPHASIS_EMOJI = /[\u{1F680}\u{1F525}\u{2728}\u{1F4A1}\u{2B50}\u{1F31F}\u{2705}\u{1F449}]/gu;
 const HEADING_EMOJI = /^#{1,6}[ \t]+\p{Extended_Pictographic}/gmu;
-const EM_DASH = /—/g;
+/** A dash aside: an em dash, or the double hyphen someone types in its place. */
+const ASIDE_DASH = /—|(?<=\w) -- (?=\w)|(?<=\w)--(?=\w)/g;
 /** A paragraph that is a list, a heading, a table or a quote is not running prose. */
 const STRUCTURED_LINE = /^\s*(?:[-*+>#|]|\d+[.)])\s?/m;
 const MACHINEGUN_MAX_WORDS = 6;
@@ -348,7 +474,7 @@ function sentenceAround(text, start, end) {
     : sentence;
 }
 
-function finding(check, count, excerpts) {
+function finding(check, count, excerpts, passages = [0]) {
   return {
     id: check.id,
     sign: check.sign,
@@ -357,42 +483,72 @@ function finding(check, count, excerpts) {
     fix: check.fix,
     count,
     excerpts: [...new Set(excerpts)].slice(0, MAX_EXCERPTS),
+    passages: [...new Set(passages)].sort((left, right) => left - right),
   };
 }
 
+/** The non-blank paragraphs of a text, each with the offset it starts at. */
 function paragraphsOf(text) {
-  return text.split(/\n[ \t]*\n/).filter((paragraph) => paragraph.trim());
+  const spans = [];
+  let start = 0;
+  const push = (end) => {
+    const body = text.slice(start, end);
+    if (body.trim()) spans.push({ start, text: body });
+  };
+  for (const gap of text.matchAll(/\n[ \t]*\n/g)) {
+    push(gap.index);
+    start = gap.index + gap[0].length;
+  }
+  push(text.length);
+  return spans;
 }
 
-/** W3: more than one em dash in a paragraph, or more than three in the text. */
-function emDashFinding(text) {
-  const total = text.match(EM_DASH)?.length ?? 0;
-  const crowded = paragraphsOf(text).filter(
-    (paragraph) => (paragraph.match(EM_DASH)?.length ?? 0) > 1,
-  );
+/** Which paragraph an offset falls in: the last one that starts at or before it. */
+function passageAt(spans, offset) {
+  let low = 0;
+  let high = spans.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (spans[mid].start <= offset) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+}
+
+/** W3: more than one dash aside in a paragraph, or more than three in the text. */
+function emDashFinding(text, spans) {
+  const total = text.match(ASIDE_DASH)?.length ?? 0;
+  const dashed = spans.flatMap((paragraph, index) => {
+    const marks = [...paragraph.text.matchAll(ASIDE_DASH)];
+    return marks.length ? [{ paragraph, index, count: marks.length, at: marks[0].index }] : [];
+  });
+  const crowded = dashed.filter(({ count }) => count > 1);
   if (total <= 3 && crowded.length === 0) return null;
-  const sample = crowded[0] ?? text;
-  const at = sample.indexOf("—");
+  const sample = crowded[0] ?? dashed[0];
   return finding(
     {
       id: "em-dash",
       sign: "W3",
       severity: "medium",
-      label: "em dash asides",
+      label: "dash asides (em dash or double hyphen)",
       fix: "give the aside its own sentence, use a comma, or cut it",
     },
     total,
-    [sentenceAround(sample, at, at + 1)],
+    [sentenceAround(sample.paragraph.text, sample.at, sample.at + 1)],
+    dashed.map(({ index }) => index),
   );
 }
 
 /** W18: more than one exclamation mark in a paragraph, or more than three overall. */
-function exclamationFinding(text) {
+function exclamationFinding(text, spans) {
   const total = text.match(/!/g)?.length ?? 0;
-  const crowded = paragraphsOf(text).find((paragraph) => (paragraph.match(/!/g)?.length ?? 0) > 1);
+  const marked = spans.flatMap((paragraph, index) =>
+    paragraph.text.includes("!") ? [{ paragraph, index }] : [],
+  );
+  const crowded = marked.find(({ paragraph }) => (paragraph.text.match(/!/g)?.length ?? 0) > 1);
   if (total <= 3 && !crowded) return null;
-  const sample = crowded ?? text;
-  const at = sample.indexOf("!");
+  const sample = (crowded ?? marked[0]).paragraph;
+  const at = sample.text.indexOf("!");
   return finding(
     {
       id: "exclamation",
@@ -402,15 +558,19 @@ function exclamationFinding(text) {
       fix: "keep at most the one that matters",
     },
     total,
-    [sentenceAround(sample, at, at + 1)],
+    [sentenceAround(sample.text, at, at + 1)],
+    marked.map(({ index }) => index),
   );
 }
 
 /** W23 and W30: emoji carrying the emphasis, in a heading or in a cluster. */
-function emojiFinding(text) {
+function emojiFinding(text, spans) {
   const headings = text.match(HEADING_EMOJI) ?? [];
   const emphasis = text.match(EMPHASIS_EMOJI) ?? [];
   if (headings.length === 0 && emphasis.length < 2) return null;
+  const passages = [...text.matchAll(HEADING_EMOJI), ...text.matchAll(EMPHASIS_EMOJI)].map(
+    (match) => passageAt(spans, match.index),
+  );
   return finding(
     {
       id: "emoji",
@@ -421,12 +581,13 @@ function emojiFinding(text) {
     },
     headings.length + emphasis.length,
     headings.length ? headings.map((heading) => heading.trim()) : [emphasis.slice(0, 4).join(" ")],
+    passages,
   );
 }
 
 /** W34: three or more short declarative sentences in a row inside one paragraph. */
-function machinegunFinding(text) {
-  for (const paragraph of paragraphsOf(text)) {
+function machinegunFinding(spans) {
+  for (const [index, { text: paragraph }] of spans.entries()) {
     if (STRUCTURED_LINE.test(paragraph)) continue;
     const sentences = paragraph
       .replace(/\s+/g, " ")
@@ -461,6 +622,7 @@ function machinegunFinding(text) {
               ? `${joined.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
               : joined,
           ],
+          [index],
         );
       }
       run = [];
@@ -469,16 +631,58 @@ function machinegunFinding(text) {
   return null;
 }
 
+/** Words that name one thing in turn: three of a kind as subjects is a renaming. */
+const SUBJECT_SYNONYMS = [
+  "tool utility solution platform framework",
+  "library package module toolkit",
+  "project repository codebase",
+  "feature capability functionality",
+  "extension plugin addon",
+  "error failure problem issue",
+].map((group) => new Set(group.split(" ")));
+const SUBJECT_OPENER = /(?:^|[.!?]\s+)(?:the|this|that|our|your)\s+([a-z]+)\b/gi;
+const RENAMED_MIN = 3;
+
+/** A paragraph whose sentences open on three different names for one thing. */
+function renamedSubjectFinding(spans) {
+  for (const [index, { text: paragraph }] of spans.entries()) {
+    const subjects = [...paragraph.matchAll(SUBJECT_OPENER)].map((match) => ({
+      word: match[1].toLowerCase(),
+      at: match.index,
+    }));
+    for (const group of SUBJECT_SYNONYMS) {
+      const named = subjects.filter(({ word }) => group.has(word));
+      if (new Set(named.map(({ word }) => word)).size < RENAMED_MIN) continue;
+      return finding(
+        {
+          id: "renamed-subject",
+          sign: "elegant variation",
+          severity: "medium",
+          label: "one subject renamed with a new synonym each time",
+          fix: "pick one name and use it every time",
+        },
+        named.length,
+        [sentenceAround(paragraph, named[0].at, named[0].at + 1)],
+        [index],
+      );
+    }
+  }
+  return null;
+}
+
 const SEVERITY_ORDER = ["high", "medium", "low"];
 
 /**
- * Every pattern the text carries, most severe first.
+ * Every pattern the text carries, most severe first. `passages` lists the
+ * paragraphs a sign appears in, which is what lets a weak sign count only
+ * beside other signs in the same paragraph.
  *
- * @returns {{ id: string, sign: string, severity: "high"|"medium"|"low", label: string, fix: string, count: number, excerpts: string[] }[]}
+ * @returns {{ id: string, sign: string, severity: "high"|"medium"|"low", label: string, fix: string, count: number, excerpts: string[], passages: number[] }[]}
  */
 export function findSlop(text) {
   const prose = maskNonProse(text);
   if (!prose.trim()) return [];
+  const spans = paragraphsOf(prose);
   const findings = [];
   for (const check of CHECKS) {
     const matches = [...prose.matchAll(check.pattern)];
@@ -490,14 +694,16 @@ export function findSlop(text) {
         matches
           .slice(0, MAX_EXCERPTS * 2)
           .map((match) => sentenceAround(prose, match.index, match.index + match[0].length)),
+        matches.map((match) => passageAt(spans, match.index)),
       ),
     );
   }
   for (const extra of [
-    emDashFinding(prose),
-    exclamationFinding(prose),
-    emojiFinding(prose),
-    machinegunFinding(prose),
+    emDashFinding(prose, spans),
+    exclamationFinding(prose, spans),
+    emojiFinding(prose, spans),
+    machinegunFinding(spans),
+    renamedSubjectFinding(spans),
   ]) {
     if (extra) findings.push(extra);
   }
@@ -517,13 +723,20 @@ export function addedFindings(after, before) {
 }
 
 /**
- * Whether findings are worth a line. Low signs only matter in aggregate, so
- * one curly quote is not a report; one high sign is.
+ * Whether findings are worth a line. A strong (high) sign is a report by
+ * itself. Weak signs only matter beside each other, so their weight is summed
+ * per paragraph: a medium and a low in one paragraph report, the same two
+ * apart do not. A finding with no `passages` shares one passage with the rest.
  */
 export function worthReporting(findings) {
-  let weight = 0;
-  for (const item of findings ?? []) weight += SEVERITY_WEIGHT[item.severity] ?? 0;
-  return weight >= REPORT_WEIGHT;
+  const weights = new Map();
+  for (const item of findings ?? []) {
+    const weight = SEVERITY_WEIGHT[item.severity] ?? 0;
+    for (const passage of item.passages ?? [0]) {
+      weights.set(passage, (weights.get(passage) ?? 0) + weight);
+    }
+  }
+  return [...weights.values()].some((weight) => weight >= REPORT_WEIGHT);
 }
 
 /** One bullet per finding: what it is, where, and what the sentence should become. */
