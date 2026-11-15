@@ -778,6 +778,26 @@ export default function (pi) {
   );
   assert.match(affectedNote, /Nothing was run|not a git|git .* failed/);
   console.log("ok: /affected answers from a live Pi without running anything");
+  await mkdir(path.join(cwd, "smoke-agents"), { recursive: true });
+  await writeFile(
+    path.join(cwd, "smoke-agents", "package.json"),
+    JSON.stringify({ scripts: { test: "node --test" } }),
+  );
+  await writeFile(
+    path.join(cwd, "smoke-agents", "AGENTS.md"),
+    "# Fixture rules\n\n- Keep this line.\n",
+  );
+  await prompt("/agents smoke-agents");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const updated = await readFile(path.join(cwd, "smoke-agents", "AGENTS.md"), "utf8");
+  assert.match(updated, /^# Fixture rules\n\n- Keep this line\./);
+  assert.match(updated, /## Commands\n\n- `npm run test`/);
+  await mkdir(path.join(cwd, "smoke-agents-fresh"), { recursive: true });
+  await prompt("/agents smoke-agents-fresh");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const created = await readFile(path.join(cwd, "smoke-agents-fresh", "AGENTS.md"), "utf8");
+  assert.match(created, /^# AGENTS\.md\n\nGuidance for coding agents/);
+  console.log("ok: /agents creates and updates AGENTS.md in a live Pi");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

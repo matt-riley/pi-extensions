@@ -44,6 +44,9 @@ these paths:
 - **Deslop:** `/deslop existing file.md` forwards a meaning-preserving rewrite
   request, then scripted read/edit calls change only the existing fixture file.
   This proves command/tool wiring, not real-model editorial quality.
+- **Agent instructions:** `/agents` creates a missing `AGENTS.md` and appends
+  Commands to an existing one, through real command dispatch, keeping the
+  fixture's existing line.
 - **Completion:** done-gate gives one extra turn for an unverified workspace edit,
   keeps its reminder out of the visible transcript, and ignores an outside write.
   `/until` resumes work until its target file exists.
