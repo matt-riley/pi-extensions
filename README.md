@@ -93,6 +93,7 @@ project-specific skills in that project's `.agents/skills/`.
 
 | Package | Use it for |
 | --- | --- |
+| [`pi-agents`](./packages/agents/README.md) | `/agents`: create or improve an `AGENTS.md` in a directory, keeping the guidance already there. |
 | [`pi-affected`](./packages/affected/README.md) | `/affected`: name the test files that can reach your changes, with the gaps and a package-level fallback. Runs nothing. |
 | [`pi-architecture`](./packages/architecture/README.md) | `/architecture`: check directory-boundary rules from a JSON file and report import cycles, with coverage gaps listed. |
 | [`pi-doctor`](./packages/doctor/README.md) | `/doctor`: read-only report of Pi and Node versions, the tool registry, router.json and agent files. |

@@ -1,0 +1,7 @@
+{
+  "name": "pi-agents",
+  "version": "0.1.0",
+  "description": "Create or improve an AGENTS.md in a directory, keeping the guidance already there.",
+  "license": "MIT",
+  "type": "module"
+}
