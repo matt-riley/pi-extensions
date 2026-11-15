@@ -6,7 +6,7 @@ tool works in the real host.
 
 The full runnable recipe is [`.pi/verify/SKILL.md`](../.pi/verify/SKILL.md).
 It covers setup, host/UI drives, expected results and cleanup. This page explains
-what those checks establish—and where they stop.
+what those checks establish, and where they stop.
 
 ## Choose a check
 
@@ -110,7 +110,7 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Jev decision ledger | Part of `npm run check`: `packages/typesafe/test/ledger.test.mjs` and `scripts/judge-thresholds.test.mjs` | A call appends a local `jev-decision` entry and does not store state, question text, or the API key; a drifted reported model warns once; guardrail entries export to the replay-corpus shape without the command |
 | Judgment quality, live | `node scripts/judge-live.mjs` | Exit 0 when every labelled case reached the judge; the labels are printed for a human to read, because a model's reading is a hypothesis and the wiring is what the unit tests prove |
 | Judgment paths, live | `node scripts/judges-live.mjs` (or `--only <name>`) | Exit 0 when every judgment path reached its judge: review lint, findings verification, `web_answer`, plan review, CI triage, correction promotion. Each line prints what came back; the readings are a model on a fixture, not ground truth. Costs one real request per case, so it is not part of `npm run check` |
-| Workbench/footer, real terminal | `node .pi/verify/workbench.mjs --upgrade` and `node .pi/verify/workbench.mjs --regular` | Exit 0 in both modes: isolated tmux terminal with real pi and Neovim, local scripted provider, footer upgrade/reload, live filter/select/cancel, recoverable drafts across reload, file references, non-editable staged/unstaged diffs, next/previous navigation with retained query/selection/scroll, read-only Neovim handoff, `/eixt` interception without execution or model calls, Unicode/narrow resize, and actual working → ready state. No personal config or credentials; fixture/server/socket removed in `finally`. Does not prove every terminal forwards Ctrl+Alt identically or exercise Matt's Neovim plugins. The target is the current working tree and printed HEAD, not a hosted revision. |
+| Workbench/footer, real terminal | `node .pi/verify/workbench.mjs --upgrade` and `node .pi/verify/workbench.mjs --regular` | Exit 0 in both modes: isolated tmux terminal with real pi and Neovim, local scripted provider, footer upgrade/reload, live filter/select/cancel, recoverable drafts across reload, file references, non-editable staged/unstaged diffs, next/previous navigation with retained query/selection/scroll, read-only Neovim handoff, `/eixt` interception without execution or model calls, Unicode/narrow resize, and actual working -> ready state. No personal config or credentials; fixture/server/socket removed in `finally`. Does not prove every terminal forwards Ctrl+Alt identically or exercise Matt's Neovim plugins. The target is the current working tree and printed HEAD, not a hosted revision. |
 | Background jobs, real terminal | `node .pi/verify/jobs.mjs` | Real Pi live logs, follow/scroll/resize/cancel, same-PTY input and detach/reattach, Ctrl+C to the program, explicit human line input, real failed exit status, and owned-process cleanup across reload/session/shutdown. Isolated tmux is only the test terminal, not an extension dependency; no personal config or model requests. |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 

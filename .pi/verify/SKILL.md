@@ -25,7 +25,7 @@ git ls-files -z --others --exclude-standard | xargs -0 -r cat | git hash-object 
 
 HEAD alone does not identify a dirty tree, and a commit hash does not identify
 uncommitted work. The harnesses print HEAD (jobs also the tree fingerprint) with
-their result. Any edit after a run invalidates that run's evidence — rerun from
+their result. Any edit after a run invalidates that run's evidence, so rerun from
 Doctor rather than reusing a line from an earlier revision.
 
 ## Launch
@@ -69,7 +69,7 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
   pi's own store into `--api-key`; never copy `~/.pi/agent` into the fixture.
 - `--no-extensions` stops discovery *and* drops builtin codemode, so name
   `-e builtin:codemode` whenever the row needs a deferred tool. `-e` alone loads
-  the extension but leaves the **tool** inactive — built-ins register inactive,
+  the extension but leaves the **tool** inactive (built-ins register inactive),
   so the model still sees only `read`/`bash` and the extension's declared tools.
   Add `--tools +codemode` (or `"defaultTools": ["+codemode"]` in the fixture
   settings). Without it, every deferred-tool row silently drives nothing.
@@ -81,7 +81,7 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
   drive here reported them as unavailable to the model.
 - Record the request you typed and the raw tool result, not the model's summary
   of it. Quit with `/exit` and delete `$tmp` afterwards. Each model turn is a
-  real, billable request — batch several tool calls into one prompt.
+  real, billable request, so batch several tool calls into one prompt.
 
 ## Doctor
 
@@ -95,7 +95,7 @@ after anything surprising (a dead tmux server, a vanished `pi`, an auth error).
 
 ## Features
 
-Offline coverage — run every row on every change:
+Offline coverage (run every row on every change):
 
 | Feature | Drive | Observe |
 | --- | --- | --- |
@@ -110,14 +110,14 @@ Offline coverage — run every row on every change:
 | Done-gate: one quiet nudge after an unverified edit, none for an outside-cwd write | `npm run smoke` | both `ok: done-gate …` lines |
 | `/until <cmd>` sends the agent back until the predicate exits 0 | `npm run smoke` | `ok: /until sends the agent back until the predicate exits 0` |
 | Extension `ctx.ui.notify` becomes a self-clearing top-right toast; `PI_TOAST_CAPTURE=0` leaves pi's own row; narrow terminals hide it | `node .pi/verify/toasts.mjs` | the three `ok:` lines plus `Local real-TUI toasts acceptance passed at HEAD …` |
-| Workbench: command groups, intent search, cancel, built-in preparation, draft recovery, `/files` reference, `/changes` previews, Neovim handoff, `/eixt` → `/exit` suggestion, resize, working→ready | `node .pi/verify/workbench.mjs --regular` | the five `ok:` lines plus `Local real-TUI acceptance passed at HEAD …` |
+| Workbench: command groups, intent search, cancel, built-in preparation, draft recovery, `/files` reference, `/changes` previews, Neovim handoff, `/eixt` -> `/exit` suggestion, resize, working->ready | `node .pi/verify/workbench.mjs --regular` | the five `ok:` lines plus `Local real-TUI acceptance passed at HEAD …` |
 | Footer: actual work state, and a prior-HEAD footer upgrading through `/reload` | `node .pi/verify/workbench.mjs --upgrade` | `ok: prior HEAD footer upgrades through actual /reload` plus the lifecycle line |
 | `/jobs` live logs, follow/scroll/resize/cancel, same-PTY input, detach/reattach, Ctrl+C, human line input, `/exit` and `/reload` stopping owned processes | `node .pi/verify/jobs.mjs` | the five `ok:` lines plus `Local real-TUI jobs acceptance passed at HEAD …` |
 | GNU `script` PTY: native input, dimensions, group identity, exit status with input still open | `bash .pi/verify/jobs-linux.sh` | `ok: GNU PTY input, dimensions, group identity and exit 9 with input still open` |
-| Every manifest entry registers; owned skills rank | `npm run verify` | a `checks passed` line and no `fail` — the count varies with the installed skill library (26/26 on 2026-10-29) |
+| Every manifest entry registers; owned skills rank | `npm run verify` | a `checks passed` line and no `fail`; the count varies with the installed skill library (26/26 on 2026-10-29) |
 | Live TypeSafe transport | `npm run verify -- --live` | `ok    live TypeSafe call — jev-…` and a `checks passed` line |
 
-Model-, network- or device-dependent coverage — drive the affected row when the
+Model-, network- or device-dependent coverage: drive the affected row when the
 change touches it. `proven` means driven at the revision in **Last proven run**;
 `unproven` means it was not, and the reason is the prerequisite.
 
@@ -133,9 +133,9 @@ change touches it. `proven` means driven at the revision in **Last proven run**;
 | `lint_change`, `verify_findings` | live session in a repo with a staged diff: lint it, then verify the findings | findings whose quotation is absent from the diff are dropped | `TYPESAFE_API_KEY` + a staged diff | **unproven** (no staged diff was driven this pass) |
 | Guardrail dialog | live TUI: `git push --force origin main` against a scratch repo | `✅ Approve / ⛔ Deny / ✏️ Suggest an alternative`; Deny leaves the remote untouched and the model reports the refusal | real TTY + provider | proven |
 | Guardrail deterministic and catastrophic refusal | live TUI: `rm -rf .git` in a scratch repo | `The guardrail refused this call (rm would destroy credentials or VCS internals)`, no dialog | real TTY | proven |
-| Router `router/auto` | live TUI: `/model` → `router/auto`, send a hard task | one escalation at task start, back to base next task | provider credentials with a frontier model | **unproven** (not driven this pass) |
+| Router `router/auto` | live TUI: `/model` -> `router/auto`, send a hard task | one escalation at task start, back to base next task | provider credentials with a frontier model | **unproven** (not driven this pass) |
 | `/improve` prompt coach | live TUI: `/improve fix the failing test` | a verified rewrite placed in the input box (not sent) | `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` + `TYPESAFE_API_KEY` (Matt sets these up; not driven since the move to a hosted model) | **unproven** (not driven this pass) |
-| `/plan check` comprehension | live TUI: `/plan`, then `/plan check` with `.pi/PLAN.md` present | `## Plan comprehension check` appended with the reader's restatement and Gaps, or `not run` with the reason | provider for the reader child + `TYPESAFE_API_KEY` for Jev | **unproven** — a scripted tmux drive left the TUI blank and never appended; no working harness exists yet |
+| `/plan check` comprehension | live TUI: `/plan`, then `/plan check` with `.pi/PLAN.md` present | `## Plan comprehension check` appended with the reader's restatement and Gaps, or `not run` with the reason | provider for the reader child + `TYPESAFE_API_KEY` for Jev | **unproven**: a scripted tmux drive left the TUI blank and never appended, and no working harness exists yet |
 | `self_compact`, `/safe-compact-info`, `/safe-compact-plan` | live TUI, in a throwaway session | thresholds and the plan for the current context; handoff note survives compaction | automatic threshold needs a long context; `self_compact` compacts the session that calls it, so never drive it in the session holding the evidence | **unproven** |
 | `/diagnosis` (status and `/diagnosis reset`) | live TUI after a blocked fix | the block reason, or `Diagnosis checkpoint: no pending gate.` | real TTY | proven (`no pending gate` with no pending block) |
 | `/footer details` | live TUI: `/footer details` | `Usage: ↑… ↓… $…` then `/session for native session details.` | real TTY | proven |
@@ -144,7 +144,7 @@ change touches it. `proven` means driven at the revision in **Last proven run**;
 
 Deferred tools need codemode: ask the model for the behaviour, then check that
 `searchTools` found the tool and the raw call returned. A missing tool, an
-unexpected rejection or an empty result is a finding — write it down instead of
+unexpected rejection or an empty result is a finding. Write it down instead of
 rewording the prompt until something appears.
 
 ## Last proven run
@@ -168,7 +168,7 @@ Findings from this run still worth knowing (the others are covered in Launch and
 ## Cleanup
 
 Each harness cleans up in `finally` (`jobs-linux.sh` on `EXIT`), and none touches
-`~/.pi/agent`. A failure during setup, before the `try` block, skips that cleanup — and a drive killed from outside leaves a live pi
+`~/.pi/agent`. A failure during setup, before the `try` block, skips that cleanup, and a drive killed from outside leaves a live pi
 inside a live tmux server, because the `finally` never ran. Finish it by hand:
 
 ```sh
@@ -194,5 +194,5 @@ clean; if it does not, something edited the tree and the evidence is invalid.
 
 Report per feature: the command, the observed line, and any row you could not
 drive plus the prerequisite that blocked it. Say separately what ran locally and
-what CI will run — CI only runs `npm run check`; no hosted runner executes
+what CI will run. CI only runs `npm run check`; no hosted runner executes
 `npm run smoke`, the workbench, jobs or `jobs-linux.sh`.
