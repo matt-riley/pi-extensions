@@ -24,8 +24,8 @@ spaces are supported without shell quoting. The command starts a normal agent
 turn (or queues a follow-up if busy); it needs your current model, not a
 TypeSafe key. It asks the agent to preserve facts, steps, caveats, links and code,
 leave clear wording alone, and review the diff. Missing files should be reported,
-not created. This is an editing request, not an automatic regex replacement or a
-guarantee that a model preserves meaning. The usual post-edit checks still run
+not created. This is an editing request: it does not run an automatic regex replacement and
+it cannot guarantee that a model preserves meaning. The usual post-edit checks still run
 for supported prose files inside the session directory.
 
 ## What it does
@@ -79,13 +79,15 @@ Two newer signs come from the idea that a sentence should state the action
 directly:
 
 - **"X, not Y" contrast.** A copula, an article and a noun phrase followed by
-  `, not a …` or `—not a …`, such as `this is a library, not a framework`. A
-  plain correction (`pass the id, not the name`, `port 8080, not 80`) has no
-  article-led noun phrase and does not match. It counts from two occurrences,
-  because one such sentence is often a fair disambiguation.
+  `, not a …`, `—not a …` or `-- not a …`, as in
+  `this is a library, not a framework`. A correction whose second half is a data
+  type or an interface word, as in `the default is a number, not a string`, does
+  not match. Neither does one with no article before the noun, as in
+  `pass the id, not the name`. It is a weak sign that counts from two
+  occurrences, because one such sentence is often a fair statement of scope.
 - **Invented hyphenated label.** A hyphenated pair in front of a generic head
   noun (`checks`, `layout`, `gate`, `pass`, `flow`, `handoff` and a few more), as in
-  `exact-head checks`. Common compounds (`read-only`, `built-in`, `open-source`),
+  `stale-branch checks`. Common compounds (`read-only`, `built-in`, `open-source`),
   prefixed words (`non-`, `multi-`, `self-`) and anything in code are excluded,
   and it counts from two occurrences. A regular expression cannot tell an
   invented label from an ordinary one, so this sign is low severity and only

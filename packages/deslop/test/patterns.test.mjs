@@ -188,7 +188,7 @@ test("delve, leverage and utilize are found in every verb form, and only as word
 });
 
 test("an invented compound label is found once it is used twice", () => {
-  const text = "Run the exact-head checks, then the editorial-row layout pass.";
+  const text = "Run the stale-branch checks, then the merge-order gate.";
   const found = findSlop(text).find((item) => item.id === "coined-label");
   assert.ok(found, text);
   assert.equal(found.severity, "low");
@@ -197,13 +197,13 @@ test("an invented compound label is found once it is used twice", () => {
 });
 
 test("one coined label, or an ordinary compound, is not a finding", () => {
-  assert.deepEqual(ids("Run the exact-head checks before you merge."), []);
+  assert.deepEqual(ids("Run the stale-branch checks before you merge."), []);
   for (const text of [
     "The read-only mode skips writes and the built-in path stays on.",
     "A non-blocking gate and a multi-line flow share one open-source loop.",
     "Use the state-of-the-art loop, then a long-running pass.",
     "The dead-code check passes in every full-text mode.",
-    "Call `exact-head checks` and `editorial-row layout pass` by name.",
+    "Call `stale-branch checks` and `merge-order gate` by name.",
   ])
     assert.deepEqual(ids(text), [], text);
 });
@@ -266,14 +266,18 @@ test("a closing phrase inside a sentence or code is not a closer", () => {
     assert.deepEqual(ids(text), [], text);
 });
 
-test("a plain correction is not a contrast", () => {
+test("a plain correction is not a contrast, even when it repeats", () => {
   for (const text of [
     "Pass the id, not the name. Use the flag, not the env var.",
-    "The default is a number, not a string.",
+    "The default is a number, not a string. The key is a path, not a url.",
     "Use `read`, not `cat`, and a `flag`, not a `var`.",
     "It runs on port 8080, not 80. It ships weekly, not daily.",
   ])
-    assert.deepEqual(ids(text), [], text);
+    assert.equal(
+      findSlop(text).some((item) => item.id === "x-not-y"),
+      false,
+      text,
+    );
 });
 
 test("weak signs only count when they share a paragraph", () => {
