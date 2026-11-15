@@ -353,6 +353,7 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
     maxChars,
     timeoutMs = 15000,
     userAgent = "",
+    headers = {},
     extraHeaders = {},
     includeImages = false,
     followAlternates = true,
@@ -362,10 +363,13 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
   const effectiveMaxChars =
     maxChars ?? (format === "raw" ? RAW_DEFAULT_MAX_CHARS : DEFAULT_MAX_CHARS);
   const state = { steps: 0, via: undefined };
+  // Per-call headers win over the settings defaults; the HTTP layer only knows
+  // `extraHeaders`, so the two are merged once here rather than per request.
+  const mergedHeaders = { ...extraHeaders, ...headers };
 
   let payload = await fetchChain(
     url,
-    { ...options, timeoutMs, userAgent, extraHeaders },
+    { ...options, timeoutMs, userAgent, extraHeaders: mergedHeaders },
     state,
     fetcher,
   );
@@ -390,7 +394,7 @@ export async function fetchPage(options, fetcher = globalThis.fetch) {
         onStatus?.(`following alternate ${alt.type}`);
         payload = await fetchChain(
           target,
-          { ...options, timeoutMs, userAgent, extraHeaders },
+          { ...options, timeoutMs, userAgent, extraHeaders: mergedHeaders },
           state,
           fetcher,
         );

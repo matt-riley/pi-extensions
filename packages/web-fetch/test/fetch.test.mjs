@@ -235,3 +235,24 @@ test("fetchSmart: github URL falls back to http when gh unavailable", async () =
   const out = await fetchSmart({ url: "https://github.com/foo/bar", timeoutMs: 5000 }, fetcher);
   assert.equal(out.kind, "page");
 });
+
+test("fetchPage: per-call headers are sent and override the settings defaults", async () => {
+  let seen;
+  const fetcher = async (_url, init) => {
+    seen = init.headers;
+    return new Response(PAGE, { status: 200, headers: { "content-type": "text/html" } });
+  };
+  const out = await fetchPage(
+    {
+      url: "https://example.com/",
+      timeoutMs: 5000,
+      headers: { cookie: "session=1", "x-shared": "call" },
+      extraHeaders: { "x-shared": "settings", "x-settings": "1" },
+    },
+    fetcher,
+  );
+  assert.equal(out.kind, "page");
+  assert.equal(seen.cookie, "session=1");
+  assert.equal(seen["x-settings"], "1");
+  assert.equal(seen["x-shared"], "call");
+});

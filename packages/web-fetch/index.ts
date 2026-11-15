@@ -367,6 +367,24 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           ],
         };
       }
+      // Same contract as web_fetch: an unknown format is a caller error, not a
+      // fetch failure worth reporting per item, and silently using markdown
+      // would return the wrong shape without saying so.
+      const badFormat = requests.findIndex(
+        (raw) => typeof raw?.format === "string" && !isKnownFormat(raw.format),
+      );
+      if (badFormat !== -1) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Rejected: requests[${badFormat}].format must be one of ${FORMATS.join(", ")}. ` +
+                `Got "${requests[badFormat].format}".`,
+            },
+          ],
+        };
+      }
 
       const concurrency = clampInt(params?.concurrency, settings.batchConcurrency, 1, 10);
       const totalBudget = clampInt(params?.totalMaxChars, 300000, 10000, 5_000_000);
@@ -377,6 +395,11 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           url: String(raw?.url ?? "").trim(),
           format: pickFormat(raw?.format, settings.defaultFormat),
           maxChars: clampInt(raw?.maxChars, settings.defaultMaxChars, 1000, 1_000_000),
+          // Carried through to buildFetchOptions: a per-item header, image and
+          // alternate setting has to reach the fetch, not just be accepted.
+          headers: raw?.headers,
+          includeImages: raw?.includeImages,
+          followAlternates: raw?.followAlternates,
         };
         return { index, request };
       });

@@ -44,3 +44,59 @@ for (const name of DEFERRED_WEB) {
     assert.ok(registry.getActiveTools().includes(name));
   });
 }
+
+const BATCH_PAGE =
+  "<html><head><title>Pic</title></head><body><article><h1>Heading</h1>" +
+  '<p><img src="/x.png" alt="a picture"> ' +
+  "Some real content that is long enough to extract. ".repeat(10) +
+  "</p></article></body></html>";
+
+test("batch_web_fetch sends a per-item header and honours per-item includeImages", async (t) => {
+  const original = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), headers: init?.headers ?? {} });
+    return new Response(BATCH_PAGE, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+
+  const tools = loadTools();
+  const tool = tools.find((def) => def.name === "batch_web_fetch");
+  const result = await tool.execute(
+    "call",
+    {
+      requests: [
+        {
+          url: "https://example.com/pic",
+          headers: { cookie: "session=1" },
+          includeImages: true,
+        },
+      ],
+    },
+    undefined,
+    undefined,
+    { cwd: "/tmp/pi-web-fetch-batch-test" },
+  );
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].headers.cookie, "session=1");
+  assert.match(result.content[0].text, /!\[a picture\]/);
+});
+
+test("batch_web_fetch rejects an unknown format instead of silently using markdown", async () => {
+  const tools = loadTools();
+  const tool = tools.find((def) => def.name === "batch_web_fetch");
+  const result = await tool.execute(
+    "call",
+    { requests: [{ url: "https://example.com/a", format: "yaml" }] },
+    undefined,
+    undefined,
+    { cwd: "/tmp/pi-web-fetch-batch-test" },
+  );
+  assert.match(result.content[0].text, /requests\[0\]\.format must be one of/);
+});
