@@ -106,3 +106,59 @@ test("findings are shaped for the prose reporter", () => {
   );
   assert.match(text, /Fix: .+\.$/);
 });
+
+test("a comment that only repeats the next line is found", () => {
+  const cases = {
+    "src/a.ts": [
+      "// increment the counter\ncounter += 1;",
+      "// return the user\nreturn user;",
+      "// set the name\nthis.name = name;",
+      "// loop over the files\nfor (const file of files) {",
+    ],
+    "tool.py": ["# open the config file\nconfig_file = open(path)"],
+  };
+  for (const [file, texts] of Object.entries(cases))
+    for (const text of texts) {
+      const found = findCodeSlop(added(file, text)).find((item) => item.id === "echo-comment");
+      assert.ok(found, `${file}: ${text}`);
+    }
+});
+
+test("a comment that gives a reason, a number or a name is kept", () => {
+  for (const text of [
+    "// retry once: the server drops idle sockets\nreturn send(request);",
+    "// 8 bytes per entry\nconst size = entries * 8;",
+    "// work around the parser bug in v3\nreturn parse(text);",
+    "// TODO: remove the counter\ncounter += 1;",
+    "// sorted by recency so the newest wins\nreturn rows.sort(byAge);",
+    "// eslint-disable-next-line no-console\nconsole.log(user);",
+    "/** The user. */\nreturn user;",
+    "const total = 1; // the counter\nreturn total;",
+  ])
+    assert.equal(idsOf(added("src/a.ts", text)).includes("echo-comment"), false, text);
+});
+
+test("an any cast or a bare ts-ignore that only silences the type checker is found", () => {
+  for (const text of [
+    "const value = input as any;",
+    "run(<any>input);",
+    "const rows = data as unknown as Row[];",
+    "// @ts-ignore\nrun(input);",
+    "// @ts-expect-error\nrun(input);",
+    "x.y = (z as any).w;",
+  ]) {
+    const found = findCodeSlop(added("src/a.ts", text)).find((item) => item.id === "silenced-type");
+    assert.ok(found, text);
+  }
+});
+
+test("a typed cast, a reasoned suppression and a non-TypeScript file are left alone", () => {
+  for (const text of [
+    "const value = input as Row;",
+    "const anyOf = rules.filter(Boolean);",
+    "// @ts-expect-error: the library types omit the signal option\nrun(input);",
+    "const note = 'a cast as any value';",
+  ])
+    assert.equal(idsOf(added("src/a.ts", text)).includes("silenced-type"), false, text);
+  assert.deepEqual(idsOf(added("src/a.mjs", "const x = 1 as any;")), []);
+});

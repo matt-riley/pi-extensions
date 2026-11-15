@@ -128,12 +128,99 @@ function swallowedErrors(files) {
   return hits;
 }
 
+const COMMENT_MARK = { js: "//", go: "//", rs: "//", py: "#" };
+const ECHO_MAX_WORDS = 8;
+/** A comment that gives a reason, a condition, a number or a directive is not a restatement. */
+const COMMENT_KEEPERS =
+  /\b(?:because|since|otherwise|unless|workaround|hack|todo|fixme|note|why|except|avoid|due|instead|must|never|always|only|before|after|until|when|if|while|eslint|prettier|istanbul|nolint|noqa)\b|[:;@\d]|work around|so that/i;
+const FILLER_WORDS = new Set(
+  "a an the this that these those to of in on for and or with over into from by at it is are be as each every all".split(
+    " ",
+  ),
+);
+/** Verbs a comment uses to name what the next line already does. */
+const ACTION_WORDS = new Set(
+  "set get return returns create creates call calls increment decrement loop iterate check checks add adds define defines initialize initialise assign import declare open read write load save update remove delete find fetch build make run print log start stop use".split(
+    " ",
+  ),
+);
+
+const stem = (word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word);
+/** Lowercase words of an identifier-laden string: camelCase and snake_case are split. */
+const wordsOf = (text) =>
+  (text.replace(/([a-z\d])([A-Z])/g, "$1 $2").match(/[A-Za-z]+/g) ?? []).map((word) =>
+    stem(word.toLowerCase()),
+  );
+
+/** Comments that only restate the line under them, such as "// increment the counter". */
+function echoComments(files) {
+  const hits = [];
+  for (const file of files) {
+    const mark = COMMENT_MARK[file.language];
+    for (const { lines } of file.hunks)
+      for (const [at, line] of lines.entries()) {
+        const code = lines[at + 1];
+        if (line.kind !== "add" || code?.kind !== "add") continue;
+        const trimmed = line.text.trim();
+        if (!trimmed.startsWith(mark) || /^(?:\/\/|#)[/!#]/.test(trimmed)) continue;
+        const comment = trimmed.slice(mark.length).trim();
+        if (!comment || COMMENT_KEEPERS.test(comment) || code.text.trim().startsWith(mark))
+          continue;
+        const words = comment.split(/\s+/);
+        const content = wordsOf(comment).filter(
+          (word) => !FILLER_WORDS.has(word) && !ACTION_WORDS.has(word),
+        );
+        if (words.length > ECHO_MAX_WORDS || content.length === 0) continue;
+        const known = new Set(wordsOf(code.text));
+        if (content.every((word) => known.has(word)))
+          hits.push({ path: file.path, n: line.n, text: `${trimmed} / ${code.text.trim()}` });
+      }
+  }
+  return hits;
+}
+
+const STRING_LITERAL = /(["'`])(?:\\.|(?!\1)[^\\])*\1/g;
+const TYPE_SILENCERS = [
+  /\bas\s+any\b/,
+  /(?<![\w>])<any>/,
+  /\bas\s+unknown\s+as\b/,
+  /@ts-(?:ignore|expect-error)\s*$/,
+];
+
+/** `as any`, `as unknown as T` and a bare ts-ignore: the cast is there to make the error go away. */
+function silencedTypes(files) {
+  const hits = [];
+  for (const file of files) {
+    if (!/\.[cm]?tsx?$/.test(file.path)) continue;
+    for (const { lines } of file.hunks)
+      for (const line of lines) {
+        if (line.kind !== "add") continue;
+        const bare = line.text.replace(STRING_LITERAL, '""').trimEnd();
+        if (TYPE_SILENCERS.some((pattern) => pattern.test(bare)))
+          hits.push({ path: file.path, n: line.n, text: line.text });
+      }
+  }
+  return hits;
+}
+
 const CHECKS = [
   {
     id: "swallowed",
     label: "error swallowed into a quiet result",
     fix: "let the error reach the caller, or handle it and say why in a comment",
     scan: swallowedErrors,
+  },
+  {
+    id: "echo-comment",
+    label: "comment that only repeats the code under it",
+    fix: "delete it, or say why the code does this",
+    scan: echoComments,
+  },
+  {
+    id: "silenced-type",
+    label: "cast or suppression that only silences the type checker",
+    fix: "fix the type, or narrow it with a guard and name the reason",
+    scan: silencedTypes,
   },
 ];
 
