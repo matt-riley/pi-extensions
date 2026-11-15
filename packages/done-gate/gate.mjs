@@ -46,6 +46,37 @@ export function isVerifyCommand(command) {
   );
 }
 
+// Checks that compile or lint without running the changed code. They show the code builds;
+// a test, `.pi/verify` or a bigger gate such as `npm run check` is what runs it.
+// `stylua --check` and `selene` are not listed: they are the only checks the gate maps
+// for Lua, so there is no test runner to ask for instead.
+const STATIC_COMMANDS = [
+  String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:lint|typecheck)\b`,
+  String.raw`go\s+vet\b`,
+  String.raw`cargo\s+(?:check|clippy)\b`,
+  String.raw`${RUNNER}(?:tsc|mypy|ruff|oxlint|eslint|golangci-lint)\b`,
+].map((body) => new RegExp(CMD_START + body));
+
+/**
+ * "static" for a compile or lint check, "behavior" for any other check, null for
+ * a command that is not a recognised check at all.
+ */
+export function checkKind(command) {
+  if (!isVerifyCommand(command)) return null;
+  return STATIC_COMMANDS.some((pattern) => pattern.test(command.trim())) ? "static" : "behavior";
+}
+
+// Where compiling or linting is the change itself: type declarations, and the
+// config the compiler or linter reads.
+const STATIC_FILE =
+  /(?:^|\/)(?:[^/]+\.d\.[cm]?ts|tsconfig[^/]*\.json|\.?eslint(?:rc|\.config)[^/]*|\.oxlintrc[^/]*|\.oxfmtrc[^/]*|\.golangci\.[a-z]+|\.?stylua\.toml|selene\.toml|ruff\.toml|mypy\.ini|biome\.jsonc?)$/;
+
+/** True when every path is one a compile or lint run fully covers. */
+export function staticIsEnough(paths) {
+  const list = [...paths];
+  return list.length > 0 && list.every((path) => STATIC_FILE.test(String(path)));
+}
+
 function standalone(command) {
   return splitSegments(command).length === 1 && !hasCommandSubstitution(command);
 }
@@ -66,6 +97,8 @@ export function createGateState() {
     remoteVerificationRevision: null,
     nudged: false,
     verificationSeen: false,
+    // A passed check that runs the code, since the last edit. A typecheck alone is not.
+    behaviorVerified: false,
     remoteVerificationSeen: false,
     remoteNudged: false,
   };
@@ -80,6 +113,7 @@ export function resetGateState(state) {
   state.remoteVerificationRevision = null;
   state.nudged = false;
   state.verificationSeen = false;
+  state.behaviorVerified = false;
   state.remoteVerificationSeen = false;
   state.remoteNudged = false;
   return state;
@@ -160,6 +194,7 @@ export function observeToolResult(
     const path = raw ? repoRelativePath(cwd, raw) : null;
     if (isError !== true && path && !DOC_FILE.test(path)) {
       invalidateEvidence(state, null);
+      state.behaviorVerified = false;
       state.edited.add(path);
       state.dirty.add(path);
     }
@@ -221,23 +256,35 @@ export function observeToolResult(
     state.verificationStatus = status;
     state.verificationSeen = status === "passed";
     state.verificationRevision = status === "passed" ? after : null;
-    if (status === "passed") state.dirty.clear();
+    if (status === "passed") clearForPass(state, checkKind(input?.command));
     else for (const path of state.edited) state.dirty.add(path);
   }
 }
 
+/**
+ * A pass clears the edits it covers. A compile or lint pass covers them only for
+ * a change to types or to that setup, or when a run that executes the code has
+ * already passed on this tree; otherwise the edits stay unverified.
+ */
+function clearForPass(state, kind) {
+  if (kind !== "static") state.behaviorVerified = true;
+  if (state.behaviorVerified || staticIsEnough(state.edited)) state.dirty.clear();
+  else for (const path of state.edited) state.dirty.add(path);
+}
+
 /** A check the user ran with `!` that passed cleanly on the tree as it is now. */
-export function observeUserCheck(state, revision) {
+export function observeUserCheck(state, revision, run) {
   state.verificationStatus = "passed";
   state.verificationSeen = true;
   state.verificationRevision = revision;
-  state.dirty.clear();
+  clearForPass(state, checkKind(run?.command) ?? "behavior");
 }
 
 /** Edits, shell writes and external changes after a check invalidate its evidence. */
 export function invalidateEvidence(state, revision) {
   if (state.verificationSeen && !sameRevision(state.verificationRevision, revision)) {
     state.verificationSeen = false;
+    state.behaviorVerified = false;
     state.verificationStatus = "unknown";
     state.verificationRevision = null;
     for (const path of state.edited) state.dirty.add(path);
@@ -340,7 +387,17 @@ function namedCommands(commands) {
   return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
 }
 
-function checkSentence(commands) {
+function checkSentence(commands, staticOnly = false) {
+  if (staticOnly) {
+    // The typecheck already ran: name only the checks that execute code.
+    const running = Array.isArray(commands)
+      ? commands.filter((command) => checkKind(command) === "behavior")
+      : [];
+    if (running.length === 0) {
+      return "Before reporting done, run a test that reaches the changed code, or run the changed path itself (the command, request or screen it serves),";
+    }
+    commands = running;
+  }
   if (!Array.isArray(commands) || commands.length === 0) {
     return "Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise the changed behavior,";
   }
@@ -369,11 +426,14 @@ const list = (items) =>
 export function buildNudge(state, debugHits = [], claimText = null, commands = null) {
   state.nudged = true;
   const files = [...state.dirty];
+  const staticOnly = state.verificationSeen && !state.behaviorVerified;
   const lines = [
-    `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`,
-    checkSentence(commands),
+    staticOnly
+      ? `Done check: ${files.length} file(s) changed and only compile or lint checks ran after the last edit (${list(files)}). That shows the code builds, not that the changed path ran.`
+      : `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`,
+    checkSentence(commands, staticOnly),
     "or say plainly why verification does not apply.",
-    "Then close with your explanation of the work plus one line of what the check proved,",
+    "Then close with your explanation of the work plus one line to name the check that reached the changed code and what it showed,",
     "not a report about this reminder.",
     `Verification status: ${state.verificationStatus}.`,
   ];

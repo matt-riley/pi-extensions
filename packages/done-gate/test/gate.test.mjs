@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   DIFF_ARGS,
   buildNudge,
+  checkKind,
   createGateState,
   debugTagsInDiff,
   debugTagsInFile,
@@ -16,6 +17,8 @@ import {
   invalidateEvidence,
   livePaths,
   observeToolResult,
+  observeUserCheck,
+  staticIsEnough,
   observeToolStart,
   resetGateState,
   shouldNudge,
@@ -389,4 +392,119 @@ test("remote checks are recognized in command position only", () => {
   ]) {
     assert.equal(isRemoteVerifyCommand(command), false, String(command));
   }
+});
+
+test("checkKind separates compile and lint checks from checks that run the code", () => {
+  for (const command of [
+    "tsc --noEmit",
+    "npx tsc -p tsconfig.json",
+    "npx eslint src",
+    "oxlint --deny-warnings .",
+    "ruff check .",
+    "mypy src",
+    "go vet ./...",
+    "cargo check",
+    "cargo clippy",
+    "golangci-lint run",
+    "npm run lint",
+    "pnpm typecheck",
+    "rtk npm run typecheck",
+  ]) {
+    assert.equal(checkKind(command), "static", command);
+  }
+  for (const command of [
+    "npm test",
+    "npm run check",
+    "node --test packages/foo/test",
+    "go test ./...",
+    "cargo test",
+    "pytest -q",
+    "vitest run",
+    "make test",
+    ".pi/verify",
+    "rtk npm test",
+    // The only checks mapped for Lua: nothing runs the code, so they stand as the check.
+    "stylua --check lua",
+    "selene lua",
+  ]) {
+    assert.equal(checkKind(command), "behavior", command);
+  }
+  for (const command of ["ls -la", "grep 'npm test' notes.txt", "npm test && echo ok", undefined]) {
+    assert.equal(checkKind(command), null, String(command));
+  }
+});
+
+test("staticIsEnough only when the change is to types or to the compile and lint setup itself", () => {
+  assert.equal(staticIsEnough(["types/api.d.ts"]), true);
+  assert.equal(staticIsEnough(["tsconfig.json", "packages/a/tsconfig.build.json"]), true);
+  assert.equal(staticIsEnough([".oxlintrc.json", "eslint.config.js", ".golangci.yml"]), true);
+  assert.equal(staticIsEnough(["tsconfig.json", "src/a.ts"]), false);
+  assert.equal(staticIsEnough(["src/a.ts"]), false);
+  assert.equal(staticIsEnough([]), false);
+});
+
+test("a typecheck alone does not clear a code edit: it shows the code builds, not that it ran", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  observeToolResult(state, bash("tsc --noEmit"));
+  assert.equal(state.verificationStatus, "passed");
+  assert.equal(shouldNudge(state, "completed"), true);
+  const text = buildNudge(state);
+  assert.match(text, /only compile or lint checks ran/i);
+  assert.match(text, /src\/a\.ts/);
+  assert.doesNotMatch(text, /tsc/);
+});
+
+test("a check that runs the code clears the edit, and a later typecheck does not undo it", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  observeToolResult(state, bash("tsc --noEmit"));
+  observeToolResult(state, bash("npm test"));
+  assert.equal(shouldNudge(state, "completed"), false);
+  observeToolResult(state, bash("tsc --noEmit"));
+  assert.equal(shouldNudge(state, "completed"), false);
+});
+
+test("an edit after a passing test run needs a new run that executes the code", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  observeToolResult(state, bash("npm test"));
+  observeToolResult(state, edit("src/b.ts"));
+  observeToolResult(state, bash("oxlint ."));
+  assert.equal(shouldNudge(state, "completed"), true);
+  assert.match(buildNudge(state), /only compile or lint checks ran/i);
+});
+
+test("a typecheck is enough when the edit was to types or to the compile setup", () => {
+  for (const path of ["types/api.d.ts", "tsconfig.json", ".oxlintrc.json"]) {
+    const state = createGateState();
+    observeToolResult(state, edit(path));
+    observeToolResult(state, bash("tsc --noEmit"));
+    assert.equal(shouldNudge(state, "completed"), false, path);
+  }
+});
+
+test("a failed typecheck still reads as failed, not as compile-only", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  observeToolResult(state, { ...bash("tsc --noEmit"), isError: true });
+  assert.match(buildNudge(state), /Verification status: failed/);
+  assert.doesNotMatch(buildNudge(state), /only compile or lint/i);
+});
+
+test("a typecheck the user ran with ! is compile-only too, a test run clears the edit", () => {
+  const typed = createGateState();
+  observeToolResult(typed, edit("src/a.ts"));
+  observeUserCheck(typed, revision, { command: "npm run lint", output: "ok" });
+  assert.equal(shouldNudge(typed, "completed"), true);
+  const tested = createGateState();
+  observeToolResult(tested, edit("src/a.ts"));
+  observeUserCheck(tested, revision, { command: "npm test", output: "ok" });
+  assert.equal(shouldNudge(tested, "completed"), false);
+});
+
+test("the nudge asks which check reached the changed code", () => {
+  const state = createGateState();
+  observeToolResult(state, edit("src/a.ts"));
+  assert.match(buildNudge(state), /name the check that reached the changed code/i);
 });

@@ -222,7 +222,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
         started: userRuns,
         current: await snapshot(ctx.cwd ?? process.cwd()),
       });
-      if (hit) observeUserCheck(state, hit.revision);
+      if (hit) observeUserCheck(state, hit.revision, hit);
     }
     if (state.verificationSeen || state.remoteVerificationSeen) {
       invalidateEvidence(state, await snapshot(ctx.cwd ?? process.cwd()));

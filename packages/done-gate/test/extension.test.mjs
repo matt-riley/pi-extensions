@@ -234,3 +234,22 @@ test("PI_DONE_GATE_EXEC=1: runs the named check and appends its output", async (
   assert.match(content, /`\.pi\/verify` — failed \(exit 1/);
   assert.match(content, /VERIFY-OUTPUT/);
 });
+
+test("a typecheck alone leaves the edit unverified and says only compile or lint ran", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ command: "npx tsc --noEmit" });
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(result.entries[0].content, /only compile or lint checks ran/i);
+});
+
+test("a test run after the typecheck clears the edit", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ command: "npx tsc --noEmit" });
+  await h.check({ command: "rtk npm test" });
+  assert.equal(await h.settle(), undefined);
+});

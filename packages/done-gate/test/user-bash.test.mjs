@@ -35,7 +35,7 @@ test("a clean pass on an unchanged tree counts", () => {
     started: [started()],
     current: rev("f1"),
   });
-  assert.deepEqual(hit, { revision: rev("f1") });
+  assert.deepEqual(hit, { revision: rev("f1"), command: "npm test", output: "ok" });
 });
 
 test("each of these leaves the run uncounted", () => {
@@ -198,4 +198,14 @@ test("a run saved without a recorded start (e.g. after /reload) is not counted",
   await h.edit();
   await h.bang({ start: false });
   assert.equal((await h.settle())?.continue, true);
+});
+
+test("a clean `!npm run lint` is compile-only evidence: the edit still needs a run that executes it", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.bang({ command: "npm run lint" });
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(result.entries[0].content, /only compile or lint checks ran/i);
 });
