@@ -262,6 +262,8 @@ test("a closing phrase inside a sentence or code is not a closer", () => {
     "The no magic mode is off. Run it twice.",
     "Print `That's it.` when the run ends.",
     "The result is the whole story of the run, read from disk.",
+    "It is a request in the prompt, so the agent can still ignore it. Nothing else\nchanges how the agent writes.",
+    "Run the check twice. That is all\nthat the second run needs.",
   ])
     assert.deepEqual(ids(text), [], text);
 });

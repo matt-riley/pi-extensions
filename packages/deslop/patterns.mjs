@@ -337,7 +337,7 @@ const CHECKS = [
           String.raw`full\s+stop`,
           String.raw`period`,
         ].join("|") +
-        String.raw`)[.!]?[ \t]*$`,
+        String.raw`)[.!][ \t]*$`,
       "gim",
     ),
   },

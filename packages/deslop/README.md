@@ -85,7 +85,7 @@ a habit that models repeat.
   article phrase, as in `this is not a bug but a feature`. Strong, because the
   sentence only exists to knock the first half down.
 - **One-line closer.** A last sentence that signs off, such as `that's it`,
-  `simple as that` or `no magic`. Strong when it ends a line.
+  `simple as that` or `no magic`. Strong when it ends a line with a full stop or an exclamation mark.
 - **"X, not Y" contrast.** A copula, an article and a noun phrase followed by
   `, not a …`, `—not a …` or `-- not a …`, as in
   `this is a library, not a framework`. A correction whose second half is a data
