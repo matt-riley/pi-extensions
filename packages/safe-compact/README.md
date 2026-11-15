@@ -144,6 +144,17 @@ tokens of verbatim copy where the unbatched run carried 0.6k, and verbatim copie
 handoff past its target. The eval script below reports calls and seconds, so a future attempt can
 be measured the same way.
 
+**Bulky tool results are trimmed in the scoring request only.** A tool result or `!` run over 800
+characters is scored from its first ~520 and last ~280 characters with a marker saying how many
+characters were left out (`scoring-text.mjs`); the head says what ran and the tail says how it
+ended. Secrets are masked before the cut, so a key block split in two cannot leave half of itself in
+the request. Shorter results, and user and assistant messages, are sent as before (up to 1500
+characters, head and tail). Only that copy is trimmed: the live context, the segments, the handoff
+entries and the coverage and selection requests keep the full text. On a synthetic 65-segment,
+tool-heavy session (20 tool results of 3-5k characters) the text sent for scoring fell from 32,229 to
+18,911 characters and the scoring requests from 196,103 to 182,431 bytes (the fixed question set
+dominates each request); real Jev produced a byte-identical handoff both ways.
+
 `node scripts/safe-compact-eval.mjs` replays real sessions from `~/.pi/agent/sessions` to the hard
 threshold and reports success, handoff size, tool-output share, and the calls and seconds of the
 first attempt and a retry. It makes real TypeSafe calls.
@@ -181,5 +192,5 @@ refused with its size; the exam is for handoffs that fit.
 
 ## Files
 
-`segment.mjs` (deterministic splitting), `judge.mjs` (every Jev question), `plan.mjs` (routing,
+`segment.mjs` (deterministic splitting), `scoring-text.mjs` (the trimmed copy scoring sees), `judge.mjs` (every Jev question), `plan.mjs` (routing,
 assembly, verification), `index.ts` (pi wiring).
