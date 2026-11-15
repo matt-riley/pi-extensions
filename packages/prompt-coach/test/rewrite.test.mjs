@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { READ_TOOLS } from "../readtools.mjs";
-import { resolveProvider, rewriteWithModel } from "../rewrite.mjs";
+import { resolveSource, rewriteWithModel } from "../rewrite.mjs";
 
 const reply = (content) => async () => ({
   ok: true,
@@ -23,23 +23,24 @@ function capture(content = "Fix the failing workflow on main and run npm run che
   return { seen, fetchImpl };
 }
 
-test("resolveProvider prefers OpenAI Luna when its key is set", () => {
-  const provider = resolveProvider({ OPENAI_API_KEY: "o", DEEPSEEK_API_KEY: "d" });
+test("resolveSource prefers OpenAI Luna when its key is set", async () => {
+  const provider = await resolveSource({ OPENAI_API_KEY: "o", DEEPSEEK_API_KEY: "d" });
+  assert.equal(provider.kind, "env");
   assert.equal(provider.name, "openai");
   assert.equal(provider.model, "gpt-6-luna");
   assert.equal(provider.baseUrl, "https://api.openai.com/v1");
   assert.equal(provider.apiKey, "o");
 });
 
-test("resolveProvider falls back to DeepSeek Flash when only its key is set", () => {
-  const provider = resolveProvider({ DEEPSEEK_API_KEY: "d" });
+test("resolveSource falls back to DeepSeek Flash when only its key is set", async () => {
+  const provider = await resolveSource({ DEEPSEEK_API_KEY: "d" });
   assert.equal(provider.name, "deepseek");
   assert.equal(provider.model, "deepseek-flash");
   assert.equal(provider.baseUrl, "https://api.deepseek.com");
 });
 
-test("resolveProvider honours an explicit provider and model", () => {
-  const provider = resolveProvider({
+test("resolveSource honours an explicit provider and model", async () => {
+  const provider = await resolveSource({
     PI_PROMPT_COACH_PROVIDER: "deepseek",
     PI_PROMPT_COACH_MODEL: "deepseek-v4-pro",
     OPENAI_API_KEY: "o",
@@ -50,13 +51,13 @@ test("resolveProvider honours an explicit provider and model", () => {
   assert.equal(provider.apiKey, "d");
 });
 
-test("resolveProvider names the variables to set when no key exists", () => {
-  assert.throws(() => resolveProvider({}), /OPENAI_API_KEY.*DEEPSEEK_API_KEY/);
-  assert.throws(
-    () => resolveProvider({ PI_PROMPT_COACH_PROVIDER: "deepseek", OPENAI_API_KEY: "o" }),
-    /DEEPSEEK_API_KEY/,
+test("resolveSource names the Pi login and the variables when nothing is usable", async () => {
+  await assert.rejects(resolveSource({}), /\/login.*OPENAI_API_KEY.*DEEPSEEK_API_KEY/);
+  await assert.rejects(
+    resolveSource({ PI_PROMPT_COACH_PROVIDER: "deepseek", OPENAI_API_KEY: "o" }),
+    /\/login deepseek.*DEEPSEEK_API_KEY/,
   );
-  assert.throws(() => resolveProvider({ PI_PROMPT_COACH_PROVIDER: "gemma" }), /unknown provider/);
+  await assert.rejects(resolveSource({ PI_PROMPT_COACH_PROVIDER: "gemma" }), /unknown provider/);
 });
 
 test("rewriteWithModel calls OpenAI with the key from the environment", async () => {
@@ -107,7 +108,7 @@ test("rewriteWithModel fails before any request when no key is set", async () =>
         calls += 1;
       },
     }),
-    /Set OPENAI_API_KEY or DEEPSEEK_API_KEY/,
+    /\/login.*OPENAI_API_KEY or DEEPSEEK_API_KEY/,
   );
   assert.equal(calls, 0);
 });

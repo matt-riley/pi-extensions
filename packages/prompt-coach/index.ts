@@ -107,6 +107,8 @@ export default function piPromptCoachExtension(
       let candidate = original;
       let filesRead: string[] = [];
       let rewriteError: string | null = null;
+      let usedModel: string | null = null;
+      let subscription: boolean | null = null;
 
       try {
         const rewrite = await rewriteWithModel({
@@ -116,9 +118,12 @@ export default function piPromptCoachExtension(
           env,
           timeoutMs: rewriteTimeoutMs,
           fetchImpl,
+          modelRegistry: ctx.modelRegistry,
         });
         candidate = rewrite.text;
         filesRead = rewrite.filesRead;
+        usedModel = rewrite.model;
+        subscription = rewrite.subscription;
       } catch (error) {
         rewriteError = errorText(error);
       }
@@ -170,6 +175,8 @@ export default function piPromptCoachExtension(
         rewriteError,
         filesRead,
         probe,
+        model: usedModel,
+        subscription,
       });
 
       const level = action === "rewritten" || action === "unchanged" ? "info" : "warning";
