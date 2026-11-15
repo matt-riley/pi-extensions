@@ -21,14 +21,32 @@ export function promptSection(enabled, planPrompt) {
   return enabled ? ["plan_mode", planPrompt] : ["ask_user", ASK_USER_PROMPT];
 }
 
+// An approval ask is the whole plan up for sign-off, or permission to begin
+// implementing with nothing else to choose. The "begin" verbs only count when
+// the sentence ends there: "Should I start with the API or the UI?" is a
+// decision, "Should I start?" is not.
+const END = String.raw`(?=\s*(?:[?.!,;:]|$))`;
+const BEGIN = String.raw`(?:go ahead|get going|get started|proceed|start|begin|implement|build)`;
+const OBJECT = String.raw`(?:\s+(?:it|this|that|now|here|the plan|this plan|my plan|implementing|implementation|building|and (?:start|begin|get started)(?: implementing| building)?|with (?:it|this|that|the plan|this plan|my plan|implementation)))*`;
+
 const APPROVAL_ASKS = [
-  /\bis (?:this|the|my) plan (?:ok|okay|good|fine|acceptable|alright)\b/i,
-  /\bhow (?:does|do) (?:this|the|that) plan look\b/i,
-  /\b(?:should|shall) i (?:proceed|go ahead|start|begin|implement)\b/i,
-  /\bany (?:changes|comments|feedback|concerns) before (?:we|i) (?:start|begin|proceed|implement|go)\b/i,
-  /\bready (?:to|for) (?:implement|implementation|proceed|start|go)\b/i,
-  /\bdo you approve\b|\bapprove (?:this|the) plan\b/i,
-  /\b(?:looks good|lgtm)\b[^.\n]*\bproceed\b/i,
+  /\b(?:is|does|do) (?:this|the|that|my) plan (?:ok|okay|good|fine|acceptable|alright|work|look|sound|seem)\b/i,
+  /\bhow (?:does|do) (?:this|the|that|my) plan (?:look|sound|seem)\b/i,
+  new RegExp(String.raw`\b(?:should|shall|can|may) i ${BEGIN}${OBJECT}${END}`, "i"),
+  new RegExp(String.raw`\b(?:want|like) me to ${BEGIN}${OBJECT}${END}`, "i"),
+  new RegExp(
+    String.raw`\b(?:happy|ok|okay|good|fine|clear) (?:for me )?to ${BEGIN}${OBJECT}${END}`,
+    "i",
+  ),
+  new RegExp(String.raw`\bready (?:to|for(?: me to)?) ${BEGIN}${OBJECT}${END}`, "i"),
+  /\b(?:any|anything)\b[^.?!\n]*\bbefore (?:we|i) (?:start|begin|proceed|implement|go)\b/i,
+  /\bkick (?:this|it) off\b/i,
+  new RegExp(
+    String.raw`\bdo you approve(?: of)?(?: (?:this|the|my|that)(?: plan| approach)?)?${END}`,
+    "i",
+  ),
+  /\bapprove (?:this|the|my) plan\b/i,
+  /\b(?:looks good|lgtm)\b[^.\n]*\b(?:proceed|go ahead|start)\b/i,
 ];
 
 /**
@@ -41,7 +59,8 @@ export function approvalQuestionProblem({ title, question, options } = {}) {
   const parts = [title, question, ...(Array.isArray(options) ? options : [])].filter(
     (part) => typeof part === "string",
   );
-  if (!APPROVAL_ASKS.some((pattern) => pattern.test(parts.join("\n")))) return null;
+  // Each part alone: a question's words and an option's words must not combine into an ask.
+  if (!parts.some((part) => APPROVAL_ASKS.some((pattern) => pattern.test(part)))) return null;
   return (
     "Rejected: do not ask for approval of the plan with a question. plan_mode_question is for decisions. " +
     "When the plan is decision-complete, call plan_mode_complete alone: it puts the plan in front of the user, " +
