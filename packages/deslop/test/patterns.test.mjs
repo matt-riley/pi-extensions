@@ -143,3 +143,13 @@ test("each finding is one bullet naming the sign, the sentence and the fix", () 
     '- marketing adjective (W5, high): "A seamless way to search.". Fix: replace it with the specific, factual description.',
   );
 });
+
+test("findSlop stays fast on a huge code block and on unclosed comments", () => {
+  const block = "```\n" + "x\n".repeat(95_000) + "```\nDone.\n";
+  const unclosed = "<!-- ".repeat(40_000);
+  for (const text of [block, unclosed]) {
+    const start = performance.now();
+    findSlop(text);
+    assert.ok(performance.now() - start < 1_000, "scan took longer than a second");
+  }
+});

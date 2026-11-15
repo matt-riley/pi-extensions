@@ -251,7 +251,7 @@ const CHECKS = [
     label: "mechanical transition",
     fix: "start the sentence without it",
     pattern:
-      /(?:^|[.!?]\s+|\n\s*)(?:Furthermore|Moreover|Additionally|In conclusion|To sum up|In summary|That said|With that in mind|Having established that|Despite these challenges)\b,?/g,
+      /(?:^|[.!?]\s+|\n[ \t]*)(?:Furthermore|Moreover|Additionally|In conclusion|To sum up|In summary|That said|With that in mind|Having established that|Despite these challenges)\b,?/g,
   },
   {
     id: "self-question",
@@ -325,7 +325,7 @@ export function maskNonProse(text) {
     .slice(0, MAX_SCAN_CHARS)
     .replace(/^---\n[\s\S]*?\n---(?=\n|$)/, blank)
     .replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$/gm, blank)
-    .replace(/<!--[\s\S]*?-->/g, blank)
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, blank)
     .replace(/`[^`\n]*`/g, blank)
     .replace(/\bhttps?:\/\/[^\s)>\]]+/g, blank);
 }
