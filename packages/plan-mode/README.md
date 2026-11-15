@@ -27,12 +27,22 @@ pi --plan           start pi already in plan mode
 
 ## What happens in plan mode
 
+Plan mode is a read-only pipeline with one way out:
+
+1. **Scout.** The agent sends up to three read-only scouts (`plan_scout`), one per area, each
+   with a brief that stands on its own.
+2. **Decide.** It reads their reports and asks you the decisions that remain.
+3. **Plan.** It writes a short plan with a Verification section.
+4. **Exit.** It calls `plan_mode_complete`, which puts the plan in front of you. You approve with
+   `/plan approve`.
+
 The footer shows `plan (read-only)`, and a widget shows the plan file path.
 The agent inspects the code and asks decision questions with options and a
 recommended answer. Questions appear one dialog at a time, even when the agent
 asks several together.
 
-When the plan is ready, `plan_mode_complete` validates it, optionally asks
+When the plan is ready, `plan_mode_complete` checks that it has a Verification section,
+validates it, optionally asks
 TypeSafe to check its steps, and writes **`.pi/PLAN.md`** in the current working
 directory. Writes are atomic. If you have edited the existing plan, revisions
 use `.pi/PLAN.md.2`, `.3`, and so on rather than overwriting your changes.
@@ -42,6 +52,47 @@ Review the file directly or through `/plan edit`. Run `/plan approve` when you
 want the agent to implement it. That restores the previous tools and submits
 the plan for implementation; `/plan exit` leaves without doing so.
 
+### Scouts
+
+`plan_scout` runs a hidden child session with fresh context and a small toolset: `read`, `grep`,
+`find`, `ls`, `repo_map`, `code_search`, `file_outline` and `find_definition`. It has **no shell**
+(not even the read-only bash allowlist), no `edit` or `write`, no web access and no way to start
+other agents. That list is exact, so a tool added later does not reach it.
+
+- **Three at once.** The agent can call it up to three times in one batch. A fourth call is told
+  to read the first reports and send the next.
+- **A brief that stands alone.** The scout never sees your conversation, so the call is rejected if
+  the brief is empty, under 40 characters, or points at the conversation ("as discussed", "above").
+- **Reports, not decisions.** A scout answers under Findings, Reuse, Verification and Unknowns,
+  capped at 6,000 characters. A scout that times out, errors or returns nothing is reported as
+  unfinished, with any partial notes marked as such, never as a finding.
+- **Same model as the session**, low thinking, 8 turns and 120 seconds at most. It costs one child
+  run per call, so the prompt asks for one scout when the work is confined to files already known,
+  and none for a trivial change.
+
+`/subagents` is separate and still unavailable in plan mode. `plan_scout` is the one sanctioned way
+to delegate while planning, which is why it carries its own, narrower toolset.
+
+### The plan must say how it is checked
+
+`plan_mode_complete` refuses a plan with no verification section: a heading that names
+verification, testing, a test plan or acceptance, with at least a sentence under it. Subsections
+count as part of the section, and a `#` line inside a fenced code block is not a heading. The rejection
+says what to add (the command to run and the behavior to observe), and the agent calls the tool
+again. This is a heading check, not a judgment of the content; the [plan check](#the-plan-check)
+below reads each step for that.
+
+### One route to approval
+
+While planning, `plan_mode_question` rejects a question, title or option that asks for approval:
+"Does this plan work for you?", "Happy for me to begin?", "Can I kick this off?", "Looks good,
+proceed". The rejection points the agent at `plan_mode_complete`. Only two kinds of question are
+refused: ones that put the whole plan up for sign-off, and ones that ask permission to begin with
+nothing else to choose. A genuine decision goes through, even with a begin word in it ("Should I
+start with the API or the UI?", "Do you approve dropping the legacy endpoint?"). Outside plan mode
+nothing is refused. The phrase list is plain patterns and will miss a clever rewording, so the
+prompt says the same thing.
+
 ### Available tools
 
 Tool access is enforced by `tool-policy.mjs`, not just instructions to the model:
@@ -49,9 +100,9 @@ Tool access is enforced by `tool-policy.mjs`, not just instructions to the model
 - Local read-only tools registered by this collection are allowed: code search,
   `skill_select`, and `view_context`. Outside tools cannot grant themselves
   access with `readOnlyHint: true`; `readOnlyHint: false` blocks access.
-- The mode activates its three deferred tools: `plan_mode_question`,
-  `plan_fetch_url`, and `plan_mode_complete`. Only the last can write, and only
-  to the plan file. Other tools whose exposure is not `direct` stay inactive.
+- The mode activates its four deferred tools: `plan_mode_question`,
+  `plan_fetch_url`, `plan_scout` and `plan_mode_complete`. Only the last can write,
+  and only to the plan file. Other tools whose exposure is not `direct` stay inactive.
 - `read`, `bash`, `grep`, `find`, `ls`, and `lore_recall` retain their existing
   access. An unloaded extension's tool name grants nothing.
 - Web research uses `plan_fetch_url` and `web_search`. `web_fetch`,

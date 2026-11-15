@@ -45,6 +45,7 @@ const EXPECTED = new Map([
   ["measure_command", { annotations: LOCAL_DESTRUCTIVE, deferred: true }],
   ["plan_mode_question", { annotations: OPEN_READ, deferred: true }],
   ["plan_fetch_url", { annotations: OPEN_READ, deferred: true }],
+  ["plan_scout", { annotations: LOCAL_READ, deferred: true }],
   ["plan_mode_complete", { annotations: OPEN_DESTRUCTIVE, deferred: true }],
   ["doctor_report", { annotations: LOCAL_READ, deferred: true }],
   ["architecture_check", { annotations: LOCAL_READ, deferred: true }],

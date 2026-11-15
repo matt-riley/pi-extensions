@@ -45,6 +45,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "terminal_stop",
   "plan_mode_question",
   "plan_fetch_url",
+  "plan_scout",
   "plan_mode_complete",
   "doctor_report",
   "architecture_check",

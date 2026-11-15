@@ -37,13 +37,21 @@ import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
-import { QUESTION_DESCRIPTION, QUESTION_LABEL, promptSection } from "./question.mjs";
+import { PLAN_MODE_PROMPT } from "./plan-prompt.mjs";
+import { createScoutSlots, runPlanScout } from "./plan-scout.mjs";
+import { planProblem } from "./plan-shape.mjs";
+import {
+  QUESTION_DESCRIPTION,
+  QUESTION_LABEL,
+  approvalQuestionProblem,
+  promptSection,
+} from "./question.mjs";
 import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
-import { OPEN_DESTRUCTIVE, OPEN_READ } from "../../shared/tool-annotations.mjs";
+import { LOCAL_READ, OPEN_DESTRUCTIVE, OPEN_READ } from "../../shared/tool-annotations.mjs";
 import { planToolVerdict, selectPlanTools } from "./tool-policy.mjs";
 import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
@@ -63,6 +71,7 @@ function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
+const SCOUT_TOOL = "plan_scout";
 // Tool membership is decided in tool-policy.mjs from annotations. lore_recall
 // is not registered here; it stays allowed only as an unannotated external
 // reader. web_search is the sanctioned open-world search path.
@@ -72,55 +81,6 @@ const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const PLAN_DIR = ".pi";
 const PLAN_FILENAME = "PLAN.md";
 const MAX_PLAN_CHARS = 50000;
-
-const PLAN_MODE_PROMPT = `# Plan Mode (read-only)
-
-You are in Plan Mode, a Codex-like collaboration mode for producing a decision-complete implementation plan. Chat your way to the plan before finalizing it. Grill the user for the full scope first: a plan is written only once every decision is settled and understood by both of you. A final plan must leave no implementation decisions unresolved.
-
-## Mode rules
-
-- Stay in Plan Mode until the user exits it. Treat requests to implement as requests to plan the implementation; do not edit files or carry out the plan.
-- Do not use update_plan/TODO tooling; Plan Mode is conversational planning, not execution tracking.
-- Do not perform mutating actions: no edit/write tools, no patching, no dependency installation, no commits, no migrations. Bash is restricted to a fail-closed allowlist of read-only commands (ls, cat, rg, find, git log/status/diff, npm ls, …) — test runners, script interpreters, installs, and network tools are blocked; do not attempt bash workarounds. For web research use plan_fetch_url (fetch a known URL) or web_search (keyless DuckDuckGo search) instead: they return readable content with sources.
-
-## Phase 1 — Ground in the environment
-
-- Recall memory first: call lore_recall with a query that captures the request's subject before exploring, to surface relevant prior decisions, preferences, rejected approaches, and recurring mistakes. Do not ask the user for anything lore already knows.
-- Explore first and ask second. Use non-mutating exploration to read files, search, inspect configuration, and resolve discoverable facts. When the request needs current or external information (API docs, versions, references), research it online with plan_fetch_url or web_search before asking the user — never ask for something a fetch or search can look up.
-- Do not ask questions that can be answered from repository or system truth. Ask only when multiple plausible choices remain, a needed identifier/context is missing, or the ambiguity is product intent.
-
-## Phase 2 — Grill: scope & intent
-
-Work the request as a design tree: every decision branches into the decisions that hang off it. The frontier is every decision whose prerequisites are already settled — the questions you can ask now without guessing at answers you haven't heard yet.
-
-- Grill in rounds. Ask the whole frontier in one round: number each question, give 2-4 meaningful options where they exist, and give your recommended answer for each. Use plan_mode_question (with title and recommended) when UI is available; otherwise ask in plain text. Questions fired in one batch appear as sequential dialogs — one per question — and every answer comes back before you continue.
-- Wait for the user's answers before the next round. Answers reshape the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open this round belongs to a later round, not this one.
-- Finding facts is your job, never the user's: never ask for anything read-only exploration can look up (files, config, identifiers). Only decisions go to the user.
-- Keep grilling until you can state the goal, success criteria, in/out of scope, constraints, current state, and key preferences/tradeoffs without guessing. Bias toward questions over guessing: if a high-impact ambiguity remains, do not produce a proposed plan yet.
-- For an unanswered preference or tradeoff, use the recommended option only when it is low risk and record that default as an explicit assumption in the final plan.
-
-## Phase 3 — Grill: implementation spec
-
-- Once intent is stable, keep grilling until the spec is decision-complete: approach, interfaces, data flow, edge cases/failure modes, testing and acceptance criteria, and any migration or compatibility constraints. Same round mechanics — numbered frontier questions with options and recommended answers — now over implementation decisions.
-- If plan_mode_question is cancelled or UI is unavailable, ask one concise plain-text question instead, or proceed only with a clearly stated low-risk assumption.
-
-## Ending each turn
-
-- If the grill frontier is not empty — a material decision remains — keep grilling with plan_mode_question (or plain text when UI is unavailable). Do not finalize.
-- If the implementation plan is decision-complete, call plan_mode_complete alone as your final action, passing the complete Markdown plan. Do not call other tools in the same batch and do not emit a normal assistant response after it.
-- Never end with prose that merely announces you are about to present the plan. Submit the actual plan with plan_mode_complete in that turn.
-
-## The plan document
-
-Only call plan_mode_complete when the plan leaves no implementation decisions unresolved. The plan is written to a file for the user to review and edit before implementation, so write it as a standalone Markdown document with:
-
-- A clear title
-- A brief summary
-- Important changes to behavior, public APIs, interfaces, or types
-- Test cases and verification scenarios
-- Explicit assumptions and defaults chosen where needed
-
-Keep it concise, human and agent digestible, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta. Once the plan is written, stay in plan mode until the user approves it with /plan approve — plan mode then ends and implementation begins from that file. Revisions are still planned, never implemented.`;
 
 // Minimal structural context used by helpers; real ExtensionContext/command
 // contexts satisfy it.
@@ -529,6 +489,12 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      // While planning, approval has one route (plan_mode_complete). Outside plan
+      // mode there is no plan to approve, so "should I proceed?" stays a fair question.
+      const refused = state.enabled ? approvalQuestionProblem({ title, question, options }) : null;
+      if (refused) {
+        return { content: [{ type: "text", text: refused }] };
+      }
       // A question the context already settles does not deserve a dialog. The
       // judgment is deliberately conservative and silent on doubt: a
       // preference, a cost, an interface, a deletion, thin confidence or no
@@ -637,6 +603,12 @@ export default function planMode(pi: ExtensionAPI) {
           ],
         };
       }
+      // A plan that names no check is refused, in code: the plan review below
+      // can only point at a missing one, and needs a key to do even that.
+      const shape = planProblem(plan);
+      if (shape) {
+        return { content: [{ type: "text", text: `Rejected: ${shape}` }] };
+      }
       // The plan review AGENTS.md asks for, in code rather than in a promise to
       // remember: each step is asked whether it names its verification and
       // what else depends on it, and the answer is appended to the file the
@@ -671,6 +643,56 @@ export default function planMode(pi: ExtensionAPI) {
         ],
         terminate: true,
       };
+    },
+  });
+
+  // At most three at once: pi runs sibling tool calls concurrently, so a batch of
+  // scouts is a batch of children.
+  const scoutSlots = createScoutSlots();
+
+  pi.registerTool({
+    name: SCOUT_TOOL,
+    label: "Plan Scout (read-only)",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Send a read-only scout into the repository and get its report back. The scout has fresh context and can only read, " +
+      "search and outline files: no shell, no edits, no web. Call it up to 3 times in one batch, one per area to understand. " +
+      "The brief must stand alone: the question, the paths or symbols to start from, what matters about this repo, and what to bring back.",
+    parameters: Type.Object({
+      task: Type.String({
+        description:
+          "The complete brief. The scout cannot see this conversation, so write the context into it.",
+      }),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (!state.enabled) {
+        return {
+          content: [{ type: "text", text: "Not in plan mode: plan_scout is inactive." }],
+        };
+      }
+      if (!scoutSlots.take()) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Three scouts are already running. Read their reports, then send the next one.",
+            },
+          ],
+        };
+      }
+      try {
+        const out = await runPlanScout({
+          task: params?.task,
+          cwd: ctx.cwd ?? process.cwd(),
+          model: ctx.model,
+          signal,
+        });
+        // Not isError: pi would blindly retry the same failing call.
+        return { content: [{ type: "text", text: out.text }] };
+      } finally {
+        scoutSlots.release();
+      }
     },
   });
 
