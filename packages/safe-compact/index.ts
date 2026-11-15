@@ -32,6 +32,7 @@ import {
   mergeFileLists,
   planBoundary,
 } from "./plan.mjs";
+import { describePrompt, promptLine, sectionSizes } from "./prompt-sections.mjs";
 import { messageText } from "./segment.mjs";
 
 const DEFAULT_SOFT = 50;
@@ -280,16 +281,31 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     },
   });
 
+  // Sizes only, never the text, and the event is left exactly as it came.
+  let promptSections: Array<{ name: string; tokens: number }> | null = null;
+  pi.on("before_agent_start", async (event) => {
+    promptSections = sectionSizes(event?.systemPromptOptions?.sections);
+  });
+
+  const describeCurrentPrompt = () =>
+    describePrompt({
+      sections: promptSections,
+      tools: pi.getAllTools?.(),
+      active: pi.getActiveTools?.(),
+    });
+
   pi.registerTool({
     name: "view_context",
     label: "view_context",
     annotations: LOCAL_READ,
-    description: "Show context window usage and the safe-compact thresholds.",
-    promptSnippet: "view_context(): context usage and compaction thresholds",
+    description:
+      "Show context window usage, the safe-compact thresholds, and an estimate of where the prompt's tokens go (per-section sizes and tool declarations).",
+    promptSnippet:
+      "view_context(): context usage, compaction thresholds and estimated prompt section sizes",
     parameters: Type.Object({}),
     async execute(_id, _params, _signal, _onUpdate, ctx) {
       const usage = ctx.getContextUsage?.();
-      const info = { ...usage, ...thresholds(), compacting };
+      const info = { ...usage, ...thresholds(), compacting, prompt: describeCurrentPrompt() };
       return { content: [{ type: "text", text: JSON.stringify(info) }] };
     },
   });
@@ -527,7 +543,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
         ? "cache unknown"
         : `cache ${cache.warm ? "warm" : "cold"} (${Math.round(cache.ratio * 100)}% read, ${minutesAgo(cache.ageMs)})`;
       ctx.ui?.notify?.(
-        `safe-compact: ${percent === null || percent === undefined ? "?" : Math.round(percent)}% used, soft ${soft}%, compact at ${hard}%, ${cacheText}`,
+        `safe-compact: ${percent === null || percent === undefined ? "?" : Math.round(percent)}% used, soft ${soft}%, compact at ${hard}%, ${cacheText}, ${promptLine(describeCurrentPrompt())}`,
         "info",
       );
     },

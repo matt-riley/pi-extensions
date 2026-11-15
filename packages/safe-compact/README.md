@@ -17,6 +17,11 @@ sessions. The design was inspired by
 ## Surface
 
 - Tools: `self_compact(note?)` (note carried verbatim), `view_context()`.
+  `view_context()` and `/safe-compact-info` also show an estimate of what the prompt is made of: the
+  size of each system-prompt section other extensions add (plan mode, router playbook, orchestrator
+  brief) and of the active tool declarations. Estimates from the handoff's own token estimator, as of
+  the last prompt, for sections added before this extension loads; sizes only, nothing is added to
+  the model's context and no model request is made.
 - Commands: `/safe-compact [note]`, `/safe-compact-plan` (dry run, shows the handoff),
   `/safe-compact-info`.
 - Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`, `--compact-cache-at <pct>`,
