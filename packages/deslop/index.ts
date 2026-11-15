@@ -32,25 +32,31 @@ export default function piDeslopExtension(pi: ExtensionAPI) {
   const state = createDeslopState();
 
   pi.registerCommand("deslop", {
-    description: "Rewrite an existing file's prose plainly: /deslop <file>",
+    description: "Rewrite existing prose plainly: /deslop <file-or-directory>",
     handler: async (args, ctx) => {
       if (flagOff(process.env[DESLOP_ENV])) {
         ctx.ui?.notify?.("deslop is disabled (PI_DESLOP).", "info");
         return;
       }
-      const file = args.trim();
-      if (!file) {
-        ctx.ui?.notify?.("Usage: /deslop <file>", "info");
+      const path = args.trim();
+      if (!path) {
+        ctx.ui?.notify?.("Usage: /deslop <file-or-directory>", "info");
         return;
       }
       pi.sendUserMessage(
-        `Read the file at ${JSON.stringify(file)} and deslop its existing prose in place. ` +
+        `Inspect the path ${JSON.stringify(path)} relative to the current working directory. ` +
+          "If it is a file, read it and deslop its existing prose in place. " +
+          "If it is a directory, recursively find its prose files " +
+          "(.md, .mdx, .markdown, .txt, .rst, .adoc) and deslop them in place. " +
+          "For directory input, change only prose files within that directory; do not follow " +
+          "symlinks outside it, and skip dependency, generated and version-control directories. " +
           "Remove filler, sales language, stock contrasts, repetitive punchy sentences and " +
           "unnecessary decoration. Preserve all facts, instructions, caveats, links, code " +
           "and the author's meaning. Keep wording that is already clear; do not invent " +
-          "claims or swap one stock phrase for another. Read the complete file before " +
-          "editing, change only this file, and review the diff for meaning changes. " +
-          "If the file is missing or unreadable, report that without creating it.",
+          "claims or swap one stock phrase for another. Read each complete file before editing, " +
+          "change only the selected files (only that file for a file input), and review the diff " +
+          "for meaning changes. If the path is missing or unreadable, report that without creating it. " +
+          "If a directory contains no prose files, report that without creating any.",
         { deliverAs: "followUp" },
       );
     },

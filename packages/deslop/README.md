@@ -9,10 +9,17 @@ while the file is still in front of it and rewrites the sentences.
 There is nothing to configure after you [install the collection](../../README.md#install).
 TypeSafe verification needs a key; see [Configuration](#configuration).
 
-## Deslop an existing file
+## Deslop existing files or a directory
 
 Run `/deslop docs/guide.md` to ask the agent to read the complete file and
-rewrite its existing prose in place. The rest of the argument is one path, so
+rewrite its existing prose in place. Run `/deslop .` for the current directory
+or `/deslop docs` for a named directory. Directory requests ask the agent to
+recursively process prose files (`.md`, `.mdx`, `.markdown`, `.txt`, `.rst`, `.adoc`),
+skipping dependency, generated and version-control directories and symlinks that
+lead outside the selected directory. Empty directories should be reported without
+creating files. Single-file requests still target only that file.
+
+The rest of the argument is one path, so
 spaces are supported without shell quoting. The command starts a normal agent
 turn (or queues a follow-up if busy); it needs your current model, not a
 TypeSafe key. It asks the agent to preserve facts, steps, caveats, links and code,

@@ -233,28 +233,54 @@ test("credentials crossing the excerpt cap are not sent as fragments", async () 
 
 test("/deslop forwards one file as a meaning-preserving rewrite task", async () => {
   const pi = harness();
-  await pi.deslop("docs/existing file.md");
+  await pi.deslop("  docs/existing file.md  ");
   assert.equal(pi.messages.length, 1);
   const [message, options] = pi.messages[0];
   assert.match(message, /"docs\/existing file.md"/);
   assert.match(message, /Read/);
   assert.match(message, /preserve/i);
   assert.match(message, /facts/);
+  assert.match(message, /only that file for a file input/);
+  assert.match(message, /missing or unreadable.*without creating/);
   assert.deepEqual(options, { deliverAs: "followUp" });
   assert.equal(requests.length, 0);
 });
 
-test("/deslop with no file shows usage without starting a turn", async () => {
+for (const path of [".", "docs", "docs/reference notes"]) {
+  test(`/deslop ${path} requests a recursive directory rewrite`, async () => {
+    const pi = harness();
+    await pi.deslop(`  ${path}  `);
+    assert.equal(pi.messages.length, 1);
+    const [message, options] = pi.messages[0];
+    assert.ok(message.includes(JSON.stringify(path)));
+    assert.match(message, /directory.*recursively/);
+    assert.match(message, /\.md, \.mdx, \.markdown, \.txt, \.rst, \.adoc/);
+    assert.match(message, /only.*within.*directory/);
+    assert.match(message, /symlinks outside it/);
+    assert.match(message, /skip dependency, generated and version-control directories/);
+    assert.match(message, /no prose files.*without creating any/);
+    assert.match(message, /complete.*file before editing/);
+    assert.match(message, /Preserve all facts/);
+    assert.match(message, /missing or unreadable.*without creating/);
+    assert.deepEqual(options, { deliverAs: "followUp" });
+    assert.equal(requests.length, 0);
+  });
+}
+
+test("/deslop with no path shows usage without starting a turn", async () => {
   const pi = harness();
   await pi.deslop("  ");
   assert.equal(pi.messages.length, 0);
-  assert.deepEqual(pi.notices, [["Usage: /deslop <file>", "info"]]);
+  assert.deepEqual(pi.notices, [["Usage: /deslop <file-or-directory>", "info"]]);
 });
 
 test("/deslop respects the extension off switch", async () => {
   const pi = harness();
   process.env.PI_DESLOP = "0";
-  await pi.deslop("README.md");
+  for (const path of ["README.md", ".", "docs"]) await pi.deslop(path);
   assert.equal(pi.messages.length, 0);
-  assert.deepEqual(pi.notices, [["deslop is disabled (PI_DESLOP).", "info"]]);
+  assert.deepEqual(
+    pi.notices,
+    Array.from({ length: 3 }, () => ["deslop is disabled (PI_DESLOP).", "info"]),
+  );
 });
