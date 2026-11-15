@@ -84,6 +84,8 @@ declare module "@earendil-works/pi-coding-agent" {
       getModel?: (provider: string, id: string) => unknown;
       find?: (provider: string, id: string) => unknown;
       getAvailable?: () => unknown[] | Promise<unknown[]>;
+      streamSimple?: (model: unknown, context: unknown, options?: unknown) => unknown;
+      isUsingOAuth?: (model: unknown) => boolean;
     };
     sessionManager?: {
       getBranch?(): unknown[];
