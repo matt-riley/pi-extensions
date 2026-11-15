@@ -2,7 +2,7 @@
 
 Checks tool calls before they run. Routine work can pass; risky actions may need
 your approval, and catastrophic operations are refused outright. It is a
-second line of defence, not a sandbox.
+second line of defence.
 
 After installing the collection, use `/guardrail` to see status and counters.
 The checks run in four layers:
