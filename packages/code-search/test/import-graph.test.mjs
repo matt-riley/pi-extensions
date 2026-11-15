@@ -38,6 +38,18 @@ test("tsconfig paths and baseUrl resolve aliases, longest prefix first", async (
   assert.deepEqual(graph.resolve("@/lib/foo", "src/a.ts"), { type: "file", rel: "src/lib/foo.ts" });
 });
 
+test("the star in a paths target can sit mid-path, and a `$&` in the specifier stays literal", async () => {
+  const graph = await repo({
+    "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "#*": ["src/*/index"] } } }),
+    "src/feature/index.ts": "",
+  });
+  assert.deepEqual(graph.resolve("#feature", "a.ts"), {
+    type: "file",
+    rel: "src/feature/index.ts",
+  });
+  assert.equal(graph.resolve("#fea$&ture", "a.ts").type, "external");
+});
+
 test("jsconfig.json is used when there is no tsconfig.json, and a broken one is ignored", async () => {
   const withJs = await repo({
     "jsconfig.json": JSON.stringify({ compilerOptions: { paths: { "~/*": ["app/*"] } } }),

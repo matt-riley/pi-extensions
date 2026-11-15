@@ -146,7 +146,10 @@ function resolveSpecifier(spec, fromRel, { fileSet, tsconfig, workspaceMap }) {
       let rel = null;
       if (pattern.endsWith("*") && raw.startsWith(pattern.slice(0, -1))) {
         const star = raw.slice(pattern.length - 1);
-        rel = `${baseUrl}${target.replace("*", () => star)}`.replace(/\/+/g, "/");
+        // The first `*` only: tsconfig allows one per target.
+        const at = target.indexOf("*");
+        const filled = at < 0 ? target : target.slice(0, at) + star + target.slice(at + 1);
+        rel = `${baseUrl}${filled}`.replace(/\/+/g, "/");
       } else if (pattern === raw) {
         rel = `${baseUrl}${target}`.replace(/\/+/g, "/");
       }
