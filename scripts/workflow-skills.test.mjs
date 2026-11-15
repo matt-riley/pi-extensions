@@ -75,3 +75,17 @@ test("every owned workflow is used by a prompt", async () => {
       assert.ok(text.includes("the `" + skill + "` skill"), name);
     }
 });
+
+test("the restate prompt asks for a plain restatement and forbids acting", async () => {
+  const text = await readFile(root + "prompts/restate.md", "utf8");
+  assert.match(text, /^---\n(?:[\s\S]*?\n)?description: /);
+  assert.match(text, /restate in your own words/i);
+  assert.match(text, /\bgoal\b/i);
+  assert.match(text, /\bproblem\b/i);
+  assert.match(text, /constraint/i);
+  assert.match(text, /assumption/i);
+  assert.match(text, /open questions/i);
+  assert.match(text, /Do not edit files or run tools/);
+  assert.match(text, /\$@/, "the brief passed as arguments must reach the model");
+  assert.doesNotMatch(text, /skill_select|the `\w+` skill/);
+});
