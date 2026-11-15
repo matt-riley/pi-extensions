@@ -17,6 +17,7 @@ import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } f
 import {
   carriedRules,
   defangSpeakerLabels,
+  escapeSectionHeadings,
   isStandingRule,
   MAX_CARRIED_RULES,
   withoutRules,
@@ -391,7 +392,9 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
   const bySection = (name) =>
     entries
       .filter((e) => e.section === name)
-      .map((e) => (e.segment.role === "user" ? e.text : defangSpeakerLabels(e.text)));
+      .map((e) =>
+        e.segment.role === "user" ? e.text : escapeSectionHeadings(defangSpeakerLabels(e.text)),
+      );
   const files = [
     fileLists.readFiles.length ? `read: ${fileLists.readFiles.join(", ")}` : "",
     fileLists.modifiedFiles.length ? `modified: ${fileLists.modifiedFiles.join(", ")}` : "",
@@ -415,7 +418,7 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
       "Earlier context",
       previousSummary ? excerpt(withoutRules(previousSummary), PREVIOUS_MAX) : "",
     ],
-    ["Agent note (verbatim)", defangSpeakerLabels(note)],
+    ["Agent note (verbatim)", escapeSectionHeadings(defangSpeakerLabels(note))],
     ["Resume", RESUME],
     ["Full transcript (searchable)", wayBack(restore)],
   ];

@@ -116,12 +116,16 @@ Four rules hold whatever Jev scored:
   excerpt wore the rules down.
 - **Only the user speaks for the user.** Quoted lines from assistant messages, tool output and the
   agent note that open with `User:` or `Human:` are marked `(quoted by the agent)`. An approval
-  the model wrote for itself cannot read as one the user gave.
+  the model wrote for itself cannot read as one the user gave. A line in that text that opens a
+  section (`## ` at the start of a line) gets a backslash, so a note cannot write a
+  `## Standing rules` heading of its own and have the next compaction carry its bullets as rules.
 - **A compact is not the end of the task.** The Resume paragraph says the work is unfinished
   unless the newest user message says otherwise, and tells the agent not to report completion on
   the strength of the handoff.
 
-The safety-rule check is a keyword test, so it can miss a rule phrased without those words. Jev's
+The safety-rule check is a keyword test, so it can miss a rule phrased without those words. Words
+that are risky only with an object (send, post, pay, token) count only next to one (`send an email`,
+`post a comment`, `pay for`), so "post-process", "payload" or "more tokens" does not pin a message. Jev's
 own constraint score is still there for those.
 
 ## Cache-aware hold
