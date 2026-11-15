@@ -62,3 +62,34 @@ test("the section ends at the next heading, so a later heading's text is not its
   const text = plan("## Verification\n\n## Assumptions\nThe client tests are slow but reliable.");
   assert.match(planProblem(text), /no verification section/i);
 });
+
+test("a # comment inside a fenced block is not a heading, so it does not end the section", () => {
+  const text = plan(
+    "## Verification\n```bash\n# build the client first\nnode --test packages/client\n```\nThe retry test must fail first.",
+  );
+  assert.equal(planProblem(text), null);
+});
+
+test("a heading inside a fence does not count as a verification section", () => {
+  const text = plan("## Notes\n```md\n## Verification\nRun every test and read the output.\n```");
+  assert.match(planProblem(text), /no verification section/i);
+});
+
+test("subsections count as part of the verification section", () => {
+  const text = plan(
+    "## Verification\n### Unit\nRun `node --test packages/client` and see the retry test pass.\n### End to end\nStart the server and send a failing request.",
+  );
+  assert.equal(planProblem(text), null);
+});
+
+test("a subsection ends at the next heading of the same or a higher level", () => {
+  const text = plan(
+    "## Verification\n### Unit\n\n### Notes\nThe client tests are slow but reliable.\n\n## Assumptions\nNone.",
+  );
+  // The parent owns the text of its subsections.
+  assert.equal(planProblem(text), null);
+  const empty = plan(
+    "## Verification\n### Unit\n\n## Assumptions\nThe client tests are slow but reliable.",
+  );
+  assert.match(planProblem(empty), /no verification section/i);
+});

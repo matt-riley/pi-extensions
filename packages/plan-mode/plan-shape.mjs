@@ -8,15 +8,35 @@ const HEADING = /^(#{1,6})\s+(.*)$/;
 const VERIFICATION_TITLE = /\b(?:verif\w*|testing|tests?|test plan|acceptance|validat\w*)\b/i;
 const MIN_BODY_CHARS = 20;
 
-/** The text under each heading, up to the next heading, with the heading's own text. */
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Each heading with the text under it, up to the next heading at the same or a
+ * higher level, so a section owns its subsections. A line inside a fenced code
+ * block is text, never a heading: `# comment` in a bash block is not one.
+ */
 function sections(plan) {
-  const out = [];
-  for (const line of String(plan ?? "").split(/\r?\n/)) {
-    const heading = HEADING.exec(line);
-    if (heading) out.push({ title: heading[2], body: [] });
-    else out.at(-1)?.body.push(line);
-  }
-  return out.map(({ title, body }) => ({ title, body: body.join("\n").trim() }));
+  const lines = String(plan ?? "").split(/\r?\n/);
+  const headings = [];
+  let fence = null;
+  lines.forEach((line, index) => {
+    const marker = FENCE.exec(line)?.[1];
+    if (marker) fence = fence === null ? marker[0] : fence === marker[0] ? null : fence;
+    else if (fence === null) {
+      const heading = HEADING.exec(line);
+      if (heading) headings.push({ index, level: heading[1].length, title: heading[2] });
+    }
+  });
+  return headings.map(({ index, level, title }, at) => {
+    const end = headings.slice(at + 1).find((next) => next.level <= level)?.index ?? lines.length;
+    return {
+      title,
+      body: lines
+        .slice(index + 1, end)
+        .join("\n")
+        .trim(),
+    };
+  });
 }
 
 /** Why a plan cannot be accepted, or null. */
