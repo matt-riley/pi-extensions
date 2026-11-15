@@ -11,23 +11,41 @@ For example:
 
 ## Setup
 
-You need one model key in your environment and TypeSafe credentials (see
-[pi-typesafe](../typesafe/README.md#configuration)). Keys are read from
-environment variables only; nothing is read from or written to a file. Without a
-key, `/improve` says which variable to set and sends the original request
-unchanged.
+There is nothing to configure if Pi is already logged in to OpenAI or DeepSeek:
+`/improve` uses those logins. You also need TypeSafe credentials (see
+[pi-typesafe](../typesafe/README.md#configuration)). The model is taken from
+Pi's own model registry, which lists only models Pi has working credentials for,
+and the request goes through the registry, so Pi resolves the login at request
+time. This package never reads or copies a credential file.
 
-| Provider | Model ID | Key variable | Price per 1M tokens (in / out) |
-| --- | --- | --- | --- |
-| OpenAI (default) | `gpt-6-luna` | `OPENAI_API_KEY` | $0.10 / $0.50 |
-| DeepSeek | `deepseek-flash` | `DEEPSEEK_API_KEY` | $0.15–$0.30 / $0.60–$1.20 (off-peak / peak) |
+If you are not logged in, run `/login` in Pi (sign in with ChatGPT, or choose
+DeepSeek). Without a login or a key variable, `/improve` says so in one message
+and sends the original request unchanged.
+
+| Option | Model ID | Pi provider used (first one with a login) | Key variable override | Price per 1M tokens (in / out) |
+| --- | --- | --- | --- | --- |
+| OpenAI (default) | `gpt-6-luna` | `openai`, then the legacy `openai-codex` | `OPENAI_API_KEY` | $0.10 / $0.50 |
+| DeepSeek | `deepseek-flash` | `deepseek` | `DEEPSEEK_API_KEY` | $0.15–$0.30 / $0.60–$1.20 (off-peak / peak) |
 
 Prices were checked on 14 Nov 2026 at
 <https://developers.openai.com/api/docs/pricing> and
 <https://api-docs.deepseek.com/quick_start/pricing>. Luna is the cheaper of the
-two, so it is used when both keys are set. If only `DEEPSEEK_API_KEY` is set,
+two, so it is used when both are available. If only DeepSeek is logged in,
 DeepSeek is used. Thinking is switched off for both: this is a short rewrite
 and the 60-second deadline would not survive a long reasoning pass.
+
+**Env vars are an override.** If `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` is set
+in the environment, that key is used directly, ahead of any Pi login, and the
+request goes to the provider's own endpoint (or `PI_PROMPT_COACH_BASE_URL`).
+
+**ChatGPT plan limits:** in Pi 1.5, the `openai` provider offers a "Sign in with
+ChatGPT" login, and the legacy `openai-codex` provider is the ChatGPT Plus/Pro
+login; Pi marks both as subscription logins. Using the ChatGPT subscription
+login counts against your ChatGPT plan limits, not pay-per-token API billing. An
+OpenAI API key (Pi's `openai` provider with a key, or `OPENAI_API_KEY`) is billed
+per token. Which one ran is recorded: each `prompt-coach-decision` entry in the
+session has `model` (for example `openai/gpt-6-luna`) and `subscription`
+(`true` when Pi reports a subscription login, `false` for an env key).
 
 ## What the rewrite adds (depth rules)
 
@@ -75,7 +93,7 @@ The command:
 
 Nothing is sent for you. Edit the text and press Enter yourself. Ordinary input
 is never intercepted. If the input box already holds a draft, the rewrite goes
-above it. If the model is unavailable, no key is set, the rewrite is malformed,
+above it. If the model is unavailable, there is no login or key, the rewrite is malformed,
 TypeSafe cannot verify it, or intent confidence is below the threshold, the
 original prompt goes into the input box instead, with a warning saying why.
 
@@ -91,11 +109,11 @@ With no argument, `/improve` uses the most recent user prompt in the session:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | unset | Key for the OpenAI provider. |
-| `DEEPSEEK_API_KEY` | unset | Key for the DeepSeek provider. |
-| `PI_PROMPT_COACH_PROVIDER` | first provider with a key | `openai` or `deepseek`. |
-| `PI_PROMPT_COACH_MODEL` | provider default above | Rewrite model ID. |
-| `PI_PROMPT_COACH_BASE_URL` | provider default | OpenAI-compatible endpoint. |
+| `OPENAI_API_KEY` | unset | Optional override: use this OpenAI key instead of Pi's login. |
+| `DEEPSEEK_API_KEY` | unset | Optional override: use this DeepSeek key instead of Pi's login. |
+| `PI_PROMPT_COACH_PROVIDER` | first with a key, then first Pi login | `openai` or `deepseek`. |
+| `PI_PROMPT_COACH_MODEL` | provider default above | Rewrite model ID; with a Pi login it must be a model Pi has a login for. |
+| `PI_PROMPT_COACH_BASE_URL` | provider default | OpenAI-compatible endpoint, for an env key only. |
 | `PI_PROMPT_COACH_READ_FILES` | on | `0`, `false`, `off` or `no` stops the model reading files. |
 | `PI_PROMPT_COACH_TIMEOUT_MS` | `60000` | Rewrite deadline, covering all tool rounds. |
 | `PI_PROMPT_COACH_INTENT_TIMEOUT_MS` | `2500` | TypeSafe verification deadline. |
