@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import extension from "../index.ts";
@@ -189,4 +189,48 @@ test("failed, masked and tree-changing host checks leave edits unverified", asyn
     await h.check(check);
     assert.equal((await h.settle()).continue, true, JSON.stringify(check));
   }
+});
+
+function withVerifyScript(h, body) {
+  mkdirSync(join(h.cwd, ".pi"), { recursive: true });
+  writeFileSync(join(h.cwd, ".pi", "verify"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+}
+
+async function settleContent(h) {
+  h.write("export default 2;\n");
+  await h.edit();
+  const result = await h.settle();
+  return result.entries.at(-1).content;
+}
+
+test("PI_DONE_GATE_EXEC unset: the named check is only named, never run", async (t) => {
+  const h = harness(t);
+  withVerifyScript(h, `echo ran > ${join(h.cwd, "marker")}; echo VERIFY-OUTPUT`);
+  delete process.env.PI_DONE_GATE_EXEC;
+  const content = await settleContent(h);
+  assert.match(content, /\.pi\/verify/);
+  assert.doesNotMatch(content, /VERIFY-OUTPUT/);
+  assert.equal(existsSync(join(h.cwd, "marker")), false);
+});
+
+test("PI_DONE_GATE_EXEC=0 and other values are off; only 1 turns it on", async (t) => {
+  const h = harness(t);
+  withVerifyScript(h, "echo VERIFY-OUTPUT");
+  t.after(() => delete process.env.PI_DONE_GATE_EXEC);
+  for (const value of ["0", "true", "yes", ""]) {
+    process.env.PI_DONE_GATE_EXEC = value;
+    h.reset();
+    assert.doesNotMatch(await settleContent(h), /VERIFY-OUTPUT/, `value ${JSON.stringify(value)}`);
+  }
+});
+
+test("PI_DONE_GATE_EXEC=1: runs the named check and appends its output", async (t) => {
+  const h = harness(t);
+  withVerifyScript(h, "echo VERIFY-OUTPUT; exit 1");
+  process.env.PI_DONE_GATE_EXEC = "1";
+  t.after(() => delete process.env.PI_DONE_GATE_EXEC);
+  const content = await settleContent(h);
+  assert.match(content, /Done check: 1 file\(s\) changed/);
+  assert.match(content, /`\.pi\/verify` — failed \(exit 1/);
+  assert.match(content, /VERIFY-OUTPUT/);
 });

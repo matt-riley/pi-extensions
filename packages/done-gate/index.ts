@@ -53,6 +53,7 @@ import {
   resetGateState,
   shouldNudge,
 } from "./gate.mjs";
+import { formatRunReport, runChecks } from "./run-checks.mjs";
 import { resolveScopedChecks } from "./scoped.mjs";
 
 const CUSTOM_TYPE = "done-gate";
@@ -267,7 +268,17 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
 
     state.dirty = new Set(files);
-    const content = buildNudge(state, debugHits, claimLine(judged), commands);
+    let content = buildNudge(state, debugHits, claimLine(judged), commands);
+    // Opt-in: run what the reminder names and append the output. Only the exact
+    // value "1" turns it on; anything else, or unset, runs nothing.
+    if (process.env.PI_DONE_GATE_EXEC === "1" && commands.length > 0) {
+      const results = await runChecks({ commands, cwd, signal: ctx.signal });
+      if (results.length > 0) {
+        const cancelled = results.at(-1)?.status === "cancelled";
+        const notRun = cancelled ? 0 : commands.length - results.length;
+        content += `\n\n${formatRunReport(results, notRun)}`;
+      }
+    }
     // Keep earlier handlers' drafts; only ever set continue to true so another
     // extension's continuation is never cleared.
     return {
