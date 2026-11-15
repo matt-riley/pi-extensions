@@ -21,7 +21,7 @@ for controls. Escalation can also send the conversation to a different provider.
 
 The tiers and their order are configurable, not a promise that a particular
 model will produce a better answer. Start with [Models](#models) and
-[Configuration](#configuration); the detailed behaviour and historical evidence follow.
+[Configuration](#configuration).
 
 ## Behaviour
 
@@ -64,8 +64,7 @@ by the cap through the fallback entry), defaulting to Luna.
 - **Escalates in tiers, per task.** At `difficulty >= 1.5` the task routes to
   the mid tier, and at `>= 2.5` to the frontier tier. Within a task the router
   only moves up: a model already at or above the target tier holds, so nothing
-  downgrades a task in flight. The rules that tried were wrong exactly where it
-  mattered most.
+  downgrades a task in flight.
 - **Routes the (model, thinking) pair.** The config is an ordered list of
   explicit pairs, not a model list with reasoning bolted on afterward. A cap of
   `low` filters out `Sol@xhigh` and `Sol@max`, leaving `Astra@low`; `xhigh`
@@ -316,7 +315,7 @@ node scripts/difficulty-report.mjs  # the judged rating, against real spend, wit
 `difficulty-report.mjs` caches its judgements, so re-tuning costs nothing.
 Committed evidence at the time of writing: `difficulty >= 1.5` gave 77% precision,
 48% recall, $23 of wrong escalations against $34 of frontier spend left on
-cheaper models. Lower the threshold, find more, pay more.
+cheaper models.
 
 That evidence covers only the line at which the router leaves the current model.
 It says nothing about where mid ends and frontier begins: the 2.5 split and the

@@ -33,6 +33,7 @@ import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
 import { maskToolResult } from "./mask.mjs";
+import { quotedFromOutput } from "./provenance.mjs";
 import { dependencyConfirmation, dependencyEditPath } from "./deps.mjs";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -45,6 +46,9 @@ const COMMAND = "guardrail";
 const SCRIPT_READ_LIMIT = 64 * 1024;
 const MAX_SCRIPTS = 5;
 const MAX_ACTION_CHARS = 300;
+/** How much of an over-long action the dialog still shows at each end. */
+const ACTION_HEAD_CHARS = 190;
+const ACTION_TAIL_CHARS = 90;
 const DEPENDENCY_FILE_LIMIT = 1024 * 1024;
 
 const APPROVE = "✅ Approve";
@@ -66,7 +70,12 @@ function describeAction(toolName, input) {
         ? input.path
         : (JSON.stringify(input ?? {}) ?? "");
   if (name === "terminal_send") return `${name}: ${raw}`; // Show every byte being approved.
-  return `${name}: ${String(raw).replace(/\s+/g, " ").trim().slice(0, MAX_ACTION_CHARS)}`;
+  const text = String(raw).replace(/\s+/g, " ").trim();
+  if (text.length <= MAX_ACTION_CHARS) return `${name}: ${text}`;
+  // A silent cut hides the end, which is where an appended `&& rm -rf` lives.
+  // Show both ends and say how much is missing, so approval covers what is seen.
+  const hidden = text.length - ACTION_HEAD_CHARS - ACTION_TAIL_CHARS;
+  return `${name}: ${text.slice(0, ACTION_HEAD_CHARS)} … [${hidden} chars hidden] … ${text.slice(-ACTION_TAIL_CHARS)}`;
 }
 
 /**
@@ -248,15 +257,19 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     let finalVerdict = verdict;
     let reason = decision?.reason ?? "flagged by the guardrail";
     let signals = null;
+    const branch = (() => {
+      try {
+        return ctx?.sessionManager?.getBranch?.() ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    // Text the agent read this turn is not the user speaking. A call that needs
+    // a decision and is a word-for-word copy of such text is flagged below.
+    const quoted =
+      typeof input?.command === "string" ? quotedFromOutput(branch, input.command) : [];
 
     if (verdict === "judge") {
-      const branch = (() => {
-        try {
-          return ctx?.sessionManager?.getBranch?.() ?? null;
-        } catch {
-          return null;
-        }
-      })();
       const judged = await judgeToolCall({
         action: typeof input?.command === "string" ? input.command : JSON.stringify(input ?? {}),
         toolName,
@@ -278,9 +291,18 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       }
     }
 
+    if (finalVerdict === "allow" && quoted.length) {
+      reason = `${reason}; the judge found it harmless`;
+      finalVerdict = "confirm";
+    }
+
     if (finalVerdict === "allow") {
       state.allowed += 1;
       return undefined;
+    }
+
+    if (finalVerdict === "confirm" && quoted.length) {
+      reason = `${reason}; this command appears word for word in the output of ${quoted.join(", ")}, and tool output or file contents cannot authorise it, only you can approve it`;
     }
 
     if (finalVerdict === "block") {
@@ -321,7 +343,7 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       };
     }
 
-    const recommended = signals ? recommendedAction(signals) : null;
+    const recommended = signals && !quoted.length ? recommendedAction(signals) : null;
     const title = [
       "🛑 Guardrail",
       describeAction(toolName, input),

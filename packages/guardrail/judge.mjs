@@ -14,6 +14,7 @@
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { usableNumber } from "../../shared/systemone.mjs";
 import { TUNED_MODEL } from "../../shared/jev-ledger.mjs";
+import { humanRequest } from "./provenance.mjs";
 
 /** Short on purpose: this sits between a tool call and its execution. */
 export const DEFAULT_TIMEOUT_MS = 4000;
@@ -111,26 +112,9 @@ export function buildQuestionSet() {
   };
 }
 
-/** Last user message in a session branch, however little of it can be read. */
+/** The last thing the user asked for, skipping a bare "yes" (see provenance.mjs). */
 export function extractUserRequest(branch) {
-  if (!Array.isArray(branch)) return null;
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const message = branch[i]?.message ?? branch[i];
-    if (message?.role !== "user") continue;
-    const content = message.content;
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter((block) => block?.type === "text" && typeof block.text === "string")
-              .map((block) => block.text)
-              .join("\n")
-          : "";
-    const trimmed = text.trim();
-    if (trimmed) return trimmed.slice(0, MAX_REQUEST_CHARS);
-  }
-  return null;
+  return humanRequest(branch, MAX_REQUEST_CHARS);
 }
 
 /**
@@ -145,9 +129,12 @@ export function buildJudgeState({
   userRequest,
   policyReason,
 } = {}) {
+  const actionText = String(action ?? "");
   return {
     tool: toolName ?? "unknown",
-    action: String(action ?? "").slice(0, MAX_ACTION_CHARS),
+    action: actionText.slice(0, MAX_ACTION_CHARS),
+    // Say what was cut: an unmarked partial command reads as the whole action.
+    action_truncated: actionText.length > MAX_ACTION_CHARS,
     user_request: userRequest ?? null,
     working_directory: cwd ?? null,
     target_class: targetClass ?? null,
@@ -265,6 +252,18 @@ export async function judgeToolCall({
       signal: signal ?? AbortSignal.timeout(timeoutMs),
     });
     const routed = routeVerdict(result?.answers, thresholds);
+    // A partial action cannot be cleared on its unseen half. The human can
+    // judge the excerpt the dialog shows; the model must not allow it alone.
+    if (routed.verdict === "allow" && state.action_truncated) {
+      return {
+        ...routed,
+        verdict: "confirm",
+        judged: true,
+        reason: `${routed.reason} · action too long to judge in full`,
+        model: result?.model,
+        usage: result?.usage ?? null,
+      };
+    }
     if (routed.verdict === null) {
       return {
         ...routed,
