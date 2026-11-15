@@ -227,3 +227,31 @@ test("a plain correction is not a contrast", () => {
   ])
     assert.deepEqual(ids(text), [], text);
 });
+
+test("weak signs only count when they share a paragraph", () => {
+  const apart = findSlop(
+    "The cache — once warm — serves every read.\n\nThis is very fast and very small.",
+  );
+  assert.deepEqual(
+    apart.map((item) => item.id),
+    ["em-dash", "very"],
+  );
+  assert.equal(worthReporting(apart), false, "a medium and a low sign in different paragraphs");
+  const together = findSlop(
+    "The cache — once warm — serves every read. This is very fast and very small.",
+  );
+  assert.equal(worthReporting(together), true, "the same two signs in one paragraph");
+});
+
+test("a strong sign is reported on its own, wherever it sits", () => {
+  const text = "Plain opening paragraph.\n\nThe second paragraph is a seamless upgrade.";
+  const found = findSlop(text);
+  assert.equal(worthReporting(found), true);
+  assert.deepEqual(found[0].passages, [1]);
+});
+
+test("a finding that carries no passages counts as one shared passage", () => {
+  assert.equal(worthReporting([{ severity: "medium" }, { severity: "low" }]), true);
+  assert.equal(worthReporting([{ severity: "high" }]), true);
+  assert.equal(worthReporting([{ severity: "medium" }]), false);
+});

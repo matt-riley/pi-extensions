@@ -9,17 +9,17 @@
 // (passive voice as habit, repeated thematic points, personification) are left
 // to the TypeSafe questions in verify.mjs, which read the whole text.
 //
-// Severity follows deslop-text: high signs are instant tells, medium ones weaken
-// the writing, low ones only matter in aggregate. Thresholds are that skill's
-// figures for internal documents, because this runs on docs an agent edits in a
-// repository and not on customer-facing copy.
+// Severity follows deslop-text: high signs are strong tells that stand alone,
+// medium and low ones are weak and only count when other signs sit in the same
+// paragraph. Thresholds are that skill's figures for internal documents, because
+// this runs on docs an agent edits in a repository and not on customer-facing copy.
 
 /** Text past this is not scanned: a generated file is not prose worth judging. */
 const MAX_SCAN_CHARS = 200_000;
 const MAX_EXCERPTS = 2;
 const MAX_EXCERPT_CHARS = 140;
 const SEVERITY_WEIGHT = { high: 3, medium: 2, low: 1 };
-/** One high sign, or a medium with company, or three low ones in aggregate. */
+/** One high sign, or a medium and a low, or three lows, all in one paragraph. */
 const REPORT_WEIGHT = 3;
 
 /** Phrases to a global, case-insensitive regex: any apostrophe, any whitespace. */
@@ -386,7 +386,7 @@ function sentenceAround(text, start, end) {
     : sentence;
 }
 
-function finding(check, count, excerpts) {
+function finding(check, count, excerpts, passages = [0]) {
   return {
     id: check.id,
     sign: check.sign,
@@ -395,22 +395,50 @@ function finding(check, count, excerpts) {
     fix: check.fix,
     count,
     excerpts: [...new Set(excerpts)].slice(0, MAX_EXCERPTS),
+    passages: [...new Set(passages)].sort((left, right) => left - right),
   };
 }
 
+/** The non-blank paragraphs of a text, each with the offset it starts at. */
 function paragraphsOf(text) {
-  return text.split(/\n[ \t]*\n/).filter((paragraph) => paragraph.trim());
+  const spans = [];
+  let start = 0;
+  const push = (end) => {
+    const body = text.slice(start, end);
+    if (body.trim()) spans.push({ start, text: body });
+  };
+  for (const gap of text.matchAll(/\n[ \t]*\n/g)) {
+    push(gap.index);
+    start = gap.index + gap[0].length;
+  }
+  push(text.length);
+  return spans;
+}
+
+/** Which paragraph an offset falls in: the last one that starts at or before it. */
+function passageAt(spans, offset) {
+  let low = 0;
+  let high = spans.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (spans[mid].start <= offset) low = mid;
+    else high = mid - 1;
+  }
+  return low;
 }
 
 /** W3: more than one em dash in a paragraph, or more than three in the text. */
-function emDashFinding(text) {
+function emDashFinding(text, spans) {
   const total = text.match(EM_DASH)?.length ?? 0;
-  const crowded = paragraphsOf(text).filter(
-    (paragraph) => (paragraph.match(EM_DASH)?.length ?? 0) > 1,
+  const dashed = spans.flatMap((paragraph, index) =>
+    paragraph.text.includes("—") ? [{ paragraph, index }] : [],
+  );
+  const crowded = dashed.filter(
+    ({ paragraph }) => (paragraph.text.match(EM_DASH)?.length ?? 0) > 1,
   );
   if (total <= 3 && crowded.length === 0) return null;
-  const sample = crowded[0] ?? text;
-  const at = sample.indexOf("—");
+  const sample = (crowded[0] ?? dashed[0]).paragraph;
+  const at = sample.text.indexOf("—");
   return finding(
     {
       id: "em-dash",
@@ -420,17 +448,21 @@ function emDashFinding(text) {
       fix: "give the aside its own sentence, use a comma, or cut it",
     },
     total,
-    [sentenceAround(sample, at, at + 1)],
+    [sentenceAround(sample.text, at, at + 1)],
+    dashed.map(({ index }) => index),
   );
 }
 
 /** W18: more than one exclamation mark in a paragraph, or more than three overall. */
-function exclamationFinding(text) {
+function exclamationFinding(text, spans) {
   const total = text.match(/!/g)?.length ?? 0;
-  const crowded = paragraphsOf(text).find((paragraph) => (paragraph.match(/!/g)?.length ?? 0) > 1);
+  const marked = spans.flatMap((paragraph, index) =>
+    paragraph.text.includes("!") ? [{ paragraph, index }] : [],
+  );
+  const crowded = marked.find(({ paragraph }) => (paragraph.text.match(/!/g)?.length ?? 0) > 1);
   if (total <= 3 && !crowded) return null;
-  const sample = crowded ?? text;
-  const at = sample.indexOf("!");
+  const sample = (crowded ?? marked[0]).paragraph;
+  const at = sample.text.indexOf("!");
   return finding(
     {
       id: "exclamation",
@@ -440,15 +472,19 @@ function exclamationFinding(text) {
       fix: "keep at most the one that matters",
     },
     total,
-    [sentenceAround(sample, at, at + 1)],
+    [sentenceAround(sample.text, at, at + 1)],
+    marked.map(({ index }) => index),
   );
 }
 
 /** W23 and W30: emoji carrying the emphasis, in a heading or in a cluster. */
-function emojiFinding(text) {
+function emojiFinding(text, spans) {
   const headings = text.match(HEADING_EMOJI) ?? [];
   const emphasis = text.match(EMPHASIS_EMOJI) ?? [];
   if (headings.length === 0 && emphasis.length < 2) return null;
+  const passages = [...text.matchAll(HEADING_EMOJI), ...text.matchAll(EMPHASIS_EMOJI)].map(
+    (match) => passageAt(spans, match.index),
+  );
   return finding(
     {
       id: "emoji",
@@ -459,12 +495,13 @@ function emojiFinding(text) {
     },
     headings.length + emphasis.length,
     headings.length ? headings.map((heading) => heading.trim()) : [emphasis.slice(0, 4).join(" ")],
+    passages,
   );
 }
 
 /** W34: three or more short declarative sentences in a row inside one paragraph. */
-function machinegunFinding(text) {
-  for (const paragraph of paragraphsOf(text)) {
+function machinegunFinding(spans) {
+  for (const [index, { text: paragraph }] of spans.entries()) {
     if (STRUCTURED_LINE.test(paragraph)) continue;
     const sentences = paragraph
       .replace(/\s+/g, " ")
@@ -499,6 +536,7 @@ function machinegunFinding(text) {
               ? `${joined.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
               : joined,
           ],
+          [index],
         );
       }
       run = [];
@@ -510,13 +548,16 @@ function machinegunFinding(text) {
 const SEVERITY_ORDER = ["high", "medium", "low"];
 
 /**
- * Every pattern the text carries, most severe first.
+ * Every pattern the text carries, most severe first. `passages` lists the
+ * paragraphs a sign appears in, which is what lets a weak sign count only
+ * beside other signs in the same paragraph.
  *
- * @returns {{ id: string, sign: string, severity: "high"|"medium"|"low", label: string, fix: string, count: number, excerpts: string[] }[]}
+ * @returns {{ id: string, sign: string, severity: "high"|"medium"|"low", label: string, fix: string, count: number, excerpts: string[], passages: number[] }[]}
  */
 export function findSlop(text) {
   const prose = maskNonProse(text);
   if (!prose.trim()) return [];
+  const spans = paragraphsOf(prose);
   const findings = [];
   for (const check of CHECKS) {
     const matches = [...prose.matchAll(check.pattern)];
@@ -528,14 +569,15 @@ export function findSlop(text) {
         matches
           .slice(0, MAX_EXCERPTS * 2)
           .map((match) => sentenceAround(prose, match.index, match.index + match[0].length)),
+        matches.map((match) => passageAt(spans, match.index)),
       ),
     );
   }
   for (const extra of [
-    emDashFinding(prose),
-    exclamationFinding(prose),
-    emojiFinding(prose),
-    machinegunFinding(prose),
+    emDashFinding(prose, spans),
+    exclamationFinding(prose, spans),
+    emojiFinding(prose, spans),
+    machinegunFinding(spans),
   ]) {
     if (extra) findings.push(extra);
   }
@@ -555,13 +597,20 @@ export function addedFindings(after, before) {
 }
 
 /**
- * Whether findings are worth a line. Low signs only matter in aggregate, so
- * one curly quote is not a report; one high sign is.
+ * Whether findings are worth a line. A strong (high) sign is a report by
+ * itself. Weak signs only matter beside each other, so their weight is summed
+ * per paragraph: a medium and a low in one paragraph report, the same two
+ * apart do not. A finding with no `passages` shares one passage with the rest.
  */
 export function worthReporting(findings) {
-  let weight = 0;
-  for (const item of findings ?? []) weight += SEVERITY_WEIGHT[item.severity] ?? 0;
-  return weight >= REPORT_WEIGHT;
+  const weights = new Map();
+  for (const item of findings ?? []) {
+    const weight = SEVERITY_WEIGHT[item.severity] ?? 0;
+    for (const passage of item.passages ?? [0]) {
+      weights.set(passage, (weights.get(passage) ?? 0) + weight);
+    }
+  }
+  return [...weights.values()].some((weight) => weight >= REPORT_WEIGHT);
 }
 
 /** One bullet per finding: what it is, where, and what the sentence should become. */
