@@ -8,6 +8,7 @@
 // `npm ci` names no package, only restores the lockfile, and is not a hit.
 
 import { findHead, splitSegments, tokenize } from "../../shared/shell-parse.mjs";
+import { cargoRequirements, pyprojectRequirements } from "./deps-toml.mjs";
 
 // Flags that take their value as the next word, per manager. A flag written as
 // --flag=value needs no entry. Wrong entries only cost a stray prompt or a
@@ -93,7 +94,7 @@ export function bashDependencyInstalls(command) {
 }
 
 // ---------------------------------------------------------------------------
-// File edits: package.json dependency sections and go.mod require lines.
+// File edits: package.json, go.mod, Cargo.toml and pyproject.toml dependencies.
 //
 // The edit tool carries only snippets, so the change is found by applying the
 // call to the file's current text in memory and comparing what each version
@@ -163,21 +164,30 @@ function textAfter(before, input) {
   return text;
 }
 
+// Files the sentinel reads, and how each one lists what it requires.
+const READERS = {
+  "package.json": packageRequirements,
+  "go.mod": goRequirements,
+  "Cargo.toml": cargoRequirements,
+  "pyproject.toml": pyprojectRequirements,
+};
+const DEPENDENCY_FILE = /(^|[\\/])(package\.json|go\.mod|Cargo\.toml|pyproject\.toml)$/;
+
 /**
- * Dependencies a write or edit call would add or re-version in a package.json
- * or go.mod: [{ file, section, name, from, to }]. `before` is the file's
+ * Dependencies a write or edit call would add or re-version in a package.json,
+ * go.mod, Cargo.toml or pyproject.toml: [{ file, section, name, from, to }]. `before` is the file's
  * current text (undefined when it does not exist yet).
  */
 export function fileDependencyChanges({ path, input, before } = {}) {
   const file = String(path ?? "");
   const parts = file.split(/[\\/]/);
   const kind = parts.at(-1);
-  if ((kind !== "package.json" && kind !== "go.mod") || parts.includes("node_modules")) return [];
+  if (!Object.hasOwn(READERS, kind) || parts.includes("node_modules")) return [];
   const after = textAfter(before, input);
   if (after === null) return [];
-  const read = kind === "go.mod" ? goRequirements : packageRequirements;
+  const read = READERS[kind];
   const next = read(after);
-  // Invalid JSON after the edit cannot be judged; a broken file before counts as empty.
+  // A file that cannot be read after the edit cannot be judged; a broken file before counts as empty.
   if (!next) return [];
   const previous = (typeof before === "string" ? read(before) : null) ?? new Map();
   const changes = [];
@@ -205,12 +215,12 @@ function listNames(names) {
   return names.length > MAX_NAMES ? `${shown} and ${names.length - MAX_NAMES} more` : shown;
 }
 
-/** The file an edit or write call would change, when it is a package.json or go.mod; else null. */
+/** The file an edit or write call would change, when it is a dependency file; else null. */
 export function dependencyEditPath(toolName, input) {
   const tool = String(toolName ?? "").toLowerCase();
   const path = input?.path;
   if ((tool !== "edit" && tool !== "write") || typeof path !== "string") return null;
-  return /(^|[\\/])(package\.json|go\.mod)$/.test(path) ? path : null;
+  return DEPENDENCY_FILE.test(path) ? path : null;
 }
 
 /**
