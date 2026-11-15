@@ -24,6 +24,39 @@ test("the tiers are ordered from cheapest to most expensive", () => {
   ]);
 });
 
+test("guidance the size of a real AGENTS.md is judged whole, not silently cut", async () => {
+  const calls = [];
+  const warnings = [];
+  const original = console.error;
+  console.error = (message) => warnings.push(message);
+  try {
+    await promoteCorrections({
+      corrections: [{ text: "land the work", occurrences: 3 }],
+      guidance: "x".repeat(10000),
+      env: {},
+      ask: async (request) => {
+        calls.push(request);
+        return { answers: { promotion_0: choice("agents") } };
+      },
+    });
+    await promoteCorrections({
+      corrections: [{ text: "land the work", occurrences: 3 }],
+      guidance: "x".repeat(13000),
+      env: {},
+      ask: async (request) => {
+        calls.push(request);
+        return { answers: { promotion_0: choice("agents") } };
+      },
+    });
+  } finally {
+    console.error = original;
+  }
+  assert.equal(calls[0].state.guidance.length, 10000);
+  assert.equal(calls[1].state.guidance.length, 12000);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /truncated to 12000 of 13000 chars/);
+});
+
 test("clusters arrive as JSON or as one correction per line", () => {
   assert.deepEqual(parseClusters('["stop printing example commands"]'), [
     { text: "stop printing example commands", occurrences: 1 },

@@ -24,7 +24,7 @@ import { usableNumber } from "../shared/systemone.mjs";
 
 export const MAX_CORRECTIONS = 12;
 const MAX_CORRECTION_CHARS = 500;
-const MAX_GUIDANCE_CHARS = 8000;
+const MAX_GUIDANCE_CHARS = 12000;
 
 export const PROMOTIONS = {
   test: "A test or assertion would catch it: the correction is a behaviour the checks can exercise.",
@@ -129,9 +129,15 @@ export async function promoteCorrections({
     return { rows: [], judged: false, reason: "no corrections to promote" };
   }
   const questions = buildQuestions(list.length, { guidance });
+  const rawGuidance = guidance ? String(guidance) : null;
+  if (rawGuidance && rawGuidance.length > MAX_GUIDANCE_CHARS) {
+    console.error(
+      `guidance truncated to ${MAX_GUIDANCE_CHARS} of ${rawGuidance.length} chars; the tail was not judged`,
+    );
+  }
   const state = {
     corrections: list.map((item) => ({ text: item.text, occurrences: item.occurrences ?? 1 })),
-    guidance: guidance ? String(guidance).slice(0, MAX_GUIDANCE_CHARS) : null,
+    guidance: rawGuidance ? rawGuidance.slice(0, MAX_GUIDANCE_CHARS) : null,
   };
   try {
     const result = await ask({ state, questions, model, env });
