@@ -49,6 +49,7 @@ test("buildJudgeState names its fields and truncates a runaway action", () => {
   });
   assert.equal(state.tool, "bash");
   assert.equal(state.action.length, 1500);
+  assert.equal(state.action_truncated, true);
   assert.equal(state.user_request, "clean up the build output");
   assert.equal(state.target_class, "workspace");
   assert.equal(state.why_it_was_flagged, "delete (rm) on workspace");
@@ -233,6 +234,28 @@ test("judgeToolCall routes real answers through the thresholds", async () => {
   assert.equal(result.verdict, "confirm");
   assert.equal(result.judged, true);
   assert.equal(result.model, "jev-test");
+});
+
+test("a short action is not marked truncated", () => {
+  assert.equal(buildJudgeState({ action: "ls" }).action_truncated, false);
+  assert.equal(buildJudgeState({ action: "x".repeat(1500) }).action_truncated, false);
+  assert.equal(buildJudgeState({ action: "x".repeat(1501) }).action_truncated, true);
+});
+
+test("an allow on an action the judge could not read in full becomes a confirm", async () => {
+  const allow = async () => ({
+    answers: {
+      destructive: noul(0.05),
+      intent_mismatch: noul(0.05),
+      blast_radius: score(0),
+      credentials: noul(0.01),
+    },
+  });
+  const long = await judgeToolCall({ action: "x".repeat(2000), ask: allow });
+  assert.equal(long.verdict, "confirm");
+  assert.equal(long.judged, true);
+  assert.match(long.reason, /action too long to judge in full/);
+  assert.equal((await judgeToolCall({ action: "ls", ask: allow })).verdict, "allow");
 });
 
 test("judgeToolCall falls back rather than throwing when the judge is missing", async () => {
