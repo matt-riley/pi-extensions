@@ -96,6 +96,22 @@ test("formatRepoMap includes sections and caps lines", () => {
   assert.ok(text.includes("42"));
   assert.ok(text.includes("## Tree"));
   assert.ok(text.includes("## Key files"));
+  const partial = formatRepoMap({
+    root: "/r",
+    branch: "",
+    viaGit: true,
+    files: [{ rel: "a.ts", size: 1 }],
+    truncated: true,
+    languages: [],
+    tree: [],
+    keyFiles: [],
+    testFiles: [],
+    pkg: null,
+    newest: [],
+    largest: [],
+    symbolCount: 0,
+  });
+  assert.match(partial, /files: 1 \(inventory capped/);
   // cap: feed a huge tree
   const capped = formatRepoMap({
     root: "/r",

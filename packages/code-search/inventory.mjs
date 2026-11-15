@@ -10,7 +10,7 @@
 // stays plain .mjs and testable with node --test.
 
 import { readFileSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { collectRules, matchPath, parseGitignore } from "./gitignore.mjs";
 
 const MAX_FILES = 50_000;
@@ -129,11 +129,22 @@ export async function walkRoot(rootDir) {
       if (entry.name === ".git" || entry.name === ".gitignore") continue;
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (isExcludedPath(rel)) continue;
-      const isDir = entry.isDirectory();
-      if (isDir && entry.isSymbolicLink()) continue; // skip dir symlinks (cycles)
+      const full = `${dir}/${entry.name}`;
+      let isDir = entry.isDirectory();
+      if (!isDir && entry.isSymbolicLink()) {
+        // A Dirent describes the link itself, so a symlink to a directory looks
+        // like a file here. Skip it rather than walk it (cycles), but keep file
+        // symlinks — including broken ones, so a reader can report the skip
+        // instead of silently omitting the path.
+        try {
+          if ((await stat(full)).isDirectory()) continue;
+        } catch {
+          // Unreadable target: leave it in the inventory to be reported.
+        }
+      }
       if (matchPath(rel, isDir, rules)) continue;
       if (isDir) {
-        await walk(`${dir}/${entry.name}`, rel);
+        await walk(full, rel);
       } else if (entry.isFile() || entry.isSymbolicLink()) {
         files.push(rel);
       }

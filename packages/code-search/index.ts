@@ -81,6 +81,8 @@ interface SessionState {
   } | null;
   cachePath: string;
   built: boolean;
+  /** The inventory hit its file cap, so the map is partial. */
+  truncated: boolean;
   symbolCount: number;
 }
 
@@ -114,22 +116,23 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
 
   async function getSession(
     root: string,
+    viaGit: boolean,
     ctx: UiLite,
     onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
   ): Promise<SessionState> {
     const existing = inflight.get(root);
     if (existing) return existing;
-    const p = buildSession(root, ctx, onUpdate).finally(() => inflight.delete(root));
+    const p = buildSession(root, viaGit, ctx, onUpdate).finally(() => inflight.delete(root));
     inflight.set(root, p);
     return p;
   }
 
   async function buildSession(
     root: string,
+    viaGit: boolean,
     ctx: UiLite,
     onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
   ): Promise<SessionState> {
-    const { viaGit } = await findRepoRoot(root, exec);
     const cachePath = cachePathFor(root);
     const previous = await loadCache(cachePath);
     const {
@@ -174,6 +177,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       cache: next,
       cachePath,
       built: changed.length > 0,
+      truncated,
       symbolCount: stats.symbolCount,
     };
   }
@@ -183,8 +187,10 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
   ): Promise<SessionState> {
     const cwd = ctx.cwd ?? process.cwd();
-    const { root } = await findRepoRoot(cwd, exec);
-    const session = await getSession(root, ctx, onUpdate);
+    // The root and whether it came from git are needed here anyway; passing
+    // both down saves buildSession a second `git rev-parse`.
+    const { root, viaGit } = await findRepoRoot(cwd, exec);
+    const session = await getSession(root, viaGit, ctx, onUpdate);
     if (session.built) {
       session.built = false; // only the first caller reports the build
       notify(
@@ -293,7 +299,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         branch,
         viaGit: session.viaGit,
         files: entries,
-        truncated: false,
+        truncated: session.truncated,
         languages,
         tree,
         keyFiles,

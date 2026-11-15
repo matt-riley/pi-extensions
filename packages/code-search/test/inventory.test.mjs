@@ -118,6 +118,7 @@ test("walkRoot skips directory symlinks but keeps file symlinks", async () => {
     await symlink(join(dir, "real"), join(dir, "dir-link")); // dir symlink
     await symlink(join(dir, "real", "a.ts"), join(dir, "link.ts")); // file symlink
     const files = await walkRoot(dir);
+    assert.ok(!files.includes("dir-link"), "dir symlink is not indexed as a file");
     assert.ok(!files.includes("dir-link/a.ts"), "dir symlink not followed");
     assert.ok(files.includes("link.ts"), "file symlink kept");
   } finally {

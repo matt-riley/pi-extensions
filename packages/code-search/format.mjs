@@ -190,7 +190,7 @@ export function formatRepoMap({
   const out = [];
   out.push(`# Repo map — ${root}`);
   out.push(
-    `files: ${files.length}${truncated ? ` (capped at ${files.length})` : ""}  ·  size: ${fmtBytes(files.reduce((s, f) => s + (f.size ?? 0), 0))}  ·  symbols indexed: ${symbolCount}`,
+    `files: ${files.length}${truncated ? " (inventory capped — not every file is listed)" : ""}  ·  size: ${fmtBytes(files.reduce((s, f) => s + (f.size ?? 0), 0))}  ·  symbols indexed: ${symbolCount}`,
   );
   if (branch) out.push(`branch: ${branch}`);
   if (!viaGit) out.push(`(not a git repo — pure-node walker inventory)`);
