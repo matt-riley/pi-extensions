@@ -32,4 +32,4 @@ The decision or plan as you understand it.
 ## Verdict
 Act / pause / rethink, in 2-3 sentences, with the single strongest reason.
 
-Keep it under one page: a second opinion is a scalpel, not a report. Do not spawn other agents. Bash is read-only inspection only.
+Keep it under one page. Do not spawn other agents. Bash is read-only inspection only.
