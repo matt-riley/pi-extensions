@@ -28,6 +28,7 @@ function harness({
   readFirst = null,
   env = { OPENAI_API_KEY: "test-key" },
   askImpl = null,
+  confirm = null,
 } = {}) {
   const commands = {};
   const entries = [];
@@ -36,6 +37,7 @@ function harness({
   const statuses = [];
   const asks = [];
   const fetchCalls = [];
+  const confirms = [];
 
   const editor = { text: draft };
   const pi = {
@@ -51,7 +53,14 @@ function harness({
     sessionManager: {
       getBranch: () => [{ message: { role: "user", content: lastPrompt } }],
     },
+    hasUI: Boolean(confirm),
     ui: {
+      ...(confirm && {
+        confirm: async (title, message) => {
+          confirms.push({ title, message, editorAtPrompt: editor.text });
+          return confirm(title, message);
+        },
+      }),
       ...(inputBox && {
         getEditorText: () => editor.text,
         setEditorText: (text) => {
@@ -97,6 +106,7 @@ function harness({
     statuses,
     asks,
     fetchCalls,
+    confirms,
   };
 }
 
@@ -229,4 +239,101 @@ test("a model that returns the prompt as written is reported, not passed off sil
   assert.equal(h.entries[0].data.action, "unchanged");
   assert.equal(h.notifications[0].level, "warning");
   assert.match(h.notifications[0].title, /returned your prompt as written/);
+});
+
+const REJECTED = "Fix the failing workflow on main and run npm run check.";
+
+test("a rejected rewrite is shown with the score and nothing is placed until Matt confirms", async () => {
+  const h = harness({
+    candidate: REJECTED,
+    intent: 0.4,
+    draft: "",
+    confirm: () => true,
+  });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.confirms.length, 1);
+  assert.equal(h.confirms[0].editorAtPrompt, "");
+  assert.match(h.confirms[0].message, /scored it 0\.40/);
+  assert.match(h.confirms[0].message, /0\.70/);
+  assert.ok(h.confirms[0].message.includes(REJECTED));
+  assert.ok(h.confirms[0].message.includes("fix the failing workflow on main"));
+  assert.equal(h.editor.text, REJECTED);
+  assert.equal(h.entries[0].data.action, "rewritten-confirmed");
+  assert.equal(h.entries[0].data.placed, REJECTED);
+  assert.equal(h.entries[0].data.intentProbability, 0.4);
+  assert.deepEqual(h.sent, []);
+});
+
+test("denying a rejected rewrite keeps the original", async () => {
+  const h = harness({ candidate: REJECTED, intent: 0.4, confirm: () => false });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.confirms.length, 1);
+  assert.equal(h.editor.text, "fix the failing workflow on main");
+  assert.equal(h.entries[0].data.action, "kept-original");
+  assert.equal(h.entries[0].data.placed, "fix the failing workflow on main");
+  assert.match(h.notifications[0].title, /scored it 0\.40/);
+  assert.equal(h.notifications[0].level, "warning");
+});
+
+test("a dialog that throws counts as deny", async () => {
+  const h = harness({
+    candidate: REJECTED,
+    intent: 0.4,
+    confirm: () => {
+      throw new Error("dialog closed");
+    },
+  });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.editor.text, "fix the failing workflow on main");
+  assert.equal(h.entries[0].data.action, "kept-original");
+});
+
+test("a failed intent check shows the error in the confirm prompt", async () => {
+  const h = harness({
+    candidate: REJECTED,
+    confirm: () => true,
+    askImpl: () => {
+      throw new Error("TYPESAFE_API_KEY is not set.");
+    },
+  });
+  await h.command("fix the failing workflow on main");
+  assert.match(h.confirms[0].message, /could not run/);
+  assert.match(h.confirms[0].message, /TYPESAFE_API_KEY is not set/);
+  assert.equal(h.editor.text, REJECTED);
+  assert.equal(h.entries[0].data.action, "rewritten-confirmed");
+  assert.equal(h.entries[0].data.intentError, "TYPESAFE_API_KEY is not set.");
+});
+
+test("an unusable intent answer is also put to Matt", async () => {
+  const h = harness({
+    candidate: REJECTED,
+    confirm: () => false,
+    askImpl: () => ({ answers: {} }),
+  });
+  await h.command("fix the failing workflow on main");
+  assert.match(h.confirms[0].message, /no usable answer/);
+  assert.equal(h.editor.text, "fix the failing workflow on main");
+});
+
+test("with no UI a rejected rewrite still fails closed to the original", async () => {
+  const h = harness({ candidate: REJECTED, intent: 0.4 });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.confirms.length, 0);
+  assert.equal(h.editor.text, "fix the failing workflow on main");
+  assert.equal(h.entries[0].data.action, "original-fallback");
+});
+
+test("a passing rewrite is placed without any prompt", async () => {
+  const h = harness({ candidate: REJECTED, intent: 0.95, confirm: () => false });
+  await h.command("fix the failing workflow on main");
+  assert.equal(h.confirms.length, 0);
+  assert.equal(h.editor.text, REJECTED);
+  assert.equal(h.entries[0].data.action, "rewritten");
+});
+
+test("a model failure is not put to Matt: there is no rewrite to confirm", async () => {
+  const h = harness({ fetchFailure: true, confirm: () => true });
+  await h.command("fix the workflow");
+  assert.equal(h.confirms.length, 0);
+  assert.equal(h.editor.text, "fix the workflow");
 });

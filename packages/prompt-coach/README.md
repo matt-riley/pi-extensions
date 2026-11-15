@@ -89,16 +89,25 @@ The command:
    names, latest commit, and relevant CI status;
 2. asks the hosted model to rewrite the request;
 3. asks TypeSafe whether the rewrite preserves the original intent; and
-4. puts the rewrite in Pi's input box if the intent check accepts it.
+4. puts the rewrite in Pi's input box if the intent check accepts it. If the check
+   rejects it (low score, error, or no usable answer), Pi shows you the rewrite
+   next to your original with the reason, and asks you to confirm or deny.
 
 Nothing is sent for you. Edit the text and press Enter yourself. Ordinary input
 is never intercepted. If the input box already holds a draft, the rewrite goes
-above it. If the model is unavailable, there is no login or key, the rewrite is malformed,
-TypeSafe cannot verify it, or intent confidence is below the threshold, the
-original prompt goes into the input box instead, with a warning saying why:
-the model error, "intent check could not run" with its error (for example no
-TypeSafe key, or the check timing out), "scored it 0.xx, below the threshold",
-or "returned your prompt as written" when the model changed nothing.
+above it. If the model is unavailable, there is no login or key, or the rewrite is
+malformed, the original prompt goes into the input box instead, with a warning
+saying why. The same happens when TypeSafe cannot verify the rewrite or its
+confidence is below the threshold, except that in an interactive session Pi first
+shows you the rewrite next to your original with the reason and asks you to
+choose: confirm puts the rewrite in the box, deny (or closing the dialog) keeps
+your original, and nothing goes in until you pick. With no UI (print mode) it
+keeps the original without asking. The reasons shown are the model error,
+"intent check could not run" with its error (for example no TypeSafe key, or the
+check timing out), "scored it 0.xx, below the threshold", "no usable answer", or
+"returned your prompt as written" when the model changed nothing. Your choice is
+recorded in the `prompt-coach-decision` entry as `rewritten-confirmed` or
+`kept-original`.
 
 The intent check is a model judgment, not a guarantee that the rewrite is equivalent.
 
