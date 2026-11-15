@@ -1,7 +1,15 @@
 ---
 description: Report where model spend and context went, and what to change
 ---
-Run `node ~/.pi/agent/extensions/pi-extensions/scripts/context-report.mjs` and read it as the source of truth; quote its numbers rather than estimating.
+
+Before running bundled scripts, locate this collection with `pi list` (managed installs) or
+Pi's active prompt/extension configuration and discovery directories (clones). Respect
+`PI_CODING_AGENT_DIR` and project overrides. Verify the root contains
+`prompts/cost.md` and the scripts below. Substitute its absolute path for
+`<collection-root>`; keep paths quoted and the working directory unchanged. If the location is
+missing or ambiguous, report it and stop rather than guessing or using another checkout.
+
+Run `node "<collection-root>/scripts/context-report.mjs"` and read it as the source of truth; quote its numbers rather than estimating.
 
 Report, briefly:
 

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, writeFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, access, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -16,6 +16,7 @@ const [major = 0, minor = 0] = (piVersion.match(/(\d+)\.(\d+)\.\d+/) ?? []).slic
 assert.ok(major > 1 || (major === 1 && minor >= 4), `pi ${piVersion} is older than 1.4.0`);
 const fixture = await mkdtemp(path.join(tmpdir(), "pi-smoke-"));
 const agentDir = path.join(fixture, "agent");
+const installRoot = path.join(fixture, "relocated collection");
 const cwd = path.join(fixture, "workspace");
 const events = [];
 const pending = new Map();
@@ -167,6 +168,12 @@ async function prompt(message, waitForAgent = !message.startsWith("/")) {
 try {
   await mkdir(agentDir);
   await mkdir(cwd);
+  await mkdir(installRoot);
+  await Promise.all(
+    ["package.json", "packages", "shared", "scripts", "prompts", ".agents"].map((entry) =>
+      cp(path.join(root, entry), path.join(installRoot, entry), { recursive: true }),
+    ),
+  );
   await mkdir(path.join(cwd, "lookup"));
   await writeFile(
     path.join(cwd, "lookup/accounts.mjs"),
@@ -245,9 +252,21 @@ export default function (pi) {
   );
   await writeFile(
     path.join(agentDir, "settings.json"),
-    JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }),
+    JSON.stringify({
+      retry: { enabled: false },
+      compaction: { enabled: false },
+      packages: [{ source: installRoot, extensions: [], skills: [], prompts: [] }],
+    }),
   );
-  const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  const packageListing = execFileSync(piBin, ["list"], {
+    cwd,
+    env: { PATH: process.env.PATH, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1" },
+    encoding: "utf8",
+    timeout: 10000,
+  });
+  assert.ok(packageListing.includes(installRoot), "pi list must expose the relocated collection");
+  console.log("ok: pi list locates the collection outside the clone directory, with spaces");
+  const manifest = JSON.parse(await readFile(path.join(installRoot, "package.json"), "utf8"));
   const args = [
     "--mode",
     "rpc",
@@ -270,11 +289,14 @@ export default function (pi) {
     "fixture",
     "--thinking",
     "off",
-    ...manifest.pi.extensions.flatMap((entry) => ["-e", path.resolve(root, entry)]),
+    ...manifest.pi.extensions.flatMap((entry) => ["-e", path.resolve(installRoot, entry)]),
     "-e",
     remoteFixture,
-    ...manifest.pi.skills.flatMap((entry) => ["--skill", path.resolve(root, entry)]),
-    ...manifest.pi.prompts.flatMap((entry) => ["--prompt-template", path.resolve(root, entry)]),
+    ...manifest.pi.skills.flatMap((entry) => ["--skill", path.resolve(installRoot, entry)]),
+    ...manifest.pi.prompts.flatMap((entry) => [
+      "--prompt-template",
+      path.resolve(installRoot, entry),
+    ]),
   ];
   // Allowlist environment: no inherited API credentials, extension flags, or config.
   child = spawn(piBin, args, {
@@ -344,6 +366,11 @@ export default function (pi) {
     assert.ok(names.has(name), `Missing workflow prompt ${name}`);
   phase = "resources";
   const resourceCases = [
+    ["/cost", 'node "<collection-root>/scripts/context-report.mjs"'],
+    ["/mine --since 7", "Pass through any flags in --since 7"],
+    ["/recall installation", "earlier pi sessions learned about: installation"],
+    ["/retro", 'node "<collection-root>/scripts/memory-check.mjs"'],
+    ["/triage --ci", 'node "<collection-root>/scripts/ci-triage.mjs"'],
     ["/skill:implementation-review", "# Implementation review"],
     ["/skill:test-driven-development", "# Behavior-driven testing"],
     ["/skill:interface-design", "# Interface design"],
@@ -362,9 +389,24 @@ export default function (pi) {
     await prompt(command, true);
     assert.equal(resourceRequests.length, count + 1, `No fixture request for ${command}`);
     const user = resourceRequests.at(-1).findLast((message) => message.role === "user");
-    assert.ok(JSON.stringify(user?.content).includes(expected), `Did not expand ${command}`);
+    const content =
+      typeof user?.content === "string"
+        ? user.content
+        : (user?.content ?? []).map((part) => part.text ?? "").join("\n");
+    assert.ok(content.includes(expected), `Did not expand ${command}: ${content}`);
   }
   console.log("ok: owned skills and workflow prompts discover and expand outside the repo");
+  for (const name of [
+    "context-report",
+    "mine-transcripts",
+    "promote-corrections",
+    "memory-check",
+    "ci-triage",
+  ])
+    await access(path.join(installRoot, "scripts", name + ".mjs"));
+  console.log(
+    "ok: script-backed prompts expand and their scripts exist in the relocated collection",
+  );
   const beforeReports = requests;
   await prompt("/skill-search review");
   const searchMessages = await request("get_messages");

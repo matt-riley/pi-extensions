@@ -42,6 +42,27 @@ test("realistic tasks route to owned workflows offline", async () => {
   assert.deepEqual(rankSkills(skills, "watercolor landscape"), []);
 });
 
+test("script-backed prompts discover their installation rather than assuming a clone path", async () => {
+  const scripts = {
+    cost: ["context-report"],
+    mine: ["mine-transcripts", "promote-corrections"],
+    recall: ["mine-transcripts"],
+    retro: ["memory-check"],
+    triage: ["ci-triage"],
+  };
+  for (const [name, names] of Object.entries(scripts)) {
+    const text = await readFile(root + "prompts/" + name + ".md", "utf8");
+    assert.doesNotMatch(text, /~\/\.pi\/agent\/extensions\/pi-extensions/, name);
+    assert.ok(text.includes("`pi list`"), name);
+    assert.ok(text.includes("PI_CODING_AGENT_DIR"), name);
+    assert.ok(text.includes("ambiguous"), name);
+    for (const script of names) {
+      assert.ok(text.includes('node "<collection-root>/scripts/' + script + '.mjs"'), name);
+      await readFile(root + "scripts/" + script + ".mjs", "utf8");
+    }
+  }
+});
+
 test("every owned workflow is used by a prompt", async () => {
   const prompts = {
     "implementation-review": ["review", "pr"],

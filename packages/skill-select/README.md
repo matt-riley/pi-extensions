@@ -74,8 +74,11 @@ The same ranker ships as a command, so agents without a pi extension (Claude
 Code, Codex, Copilot, plain scripts) can search the library too:
 
 ```sh
-node ~/.pi/agent/extensions/pi-extensions/scripts/skill-search.mjs "<task>" [--limit N] [--json] [--root DIR]
+node "<collection-root>/scripts/skill-search.mjs" "<task>" [--limit N] [--json] [--root DIR]
 ```
+
+Replace `<collection-root>` with the collection’s absolute installation directory
+(`pi list` shows managed package paths); it need not be the current directory.
 
 Exit codes: `0` matches, `1` none, `2` bad usage. Give the harness one line of
 instruction — *skill library at `~/.pi/agent/skill-library`; search it before

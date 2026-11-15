@@ -35,7 +35,8 @@ templates from an unrelated working directory. A local scripted provider drives
 these paths:
 
 - **Resource discovery:** skill and prompt loading/expansion, including
-  `/workflow`; `/skill-search` and `/usage --json` without provider calls.
+  `/workflow` and the five script-backed prompts; `/skill-search` and `/usage --json`
+  without provider calls. `pi list` exposes the relocated collection path.
 - **Plan mode:** its three tools appear on entry and disappear on exit. A real
   `touch smoke-blocked` tool call is denied, and the file remains absent.
 - **Subagents:** explicit opt-in and a completed scout through real child-session
@@ -59,6 +60,12 @@ smoke. Scripted model answers prove wiring, not the accuracy of Jev or the main
 model. A watch hint is inference, not verification.
 
 ## Isolation and cleanup
+
+Smoke copies the collection into a temporary path containing spaces, separate
+from the workspace, and registers it as a filtered local package for `pi list`.
+The extensions, skills and prompts are explicitly loaded from that copy. This
+checks relocation and prompt wiring, not whether a model follows the discovery
+instructions or whether an npm tarball contains the required files.
 
 Smoke creates a temporary workspace and agent configuration, disables discovery,
 MCP and startup networking, and serves scripted responses on loopback only.

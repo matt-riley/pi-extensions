@@ -2,6 +2,14 @@
 description: End-of-session retrospective that writes durable lore memories
 argument-hint: "[summary]"
 ---
+
+Before running bundled scripts, locate this collection with `pi list` (managed installs) or
+Pi's active prompt/extension configuration and discovery directories (clones). Respect
+`PI_CODING_AGENT_DIR` and project overrides. Verify the root contains
+`prompts/retro.md` and the scripts below. Substitute its absolute path for
+`<collection-root>`; keep paths quoted and the working directory unchanged. If the location is
+missing or ambiguous, report it and stop rather than guessing or using another checkout.
+
 Review what this session did and save durable memories so future sessions benefit.
 
 1. Draft the memories worth keeping — decisions, preferences, mistakes, rejected approaches, blockers, open loops. One claim each, short and self-contained.
@@ -9,7 +17,7 @@ Review what this session did and save durable memories so future sessions benefi
 2. Check each one against the store before saving it:
 
    ```bash
-   node ~/.pi/agent/extensions/pi-extensions/scripts/memory-check.mjs --memory "<the memory>"
+   node "<collection-root>/scripts/memory-check.mjs" --memory "<the memory>"
    ```
 
    It searches lore for the closest existing memories and judges the relation — `duplicate`, `contradiction`, `refinement` or `new` — and names the id to act on. Do what it says:

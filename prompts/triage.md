@@ -3,6 +3,13 @@ description: Triage open GitHub issues against main — reproduce, classify, the
 argument-hint: "[issue numbers… | --ci [SHA]]"
 ---
 
+Before running bundled scripts, locate this collection with `pi list` (managed installs) or
+Pi's active prompt/extension configuration and discovery directories (clones). Respect
+`PI_CODING_AGENT_DIR` and project overrides. Verify the root contains
+`prompts/triage.md` and the scripts below. Substitute its absolute path for
+`<collection-root>`; keep paths quoted and the working directory unchanged. If the location is
+missing or ambiguous, report it and stop rather than guessing or using another checkout.
+
 Triage the open issues in this repo, or use the CI mode below. Change nothing on GitHub.
 
 ## On-demand CI mode: `--ci [SHA]`
@@ -14,7 +21,7 @@ Triage the open issues in this repo, or use the CI mode below. Change nothing on
 
    ```bash
    gh run view <id> --job <job-id> --log-failed > /tmp/job.log
-   node ~/.pi/agent/extensions/pi-extensions/scripts/ci-triage.mjs --log /tmp/job.log --step "<failing step>" --reruns <prior attempts>
+   node "<collection-root>/scripts/ci-triage.mjs" --log /tmp/job.log --step "<failing step>" --reruns <prior attempts>
    ```
 
    It returns one of `flaky`, `regression`, `infra`, `configuration`, `dependency`, with the confidence and what that class means. Name the class in the report; if the classifier is unavailable (no key, network), say so and classify by hand rather than silently skipping it. Treat its confidence as information, not permission: a `flaky` at 0.55 still needs a re-run before you call it one.
