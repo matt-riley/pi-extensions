@@ -233,3 +233,53 @@ test("shallow blocks, a flat else and nesting in a new function are not flagged"
   ])
     assert.equal(idsOf(added(file, text)).includes("nesting"), false, text);
 });
+
+test("a new function, class or interface with one user is found", () => {
+  const cases = [
+    ["src/a.ts", "function wrapUser(user) {\n  return { user };\n}\nconst row = wrapUser(user);"],
+    ["src/a.ts", "const toRow = (item) => ({ item });\nexport const rows = items.map(toRow);"],
+    ["src/a.ts", "export async function loadAll() {\n  return [];\n}\nawait loadAll();"],
+    ["tool.py", "def wrap_user(user):\n    return user\n\nrow = wrap_user(user)"],
+    ["run.go", "func wrapUser(user User) Row {\n\treturn Row{user}\n}\nrow := wrapUser(user)"],
+    ["src/a.ts", "class UserCache {\n}\nconst cache = new UserCache();"],
+    [
+      "src/a.ts",
+      "interface Store {\n  get(): void;\n}\nclass MemoryStore implements Store {\n}\nrun(new MemoryStore(), 1);\nrun(new MemoryStore(), 2);",
+    ],
+  ];
+  for (const [file, text] of cases) {
+    const found = findCodeSlop(added(file, text)).find((item) => item.id === "single-use");
+    assert.ok(found, text);
+  }
+});
+
+test("shared, public, modified or tested abstractions are not single-use", () => {
+  const cases = [
+    "function wrapUser(user) {\n  return { user };\n}\nconst a = wrapUser(1);\nconst b = wrapUser(2);",
+    "export function publicApi() {\n  return 1;\n}",
+    "function main() {\n  run();\n}\nmain();",
+    "const x = (item) => item;\nconst y = x(1) + x(2);",
+    "interface Store {\n  get(): void;\n}\nclass A implements Store {\n}\nclass B implements Store {\n}",
+    "function ok() {\n  return 1;\n}\nconst fn = 'ok';",
+  ];
+  for (const text of cases)
+    assert.equal(idsOf(added("src/a.ts", text)).includes("single-use"), false, text);
+  const modified = diffOf("src/a.ts", [
+    "-function wrapUser(user) {",
+    "+function wrapUser(user, extra) {",
+    "+  return { user, extra };",
+    "+}",
+    "+const row = wrapUser(user);",
+  ]);
+  assert.equal(idsOf(modified).includes("single-use"), false, "a changed function is not new");
+});
+
+test("a new function that its own test also calls is still counted by every user", () => {
+  const source = added(
+    "src/a.ts",
+    "function wrapUser(user) {\n  return { user };\n}\nconst row = wrapUser(user);",
+  );
+  const testFile = added("src/a.test.ts", "assert.ok(wrapUser(1));");
+  assert.equal(idsOf(source).includes("single-use"), true);
+  assert.equal(idsOf(`${source}\n${testFile}`).includes("single-use"), false);
+});

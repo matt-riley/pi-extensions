@@ -29,7 +29,8 @@ function languageOf(path) {
 /**
  * The files of a unified diff: each with its hunks of added and context lines
  * (numbered in the new file) and the text of the lines it removed. Deleted
- * files, tests, generated output and anything that is not code are dropped.
+ * files and anything that is not code are dropped. Tests and generated output
+ * stay in, marked `skipped`: they are not examined, but they do use the code.
  */
 export function parseDiff(diff) {
   const files = [];
@@ -47,8 +48,14 @@ export function parseDiff(diff) {
     if (!hunk && raw.startsWith("+++ ")) {
       const path = raw.slice(4).trim().replace(/^b\//, "");
       file =
-        path !== "/dev/null" && CODE_FILE.test(path) && !SKIPPED_PATH.test(path)
-          ? { path, language: languageOf(path), hunks: [], removed: [] }
+        path !== "/dev/null" && CODE_FILE.test(path)
+          ? {
+              path,
+              language: languageOf(path),
+              skipped: SKIPPED_PATH.test(path),
+              hunks: [],
+              removed: [],
+            }
           : null;
       if (file) files.push(file);
       continue;
@@ -278,6 +285,81 @@ function deepNesting(files) {
   return hits;
 }
 
+const DECLARATIONS = {
+  js: [
+    ["function", /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_]\w*)/],
+    ["function", /^\s*(?:export\s+)?const\s+([A-Za-z_]\w*)\s*=\s*(?:async\s+)?(?:\(|\w+\s*=>)/],
+    ["class", /^\s*(?:export\s+)?class\s+([A-Za-z_]\w*)/],
+    ["interface", /^\s*(?:export\s+)?(?:interface|abstract\s+class)\s+([A-Za-z_]\w*)/],
+  ],
+  py: [["function", /^\s*(?:async\s+)?def\s+([A-Za-z]\w*)\(/]],
+  go: [["function", /^func\s+(\w+)\(/]],
+  rs: [["function", /^\s*(?:pub\s+)?fn\s+(\w+)/]],
+};
+const ENTRY_NAMES = new Set(["main", "handler", "index", "setup"]);
+const MIN_NAME_LENGTH = 4;
+const IDENTIFIER = /[A-Za-z_]\w*/g;
+
+function declared(language, text) {
+  for (const [kind, pattern] of DECLARATIONS[language]) {
+    const name = pattern.exec(text)?.[1];
+    if (
+      name &&
+      (kind !== "function" || text.includes("=>") || !/^\s*(?:export\s+)?const\b/.test(text))
+    )
+      return { kind, name };
+  }
+  return null;
+}
+
+/** How often each identifier appears across a set of lines. */
+function identifierCounts(lines) {
+  const counts = new Map();
+  for (const text of lines)
+    for (const word of text.match(IDENTIFIER) ?? []) counts.set(word, (counts.get(word) ?? 0) + 1);
+  return counts;
+}
+
+const implementersOf = (lines, name) =>
+  lines.filter(
+    (text) =>
+      /\b(?:implements|extends)\b/.test(text) && (text.match(IDENTIFIER) ?? []).includes(name),
+  ).length;
+
+/**
+ * A function or class added in this diff that the diff uses once, or an
+ * interface it implements once. Callers of something new can only be in
+ * the diff, tests included, so the count is complete; a name that a removed line
+ * also declares is an edit to old code and is skipped.
+ */
+function singleUse(files, everything) {
+  const lines = everything.flatMap((file) =>
+    file.hunks.flatMap(({ lines: hunk }) => hunk.map((line) => line.text)),
+  );
+  const counts = identifierCounts(lines);
+  const oldNames = new Set(
+    everything.flatMap((file) =>
+      file.removed.map((text) => declared(file.language, text)?.name).filter(Boolean),
+    ),
+  );
+  const hits = [];
+  for (const file of files)
+    for (const { lines: hunk } of file.hunks)
+      for (const line of hunk) {
+        const found = line.kind === "add" ? declared(file.language, line.text) : null;
+        if (!found || ENTRY_NAMES.has(found.name) || oldNames.has(found.name)) continue;
+        if (found.name.length < MIN_NAME_LENGTH) continue;
+        const own = (line.text.match(IDENTIFIER) ?? []).filter(
+          (word) => word === found.name,
+        ).length;
+        const uses = (counts.get(found.name) ?? 0) - own;
+        const single =
+          found.kind === "interface" ? implementersOf(lines, found.name) === 1 : uses === 1;
+        if (single) hits.push({ path: file.path, n: line.n, text: line.text });
+      }
+  return hits;
+}
+
 const CHECKS = [
   {
     id: "swallowed",
@@ -309,6 +391,12 @@ const CHECKS = [
     fix: "return or continue early and keep the main path at one level",
     scan: deepNesting,
   },
+  {
+    id: "single-use",
+    label: "new abstraction with one caller or one implementation",
+    fix: "inline it, unless it is public or names a concept worth keeping",
+    scan: singleUse,
+  },
 ];
 
 /**
@@ -317,10 +405,11 @@ const CHECKS = [
  * formatFindings prints both.
  */
 export function findCodeSlop(diff) {
-  const files = parseDiff(diff);
+  const everything = parseDiff(diff);
+  const files = everything.filter((file) => !file.skipped);
   const findings = [];
   for (const check of CHECKS) {
-    const hits = check.scan(files);
+    const hits = check.scan(files, everything);
     if (hits.length === 0) continue;
     findings.push({
       id: check.id,
