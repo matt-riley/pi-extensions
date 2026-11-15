@@ -12,7 +12,7 @@ missing or ambiguous, report it and stop rather than guessing or using another c
 
 Mine past pi sessions for corrections I had to make more than once, then propose turning each into a durable fix.
 
-1. Extract the raw material — do not read session JSONL directly:
+1. Extract the raw material (do not read session JSONL directly):
 
    `node "<collection-root>/scripts/mine-transcripts.mjs"`
 
@@ -27,7 +27,7 @@ Mine past pi sessions for corrections I had to make more than once, then propose
      --corrections /tmp/clusters.json --guidance AGENTS.md
    ```
 
-   `--corrections` takes a JSON array of `{correction, occurrences}` (or one correction per line). It returns one of `test`, `lint`, `guardrail`, `agents`, `prompt`, `none` per cluster — cheapest first — plus, when guidance is supplied, how strongly the existing guidance already covers it. Use the answer as the starting proposal, not the verdict: you have the context, and "already covered 0.8" plus a recurrence means the guidance is not landing, not that nothing is needed.
+   `--corrections` takes a JSON array of `{correction, occurrences}` (or one correction per line). It returns one of `test`, `lint`, `guardrail`, `agents`, `prompt`, `none` per cluster, cheapest first, plus, when guidance is supplied, how strongly the existing guidance already covers it. Use the answer as the starting proposal, not the verdict: you have the context, and "already covered 0.8" plus a recurrence means the guidance is not landing, not that nothing is needed.
 5. Propose, do not apply. One block per cluster: the correction with one verbatim quote, distinct occurrence count and source pointers, the guidance diagnosis, the cheapest proposed fix, and exactly where it goes. Prefer repairing or deleting conflicting guidance and mechanical enforcement over adding another copy. Order by how often it bit.
 
    After the blocks, print a rule table for every AGENTS.md rule the clusters touched: `rule | enforcer | status`. The enforcer is a path to the test, lint, check script or guardrail policy that fails when the rule is broken, or `none`. Mark `none` rules that recurred as repeats to promote this round, and list rules whose mistake can no longer happen (the enforcer makes it impossible) as candidates to delete.
