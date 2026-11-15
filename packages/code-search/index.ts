@@ -323,9 +323,11 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       "Search repository file contents. Plain substring by default (case-insensitive); set regex=true for " +
       "regular expressions, wholeWord=true for word boundaries, caseSensitive=true for exact case, path=dir to " +
       "scope to a subtree. Results are ranked definition-first and framed with the enclosing function/class " +
-      "when the cache has symbols. Prefer this over grep when you need ranked, contextual results.",
+      "when the cache has symbols. A page shows at most 5 matches per file; when more remain the result ends " +
+      "with a cursor, and passing it back (same query and options) returns the next hits. " +
+      "Prefer this over grep when you need ranked, contextual results.",
     promptSnippet:
-      "code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?): content search with definition-first ranking and enclosing function/class framing; prefer over grep when you need context or ranked results",
+      "code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?, cursor?): content search with definition-first ranking and enclosing function/class framing; pass the returned cursor to page on; prefer over grep when you need context or ranked results",
     promptGuidelines: [
       "Use code_search for content queries when ranking or context matters: definitions rank first and each hit is framed with its enclosing function/class. Narrow with path=<dir> when results are broad.",
     ],
@@ -346,6 +348,12 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       maxResults: Type.Optional(
         Type.Integer({ minimum: 1, maximum: 100, description: "Max hits to return (default 30)." }),
       ),
+      cursor: Type.Optional(
+        Type.String({
+          description:
+            "Continuation cursor from a previous result with the same query and options. Returns the next hits.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const session = await sessionFor(ctx, onUpdate);
@@ -358,31 +366,45 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         scope = v.rel;
       }
       try {
-        const { hits, total, truncated, suggestion } = await searchRepo({
-          cache: session.cache,
-          query,
-          opts: {
-            path: scope ?? undefined,
-            caseSensitive: params?.caseSensitive === true,
-            wholeWord: params?.wholeWord === true,
-            regex: params?.regex === true,
-            maxResults: params?.maxResults,
-          },
-          readFile: async (rel) => {
-            try {
-              return await readFile(join(session.root, rel), "utf8");
-            } catch {
-              return null;
-            }
-          },
-          exec,
-          root: session.root,
-          viaGit: session.viaGit,
-          signal,
-        });
+        const { hits, total, start, remaining, truncated, nextCursor, suggestion } =
+          await searchRepo({
+            cache: session.cache,
+            query,
+            opts: {
+              path: scope ?? undefined,
+              caseSensitive: params?.caseSensitive === true,
+              wholeWord: params?.wholeWord === true,
+              regex: params?.regex === true,
+              maxResults: params?.maxResults,
+              cursor: params?.cursor || undefined,
+            },
+            readFile: async (rel) => {
+              try {
+                return await readFile(join(session.root, rel), "utf8");
+              } catch {
+                return null;
+              }
+            },
+            exec,
+            root: session.root,
+            viaGit: session.viaGit,
+            signal,
+          });
         return {
           content: [
-            { type: "text", text: formatSearchHits({ query, hits, total, truncated, suggestion }) },
+            {
+              type: "text",
+              text: formatSearchHits({
+                query,
+                hits,
+                total,
+                start,
+                remaining,
+                truncated,
+                nextCursor,
+                suggestion,
+              }),
+            },
           ],
         };
       } catch (error) {

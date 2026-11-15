@@ -16,13 +16,23 @@ import to the definition without reading whole files along the way.
 | Tool | Use it to |
 | --- | --- |
 | `repo_map(depth?)` | Get the layout of an unfamiliar repo: directories, languages, key files, package scripts, and recent or large files. |
-| `code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?)` | Search file contents. Results show the enclosing function or class, with definitions first and comment-only matches last. |
+| `code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?, cursor?)` | Search file contents. Results show the enclosing function or class, with definitions first and comment-only matches last. |
 | `file_outline(path)` | See a file's functions, classes, fields, types and imports in line order before deciding what to read. |
 | `find_definition(symbol, fromFile?, kind?)` | Find where a symbol is defined. Supply `fromFile` to follow its import; omit it to list matching definitions, exported ones first. |
 
 Search uses plain substrings by default. Set `regex`, `wholeWord`,
 `caseSensitive`, or `path` to narrow it. A search with no hits can suggest
 similar symbol names.
+
+A page shows at most five matches per file. When more remain, the result ends
+with a `cursor`; pass it back with the same `query` and options to get the next
+hits. Later pages reach both further files and further matches in the same file,
+and every match appears once. A cursor is tied to the workspace, query and
+filter options (`path`, `regex`, `wholeWord`, `caseSensitive`) and to the matched
+files' content, so a changed search or a changed file gets a clear error
+instead of silently skipped or repeated hits. `maxResults` may change between
+pages. Each call re-runs the same bounded search; nothing is stored between
+calls.
 
 `find_definition` follows relative imports, `require`, aliases, workspace
 packages and re-exports. It checks up to eight re-export links and stops cycles.

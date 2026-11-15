@@ -12,8 +12,18 @@
 // Pure-ish: readFile/exec are injected. Ranking per match:
 //   definition hit (+100) > word-boundary exact match (+50) >
 //   substring (+10) > comment-only line (0)
+//
+// Paging: each file contributes its matches in line order, PER_FILE_CAP at a
+// time. Round 0 is the first page every search returns; round 1 holds each
+// file's next PER_FILE_CAP matches, and so on. A page is a slice of one round
+// (ranked by score, file, line), and `nextCursor` points at the next slice, so
+// later files and later matches in the same file are all reachable. Every
+// call re-runs the same bounded search; the cursor carries only a position,
+// the search it belongs to and the identity of the matched content.
 
+import { createHash } from "node:crypto";
 import { escapeRegExp } from "./gitignore.mjs";
+import { bindingOf, contentIdentity, decodeCursor, encodeCursor } from "./cursor.mjs";
 
 // Extensions we never scan as text (binary images, archives, compiled, …).
 const BINARY_EXTENSIONS = new Set([
@@ -112,14 +122,14 @@ function buildMatcher(query, { caseSensitive, wholeWord, regex }) {
  * @param {object} opts
  * @param {object} opts.cache       cache object (files: relPath → entry)
  * @param {string} opts.query
- * @param {object} opts.opts        { caseSensitive, wholeWord, regex, maxResults, path }
+ * @param {object} opts.opts        { caseSensitive, wholeWord, regex, maxResults, path, cursor }
  * @param {(rel: string) => Promise<string | null>} opts.readFile
  * @param {(cmd: string, args: string[], execOpts?: object) => Promise<{code:number,stdout:string,stderr:string}>} [opts.exec]
  *        Injected process runner, used only for the git-grep fast path.
  * @param {string} [opts.root]      repo root, required for the git-grep fast path
  * @param {boolean} [opts.viaGit]   whether the session/inventory was built via git
  * @param {AbortSignal} [opts.signal]
- * @returns {Promise<{ hits: Array, total: number, truncated: boolean, suggestion: string[] }>}
+ * @returns {Promise<{ hits: Array, total: number, start: number, remaining: number, truncated: boolean, nextCursor: string | null, suggestion: string[] }>}
  */
 export async function searchRepo({
   cache,
@@ -136,24 +146,34 @@ export async function searchRepo({
     if (unsafe) throw new Error(`code_search regex rejected: ${unsafe}`);
   }
 
+  // Decode and bind-check before any work, so a foreign cursor costs nothing.
+  const cursor = opts.cursor ? decodeCursor(opts.cursor) : null;
+  const binding = bindingOf({ root, query, opts });
+  if (cursor && cursor.binding !== binding) {
+    throw new Error(
+      "code_search: cursor is for a different search (workspace, query or options changed) — rerun without a cursor.",
+    );
+  }
+  const paging = { cursor, binding };
+
   if (viaGit && exec && root) {
     try {
-      const result = await gitGrepSearch({ cache, query, opts, exec, root, signal });
+      const result = await gitGrepSearch({ cache, query, opts, exec, root, signal, paging });
       if (result) return result;
-    } catch {
-      // Fall through to the pure scan path below.
+    } catch (error) {
+      // Cancellation and a stale cursor are answers; only git trouble falls back.
+      if (error?.paging || signal?.aborted) throw error;
     }
   }
 
-  return scanRepo({ cache, query, opts, readFile, signal });
+  return scanRepo({ cache, query, opts, readFile, signal, paging });
 }
 
-async function scanRepo({ cache, query, opts, readFile, signal }) {
+async function scanRepo({ cache, query, opts, readFile, signal, paging }) {
   const files = Object.keys(cache?.files ?? {});
-  const maxResults = clampMax(opts.maxResults);
   const matcher = buildMatcher(query, opts);
-  const hits = [];
-  let total = 0;
+  const keep = keepFor(paging.cursor);
+  const perFile = [];
   let scanned = 0;
 
   for (const rel of files) {
@@ -167,31 +187,20 @@ async function scanRepo({ cache, query, opts, readFile, signal }) {
     const source = await readFile(rel);
     if (source == null) continue;
     const lines = source.split(/\r?\n/);
-    const fileHits = [];
+    const matches = [];
     for (let idx = 0; idx < lines.length; idx++) {
-      const lineNo = idx + 1;
       const raw = lines[idx];
       matcher.lastIndex = 0;
       const m = matcher.exec(raw);
       if (!m) continue;
-      const col = (m.index ?? 0) + 1;
-      total++;
-      const score = scoreLine(raw, lineNo, query, entry, opts);
-      if (fileHits.length < PER_FILE_CAP)
-        fileHits.push({ rel, lineNo, col, score, text: raw, entry });
+      matches.push({ lineNo: idx + 1, col: (m.index ?? 0) + 1, text: raw });
     }
-    fileHits.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
-    hits.push(...fileHits);
+    if (matches.length > 0) perFile.push(collectFile({ rel, entry, matches, query, opts, keep }));
   }
 
-  hits.sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel) || a.lineNo - b.lineNo);
-  const shown = hits.slice(0, maxResults);
-  const truncated = total > shown.length;
-
-  let suggestion = [];
-  if (total === 0) suggestion = suggestNames(query, files, cache);
-
-  return { hits: shown, total, truncated, suggestion, scanned };
+  const page = rankPage({ perFile, opts, paging });
+  const suggestion = page.total === 0 ? suggestNames(query, files, cache) : [];
+  return { ...page, suggestion, scanned };
 }
 
 // --- git-grep fast path -----------------------------------------------------
@@ -227,27 +236,20 @@ export function buildGitGrepArgs({ query, opts, root }) {
  * unexpected exit code; a nonzero exit with empty stdout (code 1) means "no
  * matches", which is not an error.
  */
-async function gitGrepSearch({ cache, query, opts, exec, root, signal }) {
+async function gitGrepSearch({ cache, query, opts, exec, root, signal, paging }) {
   if (signal?.aborted) throw new Error("code_search: search cancelled");
-  const maxResults = clampMax(opts.maxResults);
   const args = buildGitGrepArgs({ query, opts, root });
   const result = await exec("git", args, { timeout: 15_000 });
   const stdout = String(result?.stdout ?? "");
 
-  if (result?.code === 1 && stdout.trim() === "") {
-    return {
-      hits: [],
-      total: 0,
-      truncated: false,
-      suggestion: suggestNames(query, Object.keys(cache?.files ?? {}), cache),
-    };
-  }
-  if (result?.code !== 0) return null; // unexpected exit code → fall back
+  // Exit code 1 with empty stdout means "no matches", which is not an error.
+  const noMatches = result?.code === 1 && stdout.trim() === "";
+  if (!noMatches && result?.code !== 0) return null; // unexpected exit code → fall back
 
   if (signal?.aborted) throw new Error("code_search: search cancelled");
 
   const byFile = new Map();
-  for (const line of stdout.split("\n")) {
+  for (const line of noMatches ? [] : stdout.split("\n")) {
     if (!line) continue;
     const parsed = parseGitGrepLine(line);
     if (!parsed) continue;
@@ -256,39 +258,98 @@ async function gitGrepSearch({ cache, query, opts, exec, root, signal }) {
     if (!entry) continue; // not in the inventory (e.g. cache is stale)
     if (isBinaryFile(rel)) continue;
     if ((entry.size ?? 0) > MAX_FILE_BYTES) continue;
-    if (!byFile.has(rel)) byFile.set(rel, []);
-    byFile.get(rel).push({ rel, lineNo, col, text, entry });
+    if (!byFile.has(rel)) byFile.set(rel, { entry, matches: [] });
+    byFile.get(rel).matches.push({ lineNo, col, text });
   }
 
-  let total = 0;
-  const hits = [];
-  for (const fileHitsRaw of byFile.values()) {
-    const fileHits = [];
-    for (const h of fileHitsRaw) {
-      total++;
-      const score = scoreLine(h.text, h.lineNo, query, h.entry, opts);
-      if (fileHits.length < PER_FILE_CAP)
-        fileHits.push({
-          rel: h.rel,
-          lineNo: h.lineNo,
-          col: h.col,
-          score,
-          text: h.text,
-          entry: h.entry,
-        });
-    }
-    fileHits.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
-    hits.push(...fileHits);
+  const keep = keepFor(paging.cursor);
+  const perFile = [...byFile].map(([rel, { entry, matches }]) =>
+    collectFile({ rel, entry, matches, query, opts, keep }),
+  );
+  const page = rankPage({ perFile, opts, paging });
+  const suggestion =
+    page.total === 0 ? suggestNames(query, Object.keys(cache?.files ?? {}), cache) : [];
+  return { ...page, suggestion };
+}
+
+// --- ranking and paging -------------------------------------------------------
+
+/** A cursor problem the caller must see, never a reason to retry another path. */
+function pagingError(message) {
+  return Object.assign(new Error(message), { paging: true });
+}
+
+/** How many matches per file the requested round needs to have kept. */
+function keepFor(cursor) {
+  return ((cursor?.round ?? 0) + 1) * PER_FILE_CAP;
+}
+
+/**
+ * One file's working set: every match is scored and digested (for the cursor's
+ * content identity), but only the first `keep` matches, in line order, are kept.
+ */
+function collectFile({ rel, entry, matches, query, opts, keep }) {
+  const digest = createHash("sha1");
+  const kept = [];
+  for (const m of matches) {
+    const score = scoreLine(m.text, m.lineNo, query, entry, opts);
+    digest.update(`${m.lineNo}:${score}\n`);
+    if (kept.length < keep) kept.push({ rel, ...m, score, entry });
   }
+  return { rel, entry, count: matches.length, kept, digest: digest.digest("hex") };
+}
 
-  hits.sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel) || a.lineNo - b.lineNo);
-  const shown = hits.slice(0, maxResults);
-  const truncated = total > shown.length;
+const byRank = (a, b) => b.score - a.score || a.rel.localeCompare(b.rel) || a.lineNo - b.lineNo;
 
-  let suggestion = [];
-  if (total === 0) suggestion = suggestNames(query, Object.keys(cache?.files ?? {}), cache);
+/**
+ * Pick the requested page. Round r is every file's matches r*cap … r*cap+cap-1
+ * in line order; within a round hits rank by score, file, line. Round 0 is the
+ * same compact first page the search always returned.
+ */
+function rankPage({ perFile, opts, paging }) {
+  const { cursor, binding } = paging;
+  const maxResults = clampMax(opts.maxResults);
+  const total = perFile.reduce((n, f) => n + f.count, 0);
+  const identity = contentIdentity(perFile);
+  if (cursor && cursor.identity !== identity) throw staleCursor();
 
-  return { hits: shown, total, truncated, suggestion };
+  const roundSize = (r) =>
+    perFile.reduce(
+      (n, f) => n + Math.min(PER_FILE_CAP, Math.max(0, f.count - r * PER_FILE_CAP)),
+      0,
+    );
+  const lastRound = Math.max(0, ...perFile.map((f) => Math.ceil(f.count / PER_FILE_CAP) - 1));
+  const round = cursor?.round ?? 0;
+  const index = cursor?.index ?? 0;
+  if (round > lastRound || index > roundSize(round)) throw staleCursor();
+
+  const inRound = perFile
+    .flatMap((f) => f.kept.slice(round * PER_FILE_CAP, (round + 1) * PER_FILE_CAP))
+    .sort(byRank);
+  const hits = inRound.slice(index, index + maxResults);
+
+  let start = index;
+  for (let r = 0; r < round; r++) start += roundSize(r);
+  const end = index + hits.length;
+  let next = null;
+  if (end < inRound.length) next = { round, index: end };
+  else if (round < lastRound) next = { round: round + 1, index: 0 };
+
+  const remaining = total - start - hits.length;
+  return {
+    hits,
+    total,
+    start,
+    remaining,
+    truncated: remaining > 0,
+    nextCursor: next ? encodeCursor({ ...next, binding, identity }) : null,
+  };
+}
+
+function staleCursor() {
+  return pagingError(
+    "code_search: cursor is stale — the matching files changed since it was issued; rerun the search without a cursor.",
+  );
 }
 
 // --- regex safety guard ------------------------------------------------------

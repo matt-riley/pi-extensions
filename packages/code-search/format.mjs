@@ -268,9 +268,22 @@ export function frameHit(hit) {
   return `in ${sym.kind} ${sym.name}${sig ? ` ${sig}` : ""} (${range})`;
 }
 
-/** code_search result text. */
-export function formatSearchHits({ query, hits, total, truncated, suggestion }) {
-  const out = [`# code_search "${query}" — ${total} match${total === 1 ? "" : "es"}`];
+/**
+ * code_search result text. `start` counts the hits before this page, `remaining`
+ * the matches after it, and `nextCursor` continues the search (null at the end).
+ */
+export function formatSearchHits({
+  query,
+  hits,
+  total,
+  start = 0,
+  truncated,
+  remaining = total - start - hits.length,
+  nextCursor = null,
+  suggestion,
+}) {
+  const page = start > 0 ? ` — showing ${start + 1}–${start + hits.length}` : "";
+  const out = [`# code_search "${query}" — ${total} match${total === 1 ? "" : "es"}${page}`];
   for (const h of hits) {
     out.push(`${h.rel}:${h.lineNo}:${h.col}`);
     const frame = frameHit(h);
@@ -278,9 +291,12 @@ export function formatSearchHits({ query, hits, total, truncated, suggestion }) 
     const text = h.text.trim().replace(/\s+/g, " ").slice(0, 160);
     if (text) out.push(`  ${text}`);
   }
-  if (truncated && total > hits.length) {
+  if (truncated && remaining > 0) {
+    const next = nextCursor
+      ? ` Or see the next ones with cursor="${nextCursor}" (same query and options).`
+      : "";
     out.push(
-      `… and ${total - hits.length} more matches — narrow with path=<dir> or a more specific query.`,
+      `… and ${remaining} more matches — narrow with path=<dir> or a more specific query.${next}`,
     );
   }
   if (suggestion?.length > 0) {
