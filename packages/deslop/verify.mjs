@@ -37,7 +37,12 @@ function noulValue(answer) {
   return usableNumber(answer.noul);
 }
 
-const clip = (text) => String(text ?? "").slice(0, MAX_TEXT_CHARS);
+// Drop the last word when truncating: a cut credential cannot be recognised by
+// the shared redactor at the transport boundary.
+const clip = (text) => {
+  const value = String(text ?? "");
+  return value.length > MAX_TEXT_CHARS ? value.slice(0, MAX_TEXT_CHARS).replace(/\S+$/, "") : value;
+};
 
 function describe(signals) {
   return Object.entries(signals)

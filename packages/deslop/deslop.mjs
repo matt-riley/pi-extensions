@@ -24,11 +24,12 @@ const PROSE_FILE = /\.(md|mdx|markdown|txt|rst|adoc)$/i;
 export const MAX_REPORTS = 2;
 
 export function createDeslopState() {
-  return { pending: new Map() };
+  return { pending: new Map(), reports: new Map() };
 }
 
 export function resetDeslopState(state) {
   state.pending.clear();
+  state.reports.clear();
 }
 
 /** The edited path relative to the session cwd, or null when it is outside it. */
@@ -74,10 +75,12 @@ function evidence(judged) {
 }
 
 /** The note for a first pass. Advice, in the source skills' own terms. */
-function findingsNote(path, findings, judged) {
+function findingsNote(path, findings, judged, verify) {
   const verified = judged?.judged
     ? `TypeSafe reads them as making the text worse for its reader${evidence(judged)}.`
-    : "TypeSafe was unavailable, so this is the pattern check alone.";
+    : verify
+      ? "TypeSafe was unavailable, so this is the pattern check alone."
+      : "TypeSafe verification is switched off, so this is the pattern check alone.";
   return [
     `deslop: the text this edit added to ${path} carries machine-writing patterns. ${verified}`,
     formatFindings(findings),
@@ -128,15 +131,14 @@ export async function observeEdit(
   const change = changeOf(toolName, input);
   if (!change || !change.after.trim()) return null;
 
+  const reports = state.reports.get(path) ?? 0;
+  if (reports >= MAX_REPORTS) return null;
   const pending = state.pending.get(path);
   const rewrites =
     pending &&
     (toolName === "write" || findSlop(change.before).some((item) => pending.ids.has(item.id)));
 
   if (rewrites) {
-    // The budget is spent: the entry stays so later edits stay quiet too, and
-    // nothing more is sent to TypeSafe about this file until the next prompt.
-    if (pending.reports >= MAX_REPORTS) return null;
     const before = toolName === "write" ? pending.text : change.before;
     const remaining = findSlop(change.after);
     const remainingReportable = worthReporting(remaining);
@@ -151,25 +153,25 @@ export async function observeEdit(
       state.pending.delete(path);
       return null;
     }
-    pending.reports++;
+    state.reports.set(path, reports + 1);
     pending.text = change.after;
     for (const item of remaining) pending.ids.add(item.id);
     const shown = remainingReportable ? remaining : [];
-    return rewriteNote(path, judged, shown, pending.reports >= MAX_REPORTS);
+    return rewriteNote(path, judged, shown, reports + 1 >= MAX_REPORTS);
   }
 
   const findings = addedFindings(change.after, change.before);
-  if (!worthReporting(findings) || (pending?.reports ?? 0) >= MAX_REPORTS) return null;
+  if (!worthReporting(findings)) return null;
   const judged = verify
     ? await judgeFindings({ path, text: change.after, findings })
     : { judged: false, verdict: null, signals: {} };
   if (judged.verdict === "dismissed") return null;
   // Unverified, a low or medium sign is too weak to interrupt an edit for.
   if (!judged.judged && !findings.some((item) => item.severity === "high")) return null;
+  state.reports.set(path, reports + 1);
   state.pending.set(path, {
     text: change.after,
     ids: new Set([...(pending?.ids ?? []), ...findings.map((item) => item.id)]),
-    reports: (pending?.reports ?? 0) + 1,
   });
-  return findingsNote(path, findings, judged);
+  return findingsNote(path, findings, judged, verify);
 }

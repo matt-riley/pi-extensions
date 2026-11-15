@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   addedFindings,
@@ -99,13 +100,15 @@ test("heading emoji and emphasis clusters are found", () => {
 });
 
 test("low signs only matter in aggregate", () => {
-  const one = findSlop("The “fast” path.");
+  const one = findSlop("The “fast” and “small” paths.");
   assert.deepEqual(
     one.map((item) => item.id),
     ["curly-quotes"],
   );
   assert.equal(worthReporting(one), false);
-  const three = findSlop("The “fast” path is very quick and very small → it quietly wins.");
+  const three = findSlop(
+    "The “fast” and “small” paths are very quick and very small → they quietly win.",
+  );
   assert.equal(
     three.every((item) => item.severity === "low"),
     true,
@@ -114,7 +117,7 @@ test("low signs only matter in aggregate", () => {
 });
 
 test("findings come most severe first", () => {
-  const found = findSlop("The “fast” path. Moreover, it is a seamless upgrade.");
+  const found = findSlop("The “fast” and “small” paths. Moreover, it is a seamless upgrade.");
   assert.deepEqual(
     found.map((item) => item.severity),
     ["high", "medium", "low"],
@@ -147,9 +150,26 @@ test("each finding is one bullet naming the sign, the sentence and the fix", () 
 test("findSlop stays fast on a huge code block and on unclosed comments", () => {
   const block = "```\n" + "x\n".repeat(95_000) + "```\nDone.\n";
   const unclosed = "<!-- ".repeat(40_000);
-  for (const text of [block, unclosed]) {
+  for (const text of [block, unclosed, "\n \n".repeat(65_000)]) {
     const start = performance.now();
     findSlop(text);
     assert.ok(performance.now() - start < 1_000, "scan took longer than a second");
   }
+});
+
+test("the detector's README quotes examples without flagging itself", async () => {
+  const text = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  assert.deepEqual(findSlop(text), []);
+});
+
+test("documentation labels, table examples and prohibitions are not formula prose", () => {
+  const label = findSlop("The cache — once warm — shows “Ready”.");
+  assert.deepEqual(
+    label.map((item) => item.id),
+    ["em-dash"],
+  );
+  assert.equal(worthReporting(label), false);
+  assert.deepEqual(ids("Choose “Ready” → “Run”."), ["curly-quotes"]);
+  assert.deepEqual(ids("| Example | Meaning |\n| seamless | marketing |"), []);
+  assert.deepEqual(ids("Do not edit files. Do not implement. Do not run commands."), []);
 });

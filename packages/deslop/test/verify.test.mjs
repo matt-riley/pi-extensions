@@ -39,13 +39,13 @@ test("both batteries are typed questions that name the state fields they read", 
 test("the state is named fields, clipped, with findings reduced to what Jev needs", () => {
   const state = buildFindingsState({
     path: "README.md",
-    text: "x".repeat(20_000),
+    text: "word ".repeat(4000),
     findings: findSlop(SLOP),
   });
   assert.equal(state.path, "README.md");
   assert.equal(state.text.length, 6000);
   assert.deepEqual(Object.keys(state.findings[0]).sort(), ["excerpts", "pattern", "severity"]);
-  const rewrite = buildRewriteState({ path: "a.md", before: "y".repeat(9000), after: "z" });
+  const rewrite = buildRewriteState({ path: "a.md", before: "word ".repeat(1800), after: "z" });
   assert.equal(rewrite.before.length, 6000);
   assert.equal(rewrite.after, "z");
 });

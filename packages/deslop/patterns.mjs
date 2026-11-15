@@ -108,7 +108,7 @@ const CHECKS = [
     sign: "W6",
     severity: "high",
     label: "generic opening",
-    fix: "start with the specific claim, finding or situation",
+    fix: "open with what happened or what you found",
     pattern: new RegExp(
       [
         String.raw`\bin\s+today['’]s\s+(?:[\w-]+\s+){0,3}(?:world|landscape|age|era|environment)\b`,
@@ -142,7 +142,7 @@ const CHECKS = [
     sign: "W16",
     severity: "high",
     label: '"whether you\'re X or Y" inclusivity',
-    fix: "pick the actual audience and speak to them",
+    fix: "address the people who need this information",
     pattern: /\bwhether\s+you(?:['’]re|\s+are)\b[^.!?\n]{0,80}\bor\b/gi,
   },
   {
@@ -213,7 +213,7 @@ const CHECKS = [
     sign: "W8",
     severity: "medium",
     label: "stacked hedging",
-    fix: "commit to the claim or cut the sentence",
+    fix: "say what the evidence supports; remove the extra qualifiers",
     min: 3,
     pattern: phrases([
       "it seems like",
@@ -294,6 +294,7 @@ const CHECKS = [
     severity: "low",
     label: "curly quotes",
     fix: "use straight quotes",
+    min: 4,
     pattern: /[‘’“”]/g,
   },
   {
@@ -302,6 +303,7 @@ const CHECKS = [
     severity: "low",
     label: "unicode arrow",
     fix: 'write "->" or a plain word',
+    min: 2,
     pattern: /[→⇒⟶]/g,
   },
 ];
@@ -326,6 +328,7 @@ export function maskNonProse(text) {
     .replace(/^---\n[\s\S]*?\n---(?=\n|$)/, blank)
     .replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$/gm, blank)
     .replace(/<!--[\s\S]*?(?:-->|$)/g, blank)
+    .replace(/^[ \t]*\|[^\n]*$/gm, blank)
     .replace(/`[^`\n]*`/g, blank)
     .replace(/\bhttps?:\/\/[^\s)>\]]+/g, blank);
 }
@@ -341,7 +344,7 @@ function sentenceAround(text, start, end) {
     .replace(/\s+/g, " ")
     .trim();
   return sentence.length > MAX_EXCERPT_CHARS
-    ? `${sentence.slice(0, MAX_EXCERPT_CHARS - 1)}…`
+    ? `${sentence.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
     : sentence;
 }
 
@@ -433,7 +436,12 @@ function machinegunFinding(text) {
     let run = [];
     for (const sentence of [...sentences, ""]) {
       const words = sentence.split(/\s+/).filter((word) => /\w/.test(word)).length;
-      if (words > 0 && words <= MACHINEGUN_MAX_WORDS && /[.!]$/.test(sentence)) {
+      if (
+        words > 0 &&
+        words <= MACHINEGUN_MAX_WORDS &&
+        /[.!]$/.test(sentence) &&
+        !/^Do not\b/i.test(sentence)
+      ) {
         run.push(sentence);
         continue;
       }
@@ -450,7 +458,7 @@ function machinegunFinding(text) {
           run.length,
           [
             joined.length > MAX_EXCERPT_CHARS
-              ? `${joined.slice(0, MAX_EXCERPT_CHARS - 1)}…`
+              ? `${joined.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
               : joined,
           ],
         );

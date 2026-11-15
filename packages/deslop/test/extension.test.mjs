@@ -16,6 +16,7 @@ const noul = (value) => ({ type: "noul", noul: value });
 
 const ENV_KEYS = [
   "TYPESAFE_API_KEY",
+  "LORE_TYPESAFE_API_KEY",
   "TYPESAFE_BASE_URL",
   "LORE_CONFIG",
   "PI_DESLOP",
@@ -52,18 +53,28 @@ beforeEach(() => {
   process.env.TYPESAFE_API_KEY = "deslop-test-key";
   process.env.TYPESAFE_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
   process.env.LORE_CONFIG = join(tmpdir(), "deslop-test-no-such-config.json");
+  delete process.env.LORE_TYPESAFE_API_KEY;
   delete process.env.PI_DESLOP;
   delete process.env.PI_DESLOP_VERIFY;
 });
 
 function harness() {
   const handlers = {};
+  const commands = {};
+  const messages = [];
+  const notices = [];
   piDeslopExtension({
+    registerCommand: (name, command) => {
+      commands[name] = command;
+    },
+    sendUserMessage: (...args) => {
+      messages.push(args);
+    },
     on: (name, handler) => {
       handlers[name] = handler;
     },
   });
-  const ctx = { cwd: "/repo" };
+  const ctx = { cwd: "/repo", ui: { notify: (...args) => notices.push(args) } };
   const result = (toolName, input, extra = {}) =>
     handlers.tool_result(
       { toolName, input, isError: false, content: [{ type: "text", text: "ok" }], ...extra },
@@ -71,6 +82,10 @@ function harness() {
     );
   return {
     handlers,
+    commands,
+    messages,
+    notices,
+    deslop: (args) => commands.deslop.handler(args, ctx),
     write: (path, content, extra) => result("write", { path, content }, extra),
     edit: (path, oldText, newText) => result("edit", { path, edits: [{ oldText, newText }] }),
     input: () => handlers.input({}, ctx),
@@ -152,7 +167,7 @@ test("PI_DESLOP_VERIFY=0 sends nothing to TypeSafe", async () => {
   const pi = harness();
   process.env.PI_DESLOP_VERIFY = "0";
   const patched = await pi.write("README.md", SLOP);
-  assert.match(noteOf(patched), /pattern check alone/);
+  assert.match(noteOf(patched), /verification is switched off.*pattern check alone/);
   assert.equal(requests.length, 0);
 });
 
@@ -172,8 +187,46 @@ test("a new prompt forgets flagged files, so the next edit is a first pass", asy
   assert.equal(requests.length, 1, "no rewrite judgment after the reset");
 });
 
+test("input and session_start each restore an exhausted note budget", async () => {
+  const pi = harness();
+  process.env.PI_DESLOP_VERIFY = "0";
+  for (const reset of ["input", "session_start"]) {
+    assert.ok(noteOf(await pi.write("README.md", SLOP)));
+    assert.ok(noteOf(await pi.write("README.md", SLOP)));
+    assert.equal(await pi.write("README.md", SLOP), undefined);
+    await pi.handlers[reset]({}, { cwd: "/repo" });
+  }
+  assert.ok(noteOf(await pi.write("README.md", SLOP)));
+  assert.equal(requests.length, 0);
+});
+
 test("a result without a content array is left alone", async () => {
   const pi = harness();
   answers = { worse_for_reader: noul(0.9), discusses_patterns: noul(0.02) };
   assert.equal(await pi.write("README.md", SLOP, { content: undefined }), undefined);
+});
+
+test("no key makes no request through the hook", async () => {
+  delete process.env.TYPESAFE_API_KEY;
+  const pi = harness();
+  assert.match(noteOf(await pi.write("README.md", SLOP)), /TypeSafe was unavailable/);
+  assert.equal(requests.length, 0);
+});
+
+test("credentials crossing the text cap are not sent as fragments", async () => {
+  const pi = harness();
+  const secret = "ghp_" + "B".repeat(36);
+  const text = SLOP + " " + "x".repeat(5990 - SLOP.length - 1) + " " + secret;
+  await pi.write("README.md", text);
+  assert.equal(requests.length, 1);
+  assert.doesNotMatch(JSON.stringify(requests[0].state), /ghp_B/);
+  assert.ok(requests[0].state.text.length <= 6000);
+});
+
+test("credentials crossing the excerpt cap are not sent as fragments", async () => {
+  const pi = harness();
+  const text = "It's worth noting " + "x".repeat(112) + " ghp_" + "B".repeat(36) + ".";
+  await pi.write("README.md", text);
+  assert.equal(requests.length, 1);
+  assert.doesNotMatch(JSON.stringify(requests[0].state), /ghp_B/);
 });

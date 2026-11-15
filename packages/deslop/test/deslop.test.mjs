@@ -82,7 +82,7 @@ test("confirmed findings become one note naming the file, the signs and the evid
   assert.match(note, /filler phrase \(W1, high\)/);
   assert.match(note, /marketing adjective \(W5, high\)/);
   assert.match(note, /This is advice/);
-  assert.equal(state.pending.get("docs/guide.md").reports, 1);
+  assert.equal(state.reports.get("docs/guide.md"), 1);
 });
 
 test("an absolute path inside the cwd is tracked by its relative path", async () => {
@@ -240,5 +240,16 @@ test("an edit elsewhere in a flagged file is a first pass, not a rewrite", async
     judgeRewrite: never,
   });
   assert.equal(note, null);
-  assert.equal(state.pending.get("README.md").reports, 1);
+  assert.equal(state.reports.get("README.md"), 1);
+});
+
+test("clean rewrites do not replenish the per-prompt note budget", async () => {
+  const state = createDeslopState();
+  const options = { verify: false };
+  const notes = [];
+  for (let round = 0; round < 4; round++) {
+    notes.push(await observeEdit(state, write("README.md", SLOP), options));
+    await observeEdit(state, write("README.md", PLAIN), options);
+  }
+  assert.equal(notes.filter(Boolean).length, MAX_REPORTS);
 });
