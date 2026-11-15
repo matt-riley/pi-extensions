@@ -62,13 +62,20 @@ function harness(t) {
     write: (value) => writeFileSync(join(cwd, "a.js"), value),
     edit: () =>
       handlers.tool_result({ toolName: "edit", input: { path: "a.js" }, isError: false }, ctx),
-    check: async ({ command = "rtk npm test", failed = false, during } = {}) => {
+    check: async ({ command = "rtk npm test", failed = false, during, log } = {}) => {
       const event = { toolName: "bash", toolCallId: String(++id), input: { command } };
       await handlers.tool_call(event, ctx);
       during?.();
-      await handlers.tool_result({ ...event, isError: failed, content: [] }, ctx);
+      const content = log === undefined ? [] : [{ type: "text", text: log }];
+      await handlers.tool_result({ ...event, isError: failed, content }, ctx);
     },
+    say: (text) =>
+      handlers.message_end(
+        { message: { role: "assistant", content: [{ type: "text", text }] } },
+        ctx,
+      ),
     settle: () => handlers.agent_before_settle({ outcome: "completed", entries: [] }, ctx),
+    handlersSettle: (event) => handlers.agent_before_settle(event, ctx),
     reset: () => handlers.input({}, ctx),
   };
 }
@@ -252,4 +259,74 @@ test("a test run after the typecheck clears the edit", async (t) => {
   await h.check({ command: "npx tsc --noEmit" });
   await h.check({ command: "rtk npm test" });
   assert.equal(await h.settle(), undefined);
+});
+
+const CLEAN_LOG = "# tests 5\n# pass 5\n# fail 0\n";
+
+test("a tests-passed claim the log contradicts is called out even though the run was clean", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: "# tests 5\n# pass 4\n# fail 1\n" });
+  await h.say("All 5 tests pass.");
+  const result = await h.settle();
+  assert.equal(result.continue, true);
+  assert.match(
+    result.entries[0].content,
+    /says the tests passed, but the log of .* reports failures/,
+  );
+});
+
+test("a tests-passed claim a clean log backs adds nothing", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: CLEAN_LOG });
+  await h.say("All 5 tests pass.");
+  assert.equal(await h.settle(), undefined);
+});
+
+test("a test count the log does not show is named", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: CLEAN_LOG });
+  await h.say("All 12 tests pass.");
+  assert.match(
+    (await h.settle()).entries[0].content,
+    /says 12 tests, the log of .* does not show 12/,
+  );
+});
+
+test("the claim line rides on the verify nudge when edits had no check at all", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.say("Tests pass.");
+  const content = (await h.settle()).entries[0].content;
+  assert.match(content, /^Done check: 1 file\(s\) changed/);
+  assert.match(content, /says the tests passed, but no check was recorded/);
+});
+
+test("a tests-passed claim with no edits and no runs is left alone", async (t) => {
+  const h = harness(t);
+  await h.say("Tests pass.");
+  assert.equal(await h.settle(), undefined);
+});
+
+test("the claim is called out once per user input, and not after an abort", async (t) => {
+  const h = harness(t);
+  h.write("export default 2;\n");
+  await h.edit();
+  await h.check({ log: "# fail 2\n" });
+  await h.say("All tests pass.");
+  assert.equal(await h.handlersSettle?.({ outcome: "aborted", entries: [] }), undefined);
+  assert.equal((await h.settle()).continue, true);
+  assert.equal(await h.settle(), undefined);
+  await h.reset();
+  h.write("export default 3;\n");
+  await h.edit();
+  await h.check({ log: "# fail 2\n" });
+  await h.say("All tests pass.");
+  assert.equal((await h.settle()).continue, true);
 });

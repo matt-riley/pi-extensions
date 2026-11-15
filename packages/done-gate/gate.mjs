@@ -11,6 +11,7 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { hasCommandSubstitution, splitSegments } from "../../shared/shell-parse.mjs";
+import { logText } from "./evidence.mjs";
 
 const EDIT_TOOLS = new Set(["edit", "write"]);
 
@@ -101,6 +102,9 @@ export function createGateState() {
     behaviorVerified: false,
     remoteVerificationSeen: false,
     remoteNudged: false,
+    // Every check seen this input, oldest first, for reading a "tests passed" claim against.
+    runs: [],
+    claimGapNudged: false,
   };
 }
 
@@ -116,6 +120,8 @@ export function resetGateState(state) {
   state.behaviorVerified = false;
   state.remoteVerificationSeen = false;
   state.remoteNudged = false;
+  state.runs = [];
+  state.claimGapNudged = false;
   return state;
 }
 
@@ -256,9 +262,19 @@ export function observeToolResult(
     state.verificationStatus = status;
     state.verificationSeen = status === "passed";
     state.verificationRevision = status === "passed" ? after : null;
+    recordRun(state, { command: input.command, status, log: logText(content) });
     if (status === "passed") clearForPass(state, checkKind(input?.command));
     else for (const path of state.edited) state.dirty.add(path);
   }
+}
+
+const MAX_RUNS = 8;
+
+/** Remember one check for the tests-passed claim check; the newest few are kept. */
+function recordRun(state, { command, status, log }) {
+  state.runs ??= [];
+  state.runs.push({ command, kind: checkKind(command), status, log });
+  if (state.runs.length > MAX_RUNS) state.runs.shift();
 }
 
 /**
@@ -277,6 +293,9 @@ export function observeUserCheck(state, revision, run) {
   state.verificationStatus = "passed";
   state.verificationSeen = true;
   state.verificationRevision = revision;
+  if (run?.command) {
+    recordRun(state, { command: run.command, status: "passed", log: logText(run.output) });
+  }
   clearForPass(state, checkKind(run?.command) ?? "behavior");
 }
 

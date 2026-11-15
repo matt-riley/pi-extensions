@@ -56,6 +56,7 @@ import {
 } from "./gate.mjs";
 import { formatRunReport, runChecks } from "./run-checks.mjs";
 import { resolveScopedChecks } from "./scoped.mjs";
+import { claimGapLine, testClaimGap } from "./evidence.mjs";
 import { userBashEvidence } from "./user-bash.mjs";
 
 const CUSTOM_TYPE = "done-gate";
@@ -237,7 +238,17 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       !state.remoteNudged &&
       !state.remoteVerificationSeen &&
       couldClaimRemote(lastClaim);
-    if (!needsVerify && !checkRemote) {
+    // A "tests passed" claim the recorded runs do not back is read from code
+    // alone: no key, no request. Once per user input, like the other lines.
+    const gap =
+      completed && !state.claimGapNudged
+        ? testClaimGap({
+            claim: lastClaim,
+            runs: state.runs ?? [],
+            edited: state.edited.size > 0,
+          })
+        : null;
+    if (!needsVerify && !checkRemote && !gap) {
       return;
     }
 
@@ -250,42 +261,54 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       typeof gateModule.livePaths === "function"
         ? gateModule.livePaths([...state.dirty], live)
         : [...state.dirty];
-    if (needsVerify && files.length === 0) {
+    if (needsVerify && files.length === 0 && !gap) {
       // Everything was reverted, committed, ignored, or lives outside this repo.
       return;
     }
+    const verifyNow = needsVerify && files.length > 0;
 
     // Both are best effort and neither may fail the run: the debug scan
     // swallows its own errors, and the judge reports every failure as
     // "unjudged". The judge takes its own timeout rather than `ctx.signal`,
-    // because an inherited abort would drop the judgment silently.
+    // because an inherited abort would drop the judgment silently. A run that
+    // only has a claim gap to report asks no model at all.
+    const unjudged = { judged: false, verdict: null, reason: "not asked", signals: {} };
     const [debugHits, judged, commands] = await Promise.all([
-      needsVerify ? findDebugTags(cwd, untracked) : Promise.resolve([]),
-      judgeDoneClaim({
-        claim: lastClaim,
-        files,
-        verificationSeen: state.verificationSeen,
-        remoteVerificationSeen: state.remoteVerificationSeen,
-      }),
-      needsVerify
+      verifyNow ? findDebugTags(cwd, untracked) : Promise.resolve([]),
+      verifyNow || checkRemote
+        ? judgeDoneClaim({
+            claim: lastClaim,
+            files,
+            verificationSeen: state.verificationSeen,
+            remoteVerificationSeen: state.remoteVerificationSeen,
+          })
+        : Promise.resolve(unjudged),
+      verifyNow
         ? resolveScopedChecks({ root: cwd, files, env: process.env }).catch(() => [])
         : Promise.resolve([]),
     ]);
+    const gapLine = gap ? claimGapLine(gap) : null;
+    if (gap) state.claimGapNudged = true;
 
-    if (!needsVerify) {
+    if (!verifyNow) {
       // Only the specific overclaim earns a line here: the generic "unclosed
       // claim" nudge already had its run, and repeating it is noise.
-      if (judged.verdict !== "remote_overreach") {
+      const lines: string[] = [];
+      if (judged.verdict === "remote_overreach") {
+        state.remoteNudged = true;
+        lines.push(claimLine(judged));
+      }
+      if (gapLine) lines.push(gapLine);
+      if (lines.length === 0) {
         return;
       }
-      state.remoteNudged = true;
       return {
         entries: [
           ...(event?.entries ?? []),
           {
             type: "custom_message",
             customType: CUSTOM_TYPE,
-            content: claimLine(judged),
+            content: lines.join(" "),
             display: false,
           },
         ],
@@ -294,7 +317,8 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     }
 
     state.dirty = new Set(files);
-    let content = buildNudge(state, debugHits, claimLine(judged), commands);
+    const claimText = [claimLine(judged), gapLine].filter(Boolean).join(" ") || null;
+    let content = buildNudge(state, debugHits, claimText, commands);
     // Opt-in: run what the reminder names and append the output. Only the exact
     // value "1" turns it on; anything else, or unset, runs nothing.
     if (process.env.PI_DONE_GATE_EXEC === "1" && commands.length > 0) {
