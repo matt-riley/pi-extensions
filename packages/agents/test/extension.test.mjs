@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -22,106 +23,74 @@ function setup(t) {
   mkdirSync(cwd);
   const commands = new Map();
   const notes = [];
-  const pi = { registerCommand: (name, definition) => commands.set(name, definition) };
+  const messages = [];
+  const pi = {
+    registerCommand: (name, definition) => commands.set(name, definition),
+    sendUserMessage: (text, options) => messages.push({ text, options }),
+  };
   agents(pi);
   const ctx = { cwd, ui: { notify: (text, level) => notes.push({ text, level }) } };
   const run = (args = "", context = ctx) => commands.get("agents").handler(args, context);
   const read = (rel) => readFileSync(join(cwd, rel), "utf8");
-  const exists = (rel) => existsIn(cwd, rel);
-  return { root, cwd, commands, notes, run, ctx, read, exists };
+  return { root, cwd, commands, notes, messages, run, ctx, read };
 }
 
-function existsIn(dir, rel) {
-  try {
-    lstatSync(join(dir, rel));
-    return true;
-  } catch {
-    return false;
+test("registers /agents and delegates creation without writing a placeholder", async (t) => {
+  const h = setup(t);
+  assert.match(h.commands.get("agents").description, /AGENTS\.md/);
+  await h.run();
+  assert.equal(h.messages.length, 1);
+  assert.deepEqual(h.messages[0].options, { deliverAs: "followUp" });
+  assert.ok(h.messages[0].text.includes(JSON.stringify(join(h.cwd, "AGENTS.md"))));
+  assert.deepEqual(readdirSync(h.cwd), []);
+  assert.deepEqual(h.notes, [], "dispatch is not reported as a completed file edit");
+});
+
+test("targets a chosen directory with spaces, relative or absolute", async (t) => {
+  const h = setup(t);
+  const dir = join(h.cwd, "sub dir");
+  mkdirSync(dir);
+  for (const arg of ["  sub dir  ", dir]) {
+    await h.run(arg);
+    assert.ok(h.messages.at(-1).text.includes(JSON.stringify(dir)));
+    assert.ok(h.messages.at(-1).text.includes(JSON.stringify(join(dir, "AGENTS.md"))));
   }
-}
-
-const scripts = { build: "tsc", test: "node --test" };
-
-test("registers /agents", (t) => {
-  const h = setup(t);
-  const command = h.commands.get("agents");
-  assert.ok(command);
-  assert.match(command.description, /AGENTS\.md/);
+  assert.equal(h.messages.length, 2);
+  assert.deepEqual(readdirSync(dir), []);
 });
 
-test("creates an AGENTS.md in the working directory", async (t) => {
+test("an existing Commands section still gets an improvement request preserving guidance", async (t) => {
   const h = setup(t);
-  await h.run();
-  assert.match(h.read("AGENTS.md"), /^# AGENTS\.md\n\nGuidance for coding agents/);
-  assert.deepEqual(h.notes, [{ text: "agents: created AGENTS.md", level: "info" }]);
-});
-
-test("creates it in a chosen directory, with that directory's scripts", async (t) => {
-  const h = setup(t);
-  mkdirSync(join(h.cwd, "sub dir"));
-  writeFileSync(join(h.cwd, "sub dir", "package.json"), JSON.stringify({ scripts }));
-  await h.run("  sub dir  ");
-  const content = h.read(join("sub dir", "AGENTS.md"));
-  assert.match(content, /## Commands\n\n- `npm run build`\n- `npm run test`/);
-  assert.equal(h.exists("AGENTS.md"), false, "the session directory is untouched");
-});
-
-test("updates an existing file without losing its guidance", async (t) => {
-  const h = setup(t);
-  writeFileSync(join(h.cwd, "package.json"), JSON.stringify({ scripts }));
-  const existing = "# House rules\n\n- Never force-push.\n- Ask before deploying.\n";
+  const existing = "# Rules\n\nNever force-push.\n\n## Commands\n\nmake test\n";
   writeFileSync(join(h.cwd, "AGENTS.md"), existing);
   await h.run();
-  const content = h.read("AGENTS.md");
-  assert.ok(content.startsWith(existing));
-  assert.match(content, /## Commands\n\n- `npm run build`/);
-  assert.deepEqual(h.notes, [
-    { text: "agents: updated AGENTS.md: added Commands, existing content kept", level: "info" },
-  ]);
+  assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0].text, /Read the complete existing file before editing/);
+  assert.match(h.messages[0].text, /Preserve useful existing guidance/);
+  assert.equal(h.read("AGENTS.md"), existing, "dispatch does not eagerly overwrite user guidance");
 });
 
-test("a file that already documents commands is left byte-for-byte alone", async (t) => {
-  const h = setup(t);
-  writeFileSync(join(h.cwd, "package.json"), JSON.stringify({ scripts }));
-  const existing = "# House rules\n\n## Commands\n\n- `make test`\n";
-  writeFileSync(join(h.cwd, "AGENTS.md"), existing);
-  await h.run();
-  assert.equal(h.read("AGENTS.md"), existing);
-  assert.match(h.notes[0].text, /already documents commands/);
-  assert.equal(h.notes[0].level, "info");
-});
-
-test("without scripts it creates the file, and a second run changes nothing", async (t) => {
-  const h = setup(t);
-  await h.run();
-  const created = h.read("AGENTS.md");
-  assert.doesNotMatch(created, /## Commands/);
-  h.notes.length = 0;
-  await h.run();
-  assert.equal(h.read("AGENTS.md"), created);
-  assert.match(h.notes[0].text, /no package.json scripts/);
-});
-
-test("an invalid package.json does not stop creation", async (t) => {
+test("invalid or absent package.json does not prevent repository inspection", async (t) => {
   const h = setup(t);
   writeFileSync(join(h.cwd, "package.json"), "{ not json");
   await h.run();
-  assert.match(h.read("AGENTS.md"), /^# AGENTS\.md/);
-  assert.doesNotMatch(h.read("AGENTS.md"), /## Commands/);
+  assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0].text, /Support non-JavaScript projects too/);
 });
 
-test("a missing directory is reported and nothing is created", async (t) => {
+test("a missing directory is reported without sending work", async (t) => {
   const h = setup(t);
   await h.run("missing");
+  assert.equal(h.messages.length, 0);
   assert.equal(h.notes[0].level, "error");
   assert.match(h.notes[0].text, /missing: no such directory/);
-  assert.equal(h.exists("AGENTS.md"), false);
 });
 
 test("a path that is a file is reported as not a directory", async (t) => {
   const h = setup(t);
   writeFileSync(join(h.cwd, "notes.txt"), "x\n");
   await h.run("notes.txt");
+  assert.equal(h.messages.length, 0);
   assert.equal(h.notes[0].level, "error");
   assert.match(h.notes[0].text, /notes\.txt is not a directory/);
 });
@@ -130,41 +99,69 @@ test("an unreadable AGENTS.md is reported and left untouched", async (t) => {
   const h = setup(t);
   mkdirSync(join(h.cwd, "AGENTS.md"));
   await h.run();
+  assert.equal(h.messages.length, 0);
   assert.equal(h.notes[0].level, "error");
-  assert.match(h.notes[0].text, /AGENTS\.md/);
   assert.equal(lstatSync(join(h.cwd, "AGENTS.md")).isDirectory(), true);
 });
 
-test("a case-variant AGENTS.MD is updated instead of duplicated", async (t) => {
+test("a case-variant AGENTS.MD is targeted instead of duplicated", async (t) => {
   const h = setup(t);
-  writeFileSync(join(h.cwd, "package.json"), JSON.stringify({ scripts }));
   writeFileSync(join(h.cwd, "AGENTS.MD"), "# Existing rules\n");
   await h.run();
-  const files = readdirSync(h.cwd).filter((name) => name.toLowerCase() === "agents.md");
-  assert.deepEqual(files, ["AGENTS.MD"]);
-  assert.match(h.read("AGENTS.MD"), /^# Existing rules\n\n## Commands/);
+  assert.equal(h.messages.length, 1);
+  assert.ok(h.messages[0].text.includes(JSON.stringify(join(h.cwd, "AGENTS.MD"))));
+  assert.deepEqual(readdirSync(h.cwd), ["AGENTS.MD"]);
+  assert.equal(h.read("AGENTS.MD"), "# Existing rules\n");
 });
 
-test("a symlinked AGENTS.md keeps its link and updates the target", async (t) => {
+test("a symlinked AGENTS.md targets its resolved file without replacing the link", async (t) => {
   const h = setup(t);
-  writeFileSync(join(h.cwd, "package.json"), JSON.stringify({ scripts }));
-  writeFileSync(join(h.cwd, "real.md"), "# Shared rules\n");
-  symlinkSync("real.md", join(h.cwd, "AGENTS.md"));
+  writeFileSync(join(h.root, "real.md"), "# Shared rules\n");
+  symlinkSync("../real.md", join(h.cwd, "AGENTS.md"));
   await h.run();
-  assert.equal(lstatSync(join(h.cwd, "AGENTS.md")).isSymbolicLink(), true);
-  assert.match(h.read("real.md"), /^# Shared rules\n\n## Commands/);
-  assert.deepEqual(
-    readdirSync(h.cwd).filter((name) => name.includes(".tmp-")),
-    [],
-    "no temp file is left behind",
+  assert.equal(h.messages.length, 1);
+  assert.ok(
+    h.messages[0].text.includes(
+      `Only edit ${JSON.stringify(realpathSync(join(h.root, "real.md")))}`,
+    ),
   );
+  assert.equal(lstatSync(join(h.cwd, "AGENTS.md")).isSymbolicLink(), true);
+  assert.equal(h.read("AGENTS.md"), "# Shared rules\n");
 });
 
-test("AGENTS.override.md is reported instead of shadowed by a new AGENTS.md", async (t) => {
+test("a broken instruction symlink is not replaced or queued", async (t) => {
+  const h = setup(t);
+  symlinkSync("missing.md", join(h.cwd, "AGENTS.md"));
+  await h.run();
+  assert.equal(h.messages.length, 0);
+  assert.equal(h.notes[0].level, "error");
+  assert.equal(lstatSync(join(h.cwd, "AGENTS.md")).isSymbolicLink(), true);
+});
+
+test("AGENTS.override.md is reported whether or not AGENTS.md exists", async (t) => {
   const h = setup(t);
   writeFileSync(join(h.cwd, "AGENTS.override.md"), "# Overriding rules\n");
+  for (const existing of [false, true]) {
+    if (existing) writeFileSync(join(h.cwd, "AGENTS.md"), "# Shadowed\n");
+    await h.run();
+    assert.equal(h.messages.length, 0);
+    assert.equal(h.notes.at(-1).level, "warning");
+    assert.match(h.notes.at(-1).text, /AGENTS\.override\.md replaces AGENTS\.md/);
+  }
+  assert.equal(h.read("AGENTS.override.md"), "# Overriding rules\n");
+});
+
+test("dispatch failure is reported without changing instructions", async (t) => {
+  const h = setup(t);
+  writeFileSync(join(h.cwd, "AGENTS.md"), "# Rules\n");
+  agents({
+    registerCommand: (name, definition) => h.commands.set(name, definition),
+    sendUserMessage: () => {
+      throw new Error("session unavailable");
+    },
+  });
   await h.run();
-  assert.equal(h.notes[0].level, "warning");
-  assert.match(h.notes[0].text, /AGENTS\.override\.md replaces AGENTS\.md/);
-  assert.equal(h.exists("AGENTS.md"), false);
+  assert.equal(h.read("AGENTS.md"), "# Rules\n");
+  assert.match(h.notes[0].text, /session unavailable/);
+  assert.equal(h.notes[0].level, "error");
 });

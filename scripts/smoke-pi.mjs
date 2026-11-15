@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, writeFile, rm, access, cp } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, access, cp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -25,6 +25,7 @@ let stderr = "";
 let sequence = 0;
 let phase = "blocked";
 let scripted;
+let agentsApproval = null;
 let requests = 0;
 let childRequests = 0;
 let offeredTools = [];
@@ -336,9 +337,22 @@ export default function (pi) {
       return;
     }
     events.push(event);
-    // The only dialog this smoke expects is the guardrail's: answer it with Deny.
+    // Deny guardrail requests except the exact disposable /agents target under test.
     if (event.type === "extension_ui_request" && event.method === "select") {
-      const answer = /Guardrail/.test(event.title ?? "") ? "⛔ Deny" : undefined;
+      const approved =
+        agentsApproval &&
+        (event.title ?? "")
+          .split("\n")
+          .some(
+            (scopeLine) =>
+              scopeLine === `control:overwrite:${agentsApproval}` ||
+              scopeLine === `control:create:${agentsApproval}`,
+          );
+      const answer = /Guardrail/.test(event.title ?? "")
+        ? approved
+          ? "✅ Approve"
+          : "⛔ Deny"
+        : undefined;
       child.stdin.write(
         `${JSON.stringify({ type: "extension_ui_response", id: event.id, ...(answer ? { value: answer } : { cancelled: true }) })}\n`,
       );
@@ -785,18 +799,71 @@ export default function (pi) {
   );
   await writeFile(
     path.join(cwd, "smoke-agents", "AGENTS.md"),
-    "# Fixture rules\n\n- Keep this line.\n",
+    "# Fixture rules\n\n## Commands\n\n- `make build`\n\n- Keep this line.\n",
   );
-  await prompt("/agents smoke-agents");
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  phase = "resources";
+  scripted = [
+    { name: "read", arguments: { path: "smoke-agents/AGENTS.md" } },
+    { name: "read", arguments: { path: "smoke-agents/package.json" } },
+    {
+      name: "edit",
+      arguments: {
+        path: "smoke-agents/AGENTS.md",
+        edits: [
+          {
+            oldText: "- Keep this line.\n",
+            newText:
+              "- Keep this line.\n\n## Testing instructions\n\nRun `npm run test` from this directory.\n",
+          },
+        ],
+      },
+    },
+  ];
+  agentsApproval = await realpath(path.join(cwd, "smoke-agents", "AGENTS.md"));
+  const agentsEvents = await prompt("/agents smoke-agents", true);
+  agentsApproval = null;
+  const agentsRequest = JSON.stringify(resourceRequests.at(-1));
+  assert.match(agentsRequest, /Preserve useful existing guidance/);
+  assert.match(agentsRequest, /https:\/\/agents\.md\/#examples/);
+  for (const name of ["read", "edit"]) {
+    assert.ok(
+      agentsEvents.some(
+        (event) => event.type === "tool_execution_end" && event.toolName === name && !event.isError,
+      ),
+      `agents did not complete ${name}: ${JSON.stringify(agentsEvents.filter((event) => event.type === "tool_execution_end"))}`,
+    );
+  }
   const updated = await readFile(path.join(cwd, "smoke-agents", "AGENTS.md"), "utf8");
-  assert.match(updated, /^# Fixture rules\n\n- Keep this line\./);
-  assert.match(updated, /## Commands\n\n- `npm run test`/);
+  assert.match(updated, /^# Fixture rules\n\n## Commands\n\n- `make build`\n\n- Keep this line\./);
+  assert.match(updated, /## Testing instructions\n\nRun `npm run test`/);
   await mkdir(path.join(cwd, "smoke-agents-fresh"), { recursive: true });
-  await prompt("/agents smoke-agents-fresh");
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await writeFile(
+    path.join(cwd, "smoke-agents-fresh", "README.md"),
+    "# Widget\n\nA small Python CLI. Run pytest from this directory.\n",
+  );
+  scripted = [
+    { name: "read", arguments: { path: "smoke-agents-fresh/README.md" } },
+    {
+      name: "write",
+      arguments: {
+        path: "smoke-agents-fresh/AGENTS.md",
+        content:
+          "# AGENTS.md\n\nA small Python CLI.\n\n## Testing instructions\n\nRun `pytest` from this directory.\n",
+      },
+    },
+  ];
+  agentsApproval = path.join(await realpath(cwd), "smoke-agents-fresh", "AGENTS.md");
+  const freshEvents = await prompt("/agents smoke-agents-fresh", true);
+  agentsApproval = null;
+  assert.ok(
+    freshEvents.some(
+      (event) =>
+        event.type === "tool_execution_end" && event.toolName === "write" && !event.isError,
+    ),
+  );
   const created = await readFile(path.join(cwd, "smoke-agents-fresh", "AGENTS.md"), "utf8");
-  assert.match(created, /^# AGENTS\.md\n\nGuidance for coding agents/);
+  assert.match(created, /^# AGENTS\.md\n\nA small Python CLI\./);
+  assert.match(created, /Run `pytest` from this directory\./);
   console.log("ok: /agents creates and updates AGENTS.md in a live Pi");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
