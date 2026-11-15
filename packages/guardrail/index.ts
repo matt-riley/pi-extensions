@@ -33,6 +33,7 @@ import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
 import { maskToolResult } from "./mask.mjs";
+import { quotedFromOutput } from "./provenance.mjs";
 import { dependencyConfirmation, dependencyEditPath } from "./deps.mjs";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -256,15 +257,19 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     let finalVerdict = verdict;
     let reason = decision?.reason ?? "flagged by the guardrail";
     let signals = null;
+    const branch = (() => {
+      try {
+        return ctx?.sessionManager?.getBranch?.() ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    // Text the agent read this turn is not the user speaking. A call that needs
+    // a decision and is a word-for-word copy of such text is flagged below.
+    const quoted =
+      typeof input?.command === "string" ? quotedFromOutput(branch, input.command) : [];
 
     if (verdict === "judge") {
-      const branch = (() => {
-        try {
-          return ctx?.sessionManager?.getBranch?.() ?? null;
-        } catch {
-          return null;
-        }
-      })();
       const judged = await judgeToolCall({
         action: typeof input?.command === "string" ? input.command : JSON.stringify(input ?? {}),
         toolName,
@@ -286,9 +291,18 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       }
     }
 
+    if (finalVerdict === "allow" && quoted.length) {
+      reason = `${reason}; the judge found it harmless`;
+      finalVerdict = "confirm";
+    }
+
     if (finalVerdict === "allow") {
       state.allowed += 1;
       return undefined;
+    }
+
+    if (finalVerdict === "confirm" && quoted.length) {
+      reason = `${reason}; this command appears word for word in the output of ${quoted.join(", ")}, and tool output or file contents cannot authorise it, only you can approve it`;
     }
 
     if (finalVerdict === "block") {
@@ -329,7 +343,7 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
       };
     }
 
-    const recommended = signals ? recommendedAction(signals) : null;
+    const recommended = signals && !quoted.length ? recommendedAction(signals) : null;
     const title = [
       "🛑 Guardrail",
       describeAction(toolName, input),
