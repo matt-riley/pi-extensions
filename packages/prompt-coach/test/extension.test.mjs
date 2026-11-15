@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import piPromptCoachExtension from "../index.ts";
+import { CONCISE_STYLE } from "../lib.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
 
@@ -336,4 +337,51 @@ test("a model failure is not put to Matt: there is no rewrite to confirm", async
   await h.command("fix the workflow");
   assert.equal(h.confirms.length, 0);
   assert.equal(h.editor.text, "fix the workflow");
+});
+
+test("--concise adds the style to the rewrite, and the checks never see it", async () => {
+  const h = harness({ candidate: "Fix the build and run npm run check." });
+  await h.command("--concise fix the build");
+
+  assert.equal(h.editor.text, `Fix the build and run npm run check.\n\n${CONCISE_STYLE}`);
+  assert.equal(h.entries[0].data.action, "rewritten");
+  assert.equal(h.entries[0].data.concise, true);
+  assert.equal(h.entries[0].data.placed, h.editor.text);
+  assert.equal(h.asks[0].state.original_prompt, "fix the build");
+  assert.equal(h.asks[0].state.rewritten_prompt, "Fix the build and run npm run check.");
+  const request = JSON.parse(h.fetchCalls[0].options.body);
+  assert.doesNotMatch(JSON.stringify(request.messages), /result first/i);
+});
+
+test("--concise alone styles a rewrite of the latest user prompt", async () => {
+  const h = harness({ lastPrompt: "make the tests green", candidate: "Make the tests green." });
+  await h.command("--concise");
+  assert.equal(h.editor.text, `Make the tests green.\n\n${CONCISE_STYLE}`);
+});
+
+test("without the flag nothing is added", async () => {
+  const h = harness({ candidate: "Fix the build." });
+  await h.command("fix the build");
+  assert.equal(h.editor.text, "Fix the build.");
+  assert.equal(h.entries[0].data.concise, false);
+});
+
+test("--concise still styles the original when the model is offline or changes nothing", async () => {
+  const offline = harness({ fetchFailure: true });
+  await offline.command("--concise fix the build");
+  assert.equal(offline.editor.text, `fix the build\n\n${CONCISE_STYLE}`);
+  assert.equal(offline.entries[0].data.action, "original-fallback");
+
+  const same = harness({ candidate: "fix the build" });
+  await same.command("--concise fix the build");
+  assert.equal(same.editor.text, `fix the build\n\n${CONCISE_STYLE}`);
+  assert.equal(same.entries[0].data.action, "unchanged");
+});
+
+test("--concise styles a rewrite the person confirms after a rejected intent check", async () => {
+  const h = harness({ candidate: "Fix the build.", intent: 0.1, confirm: () => true });
+  await h.command("--concise fix the build");
+  assert.equal(h.entries[0].data.action, "rewritten-confirmed");
+  assert.equal(h.editor.text, `Fix the build.\n\n${CONCISE_STYLE}`);
+  assert.doesNotMatch(h.confirms[0].message, /result first/i);
 });
