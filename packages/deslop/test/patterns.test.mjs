@@ -208,14 +208,62 @@ test("one coined label, or an ordinary compound, is not a finding", () => {
     assert.deepEqual(ids(text), [], text);
 });
 
-test("a contrast framed as X, not Y is found when it repeats", () => {
-  const text = "This is a library, not a framework. The default is a helper, not a daemon.";
+test("a contrast framed as X, not Y stays weak and counts from two sightings", () => {
+  const one = findSlop("This is a library, not a framework.");
+  assert.deepEqual(one, [], "one such sentence is often a fair scope statement");
+  const text = "This is a library, not a framework. The default is a helper -- not a daemon.";
   const found = findSlop(text).find((item) => item.id === "x-not-y");
   assert.ok(found, text);
   assert.equal(found.count, 2);
   assert.equal(found.severity, "medium");
   assert.equal(worthReporting([found]), false, "medium signs need company");
-  assert.ok(ids("It is a guide—not a spec. This is a tool—not a toy.").includes("x-not-y"));
+});
+
+test("not X but Y is a strong contrast on one sighting", () => {
+  for (const text of [
+    "This is not a bug but a feature.",
+    "It isn't a cache, but a registry.",
+    "The gate is not the author but the reader.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "contrast");
+    assert.ok(found, text);
+    assert.equal(found.severity, "high");
+  }
+});
+
+test("a but clause that is not a contrast is left alone", () => {
+  for (const text of [
+    "It is not set, but the default applies.",
+    "This is not documented, but it works.",
+    "The flag is not required but is recommended.",
+    "He does not like the cache but uses it.",
+  ])
+    assert.deepEqual(ids(text), [], text);
+});
+
+test("a one-line closer ends a paragraph on a sign-off", () => {
+  for (const text of [
+    "The parser reads each file once and caches the tree. That's it.",
+    "We removed the lock.\n\nSimple as that.",
+    "Run the check before every push. No magic.",
+    "It reads the config and exits. And that's the point!",
+    "That is the whole story.",
+  ]) {
+    const found = findSlop(text).find((item) => item.id === "closer");
+    assert.ok(found, text);
+    assert.equal(found.severity, "high");
+    assert.equal(worthReporting([found]), true);
+  }
+});
+
+test("a closing phrase inside a sentence or code is not a closer", () => {
+  for (const text of [
+    "That's it for the cache, so the parser runs next.",
+    "The no magic mode is off. Run it twice.",
+    "Print `That's it.` when the run ends.",
+    "The result is the whole story of the run, read from disk.",
+  ])
+    assert.deepEqual(ids(text), [], text);
 });
 
 test("a plain correction is not a contrast", () => {

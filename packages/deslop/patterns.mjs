@@ -88,7 +88,7 @@ const CHECKS = [
     id: "contrast",
     sign: "W2",
     severity: "high",
-    label: '"not X, it is Y" contrast',
+    label: '"not X, it is Y" or "not X but Y" contrast',
     fix: "state Y directly and cut the negation",
     pattern: new RegExp(
       [
@@ -96,6 +96,7 @@ const CHECKS = [
         String.raw`\bnot\s+(?:only|just)\b[^.!?\n]{0,80}\bbut\s+also\b`,
         String.raw`\bless\s+about\b[^.!?\n]{0,60}\bmore\s+about\b`,
         String.raw`\bnot\s+because\b[^.!?\n]{0,80}[.,]\s*(?:but\s+)?because\b`,
+        String.raw`\b(?:(?:is|are|was|were)\s+not|(?:is|are|was|were)n['’]t)\s+(?:an?|the)\b[^.!?\n]{0,60}?\bbut\s+(?:rather\s+)?(?:an?|the)\b`,
       ].join("|"),
       "gi",
     ),
@@ -303,7 +304,30 @@ const CHECKS = [
     fix: "state what it is and drop the alternative nobody asked about",
     min: 2,
     pattern:
-      /\b(?:is|are|was|were|it['’]s|that['’]s|this['’]s)\s+(?:an?|the)\s+[\w-]+(?:\s+[\w-]+){0,3}\s*[,—–]\s*(?:and\s+)?not\s+(?:an?|the)\s+[\w-]+/gi,
+      /\b(?:is|are|was|were|it['’]s|that['’]s|this['’]s)\s+(?:an?|the)\s+[\w-]+(?:\s+[\w-]+){0,3}\s*(?:[,—–]|--)\s*(?:and\s+)?not\s+(?:an?|the)\s+[\w-]+/gi,
+  },
+  {
+    id: "closer",
+    sign: "one-line closer",
+    severity: "high",
+    label: "one-line closer",
+    fix: "end on the last fact and cut the sign-off",
+    pattern: new RegExp(
+      String.raw`(?:^|[.!?]\s+)(?:` +
+        [
+          String.raw`(?:and\s+)?that(?:['’]s|\s+is)\s+(?:it|all|okay|fine)`,
+          String.raw`(?:and\s+)?that(?:['’]s|\s+is)\s+the\s+(?:whole\s+)?(?:point|story|idea)`,
+          String.raw`simple\s+as\s+that`,
+          String.raw`plain\s+and\s+simple`,
+          String.raw`no\s+(?:magic|surprises)`,
+          String.raw`nothing\s+(?:more|else)`,
+          String.raw`end\s+of\s+story`,
+          String.raw`full\s+stop`,
+          String.raw`period`,
+        ].join("|") +
+        String.raw`)[.!]?[ \t]*$`,
+      "gim",
+    ),
   },
   {
     id: "coined-label",
