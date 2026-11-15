@@ -268,9 +268,30 @@ export function frameHit(hit) {
   return `in ${sym.kind} ${sym.name}${sig ? ` ${sig}` : ""} (${range})`;
 }
 
+/** `[path=src, regex, context=3]`: the options that shaped a search, for telling parallel results apart. */
+function optionLabel(options) {
+  const parts = [];
+  if (options?.path) parts.push(`path=${options.path}`);
+  if (options?.regex) parts.push("regex");
+  if (options?.wholeWord) parts.push("whole word");
+  if (options?.caseSensitive) parts.push("case-sensitive");
+  if (options?.context > 0) parts.push(`context=${options.context}`);
+  return parts.length ? ` [${parts.join(", ")}]` : "";
+}
+
+/** A hit's numbered lines, the match marked, in the file's own text. */
+function contextLines(around) {
+  const width = String(Math.max(...around.map((line) => line.n))).length;
+  return around.map(
+    (line) => `  ${line.match ? ">" : " "} ${String(line.n).padStart(width)} | ${line.text}`,
+  );
+}
+
 /**
  * code_search result text. `start` counts the hits before this page, `remaining`
  * the matches after it, and `nextCursor` continues the search (null at the end).
+ * A hit with `around` shows those lines; `contextOmitted` counts the hits whose
+ * lines did not fit the page.
  */
 export function formatSearchHits({
   query,
@@ -281,15 +302,33 @@ export function formatSearchHits({
   remaining = total - start - hits.length,
   nextCursor = null,
   suggestion,
+  options,
+  contextOmitted = 0,
 }) {
   const page = start > 0 ? ` — showing ${start + 1}–${start + hits.length}` : "";
-  const out = [`# code_search "${query}" — ${total} match${total === 1 ? "" : "es"}${page}`];
+  const out = [
+    `# code_search "${query}"${optionLabel(options)} — ${total} match${total === 1 ? "" : "es"}${page}`,
+  ];
   for (const h of hits) {
     out.push(`${h.rel}:${h.lineNo}:${h.col}`);
     const frame = frameHit(h);
     if (frame) out.push(`  ${frame}`);
-    const text = h.text.trim().replace(/\s+/g, " ").slice(0, 160);
-    if (text) out.push(`  ${text}`);
+    if (h.around?.length) {
+      out.push(...contextLines(h.around));
+    } else {
+      const text = h.text.trim().replace(/\s+/g, " ").slice(0, 160);
+      if (text) out.push(`  ${text}`);
+    }
+    if (h.dupes > 1) {
+      out.push(
+        `  (this exact line appears ${h.dupes} times in the file: include a neighbouring line to edit it unambiguously)`,
+      );
+    }
+  }
+  if (contextOmitted > 0) {
+    out.push(
+      `… context left out for ${contextOmitted} hit${contextOmitted === 1 ? "" : "s"} to keep the page short: lower context, narrow with path=<dir>, or read those ranges.`,
+    );
   }
   if (truncated && remaining > 0) {
     const next = nextCursor

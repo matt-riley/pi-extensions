@@ -292,10 +292,14 @@ function keepFor(cursor) {
  */
 function collectFile({ rel, entry, matches, query, opts, keep }) {
   const digest = createHash("sha1");
+  // Identical lines all contain the query, so each one is a match: counting the
+  // matches counts the repeats, on the scan and the git-grep path alike.
+  const repeats = new Map();
+  for (const m of matches) repeats.set(m.text, (repeats.get(m.text) ?? 0) + 1);
   const ranked = matches.map((m) => {
     const score = scoreLine(m.text, m.lineNo, query, entry, opts);
     digest.update(`${m.lineNo}:${score}\n`);
-    return { rel, ...m, score, entry };
+    return { rel, ...m, score, entry, dupes: repeats.get(m.text) };
   });
   ranked.sort((a, b) => b.score - a.score || a.lineNo - b.lineNo);
   return {

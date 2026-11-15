@@ -441,3 +441,39 @@ test("searchRepo throws a clear cancellation error when the signal is already ab
   );
   assert.equal(readCalls, 0);
 });
+
+test("a hit knows how many times its exact line appears in the file", async () => {
+  const cache = { files: { "src/d.ts": entry([]) } };
+  const source = "return null;\nconst a = 1;\nreturn null;\n  return null;\nreturn null;\n";
+  const r = await searchRepo({
+    cache,
+    query: "null",
+    opts: {},
+    readFile: async () => source,
+  });
+  const byLine = Object.fromEntries(r.hits.map((h) => [h.lineNo, h.dupes]));
+  assert.deepEqual(byLine, { 1: 3, 3: 3, 4: 1, 5: 3 }, "the indented line is a different line");
+});
+
+test("the git-grep path counts repeated lines the same way", async () => {
+  const cache = { files: { "src/d.ts": entry([]) } };
+  const exec = async () => ({
+    code: 0,
+    stdout: "src/d.ts:1:8:return null;\nsrc/d.ts:3:8:return null;\nsrc/d.ts:4:3:  return null;\n",
+    stderr: "",
+  });
+  const r = await searchRepo({
+    cache,
+    query: "null",
+    opts: {},
+    readFile: async () => null,
+    exec,
+    root: "/repo",
+    viaGit: true,
+  });
+  assert.deepEqual(Object.fromEntries(r.hits.map((h) => [h.lineNo, h.dupes])), {
+    1: 2,
+    3: 2,
+    4: 1,
+  });
+});
