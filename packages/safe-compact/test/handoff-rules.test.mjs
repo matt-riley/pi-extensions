@@ -67,6 +67,9 @@ test("isStandingRule recognises a prohibition or an ask-first rule about a risky
     "don't post comments on issues",
     "never pay for anything without asking",
     "don't buy anything",
+    "Never post to Slack",
+    "Don't send anything to the client without asking me",
+    "don't touch prod",
   ]) {
     assert.equal(isStandingRule(text), true, text);
   }
@@ -88,6 +91,54 @@ test("isStandingRule leaves ordinary asks and style preferences alone", () => {
   ]) {
     assert.equal(isStandingRule(text), false, text);
   }
+});
+
+test("isStandingRule pins a prohibition that names send, post or prod, and leaves the noisy lookalikes alone", () => {
+  for (const text of [
+    "Never post to Slack",
+    "Don't send anything to the client without asking me",
+    "don't touch prod",
+  ]) {
+    assert.equal(isStandingRule(text), true, text);
+  }
+  for (const text of [
+    "never mind, we can post-process later",
+    "don't send me the long version",
+    "do not worry about the payload size",
+    "never use more tokens than needed",
+  ]) {
+    assert.equal(isStandingRule(text), false, text);
+  }
+});
+
+test("a send, post or prod rule is carried word for word, whatever Jev scored it", async () => {
+  const rules = [
+    "Never post to Slack",
+    "Don't send anything to the client without asking me",
+    "don't touch prod",
+  ];
+  const result = await compose([
+    user("first, fix the retry logic"),
+    assistant("on it"),
+    ...rules.flatMap((rule) => [user(rule), assistant("noted")]),
+    user("now run the tests"),
+  ]);
+  assert.ok(result);
+  const standing = section(result.summary, "Standing rules") ?? "";
+  for (const rule of rules) {
+    assert.ok(result.summary.includes(rule), rule);
+    assert.match(standing, new RegExp(`^- ${rule}$`, "m"), rule);
+  }
+});
+
+test("isStandingRule stays linear on a large input", () => {
+  const padding = "please fix the retry logic. ".repeat(20_000);
+  const started = performance.now();
+  assert.equal(isStandingRule(`${padding}Never post to Slack`), true);
+  assert.equal(isStandingRule(`${padding}don't send me the long version`), false);
+  assert.equal(isStandingRule(`${padding}don't touch prod`), true);
+  const took = performance.now() - started;
+  assert.ok(took < 500, `took ${Math.round(took)} ms`);
 });
 
 test("a safety rule the user stated is carried word for word, whatever Jev scored it", async () => {
