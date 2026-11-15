@@ -66,7 +66,7 @@ test("a new suppression directive is a strong flag in every language it is writt
         [["suppression", "high", "lowered-bar"]],
         `${file}: ${line}`,
       );
-      assert.match(found[0].excerpts[0], new RegExp(`^${file.replace(/[.]/g, "\\.")}:1: `));
+      assert.ok(found[0].excerpts[0].startsWith(`${file}:1: `), found[0].excerpts[0]);
     }
 });
 
