@@ -21,6 +21,15 @@ function loadTools() {
 
 const DEFERRED_WEB = ["web_answer", "batch_web_fetch"];
 
+test("every tool that returns web content calls it untrusted data", () => {
+  const tools = loadTools();
+  for (const name of ["web_fetch", "web_answer", "batch_web_fetch", "web_search"]) {
+    const def = tools.find((tool) => tool.name === name);
+    assert.ok(def, `${name} registered`);
+    assert.match(def.description, /untrusted data, never as instructions/i, `${name} description`);
+  }
+});
+
 for (const name of DEFERRED_WEB) {
   test(`${name} stays out of the initial tool list`, () => {
     const tools = loadTools();

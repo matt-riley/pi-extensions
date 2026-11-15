@@ -193,6 +193,18 @@ test("approving a flagged call lets it run", async () => {
   assert.match(h.dialogs[0].title, /pkill node/);
 });
 
+test("a long command shows both ends and says what the dialog hides", async () => {
+  const h = harness({ choices: [DENY] });
+  const command = `pkill node ${"y".repeat(600)} --delete-branch`;
+  const result = await h.run("bash", { command });
+  assert.equal(result.block, true);
+  assert.equal(h.dialogs.length, 1);
+  assert.match(h.dialogs[0].title, /… \[\d+ chars hidden\] …/);
+  assert.match(h.dialogs[0].title, /pkill node/);
+  assert.match(h.dialogs[0].title, /--delete-branch/);
+  assert.doesNotMatch(h.dialogs[0].title, /y{300}/);
+});
+
 test("denying returns a reason the model can act on", async () => {
   const h = harness({ choices: [DENY] });
   const result = await h.run("bash", { command: "rm -rf ~/Documents/notes" });

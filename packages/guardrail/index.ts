@@ -45,6 +45,9 @@ const COMMAND = "guardrail";
 const SCRIPT_READ_LIMIT = 64 * 1024;
 const MAX_SCRIPTS = 5;
 const MAX_ACTION_CHARS = 300;
+/** How much of an over-long action the dialog still shows at each end. */
+const ACTION_HEAD_CHARS = 190;
+const ACTION_TAIL_CHARS = 90;
 const DEPENDENCY_FILE_LIMIT = 1024 * 1024;
 
 const APPROVE = "✅ Approve";
@@ -66,7 +69,12 @@ function describeAction(toolName, input) {
         ? input.path
         : (JSON.stringify(input ?? {}) ?? "");
   if (name === "terminal_send") return `${name}: ${raw}`; // Show every byte being approved.
-  return `${name}: ${String(raw).replace(/\s+/g, " ").trim().slice(0, MAX_ACTION_CHARS)}`;
+  const text = String(raw).replace(/\s+/g, " ").trim();
+  if (text.length <= MAX_ACTION_CHARS) return `${name}: ${text}`;
+  // A silent cut hides the end, which is where an appended `&& rm -rf` lives.
+  // Show both ends and say how much is missing, so approval covers what is seen.
+  const hidden = text.length - ACTION_HEAD_CHARS - ACTION_TAIL_CHARS;
+  return `${name}: ${text.slice(0, ACTION_HEAD_CHARS)} … [${hidden} chars hidden] … ${text.slice(-ACTION_TAIL_CHARS)}`;
 }
 
 /**
