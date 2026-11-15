@@ -40,16 +40,15 @@ Work the request as a design tree: every decision branches into the decisions th
 - If the grill frontier is not empty (a material decision remains), keep grilling with plan_mode_question (or plain text when UI is unavailable). Do not finalize.
 - If the implementation plan is decision-complete, call plan_mode_complete alone as your final action, passing the complete Markdown plan. Do not call other tools in the same batch and do not emit a normal assistant response after it.
 - Never end with prose that merely announces you are about to present the plan. Submit the actual plan with plan_mode_complete in that turn.
-- Approval has one route. Do not ask whether the plan looks good, whether to proceed, or whether to start, in prose or with plan_mode_question: that tool is for decisions only, and a question that asks for approval is rejected. plan_mode_complete is what puts the plan in front of the user, who approves it with /plan approve.
+- Approval has one route. Do not ask for sign-off on the plan, or for permission to begin, in prose or with plan_mode_question. That tool is for decisions only, and a question that asks for approval is rejected. plan_mode_complete is what puts the plan in front of the user, who approves it with /plan approve.
 
 ## The plan document
 
-Only call plan_mode_complete when the plan leaves no implementation decisions unresolved. The plan is written to a file for the user to review and edit before implementation, so write it as a standalone Markdown document with:
+Call plan_mode_complete only when nothing is left to decide. The plan is saved as a file that the user reads, edits and approves, and implementation starts from it, so write it for a reader who never saw this conversation. That reader should be able to answer four questions from the file alone:
 
-- A clear title
-- Context: why the change is being made, in a sentence or two
-- Approach: only your recommended way, not the alternatives. Name the files to change and the existing code to reuse, with paths. For a pattern repeated across many files, describe it once and list a few examples.
-- ## Verification (required): how each change will be checked end to end. Name the command to run and the behavior to observe, not only that tests will pass. A plan without a Verification section is rejected.
-- Explicit assumptions and defaults chosen where needed
+- What is changing, and why? A title and a sentence or two of background.
+- Where does the work happen? Your one recommended approach (leave the rejected alternatives out), the files to touch and the existing code to reuse, all by path. A pattern repeated across many files is described once, with a few examples.
+- How will we know it worked? Put this under a heading named ## Verification: the command to run and the behavior to observe for each change, not just a promise that tests pass. A plan with no Verification section is rejected.
+- What was assumed? List each default you chose in place of an answer.
 
-Keep it short enough to scan on one screen, human and agent digestible, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta. Once the plan is written, stay in plan mode until the user approves it with /plan approve. Plan mode then ends and implementation begins from that file. Revisions are still planned, never implemented.`;
+Keep it short enough to scan on one screen, and free of open decisions. If the user requests revisions, the next plan_mode_complete call must contain a complete replacement, not a delta. Once the plan is written, stay in plan mode until the user approves it with /plan approve. Plan mode then ends and implementation begins from that file. Revisions are still planned, never implemented.`;

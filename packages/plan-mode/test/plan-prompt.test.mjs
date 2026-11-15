@@ -36,10 +36,30 @@ test("the plan document is short and has a verification section", () => {
   assert.match(doc, /short|one screen|scan/i);
 });
 
+test("the plan document is described by what a reader must be able to answer", () => {
+  const doc = phase("## The plan document");
+  for (const question of [/what is changing, and why/i, /where/i, /how will we know/i, /assum/i]) {
+    assert.match(doc, question);
+  }
+  assert.match(doc, /file the user (?:reads|will read)|reader/i);
+});
+
+test("the approval examples are our own, not a list from another prompt", () => {
+  const ending = phase("## Ending each turn");
+  for (const borrowed of [
+    /is this plan okay/i,
+    /should i proceed/i,
+    /any changes before we start/i,
+  ]) {
+    assert.doesNotMatch(PLAN_MODE_PROMPT, borrowed);
+    assert.doesNotMatch(ending, borrowed);
+  }
+});
+
 test("approval has one route: plan_mode_complete, never a question or prose", () => {
   const ending = phase("## Ending each turn");
   assert.match(ending, /plan_mode_complete/);
-  assert.match(ending, /do not ask whether the plan looks good/i);
+  assert.match(ending, /do not ask for sign-off/i);
   assert.match(ending, /rejected/i);
   assert.match(ending, /\/plan approve/);
 });

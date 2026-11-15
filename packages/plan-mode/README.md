@@ -76,7 +76,8 @@ to delegate while planning, which is why it carries its own, narrower toolset.
 ### The plan must say how it is checked
 
 `plan_mode_complete` refuses a plan with no verification section: a heading that names
-verification, testing, a test plan or acceptance, with at least a sentence under it. The rejection
+verification, testing, a test plan or acceptance, with at least a sentence under it. Subsections
+count as part of the section, and a `#` line inside a fenced code block is not a heading. The rejection
 says what to add (the command to run and the behavior to observe), and the agent calls the tool
 again. This is a heading check, not a judgment of the content; the [plan check](#the-plan-check)
 below reads each step for that.
@@ -84,10 +85,13 @@ below reads each step for that.
 ### One route to approval
 
 While planning, `plan_mode_question` rejects a question, title or option that asks for approval:
-"Is this plan okay?", "Should I proceed?", "Ready to implement?", "Any changes before we start?",
-"Looks good, proceed". The rejection points the agent at `plan_mode_complete`. Real decisions go
-through unchanged, and outside plan mode nothing is refused. The phrase list is plain patterns and
-will miss a clever rewording, so the prompt says the same thing.
+"Does this plan work for you?", "Happy for me to begin?", "Can I kick this off?", "Looks good,
+proceed". The rejection points the agent at `plan_mode_complete`. Only two kinds of question are
+refused: ones that put the whole plan up for sign-off, and ones that ask permission to begin with
+nothing else to choose. A genuine decision goes through, even with a begin word in it ("Should I
+start with the API or the UI?", "Do you approve dropping the legacy endpoint?"). Outside plan mode
+nothing is refused. The phrase list is plain patterns and will miss a clever rewording, so the
+prompt says the same thing.
 
 ### Available tools
 
