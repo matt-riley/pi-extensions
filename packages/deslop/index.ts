@@ -31,6 +31,31 @@ export default function piDeslopExtension(pi: ExtensionAPI) {
   bindSystemOne(pi);
   const state = createDeslopState();
 
+  pi.registerCommand("deslop", {
+    description: "Rewrite an existing file's prose plainly: /deslop <file>",
+    handler: async (args, ctx) => {
+      if (flagOff(process.env[DESLOP_ENV])) {
+        ctx.ui?.notify?.("deslop is disabled (PI_DESLOP).", "info");
+        return;
+      }
+      const file = args.trim();
+      if (!file) {
+        ctx.ui?.notify?.("Usage: /deslop <file>", "info");
+        return;
+      }
+      pi.sendUserMessage(
+        `Read the file at ${JSON.stringify(file)} and deslop its existing prose in place. ` +
+          "Remove filler, sales language, stock contrasts, repetitive punchy sentences and " +
+          "unnecessary decoration. Preserve all facts, instructions, caveats, links, code " +
+          "and the author's meaning. Keep wording that is already clear; do not invent " +
+          "claims or swap one stock phrase for another. Read the complete file before " +
+          "editing, change only this file, and review the diff for meaning changes. " +
+          "If the file is missing or unreadable, report that without creating it.",
+        { deliverAs: "followUp" },
+      );
+    },
+  });
+
   pi.on("session_start", async () => {
     resetDeslopState(state);
   });

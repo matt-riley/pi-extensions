@@ -9,6 +9,18 @@ while the file is still in front of it and rewrites the sentences.
 There is nothing to configure after you [install the collection](../../README.md#install).
 TypeSafe verification needs a key; see [Configuration](#configuration).
 
+## Deslop an existing file
+
+Run `/deslop docs/guide.md` to ask the agent to read the complete file and
+rewrite its existing prose in place. The rest of the argument is one path, so
+spaces are supported without shell quoting. The command starts a normal agent
+turn (or queues a follow-up if busy); it needs your current model, not a
+TypeSafe key. It asks the agent to preserve facts, steps, caveats, links and code,
+leave clear wording alone, and review the diff. Missing files should be reported,
+not created. This is an editing request, not an automatic regex replacement or a
+guarantee that a model preserves meaning. The usual post-edit checks still run
+for supported prose files inside the session directory.
+
 ## What it does
 
 It runs from `tool_result`, the hook pi fires after a tool finishes. A handler

@@ -230,3 +230,31 @@ test("credentials crossing the excerpt cap are not sent as fragments", async () 
   assert.equal(requests.length, 1);
   assert.doesNotMatch(JSON.stringify(requests[0].state), /ghp_B/);
 });
+
+test("/deslop forwards one file as a meaning-preserving rewrite task", async () => {
+  const pi = harness();
+  await pi.deslop("docs/existing file.md");
+  assert.equal(pi.messages.length, 1);
+  const [message, options] = pi.messages[0];
+  assert.match(message, /"docs\/existing file.md"/);
+  assert.match(message, /Read/);
+  assert.match(message, /preserve/i);
+  assert.match(message, /facts/);
+  assert.deepEqual(options, { deliverAs: "followUp" });
+  assert.equal(requests.length, 0);
+});
+
+test("/deslop with no file shows usage without starting a turn", async () => {
+  const pi = harness();
+  await pi.deslop("  ");
+  assert.equal(pi.messages.length, 0);
+  assert.deepEqual(pi.notices, [["Usage: /deslop <file>", "info"]]);
+});
+
+test("/deslop respects the extension off switch", async () => {
+  const pi = harness();
+  process.env.PI_DESLOP = "0";
+  await pi.deslop("README.md");
+  assert.equal(pi.messages.length, 0);
+  assert.deepEqual(pi.notices, [["deslop is disabled (PI_DESLOP).", "info"]]);
+});

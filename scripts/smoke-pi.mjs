@@ -358,6 +358,7 @@ export default function (pi) {
     "jobs",
     "skill-search",
     "usage",
+    "deslop",
   ])
     assert.ok(names.has(name), `Missing command ${name}`);
   assert.equal(names.has("influencer"), false, "extracted extension must not load here");
@@ -434,6 +435,30 @@ export default function (pi) {
   console.log(
     "ok: skill search and branch usage report run in the real host without model requests",
   );
+  const sloppyDoc = "It's worth noting that the cache holds 100 entries.\n";
+  const plainDoc = "The cache holds 100 entries.\n";
+  await writeFile(path.join(cwd, "existing file.md"), sloppyDoc);
+  scripted = [
+    { name: "read", arguments: { path: "existing file.md" } },
+    {
+      name: "edit",
+      arguments: { path: "existing file.md", edits: [{ oldText: sloppyDoc, newText: plainDoc }] },
+    },
+  ];
+  const deslopEvents = await prompt("/deslop existing file.md", true);
+  const deslopPrompt = JSON.stringify(resourceRequests.at(-1));
+  assert.match(deslopPrompt, /deslop its existing prose in place/);
+  assert.match(deslopPrompt, /Preserve all facts/);
+  for (const name of ["read", "edit"]) {
+    assert.ok(
+      deslopEvents.some(
+        (event) => event.type === "tool_execution_end" && event.toolName === name && !event.isError,
+      ),
+      `deslop did not complete ${name}`,
+    );
+  }
+  assert.equal(await readFile(path.join(cwd, "existing file.md"), "utf8"), plainDoc);
+  console.log("ok: /deslop reads and rewrites an existing file in the real host (scripted model)");
   const codeTool = (code) => ({ name: "codemode", arguments: { code } });
   phase = "jobs";
   scripted = [

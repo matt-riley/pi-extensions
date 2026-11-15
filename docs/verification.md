@@ -41,6 +41,9 @@ these paths:
   `touch smoke-blocked` tool call is denied, and the file remains absent.
 - **Subagents:** explicit opt-in and a completed scout through real child-session
   construction, with execution completion kept separate from task verification.
+- **Deslop:** `/deslop existing file.md` forwards a meaning-preserving rewrite
+  request, then scripted read/edit calls change only the existing fixture file.
+  This proves command/tool wiring, not real-model editorial quality.
 - **Completion:** done-gate gives one extra turn for an unverified workspace edit,
   keeps its reminder out of the visible transcript, and ignores an outside write.
   `/until` resumes work until its target file exists.
