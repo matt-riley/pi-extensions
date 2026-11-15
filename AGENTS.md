@@ -66,6 +66,10 @@ README's extension table, which indexes every package.
   in `shared/` is imported rather than re-typed: the conventions check names
   `usableNumber` and off-flag parsing explicitly. `npm run conventions` runs
   that checker alone when you want a fast answer.
+- Prompt prose is product text: assert the sentence a rule states
+  (`/Do not edit files\./`), not a keyword other sentences also contain
+  (`/plan/i` passes a prompt that says to skip the plan). See
+  `.pi/garden.md`.
 - `prompts/*.md` may only name skills that exist under `.agents/skills/`; the
   conventions check validates those references against skill frontmatter.
 - `npm run check` must pass before pushing: type-check with `tsc --noEmit`
