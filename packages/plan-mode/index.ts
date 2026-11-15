@@ -38,13 +38,14 @@ import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { decideGate, judgeQuestion } from "./ask-gate.mjs";
 import { PLAN_MODE_PROMPT } from "./plan-prompt.mjs";
+import { createScoutSlots, runPlanScout } from "./plan-scout.mjs";
 import { QUESTION_DESCRIPTION, QUESTION_LABEL, promptSection } from "./question.mjs";
 import { runPlanComprehensionCheck, resolvePlanCheckModel } from "./plan-check.mjs";
 import { reviewPlan } from "./plan-review.mjs";
 import { fetchSmart } from "../web-fetch/fetch.mjs";
 import { formatWebFetchResult, isKnownFormat } from "../web-fetch/format.mjs";
 import { atomicWriteFile, resolvePlanFile } from "./plan-file.mjs";
-import { OPEN_DESTRUCTIVE, OPEN_READ } from "../../shared/tool-annotations.mjs";
+import { LOCAL_READ, OPEN_DESTRUCTIVE, OPEN_READ } from "../../shared/tool-annotations.mjs";
 import { planToolVerdict, selectPlanTools } from "./tool-policy.mjs";
 import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 
@@ -64,6 +65,7 @@ function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 const COMPLETE_TOOL = "plan_mode_complete";
 const FETCH_TOOL = "plan_fetch_url";
+const SCOUT_TOOL = "plan_scout";
 // Tool membership is decided in tool-policy.mjs from annotations. lore_recall
 // is not registered here; it stays allowed only as an unannotated external
 // reader. web_search is the sanctioned open-world search path.
@@ -623,6 +625,56 @@ export default function planMode(pi: ExtensionAPI) {
         ],
         terminate: true,
       };
+    },
+  });
+
+  // At most three at once: pi runs sibling tool calls concurrently, so a batch of
+  // scouts is a batch of children.
+  const scoutSlots = createScoutSlots();
+
+  pi.registerTool({
+    name: SCOUT_TOOL,
+    label: "Plan Scout (read-only)",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Send a read-only scout into the repository and get its report back. The scout has fresh context and can only read, " +
+      "search and outline files: no shell, no edits, no web. Call it up to 3 times in one batch, one per area to understand. " +
+      "The brief must stand alone: the question, the paths or symbols to start from, what matters about this repo, and what to bring back.",
+    parameters: Type.Object({
+      task: Type.String({
+        description:
+          "The complete brief. The scout cannot see this conversation, so write the context into it.",
+      }),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (!state.enabled) {
+        return {
+          content: [{ type: "text", text: "Not in plan mode: plan_scout is inactive." }],
+        };
+      }
+      if (!scoutSlots.take()) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Three scouts are already running. Read their reports, then send the next one.",
+            },
+          ],
+        };
+      }
+      try {
+        const out = await runPlanScout({
+          task: params?.task,
+          cwd: ctx.cwd ?? process.cwd(),
+          model: ctx.model,
+          signal,
+        });
+        // Not isError: pi would blindly retry the same failing call.
+        return { content: [{ type: "text", text: out.text }] };
+      } finally {
+        scoutSlots.release();
+      }
     },
   });
 

@@ -12,7 +12,12 @@ const EXTERNAL_SET = new Set(EXTERNAL_TOOLS);
 
 // Plan mode's own tools. They stay available even when deferred, because the
 // mode is what activates them. plan_mode_complete writes the plan file.
-const PLAN_OWNED = new Set(["plan_mode_question", "plan_mode_complete", "plan_fetch_url"]);
+const PLAN_OWNED = new Set([
+  "plan_mode_question",
+  "plan_mode_complete",
+  "plan_fetch_url",
+  "plan_scout",
+]);
 
 // The one open-world reader that was already the sanctioned search path.
 // Other open-world readers (web_fetch, typesafe_ask, read_relevant) stay out,
@@ -36,6 +41,7 @@ const HISTORICAL_PLAN_TOOLS = [
   "plan_mode_question",
   "plan_mode_complete",
   "plan_fetch_url",
+  "plan_scout",
   "web_search",
 ];
 

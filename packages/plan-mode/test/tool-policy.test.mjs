@@ -28,6 +28,7 @@ const HISTORICAL = [
   "plan_mode_question",
   "plan_mode_complete",
   "plan_fetch_url",
+  "plan_scout",
   "web_search",
 ];
 
@@ -50,6 +51,11 @@ test("open-world readers stay out except web_search and plan-owned tools", () =>
     planToolVerdict("plan_mode_question", info("plan_mode_question", OPEN_READ, "deferred")),
     "allow",
   );
+});
+
+test("plan_scout stays available in plan mode while subagent stays blocked", () => {
+  assert.equal(planToolVerdict("plan_scout", info("plan_scout", LOCAL_READ, "deferred")), "allow");
+  assert.equal(planToolVerdict("subagent", info("subagent", OPEN_DESTRUCTIVE)), "block");
 });
 
 test("writers are blocked except the plan file tool", () => {
@@ -126,6 +132,7 @@ test("selectPlanTools follows annotations", () => {
     info("plan_mode_question", OPEN_READ, "deferred"),
     info("plan_mode_complete", OPEN_DESTRUCTIVE, "deferred"),
     info("plan_fetch_url", OPEN_READ, "deferred"),
+    info("plan_scout", LOCAL_READ, "deferred"),
     info("web_fetch", OPEN_READ),
     info("web_answer", OPEN_READ, "deferred"),
     info("batch_web_fetch", OPEN_READ, "deferred"),
@@ -164,6 +171,7 @@ test("selectPlanTools follows annotations", () => {
     "plan_mode_question",
     "plan_mode_complete",
     "plan_fetch_url",
+    "plan_scout",
   ]) {
     assert.ok(names.includes(name), name);
   }
