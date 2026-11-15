@@ -34,10 +34,33 @@ const FAITHFUL_FAILS_BELOW = 0.35;
 
 const KEEP_BELOW = 0.4; // hard-rule thresholds sit low: a false keep is cheap, a false drop is not
 
-export function decideTrigger({ percent, soft, hard, moment }) {
+/**
+ * "hold" is the soft band with a warm prompt cache: compacting would throw the
+ * cached prefix away, so it waits for the hard threshold instead.
+ */
+export function decideTrigger({ percent, soft, hard, moment, warm }) {
   if (percent === null || percent === undefined || percent < soft) return "none";
-  if (percent >= hard || moment?.clean) return "compact";
-  return "wait";
+  if (percent >= hard) return "compact";
+  if (warm) return "hold";
+  return moment?.clean ? "compact" : "wait";
+}
+
+/**
+ * Whether a message was served mostly from the prompt cache and finished
+ * recently enough that the cache is still there. pi's `usage.input` leaves out
+ * cached tokens (pi's own cache-stats and cache-warmer sum
+ * `input + cacheRead + cacheWrite` for the prompt size), so the ratio is
+ * cacheRead over that sum. Returns null for anything that is not an assistant
+ * message with usage.
+ */
+export function cacheWarmth(message, { minRatio, maxAgeMs, now = Date.now() }) {
+  const usage = message?.usage;
+  if (message?.role !== "assistant" || !usage || !Number.isFinite(message.timestamp)) return null;
+  const cacheRead = usage.cacheRead || 0;
+  const prompt = (usage.input || 0) + cacheRead + (usage.cacheWrite || 0);
+  const ratio = prompt > 0 ? cacheRead / prompt : 0;
+  const ageMs = Math.max(0, now - (message.timestamp + (message.durationMs || 0)));
+  return { ratio, ageMs, warm: ratio >= minRatio && ageMs < maxAgeMs };
 }
 
 /**
