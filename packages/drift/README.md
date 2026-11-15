@@ -1,4 +1,4 @@
-# pi-drift — notice edits made behind the agent's back
+# pi-drift: notice edits made behind the agent's back
 
 Files change under a session between its runs: an editor, another terminal, a
 `git checkout`. The agent's earlier reads are then stale, and it can overwrite

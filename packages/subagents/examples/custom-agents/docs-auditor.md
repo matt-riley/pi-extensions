@@ -24,12 +24,12 @@ Method:
 Output format:
 
 ## Drift
-- `README.md:12` — says X, but code does Y
+- `README.md:12`: says X, but code does Y
 
 ## Missing docs
 - feature/flag/behavior with no documentation
 
 ## Stale references
-- `docs/foo.md` — references the removed `--old-flag`
+- `docs/foo.md`: references the removed `--old-flag`
 
 Keep findings grounded: every line reference must be something you actually read.

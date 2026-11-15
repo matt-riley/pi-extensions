@@ -12,7 +12,7 @@ missing or ambiguous, report it and stop rather than guessing or using another c
 
 Bring forward what earlier pi sessions learned about: $ARGUMENTS
 
-1. Search pi's own transcripts — do not read session JSONL directly:
+1. Search pi's own transcripts (do not read session JSONL directly):
 
    `node "<collection-root>/scripts/mine-transcripts.mjs" --grep "<pattern>"`
 

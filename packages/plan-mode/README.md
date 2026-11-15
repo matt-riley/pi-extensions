@@ -1,4 +1,4 @@
-# pi-plan-mode — plan before editing
+# pi-plan-mode: plan before editing
 
 Work through a change before the agent starts editing. In `/plan`, the agent
 explores the repository with read-only tools, asks you to settle open decisions,
@@ -103,8 +103,8 @@ passes too.
 
 Before `/plan approve`, you can run **`/plan check`**: one hidden read-only
 child (via `subagents/spawn.mjs` `runChild`, pinned to **`cross-family`**, no
-fleet widget or panes) reads **only** the plan file path — it never sees the
-planning chat — and may read files the plan names. It must restate the plan under
+fleet widget or panes) reads **only** the plan file path (it never sees the
+planning chat) and may read files the plan names. It must restate the plan under
 **What the plan changes** and **How it will be done**, then list **Gaps**
 (undefined terms, unstated assumptions, missing verification). TypeSafe (Jev) then
 answers two yes/no questions: whether the restatement matches the plan goal, and
@@ -113,7 +113,7 @@ appended to the plan file as **`## Plan comprehension check`**, and Jev's answer
 are logged in the usual **`jev-decision`** ledger like the step review above.
 
 Cost: **one child run** (up to 8 turns, 120s timeout) plus one Jev request (12s).
-It is **opt-in and advisory** — it never blocks or changes `/plan approve`.
+It is **opt-in and advisory**: it never blocks or changes `/plan approve`.
 
 Hard failures are reported honestly:
 
@@ -123,12 +123,12 @@ Hard failures are reported honestly:
   and gaps; the verdict is **`not run`**, never a pass.
 - With no plan file yet, `/plan check` says so and does nothing.
 
-You then read/edit `.pi/PLAN.md` — directly, via `/plan edit` or `ctrl+alt+e`
+You then read/edit `.pi/PLAN.md` directly, via `/plan edit` or `ctrl+alt+e`
 (Ctrl+G inside the dialog opens your `$EDITOR`; the plan is written back when
-you close it), or in any editor of your choice — and run `/plan approve`. That
+you close it), or in any editor of your choice, and run `/plan approve`. That
 ends plan mode, restores your tools, and automatically tells the agent to
-implement the plan file — no separate exit/implement step. The file is the
-durable artifact — it survives compaction and is the implementation handoff,
+implement the plan file, with no separate exit/implement step. The file is the
+durable artifact: it survives compaction and is the implementation handoff,
 so plan mode needs no in-memory plan retention.
 
 ## Notes and non-goals (for now)
@@ -142,7 +142,7 @@ so plan mode needs no in-memory plan retention.
 - The bash guard is a **fail-closed read-only allowlist**: plan-mode bash is
   limited to inspection commands (see `shared/bash-policy.mjs`). Test runners
   (`npm test`, `go test`), script interpreters (`node`, `python3 -c`),
-  installs, and network tools are blocked in plan mode — exit plan mode to run
+  installs, and network tools are blocked in plan mode. Exit plan mode to run
   them; use `plan_fetch_url` / `web_search` for web research instead. The model is
   additionally instructed not to mutate.
 
@@ -159,8 +159,8 @@ label is now "Ask User Question"; its name is unchanged.
 
 `plan_mode_question` is where a discoverable question becomes a dialog, so it
 is also where that can be enforced: the tool, not the prompt. Before showing a
-dialog it asks Jev one thing — which option the agent's **own** `recommended`
-answer names — and answers only when that reading lands on the recommendation
+dialog it asks Jev one thing (which option the agent's **own** `recommended`
+answer names) and answers only when that reading lands on the recommendation
 at 0.9 confidence or above. A question is a dialog because the agent was in
 two minds about it; a reading that agrees with the recommendation was not
 going to be news.
@@ -174,8 +174,8 @@ the reason and the agent is told the answer was inferred rather than given, so
 the plan cannot claim the user chose it.
 
 A first version asked the judge whether "the context settles this" and got
-0.32 and 0.57 on the most inferable questions in `node scripts/judge-live.mjs`
-— the right answer to the wrong question, since one line of request is not
+0.32 and 0.57 on the most inferable questions in `node scripts/judge-live.mjs`.
+That is the right answer to the wrong question, since one line of request is not
 context. Reading the recommendation needs nothing the tool does not already
 have.
 

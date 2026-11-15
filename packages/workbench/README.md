@@ -11,7 +11,7 @@ Start with `/ui` to find a command, or `/changes` to inspect your work.
 | `/ui [words]` | Ctrl+Alt+K | Live command search by name, group or intent |
 | `/files [words]` | Ctrl+Alt+F | Live file search; insert a plain quoted reference |
 | `/changes [words]` | Ctrl+Alt+G | Browse staged, unstaged and untracked changes |
-| `/ui restore` | Search “Restore saved draft” | Recover/swap a saved prompt draft |
+| `/ui restore` | Search "Restore saved draft" | Recover/swap a saved prompt draft |
 
 Type to filter immediately; arrows navigate, Enter chooses, Escape cancels.
 Search requires every word; name matches rank ahead of description matches.
@@ -42,7 +42,7 @@ original text and arguments are restored, and a notification suggests `/exit`.
 **Nothing is autocorrected or executed**: edit it and submit again. Prefix it with
 ordinary text to discuss a literal command instead.
 
-Suggestions use the current extension/prompt/skill registry plus pi 1.4’s built-in
+Suggestions use the current extension/prompt/skill registry plus pi 1.4's built-in
 names. The guard recognizes one insertion, deletion, substitution or adjacent
 transposition (and wrong case). It deliberately leaves distant unknown names,
 paths, slash prose, multiline prompts, RPC/extension input and image-bearing
@@ -50,7 +50,7 @@ messages alone; images cannot be restored through the editor-text API.
 
 ## Files and changes
 
-File inventory reuses code-search’s Git-aware inventory and non-Git fallback.
+File inventory reuses code-search's Git-aware inventory and non-Git fallback.
 In a Git repository it covers the whole repository, including from a subdirectory.
 Ignored files are omitted; the existing inventory cap is 50,000 paths.
 

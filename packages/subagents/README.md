@@ -44,7 +44,7 @@ Unknown or disabled types error. There is no general-purpose fallback.
 
 | Type | Job | Writes |
 | --- | --- | --- |
-| `scout` | Fast recon. repo_map → code_search → key files → compressed start-here. | read-only |
+| `scout` | Fast recon. repo_map -> code_search -> key files -> compressed start-here. | read-only |
 | `reviewer` | Reviews the diff (not the whole file). Findings with `path:line`, severity, verdict. No edits. | read-only |
 | `verifier` | Independently reproduces a change. Runs the build, tests, and artifact, and reports observed evidence. | write-capable (bash unrestricted) |
 | `oracle` | Second opinion. Challenge assumptions. Name what is missing. | read-only |
@@ -69,7 +69,7 @@ Builtins are pre-tuned: `scout` (10 turns, low thinking), `reviewer` (15/high),
 
 `.md` files with YAML frontmatter, highest wins:
 
-1. `<cwd>/.pi/agents/*.md` — only if the project is trusted
+1. `<cwd>/.pi/agents/*.md`: only if the project is trusted
 2. `~/.pi/agent/agents/*.md`
 3. shipped builtins
 
@@ -86,15 +86,15 @@ You implement the task. Do not spawn other agents.
 A declared `tools:` list is honored for every agent (builtin or custom) and
 defines the child's exact toolset. Files that omit `tools:` get an explicit
 read-only allowlist (`read`, `grep`, `find`, `ls`, `bash`, the code-search tools,
-and the web tools) — never a blocklist, so no future mutating tool can leak in.
+and the web tools), never a blocklist, so no future mutating tool can leak in.
 
 Full bash is granted **only** to write-capable agents: those that declare
-`edit`/`write` in `tools:`. Every other agent — builtin or custom, listed or
-not — runs bash under the read-only allowlist, so a "read-only" agent cannot
+`edit`/`write` in `tools:`. Every other agent (builtin or custom, listed or
+not) runs bash under the read-only allowlist, so a "read-only" agent cannot
 `rm -rf` its way around missing write tools. `enabled: false` hides that name
 (including a builtin).
 
-Copy-paste examples live in [`examples/custom-agents/`](./examples/custom-agents/) —
+Copy-paste examples live in [`examples/custom-agents/`](./examples/custom-agents/):
 a write-capable `writer` and a read-only `docs-auditor`. Drop them into
 `~/.pi/agent/agents/` (or `<cwd>/.pi/agents/`) to use them as `subagent` types.
 
@@ -114,15 +114,15 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
   recent assistant text and tool trace instead of an empty message.
 - A "start converging" steer at ~70% of the turn cap (caps of 5+), before the wrap-up steer. Child token usage is
   attributed to the session (`usage` on the tool result).
-- Child runtime failures (error / timed out / aborted) return as normal content
-  — never `isError`, so pi does not blindly auto-retry the same failing spawn.
+- Child runtime failures (error / timed out / aborted) return as normal content,
+  never `isError`, so pi does not blindly auto-retry the same failing spawn.
 - Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
 - Children load host extensions except this package and the interactive-only ones
   (`lore`, `prompt-coach`, `skill-select`), and never get `subagent`.
   The router loads on purpose so children that inherit `router/auto` still register
   the virtual model; pinned or cross-family children keep their physical model.
 - The orchestrator brief (roster + spawn rules) is appended to the system
-  prompt only while subagents are on — never otherwise.
+  prompt only while subagents are on, never otherwise.
 
 ## Notes
 
@@ -145,7 +145,7 @@ runs it. URLs, globs, directories and paths the task says to create are never fl
 ## TypeSafe judgments (optional)
 
 With a TypeSafe key (see `pi-typesafe`) three batched Jev judgments run; without one they
-are skipped silently — every path fails open.
+are skipped silently, so every path fails open.
 
 - **Preflight** (before spawn): rejects a task once when it leans on context the child
   cannot see, or (write-capable agents) leaves a design decision open. Resubmitting the

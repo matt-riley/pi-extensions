@@ -1,4 +1,4 @@
-# pi-until — keep going until the predicate passes
+# pi-until: keep going until the predicate passes
 
 Give the agent a finish line it can check: a shell command that exits 0. If the
 check fails when the agent tries to stop, its output sends the agent back to
@@ -23,8 +23,8 @@ For example, keep working on a test failure, or wait for a PR's checks:
   and runs the agent.
 - Every time the run is about to settle, the command runs via `sh -c` in the
   session's cwd (10 minute timeout).
-  - exit 0 → loop ends, notification.
-  - non-zero → the last 40 lines of output go back to the agent as a message,
+  - exit 0: the loop ends, with a notification.
+  - non-zero: the last 40 lines of output go back to the agent as a message,
     with the rule: *a plateau is not a stop; never relax the predicate*. The
     agent continues.
   - after `--max` checks (default 20) it gives up and says so.

@@ -16,7 +16,7 @@ Thoroughness (infer from task, default medium):
 - Thorough: Trace all dependencies, check tests/types
 
 Strategy:
-1. If the repo is unfamiliar, start with repo_map to get the layout, languages, and package scripts — then drill in.
+1. If the repo is unfamiliar, start with repo_map to get the layout, languages, and package scripts, then drill in.
 2. Locate relevant code with code_search / grep / find (code_search ranks definitions first).
 3. Use file_outline to see a file's symbols before committing to a full read; use find_definition to resolve imports, aliases, and re-exports to their real definitions.
 4. Read key sections (not entire files).
@@ -24,7 +24,7 @@ Strategy:
 
 Discipline:
 - Never read node_modules, .git, or build output. Respect .gitignore.
-- Ground every file/line reference in what you actually read — do not guess line numbers.
+- Ground every file/line reference in what you actually read, and do not guess line numbers.
 - Compress aggressively: findings, not dumps. If a whole file matters, say so and summarize it; do not paste it.
 - Stop as soon as the task is answered. Do not pad.
 
@@ -36,7 +36,7 @@ List with exact line ranges:
 2. `path/to/other.ts` (lines 100-150) - Description
 
 ## Key Code
-Critical types, interfaces, or functions — minimal excerpts only, just what the next agent needs. Do not paste whole files.
+Critical types, interfaces, or functions: minimal excerpts only, just what the next agent needs. Do not paste whole files.
 
 ## Architecture
 Brief explanation of how the pieces connect.

@@ -1,4 +1,4 @@
-# pi-typesafe — TypeSafe System One judgments for pi
+# pi-typesafe: TypeSafe System One judgments for pi
 
 Ask a model a specific question and get a structured judgment back: yes/no
 probabilities, a choice, or a score. The answers come from
@@ -39,19 +39,19 @@ Answers come back with the same ids: `breaking: noul 0.88`,
 typesafe_ask(state, questions, model?)
 ```
 
-- `state` — text, or structured JSON (objects/arrays). Questions can reference
+- `state`: text, or structured JSON (objects/arrays). Questions can reference
   it by path, e.g. `` `ticket.messages[0].text` ``.
-- `questions` — map of id → `{ type, instructions, criteria }`:
-  - `noul` — yes/no; returns the probability of yes.
-  - `choice` — one of your options; returns the choice plus the distribution.
-  - `score` — graded rating on ordered levels you describe.
-- `model` — optional override (default `TYPESAFE_MODEL` or `jev-1.13.0`).
+- `questions`: map of id to `{ type, instructions, criteria }`:
+  - `noul`: yes/no; returns the probability of yes.
+  - `choice`: one of your options; returns the choice plus the distribution.
+  - `score`: graded rating on ordered levels you describe.
+- `model`: optional override (default `TYPESAFE_MODEL` or `jev-1.13.0`).
 
 Independent questions are answered in **one request**, so batch them rather than
 calling repeatedly. This saves requests; it does not make the answers certain.
 
 A request that could not be answered as asked is refused before it is sent: a state past Jev's 60000
-characters, a state value JSON would drop (`undefined`, a function, a `Map` — the model sees the key
+characters, a state value JSON would drop (`undefined`, a function, a `Map`, where the model sees the key
 as absent), or a question naming a path the state does not have. Each refusal names the size, the
 path or the question id, because an answer about absent state is indistinguishable from a considered
 "no".
@@ -63,11 +63,11 @@ sent to Jev; the agent only gets typed answers back, so nothing enters its
 context. Questions reference `file.content`, `file.path` and
 `command_output.output`.
 
-- `paths` — files, directories or globs (`src/**/*.ts`), at most 255 files. One
+- `paths`: files, directories or globs (`src/**/*.ts`), at most 255 files. One
   request per file, in parallel. A directory means its direct children unless
   `recursive`. Repo files only.
-- `rank_by` — id of a `noul` or `score` question; files come back highest first.
-- `command` — a read-only shell command; its output becomes state. Must pass
+- `rank_by`: id of a `noul` or `score` question; files come back highest first.
+- `command`: a read-only shell command; its output becomes state. Must pass
   both the read-only bash policy and the guardrail.
 
 Because this sends content to a third-party API, paths must resolve inside the
@@ -123,11 +123,11 @@ inspected. Local reads, commands and semantic-search results are not screened.
 
 ## Configuration
 
-Environment only — no config file:
+Environment only, no config file:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. Falls back to `LORE_TYPESAFE_API_KEY`, then to `typesafe.apiKey` in the lore config — the same locations lore itself checks: `LORE_CONFIG`, then `lore.json` under `LORE_HOME`, `XDG_CONFIG_HOME` or `~/.config`, with the legacy `~/.copilot/lore.json` fallback. One file therefore covers pi and lore on machines where shell exports never reach a GUI-launched agent. |
+| `TYPESAFE_API_KEY` | *(required)* | Bearer token for `api.typesafe.ai`. Falls back to `LORE_TYPESAFE_API_KEY`, then to `typesafe.apiKey` in the lore config. These are the same locations lore itself checks: `LORE_CONFIG`, then `lore.json` under `LORE_HOME`, `XDG_CONFIG_HOME` or `~/.config`, with the legacy `~/.copilot/lore.json` fallback. One file therefore covers pi and lore on machines where shell exports never reach a GUI-launched agent. |
 | `TYPESAFE_MODEL` | `jev-1.13.0` | Default model. Pinned because the repo's thresholds were measured on it; re-tune them before moving to a newer Jev. |
 | `PI_MASK_EMAILS` | off | Set to `1` to mask common email addresses in request-state string values. Leave off for identity/permission judgments. |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai/v1` | Override for a proxy or a test double. |
@@ -176,7 +176,7 @@ probabilities, and `{ input_tokens, output_tokens }`.
 - Malformed questions are rejected before any network call, with a message that
   says which question and why.
 - Failures (missing key, HTTP error, timeout, cancellation, invalid JSON) are
-  reported as tool errors — an explicit judgment request should surface its
+  reported as tool errors, because an explicit judgment request should surface its
   failure rather than silently return a default.
 - Zero runtime dependencies: `node:` built-ins and pi's typebox only.
 
@@ -249,7 +249,7 @@ node scripts/judge-thresholds.mjs sample.json
 
 ## Tests
 
-`npm test` — `systemone.test.mjs` covers the direct HTTP transport, validation,
+`npm test`: `systemone.test.mjs` covers the direct HTTP transport, validation,
 timeout/abort and formatting; `systemone-classify.test.mjs` covers the Pi
 classify path, the `jev-1.13.0` pin, 429/529, redaction, and the fail-open /
 fail-closed gates; `ledger.test.mjs` covers the session entry, what it refuses

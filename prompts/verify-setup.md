@@ -20,7 +20,7 @@ The recipe has these sections: **Target** (what revision is being verified and h
 2. For each feature, re-read its source entry points and note likely drift with `path:line`. Scan recent churn (`git log --since=30.days --name-only`) for user-facing surfaces missing from the map, citing a real path before calling one missing.
 3. Drive every feature live at least once, even when the source looks clean. Doctor before the first drive and after any failed one.
 4. Triage what you find:
-   - the recipe describes something wrong → doc drift, fix it in the recipe;
-   - working behaviour the recipe can't drive → harness gap, fix it and re-drive it;
-   - the app is actually broken → product regression. Report it separately; never edit product code or soften the recipe to hide it.
+   - the recipe describes something wrong -> doc drift, fix it in the recipe;
+   - working behaviour the recipe can't drive -> harness gap, fix it and re-drive it;
+   - the app is actually broken -> product regression. Report it separately; never edit product code or soften the recipe to hide it.
 5. Only edit files under `.pi/verify/`. Report the outcome as **clean**, **changed** (with the edits) or **blocked** (what stopped it), plus which features were covered and which were unreachable and why.

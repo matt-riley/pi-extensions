@@ -1,4 +1,4 @@
-# 🧩 pi-extensions
+# pi-extensions
 
 A personal collection of extensions for the [Pi coding agent](https://pi.dev).
 Plan changes before editing, find your way around code, run background jobs, and
@@ -177,9 +177,9 @@ judge; a failed real request reports that it could not judge.
 
 ## Related
 
-- [Verifying pi extensions](./docs/verification.md) — what each check proves and misses.
-- [Keeping skills lean](./docs/skill-diet.md) — the checklist for trimming a `SKILL.md`.
-- [Applying the Pi workflow research](./docs/research-application.md) — the design decisions behind discovery, usage and workflow commands.
-- [Pi's sandbox example and this collection](./docs/sandbox-integration.md) — what would be needed for OS-level isolation; not an enabled feature.
-- [Bounded workflow outcome pilot](./docs/workflow-evaluation.md) — a small recorded experiment, including its limits.
-- [matt-riley/lore](https://github.com/matt-riley/lore) — local-first memory for the Copilot CLI and pi, installed separately.
+- [Verifying pi extensions](./docs/verification.md): what each check proves and misses.
+- [Keeping skills lean](./docs/skill-diet.md): the checklist for trimming a `SKILL.md`.
+- [Applying the Pi workflow research](./docs/research-application.md): the design decisions behind discovery, usage and workflow commands.
+- [Pi's sandbox example and this collection](./docs/sandbox-integration.md): what would be needed for OS-level isolation; not an enabled feature.
+- [Bounded workflow outcome pilot](./docs/workflow-evaluation.md): a small recorded experiment, including its limits.
+- [matt-riley/lore](https://github.com/matt-riley/lore): local-first memory for the Copilot CLI and pi, installed separately.

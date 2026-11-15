@@ -16,9 +16,9 @@ For example, run a project's tests and open the job list to follow the output:
 /jobs
 ```
 
-- `/jobs run <command>` — start a pipe-based job without involving the model.
-- `/jobs pty <command>` — start an interactive terminal.
-- `/jobs` — choose a job; `/jobs <id>` opens it directly.
+- `/jobs run <command>`: start a pipe-based job without involving the model.
+- `/jobs pty <command>`: start an interactive terminal.
+- `/jobs`: choose a job; `/jobs <id>` opens it directly.
 
 The live log overlay follows output. Arrows/PageUp/PageDown/Home/End scroll;
 `f` toggles following. `i` sends one line, `s` confirms a stop, `x` forgets a

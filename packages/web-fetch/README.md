@@ -1,4 +1,4 @@
-# pi-web-fetch — read and search the web
+# pi-web-fetch: read and search the web
 
 Read web pages and search results without filling the conversation with navigation,
 ads and raw HTML. GitHub links use the authenticated `gh` CLI when available.
@@ -27,7 +27,7 @@ item's result (or failure) independently. `web_search` returns ranked
 DuckDuckGo results (title, URL, snippet) without an API key. `web_answer` and
 `batch_web_fetch` use deferred exposure and load through tool search when needed.
 
-## `web_answer` — the passage, not the page
+## `web_answer`: the passage, not the page
 
 ```
 web_answer(url, question, max_spans?)
@@ -35,7 +35,7 @@ web_answer(url, question, max_spans?)
 
 Fetching a long page to answer one narrow question pays for the whole page.
 `web_answer` fetches it, splits it into passages, and asks TypeSafe's System One
-whether each passage answers the question — one request, every passage asked at
+whether each passage answers the question: one request, every passage asked at
 once, plus a Noul for whether the page answers at all.
 
 It returns the passages themselves, quoted verbatim, so the answer can be
@@ -49,15 +49,15 @@ The uploader retries three times, with exponential backoff starting at 200 ms.
 
 Three outcomes, and the tool says which one it is rather than guessing:
 
-- **answered** — the page answers the question; the strongest passages are returned.
-- **closest** — nothing cleared the threshold, but the nearest passages are
+- **answered**: the page answers the question; the strongest passages are returned.
+- **closest**: nothing cleared the threshold, but the nearest passages are
   returned with a warning, because reading them beats re-fetching blind.
-- **not_found** — the page does not appear to answer; try another source
+- **not_found**: the page does not appear to answer; try another source
   rather than reading this one.
 
 Requirements and limits:
 
-- **`TYPESAFE_API_KEY`** (`LORE_TYPESAFE_API_KEY`, or the lore config file — the
+- **`TYPESAFE_API_KEY`** (`LORE_TYPESAFE_API_KEY`, or the lore config file, the
   same chain `pi-typesafe` uses). Without it the tool refuses with a message
   pointing at `web_fetch` rather than fetching and failing later.
 - The page is cut at 45,000 characters before splitting and at 12 passages
@@ -77,37 +77,37 @@ Requirements and limits:
 
 ## What makes it "smart"
 
-- **Browser-like headers** — realistic Chrome user agent, `accept`,
+- **Browser-like headers**: realistic Chrome user agent, `accept`,
   `accept-language`, and `sec-fetch-*` navigation headers. Better success on
   bot-defended pages that check headers. This is *not* TLS fingerprint
   impersonation (that needs native deps this extension deliberately avoids).
-- **Chrome-free extraction** — scripts, styles, navs, footers, sidebars,
+- **Chrome-free extraction**: scripts, styles, navs, footers, sidebars,
   forms, ads, and comment widgets are stripped by tag and class/id heuristics;
-  the main content is picked by semantic element (`article` → `main` →
+  the main content is picked by semantic element (`article`, then `main`, then the
   highest-text block) and converted to markdown.
-- **Metadata** — title, description, author, site name, published date,
+- **Metadata**: title, description, author, site name, published date,
   language, canonical URL from `<head>`.
-- **Redirects, both kinds** — HTTP redirects (manual loop, capped) and
+- **Redirects, both kinds**: HTTP redirects (manual loop, capped) and
   client-side `<meta http-equiv="refresh">`, with a combined hop budget.
-- **Alternate-content fallback** — when a page extracts thin (< 250 chars),
+- **Alternate-content fallback**: when a page extracts thin (< 250 chars),
   `web_fetch` follows qualified `<link rel="alternate">` entries matching the
   requested format (`text/markdown`, `text/plain`, `application/json`) and
   refetches.
-- **Charset-aware** — respects `content-type` charset, `<meta charset>`, and
+- **Charset-aware**: respects `content-type` charset, `<meta charset>`, and
   `http-equiv` charset declarations; decodes with `TextDecoder`.
-- **Size-capped reads** — bodies are streamed with a hard cap (4 MB for
+- **Size-capped reads**: bodies are streamed with a hard cap (4 MB for
   text/html, 64 KB probe for binaries), so a 2 GB attachment can't eat
   memory.
-- **Binary handling** — non-text payloads are reported by content-type and
+- **Binary handling**: non-text payloads are reported by content-type and
   size instead of being slurped into context. Fetch a text/JSON
   representation instead (e.g. GitHub raw, an API endpoint).
 
-## `web_search` — keyless web search
+## `web_search`: keyless web search
 
 `web_search(query, max_results?)` returns ranked results as markdown: title,
 URL, and snippet. No API key; works with any provider/model.
 
-**Engine selection** — DuckDuckGo by default; set `searxngUrl` in settings to
+**Engine selection**: DuckDuckGo by default; set `searxngUrl` in settings to
 point `web_search` at a self-hosted SearXNG instance (JSON API, aggregates
 many engines, no scraping):
 
@@ -152,7 +152,7 @@ gives authenticated, structured data instead of scraped HTML:
 | `gist.github.com/…` | gist files |
 | `github.com/owner` | profile |
 
-`gh` availability is probed once per session (cached) — set
+`gh` availability is probed once per session (cached). Set
 `"webFetch": { "useGh": false }` in settings to disable. When `gh` is missing
 or unauthenticated, GitHub URLs fall back to plain HTTP automatically. Unhandled
 GitHub paths (`/actions`, `/settings`, …) also fall back to HTTP.
@@ -191,7 +191,7 @@ Optional keys in `~/.pi/agent/settings.json` or `<project>/.pi/settings.json`
 | `followAlternates` | `true` | Alternate-content fallback |
 | `includeImages` | `false` | Keep markdown image references |
 | `useGh` | `true` | Prefer `gh` for GitHub URLs |
-| `searxngUrl` | `""` | Self-hosted SearXNG instance (JSON API) — `web_search` uses it instead of DuckDuckGo |
+| `searxngUrl` | `""` | Self-hosted SearXNG instance (JSON API); `web_search` uses it instead of DuckDuckGo |
 
 ## Limitations
 
@@ -202,7 +202,7 @@ Optional keys in `~/.pi/agent/settings.json` or `<project>/.pi/settings.json`
 - **No file downloads.** Binary payloads are reported, not saved (the fetch
   tool stays read-only).
 - **Heuristic extraction** is tuned for articles/blog/docs; unusual layouts
-  may extract imperfectly — use `format=raw` to see the source.
+  may extract imperfectly. Use `format=raw` to see the source.
 
 ## Development
 

@@ -12,8 +12,8 @@ commands, see [Using the additions](#using-the-additions) below.
 ## Research and scope
 
 The comparison was made against commit `69b0baa378e772fd8158e4476d7745d581ef9b7a`,
-using two supplied research documents dated 2026-11-01: “Executive Summary” and
-“Pasted text(1).txt”. You do not need those files to use the commands. Both made
+using two supplied research documents dated 2026-11-01: "Executive Summary" and
+"Pasted text(1).txt". You do not need those files to use the commands. Both made
 the same eight proposals, but neither inventoried this implementation. Their
 suggested APIs and package statistics were not verified specifications.
 The root `package.json` remains the only extension registration point.
