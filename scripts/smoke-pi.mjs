@@ -712,6 +712,17 @@ export default function (pi) {
     `/architecture produced no violation: ${architectureNote.slice(0, 400)}`,
   );
   console.log("ok: /architecture reports a boundary violation from a live Pi");
+  const affectedStart = events.length;
+  await prompt("/affected");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const affectedNote = JSON.stringify(events.slice(affectedStart));
+  assert.match(
+    affectedNote,
+    /Affected tests: /,
+    `/affected produced no report: ${affectedNote.slice(0, 400)}`,
+  );
+  assert.match(affectedNote, /Nothing was run|not a git|git .* failed/);
+  console.log("ok: /affected answers from a live Pi without running anything");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

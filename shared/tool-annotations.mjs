@@ -48,6 +48,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "plan_mode_complete",
   "doctor_report",
   "architecture_check",
+  "affected_tests",
 ]);
 
 /**
