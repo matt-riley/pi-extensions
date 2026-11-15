@@ -8,6 +8,8 @@
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { excerpt, mapPool, rateCandidates, topIndices, usable, yes } from "../../shared/spans.mjs";
 
+import { trimForScoring } from "./scoring-text.mjs";
+
 const MAX_TEXT_CHARS = 1500;
 const MAX_HANDOFF_CHARS = 12000;
 
@@ -74,7 +76,8 @@ function segmentState({ goal, segment, next }) {
       // null, not undefined: JSON drops an undefined key, so the model would see
       // a segment with no way to tell "not a file" from "field missing".
       path: segment.path ?? null,
-      text: excerpt(segment.text, MAX_TEXT_CHARS),
+      // Bulky tool results are trimmed for this request only (scoring-text.mjs).
+      text: excerpt(trimForScoring(segment), MAX_TEXT_CHARS),
     },
     next: next ? excerpt(next.text, 400) : "(none)",
   };
