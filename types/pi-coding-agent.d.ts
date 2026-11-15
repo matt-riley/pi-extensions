@@ -280,6 +280,9 @@ declare module "@earendil-works/pi-coding-agent" {
     events: EventBus;
   }
 
+  /** The running Pi's version string. */
+  export const VERSION: string;
+
   /** Directory pi stores per-user agent config/state under (~/.pi/agent). */
   export function getAgentDir(): string;
 

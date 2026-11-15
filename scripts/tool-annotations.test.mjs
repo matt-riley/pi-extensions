@@ -46,6 +46,7 @@ const EXPECTED = new Map([
   ["plan_mode_question", { annotations: OPEN_READ, deferred: true }],
   ["plan_fetch_url", { annotations: OPEN_READ, deferred: true }],
   ["plan_mode_complete", { annotations: OPEN_DESTRUCTIVE, deferred: true }],
+  ["doctor_report", { annotations: LOCAL_READ, deferred: true }],
 ]);
 
 test("every tool declares annotations and only rare tools are deferred", async () => {

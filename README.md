@@ -93,6 +93,7 @@ project-specific skills in that project's `.agents/skills/`.
 
 | Package | Use it for |
 | --- | --- |
+| [`pi-doctor`](./packages/doctor/README.md) | `/doctor`: read-only report of Pi and Node versions, the tool registry, router.json and agent files. |
 | [`pi-exit`](./packages/exit/README.md) | Use `/exit` when your fingers insist on it. Same graceful shutdown as `/quit`. |
 | [`pi-plan-mode`](./packages/plan-mode/README.md) | Work through a change in read-only mode, with an editable plan before implementation. |
 | [`pi-web-fetch`](./packages/web-fetch/README.md) | Read web pages, search the web, and fetch GitHub content without opening a browser. |

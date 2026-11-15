@@ -1,0 +1,7 @@
+{
+  "name": "pi-doctor",
+  "version": "0.1.0",
+  "description": "Read-only health report: Pi and Node versions, the tool registry, router.json and agent files.",
+  "license": "MIT",
+  "type": "module"
+}
