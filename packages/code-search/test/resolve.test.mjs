@@ -1,11 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  loadWorkspaceMap,
-  parseTsconfigPaths,
-  resolveDefinition,
-  resolveSpecifier,
-} from "../resolve.mjs";
+import { loadImportGraph } from "../../../shared/import-graph.mjs";
+import { resolveDefinition } from "../resolve.mjs";
 
 const def = (name, kind = "function", extra = {}) => ({
   name,
@@ -59,75 +55,32 @@ const readFile = async (rel) => {
   return content[rel] ?? null;
 };
 
-const ctx = (overrides = {}) => ({
-  cache: { files: { ...BASE, ...overrides } },
-  tsconfig: null,
-  workspaceMap: null,
-  readFile,
-});
+// No tsconfig or workspaces here: what resolves is relative paths and externals.
+const graphOf = (cache) =>
+  loadImportGraph({ files: Object.keys(cache.files), readFile: async () => null });
 
-test("parseTsconfigPaths extracts baseUrl and paths", () => {
-  const parsed = parseTsconfigPaths({
-    compilerOptions: {
-      baseUrl: ".",
-      paths: { "@/*": ["src/*"], "@lib/*": ["lib/*"] },
-    },
-  });
-  assert.deepEqual(parsed.entries, [
-    { pattern: "@/*", target: "src/*" },
-    { pattern: "@lib/*", target: "lib/*" },
-  ]);
-  assert.equal(parsed.baseUrl, "");
-  assert.equal(parseTsconfigPaths({ compilerOptions: {} }), null);
-});
-
-test("resolveSpecifier: relative with extension and index probing", () => {
-  const fileSet = new Set(Object.keys(BASE));
-  assert.deepEqual(
-    resolveSpecifier("./helper", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null }),
-    { type: "file", rel: "src/helper/index.ts" },
-  );
-  assert.deepEqual(
-    resolveSpecifier("../missing", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: null })
-      .type,
-    "unresolved",
-  );
-});
-
-test("resolveSpecifier: tsconfig path aliases", () => {
-  const fileSet = new Set(Object.keys(BASE));
-  const tsconfig = parseTsconfigPaths({
-    compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"], "@lib/*": ["lib/*"] } },
-  });
-  const r = resolveSpecifier("@lib/foo", "src/alias.ts", { fileSet, tsconfig, workspaceMap: null });
-  assert.deepEqual(r, { type: "file", rel: "lib/foo.ts" });
-});
-
-test("resolveSpecifier: bare specifier → external", () => {
-  const fileSet = new Set(Object.keys(BASE));
-  assert.deepEqual(
-    resolveSpecifier("react", "src/index.ts", { fileSet, tsconfig: null, workspaceMap: new Map() }),
-    { type: "external", pkg: "react" },
-  );
-  assert.deepEqual(
-    resolveSpecifier("@scope/other", "src/index.ts", {
-      fileSet,
-      tsconfig: null,
-      workspaceMap: new Map(),
-    }),
-    { type: "external", pkg: "@scope/other" },
-  );
-});
+const ctx = async (overrides = {}) => {
+  const cache = { files: { ...BASE, ...overrides } };
+  return { cache, graph: await graphOf(cache), readFile };
+};
 
 test("resolveDefinition: fromFile import resolves to the defining file", async () => {
-  const r = await resolveDefinition({ symbol: "helper", fromFile: "src/index.ts", ...ctx() });
+  const r = await resolveDefinition({
+    symbol: "helper",
+    fromFile: "src/index.ts",
+    ...(await ctx()),
+  });
   assert.equal(r.primaryRel, "src/helper/index.ts");
   assert.equal(r.external, null);
   assert.ok(r.candidates.some((c) => c.rel === "src/helper/index.ts"));
 });
 
 test("resolveDefinition: follows re-export chains to the real definition", async () => {
-  const r = await resolveDefinition({ symbol: "deep", fromFile: "src/barrel.ts", ...ctx() });
+  const r = await resolveDefinition({
+    symbol: "deep",
+    fromFile: "src/barrel.ts",
+    ...(await ctx()),
+  });
   assert.equal(r.primaryRel, "src/deeper.ts");
 });
 
@@ -143,8 +96,7 @@ test("resolveDefinition: external imports are reported, not scanned", async () =
     symbol: "react",
     fromFile: "src/app.ts",
     cache,
-    tsconfig: null,
-    workspaceMap: new Map(),
+    graph: await graphOf(cache),
     readFile: async () => "x",
   });
   assert.equal(r.external, "react");
@@ -163,8 +115,7 @@ test("resolveDefinition: global scan lists exported definitions first", async ()
   const r = await resolveDefinition({
     symbol: "util",
     cache,
-    tsconfig: null,
-    workspaceMap: null,
+    graph: await graphOf(cache),
     readFile: async () => "export function util() {}",
   });
   assert.equal(r.candidates[0].rel, "src/two.ts");
@@ -183,8 +134,7 @@ test("resolveDefinition: kind filter narrows candidates", async () => {
     symbol: "thing",
     kind: "type",
     cache,
-    tsconfig: null,
-    workspaceMap: null,
+    graph: await graphOf(cache),
     readFile: async () => "x",
   });
   assert.ok(r.candidates.every((c) => c.kind === "type"));
@@ -199,8 +149,7 @@ test("resolveDefinition: no candidates suggests near names", async () => {
   const r = await resolveDefinition({
     symbol: "greetr",
     cache,
-    tsconfig: null,
-    workspaceMap: null,
+    graph: await graphOf(cache),
     readFile: async () => "x",
   });
   assert.equal(r.candidates.length, 0);
@@ -219,29 +168,10 @@ test("resolveDefinition: re-export cycles terminate", async () => {
     symbol: "loop",
     fromFile: "src/a.ts",
     cache,
-    tsconfig: null,
-    workspaceMap: null,
+    graph: await graphOf(cache),
     readFile: async () => "x",
   });
   // No crash, no definition found
   assert.equal(r.primaryRel, null);
   assert.ok(r.note.includes("no definition"));
-});
-
-test("loadWorkspaceMap maps workspace package names to dirs", async () => {
-  const json = { name: "root", workspaces: ["packages/*"] };
-  const files = ["packages/pkg/package.json", "packages/pkg/src/index.ts", "src/main.ts"];
-  const map = await loadWorkspaceMap({ files, readFile, json });
-  assert.equal(map.get("@scope/pkg"), "packages/pkg");
-});
-
-test("loadWorkspaceMap: scoped-glob and missing workspaces", async () => {
-  const none = await loadWorkspaceMap({ files: ["src/main.ts"], readFile, json: null });
-  assert.equal(none.size, 0);
-  const glob = await loadWorkspaceMap({
-    files: ["apps/web/package.json"],
-    readFile: async () => '{"name":"web"}',
-    json: { workspaces: { packages: ["apps/*"] } },
-  });
-  assert.equal(glob.get("web"), "apps/web");
 });

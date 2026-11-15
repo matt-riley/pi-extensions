@@ -39,7 +39,8 @@ import {
   languageBreakdown,
   packageHighlights,
 } from "./format.mjs";
-import { loadWorkspaceMap, parseTsconfigPaths, resolveDefinition } from "./resolve.mjs";
+import { loadImportGraph } from "../../shared/import-graph.mjs";
+import { resolveDefinition } from "./resolve.mjs";
 
 interface CacheEntry {
   mtimeMs: number;
@@ -227,23 +228,16 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     return null;
   }
 
-  async function loadTsconfig(root: string) {
-    const json = await readRootJson(root, ["tsconfig.json", "jsconfig.json"]);
-    return parseTsconfigPaths(json);
-  }
-
-  async function loadWorkspaces(root: string, files: Record<string, CacheEntry>) {
-    const pkgJson = await readRootJson(root, ["package.json"]);
-    return loadWorkspaceMap({
+  function loadGraph(root: string, files: Record<string, CacheEntry>) {
+    return loadImportGraph({
       files: Object.keys(files),
-      readFile: async (rel) => {
+      readFile: async (rel: string) => {
         try {
           return await readFile(join(root, rel), "utf8");
         } catch {
           return null;
         }
       },
-      json: pkgJson,
     });
   }
 
@@ -498,15 +492,13 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         fromFile = v.rel;
       }
       const kind = typeof params?.kind === "string" && params.kind ? params.kind : undefined;
-      const tsconfig = await loadTsconfig(session.root);
-      const workspaceMap = await loadWorkspaces(session.root, session.cache?.files ?? {});
+      const graph = await loadGraph(session.root, session.cache?.files ?? {});
       const result = await resolveDefinition({
         symbol,
         fromFile,
         kind,
         cache: session.cache,
-        tsconfig,
-        workspaceMap,
+        graph,
         readFile: async (rel) => {
           try {
             return await readFile(join(session.root, rel), "utf8");

@@ -1,11 +1,11 @@
 // resolve.mjs — find_definition engine: locate the definition of a symbol,
-// resolving relative imports (with extension/index probing), tsconfig/jsconfig
-// path aliases, workspace package names, and re-export chains (depth ≤ 8 with
-// a cycle guard). Bare specifiers that don't match a workspace member are
-// reported as external — node_modules is never scanned.
+// following imports and re-export chains (depth ≤ 8 with a cycle guard) to the
+// file that defines it. Turning a specifier into a file is the import graph's job
+// (shared/import-graph.mjs): relative paths, tsconfig/jsconfig aliases, workspace
+// packages, and external packages that are never scanned.
 //
-// Pure-ish: file existence is checked against the cache's file set; file
-// reads (package.json for workspaces, context lines) are injected.
+// Pure-ish: the cache and the import graph are passed in; file reads (context
+// lines) are injected.
 
 import { levenshtein } from "./search.mjs";
 
@@ -21,173 +21,7 @@ const DEF_KINDS = new Set([
   "method",
 ]);
 
-const EXT_PROBE = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts"];
 const REEXPORT_DEPTH = 8;
-
-/** Parse tsconfig/jsconfig compilerOptions.paths + baseUrl. */
-export function parseTsconfigPaths(json) {
-  const compiler = json?.compilerOptions;
-  if (!compiler || typeof compiler !== "object") return null;
-  const paths = compiler.paths;
-  if (!paths || typeof paths !== "object") return null;
-  const entries = [];
-  for (const [pattern, targets] of Object.entries(paths)) {
-    const target = Array.isArray(targets) ? targets[0] : targets;
-    if (typeof target === "string") entries.push({ pattern, target });
-  }
-  if (entries.length === 0) return null;
-  const baseUrl = typeof compiler.baseUrl === "string" ? compiler.baseUrl.replace(/\/+$/, "") : "";
-  return { baseUrl: baseUrl === "." ? "" : baseUrl, entries };
-}
-
-/**
- * Load the workspace name → dir map from root package.json `workspaces`.
- * @returns {Promise<Map<string, string>>}
- */
-export async function loadWorkspaceMap({ files, readFile, json }) {
-  const map = new Map();
-  let patterns = [];
-  if (json && typeof json === "object" && json.workspaces) {
-    if (Array.isArray(json.workspaces)) patterns = json.workspaces;
-    else if (typeof json.workspaces.packages === "object") patterns = json.workspaces.packages;
-  }
-  if (patterns.length === 0) return map;
-  const dirs = new Set();
-  const globRe = patterns.map((p) => globToDirRegex(String(p)));
-  const fileSet = new Set(files);
-  for (const rel of files) {
-    const parts = rel.split("/");
-    if (parts.length < 2) continue;
-    // Candidate workspace member dirs: every directory prefix of a file that
-    // has its own package.json.
-    for (let k = 1; k < parts.length; k++) {
-      const dir = parts.slice(0, k).join("/");
-      if (dirs.has(dir)) continue;
-      if (!fileSet.has(`${dir}/package.json`)) continue;
-      if (globRe.some((re) => re.test(dir))) dirs.add(dir);
-    }
-  }
-  for (const dir of dirs) {
-    try {
-      const text = await readFile(`${dir}/package.json`);
-      const name = JSON.parse(text)?.name;
-      if (typeof name === "string" && name) map.set(name, dir);
-    } catch {
-      // skip unreadable/parse-failing member manifests
-    }
-  }
-  return map;
-}
-
-/** Workspace glob (`packages/*`, `apps/**`) → dir-matching RegExp. */
-function globToDirRegex(glob) {
-  let body = String(glob).replace(/\/+$/, "");
-  let out = "";
-  let i = 0;
-  while (i < body.length) {
-    const c = body[i];
-    if (c === "*") {
-      let j = i;
-      while (j < body.length && body[j] === "*") j++;
-      const count = j - i;
-      if (count >= 2) out += ".*";
-      else out += "[^/]+";
-      i = j;
-    } else if (c === "?") {
-      out += "[^/]";
-      i++;
-    } else if (c === ".") {
-      out += "\\.";
-      i++;
-    } else {
-      out += c;
-      i++;
-    }
-  }
-  return new RegExp(`^${out}$`);
-}
-
-/**
- * Resolve a module specifier to a repo-relative file, probing extensions and
- * index files against the file set.
- * @returns {{ type: "file", rel: string } | { type: "external", pkg: string } | { type: "unresolved", reason: string }}
- */
-export function resolveSpecifier(spec, fromRel, { fileSet, tsconfig, workspaceMap }) {
-  const raw = String(spec ?? "");
-  if (!raw) return { type: "unresolved", reason: "empty specifier" };
-
-  const probe = (base) => {
-    if (fileSet.has(base)) return base;
-    for (const ext of EXT_PROBE) {
-      if (!ext) continue;
-      if (fileSet.has(base + ext)) return base + ext;
-    }
-    for (const ext of EXT_PROBE) {
-      if (fileSet.has(`${base}/index${ext}`)) return `${base}/index${ext}`;
-    }
-    return null;
-  };
-
-  const dirName = (rel) => {
-    const idx = rel.lastIndexOf("/");
-    return idx < 0 ? "" : rel.slice(0, idx);
-  };
-
-  // Relative specifier
-  if (raw.startsWith("./") || raw.startsWith("../")) {
-    const base = dirName(fromRel);
-    const parts = [];
-    for (const seg of raw.split("/")) {
-      if (seg === "." || seg === "") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    const joined = [...(base ? base.split("/") : []), ...parts].join("/");
-    const hit = probe(joined);
-    if (hit) return { type: "file", rel: hit };
-    return { type: "unresolved", reason: `no local file for "${raw}" (probed from ${fromRel})` };
-  }
-
-  // tsconfig/jsconfig path alias (@/lib/x, ~/foo, lib/*) — try entries from
-  // longest prefix to shortest, probing each target in the file set.
-  if (tsconfig) {
-    const baseUrl = tsconfig.baseUrl ? `${tsconfig.baseUrl.replace(/^\/+/, "")}/` : "";
-    const entries = [...tsconfig.entries].sort(
-      (a, b) => b.pattern.replace(/\*$/, "").length - a.pattern.replace(/\*$/, "").length,
-    );
-    for (const { pattern, target } of entries) {
-      let rel = null;
-      if (pattern.endsWith("*") && raw.startsWith(pattern.slice(0, -1))) {
-        const star = raw.slice(pattern.length - 1);
-        rel = `${baseUrl}${target.replace("*", () => star)}`.replace(/\/+/g, "/");
-      } else if (pattern === raw) {
-        rel = `${baseUrl}${target}`.replace(/\/+/g, "/");
-      }
-      if (rel) {
-        const hit = probe(rel);
-        if (hit) return { type: "file", rel: hit };
-      }
-    }
-  }
-
-  // Workspace package name
-  if (workspaceMap?.has(raw)) {
-    const dir = workspaceMap.get(raw);
-    const entry = probe(`${dir}/src/index`);
-    if (entry) return { type: "file", rel: entry };
-    const entry2 = probe(`${dir}/index`);
-    if (entry2) return { type: "file", rel: entry2 };
-    const pkgEntry = probe(`${dir}/package.json`);
-    if (pkgEntry && fileSet.has(pkgEntry)) {
-      return { type: "file", rel: pkgEntry }; // caller may read main/types
-    }
-    return { type: "unresolved", reason: `workspace member "${raw}" has no resolvable entry` };
-  }
-
-  // Bare specifier not in workspaces → external
-  const pkg = raw.startsWith("@") ? raw.split("/").slice(0, 2).join("/") : raw.split("/")[0];
-  return { type: "external", pkg };
-}
 
 /**
  * Find definition candidates for `symbol`.
@@ -196,22 +30,12 @@ export function resolveSpecifier(spec, fromRel, { fileSet, tsconfig, workspaceMa
  * @param {string} [opts.fromFile]   repo-relative path to resolve imports from
  * @param {string} [opts.kind]       optional kind filter
  * @param {object} opts.cache        cache object
- * @param {object|null} opts.tsconfig
- * @param {Map|null} opts.workspaceMap
+ * @param {{ resolve: (spec: string, fromRel: string) => object }} opts.graph  import graph (shared/import-graph.mjs)
  * @param {(rel: string) => Promise<string | null>} opts.readFile
  * @returns {Promise<{ external: string | null, candidates: Array, note: string | null, primaryRel: string | null }>}
  */
-export async function resolveDefinition({
-  symbol,
-  fromFile,
-  kind,
-  cache,
-  tsconfig,
-  workspaceMap,
-  readFile,
-}) {
+export async function resolveDefinition({ symbol, fromFile, kind, cache, graph, readFile }) {
   const files = Object.keys(cache?.files ?? {});
-  const fileSet = new Set(files);
   const note = [];
   let external = null;
   let primaryRel = null;
@@ -238,17 +62,11 @@ export async function resolveDefinition({
         }
       }
       if (targetSpec) {
-        const resolved = resolveSpecifier(targetSpec, fromFile, {
-          fileSet,
-          tsconfig,
-          workspaceMap,
-        });
+        const resolved = graph.resolve(targetSpec, fromFile);
         if (resolved.type === "file") {
           const followed = followReexports(resolved.rel, targetName, {
             cache,
-            fileSet,
-            tsconfig,
-            workspaceMap,
+            graph,
             depth: 0,
             visited: new Set(),
             alsoName: symbol, // default imports resolve to the function's own name
@@ -330,11 +148,7 @@ export async function resolveDefinition({
 }
 
 /** Follow a re-export chain from `startRel` looking for `name`. */
-function followReexports(
-  startRel,
-  name,
-  { cache, fileSet, tsconfig, workspaceMap, depth, visited, alsoName },
-) {
+function followReexports(startRel, name, { cache, graph, depth, visited, alsoName }) {
   if (depth > REEXPORT_DEPTH || visited.has(startRel)) return null;
   visited.add(startRel);
   const entry = cache.files[startRel];
@@ -352,15 +166,13 @@ function followReexports(
     (r) => r.names === null || r.names?.some((nm) => nm.imported === name || nm.local === name),
   );
   if (re?.source) {
-    const resolved = resolveSpecifier(re.source, startRel, { fileSet, tsconfig, workspaceMap });
+    const resolved = graph.resolve(re.source, startRel);
     if (resolved.type === "file") {
       const nm = re.names?.find((n) => n.imported === name || n.local === name);
       const nextName = nm ? nm.imported : name;
       return followReexports(resolved.rel, nextName, {
         cache,
-        fileSet,
-        tsconfig,
-        workspaceMap,
+        graph,
         depth: depth + 1,
         visited,
       });
