@@ -50,6 +50,20 @@ never creates or edits it.
 
 With no rules file, only the cycle check runs and the report says so.
 
+### This repository's own rules
+
+[`.pi/architecture.json`](../../.pi/architecture.json) here describes how pi-extensions
+works today, and `test/repo-rules.test.mjs` runs the check against it, so a new
+boundary break fails `npm run check`:
+
+- `shared/` imports nothing from `packages/` or `scripts/`.
+- `packages/` does not import `scripts/`.
+- A package imports only itself and `shared/`. The `except` list in
+  `packages-are-islands` names the 13 cross-package files that were already imported
+  when the rules were written. Move one into `shared/` and delete its line; do not add
+  to the list.
+- Import cycles are reported, and there are none.
+
 ## What counts as an import
 
 Static imports, `import type` (reported with its kind), re-exports, `require("...")`
