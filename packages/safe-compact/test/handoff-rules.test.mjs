@@ -7,7 +7,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { composeHandoff } from "../plan.mjs";
-import { defangSpeakerLabels, isStandingRule } from "../handoff-rules.mjs";
+import {
+  carriedRules,
+  defangSpeakerLabels,
+  isStandingRule,
+  withoutRules,
+} from "../handoff-rules.mjs";
 
 const noul = (value) => ({ type: "noul", noul: value });
 
@@ -182,4 +187,70 @@ test("the resume section is the same fixed text whatever the session held", asyn
   const b = await compose([user("completely different"), assistant("KEEPME y"), user("more")]);
   assert.ok(section(a.summary, "Resume"));
   assert.equal(section(a.summary, "Resume"), section(b.summary, "Resume"));
+});
+
+const PREVIOUS = [
+  "## Goal\nfix the retry logic",
+  "## Standing rules and constraints (verbatim)\n- Never force-push to main\n- ask before you delete\n  any branch or tag",
+  "## Recent user messages (verbatim, oldest first)\n- carry on",
+  "## Full transcript (searchable)\nsee disk",
+].join("\n\n");
+
+test("carriedRules reads the rule bullets of an earlier handoff, joined continuation lines included", () => {
+  assert.deepEqual(carriedRules(PREVIOUS), [
+    "Never force-push to main",
+    "ask before you delete\nany branch or tag",
+  ]);
+});
+
+test("carriedRules also reads the earlier section title, and tolerates anything else", () => {
+  const old = "## Constraints & preferences (verbatim)\n- use tabs";
+  assert.deepEqual(carriedRules(old), ["use tabs"]);
+  assert.deepEqual(carriedRules(undefined), []);
+  assert.deepEqual(carriedRules("no sections here"), []);
+});
+
+test("withoutRules drops only the rules section", () => {
+  const rest = withoutRules(PREVIOUS);
+  assert.doesNotMatch(rest, /force-push/);
+  assert.match(rest, /## Goal/);
+  assert.match(rest, /## Recent user messages/);
+});
+
+test("rules from an earlier handoff are carried into the next one, once, and not repeated", async () => {
+  const result = await compose([user("keep going"), assistant("KEEPME ok")], {
+    previousSummary: PREVIOUS,
+  });
+  assert.ok(result);
+  const rules = section(result.summary, "Standing rules") ?? "";
+  assert.match(rules, /^- Never force-push to main$/m);
+  assert.match(rules, /^- ask before you delete\n {2}any branch or tag$/m);
+  assert.equal(result.summary.match(/Never force-push to main/g).length, 1);
+  assert.match(section(result.summary, "Earlier context") ?? "", /fix the retry logic/);
+});
+
+test("a rule survives three compactions in a row", async () => {
+  let summary = PREVIOUS;
+  for (const round of ["a", "b", "c"]) {
+    const result = await compose([user(`step ${round}`), assistant(`KEEPME did ${round}`)], {
+      previousSummary: summary,
+    });
+    assert.ok(result);
+    summary = result.summary;
+    assert.match(section(summary, "Standing rules") ?? "", /Never force-push to main/, round);
+  }
+});
+
+test("a new rule joins the carried ones, and the oldest go first past the cap", async () => {
+  const many = Array.from({ length: 45 }, (_, i) => `- rule number ${i}`).join("\n");
+  const previous = `## Standing rules and constraints (verbatim)\n${many}`;
+  const result = await compose([user("go"), user("Never delete the backups")], {
+    previousSummary: previous,
+  });
+  assert.ok(result);
+  const rules = (section(result.summary, "Standing rules") ?? "").split("\n");
+  assert.equal(rules.length, 40);
+  assert.equal(rules.at(-1), "- Never delete the backups");
+  assert.ok(!rules.includes("- rule number 0"));
+  assert.ok(rules.includes("- rule number 44"));
 });

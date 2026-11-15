@@ -14,7 +14,13 @@ import {
   WINDOW_RELEVANCE,
 } from "../../shared/spans.mjs";
 import { DISPOSITIONS, judgeSegment, pickGoal, verifyCoverage, verifyEntries } from "./judge.mjs";
-import { defangSpeakerLabels, isStandingRule } from "./handoff-rules.mjs";
+import {
+  carriedRules,
+  defangSpeakerLabels,
+  isStandingRule,
+  MAX_CARRIED_RULES,
+  withoutRules,
+} from "./handoff-rules.mjs";
 import { estimateTokens, messageText, segmentMessages, splitSpans } from "./segment.mjs";
 
 const MAX_SEGMENTS = 400;
@@ -391,15 +397,24 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
     fileLists.modifiedFiles.length ? `modified: ${fileLists.modifiedFiles.join(", ")}` : "",
   ].filter(Boolean);
   const pointers = [...bySection("pointers"), ...files];
+  // Earlier handoffs' rules first, then this span's; one already restated is kept once.
+  const fresh = bySection("constraints");
+  const rules = [
+    ...carriedRules(previousSummary).filter((rule) => !fresh.includes(rule)),
+    ...fresh,
+  ].slice(-MAX_CARRIED_RULES);
   const sections = [
     ["Goal", goal],
-    ["Standing rules and constraints (verbatim)", bullets(bySection("constraints"))],
+    ["Standing rules and constraints (verbatim)", bullets(rules)],
     ["Recent user messages (verbatim, oldest first)", bullets(bySection("recent"))],
     ["Open problems (verbatim)", bullets(bySection("problems"))],
     ["Key decisions", bullets(bySection("decisions"))],
     ["Context carried forward", bullets(bySection("context"))],
     ["Pointers (re-read on demand)", bullets(pointers)],
-    ["Earlier context", previousSummary ? excerpt(previousSummary, PREVIOUS_MAX) : ""],
+    [
+      "Earlier context",
+      previousSummary ? excerpt(withoutRules(previousSummary), PREVIOUS_MAX) : "",
+    ],
     ["Agent note (verbatim)", defangSpeakerLabels(note)],
     ["Resume", RESUME],
     ["Full transcript (searchable)", wayBack(restore)],

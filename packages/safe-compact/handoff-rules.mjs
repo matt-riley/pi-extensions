@@ -30,3 +30,45 @@ const SPEAKER_LABEL = /^(\s*(?:\[[^\]\n]*\]\s*)?)(user|human)\s*:/gim;
 export function defangSpeakerLabels(text) {
   return String(text ?? "").replace(SPEAKER_LABEL, "$1(quoted by the agent) $2:");
 }
+
+const RULES_TITLES = new Set([
+  "Standing rules and constraints (verbatim)",
+  "Constraints & preferences (verbatim)",
+]);
+/** Rules carried from earlier handoffs; past this the oldest are let go. */
+export const MAX_CARRIED_RULES = 40;
+
+const sectionsOf = (summary) =>
+  String(summary ?? "")
+    .split(/^(?=## )/m)
+    .map((part) => {
+      const [head, ...rest] = part.split("\n");
+      return { part, title: head.startsWith("## ") ? head.slice(3).trim() : null, body: rest };
+    });
+
+/**
+ * The rule bullets of an earlier handoff, one string each. Each compaction
+ * excerpts the one before it, so a rule would fade after a few rounds; carrying
+ * the bullets forward whole keeps them as the user wrote them.
+ */
+export function carriedRules(summary) {
+  const rules = [];
+  for (const { title, body } of sectionsOf(summary)) {
+    if (!RULES_TITLES.has(title)) continue;
+    for (const line of body) {
+      if (line.startsWith("- ")) rules.push(line.slice(2));
+      else if (line.startsWith("  ") && rules.length > 0)
+        rules[rules.length - 1] += `\n${line.slice(2)}`;
+    }
+  }
+  return rules;
+}
+
+/** An earlier handoff without its rules section, for the "Earlier context" excerpt. */
+export function withoutRules(summary) {
+  return sectionsOf(summary)
+    .filter(({ title }) => !RULES_TITLES.has(title))
+    .map(({ part }) => part)
+    .join("")
+    .trim();
+}
