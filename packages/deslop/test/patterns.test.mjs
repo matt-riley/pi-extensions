@@ -446,7 +446,7 @@ test("the new strong signs are found, each with its sentence", () => {
   const cases = {
     "faux-insight": "What nobody tells you is that the cache is emptied on restart.",
     "dramatic-fragment": "The parser reads the file once. That's it. That's the whole thing.",
-    "rhetorical-setup": "What if I told you the cache is already warm?",
+    "rhetorical-setup": "Picture this: the cache is already warm.",
   };
   for (const [id, sample] of Object.entries(cases)) {
     const found = findSlop(sample).find((item) => item.id === id);
@@ -464,7 +464,7 @@ test("the new weak signs are found but do not report alone", () => {
       "The new flag skips the retry, highlighting the team's commitment to faster runs.",
     "importance-puffery": "The merge is a testament to the work on the cache.",
     weasel: "Studies show the parser is faster now.",
-    metadiscourse: "As you can see, the cache is emptied on restart.",
+    metadiscourse: "Put simply, the cache is emptied on restart.",
     "negative-listing": "Not a linter. Not a formatter. A checker.",
   };
   for (const [id, sample] of Object.entries(cases)) {
@@ -507,9 +507,9 @@ test("the new signs leave ordinary technical prose alone", () => {
     assert.deepEqual(ids(sample), [], sample);
 });
 
-test("I'll be honest and here's what I mean are throat-clearing pivots", () => {
-  assert.ok(ids("I'll be honest, the cache is too large.").includes("pivot"));
-  assert.ok(ids("Here's what I mean: the parser runs twice.").includes("pivot"));
+test("to be frank and let me be frank are throat-clearing pivots", () => {
+  assert.ok(ids("To be frank, the cache is too large.").includes("pivot"));
+  assert.ok(ids("Let me be frank: the parser runs twice.").includes("pivot"));
 });
 
 test("the newer patterns stay linear on large hostile input", () => {

@@ -119,8 +119,8 @@ a habit that models repeat.
   that names this project's own commands and numbers does not match.
 - **A longer verb for "is".** The phrases `serves as` and `stands as`, with their
   plural forms, where `is` says the same thing. Medium.
-- **Faux-insight setup.** A line that flatters the writer as the one who sees
-  the hidden point, such as `what nobody tells you` or `the part everyone misses`.
+- **Faux-insight setup.** A line that casts the writer as the only one in on
+  a secret, such as `what nobody tells you` or `what everyone misses`.
   Strong. State the claim and drop the setup.
 - **Colon reveal.** A hype lead-in, a colon, then a lowercase punchline, as in
   `The best part: the cache warms itself`. Weak. Ordinary labels (`Timeout: 15`),
@@ -135,10 +135,10 @@ a habit that models repeat.
 - **Dramatic fragment.** The two-beat sign-off `That's it. That's the whole thing.`
   Strong. Use one complete sentence. The existing one-line closer still covers
   a last-line `that's it` on its own.
-- **Rhetorical setup.** Openers such as `what if I told you` or `think about it:`
-  that delay the point. Strong.
+- **Rhetorical setup.** Openers such as `picture this:` or `ask yourself:`
+  that hold back the claim. Strong.
 - **Interpretive metadiscourse.** An aside that tells the reader how to take
-  the sentence, such as `as you can see` or `the key point is`. Weak.
+  the sentence, such as `put simply` or `to put it another way`. Weak.
 - **Negative listing.** Two `Not a …` sentences in a row before saying what
   the thing is. Weak. State what it is and drop the list.
 
