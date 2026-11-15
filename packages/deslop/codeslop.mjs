@@ -105,7 +105,7 @@ function blockBody(lines, at, closes) {
   return null;
 }
 
-/** Errors swallowed into false, null or an empty result, with no log and no reason. */
+/** Errors dropped into false, null or an empty result, with no log and no reason. */
 function swallowedErrors(files) {
   const hits = [];
   for (const file of files)
@@ -214,9 +214,13 @@ function silencedTypes(files) {
 
 const FALLBACK_COMMENT =
   /\b(?:fall\s?back|just in case|should(?:n['’]t| never)|can(?:not|['’]t) happen|backwards?[- ]compat\w*|legacy|defensive|for safety)\b/i;
-const NULLISH_CHAIN = /\?\?[^?]*\?\?/;
+const CHAIN_OPERAND = String.raw`(?:""|\[\]|\{\}|[\w$]+(?:\??\.[\w$]+)*(?:\([^()]*\))?)`;
+/** `a ?? b ?? c`: three operands in a row, not two separate defaults on one line. */
+const NULLISH_CHAIN = new RegExp(
+  String.raw`${CHAIN_OPERAND}\s*\?\?\s*${CHAIN_OPERAND}\s*\?\?\s*${CHAIN_OPERAND}`,
+);
 
-/** Defaults, guards and compatibility shims that a comment admits nobody asked for. */
+/** Defaults, guards and compatibility shims that a comment admits nobody requested. */
 function unrequestedFallbacks(files) {
   const hits = [];
   for (const file of files) {
@@ -287,77 +291,108 @@ function deepNesting(files) {
   return hits;
 }
 
-const DECLARATIONS = {
-  js: [
-    ["function", /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_]\w*)/],
-    ["function", /^\s*(?:export\s+)?const\s+([A-Za-z_]\w*)\s*=\s*(?:async\s+)?(?:\(|\w+\s*=>)/],
-    ["class", /^\s*(?:export\s+)?class\s+([A-Za-z_]\w*)/],
-    ["interface", /^\s*(?:export\s+)?(?:interface|abstract\s+class)\s+([A-Za-z_]\w*)/],
-  ],
-  py: [["function", /^\s*(?:async\s+)?def\s+([A-Za-z]\w*)\(/]],
-  go: [["function", /^func\s+(\w+)\(/]],
-  rs: [["function", /^\s*(?:pub\s+)?fn\s+(\w+)/]],
-};
-const ENTRY_NAMES = new Set(["main", "handler", "index", "setup"]);
-const MIN_NAME_LENGTH = 4;
+const FORWARDER_NAME = /^\s*(?:export\s+)?(?:(?:async\s+)?(?:function|def)\s+|const\s+)(\w+)/;
 const IDENTIFIER = /[A-Za-z_]\w*/g;
+const INTERFACE_DECLARATION = /^\s*(?:export\s+)?(?:interface|abstract\s+class)\s+([A-Za-z_]\w*)/;
+const IMPLEMENTS_OR_EXTENDS = /\b(?:implements|extends)\b/;
 
-function declared(language, text) {
-  for (const [kind, pattern] of DECLARATIONS[language]) {
-    const name = pattern.exec(text)?.[1];
-    if (
-      name &&
-      (kind !== "function" || text.includes("=>") || !/^\s*(?:export\s+)?const\b/.test(text))
-    )
-      return { kind, name };
-  }
-  return null;
+/**
+ * A function whose whole body forwards its parameters, in order, to one other
+ * function. The patterns capture (name, parameters, target, arguments).
+ */
+const FORWARDERS = [
+  /^\s*(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*(?::[^=>]*)?=>\s*(?:await\s+)?([\w.$]+)\(([^()]*)\)\s*;?\s*$/,
+  /^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*(?::[^{]*)?\{\s*return\s+(?:await\s+)?([\w.$]+)\(([^()]*)\)\s*;?\s*\}\s*$/,
+];
+const FORWARDER_OPEN =
+  /^\s*(?:export\s+)?(?:(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)(?::[^{]*)?|const\s+(\w+)\s*=\s*(?:async\s+)?\(([^)]*)\)\s*(?::[^=>]*)?=>)\s*\{\s*$/;
+const PY_FORWARDER_OPEN = /^\s*(?:async\s+)?def\s+(\w+)\(([^)]*)\)(?:\s*->[^:]*)?:\s*$/;
+const RETURNED_CALL = /^\s*return\s+(?:await\s+)?([\w.$]+)\(([^()]*)\)\s*;?\s*$/;
+
+/** A parameter's name: without its type, default or optional mark. Null when it is not a plain name. */
+function parameterName(param) {
+  const trimmed = param.trim();
+  if (/[<>{}[\]]/.test(trimmed.split(/[:=]/)[0])) return null;
+  return trimmed.split(/[:=]/)[0].replace(/\?$/, "").trim();
 }
 
-/** How often each identifier appears across a set of lines. */
-function identifierCounts(lines) {
-  const counts = new Map();
-  for (const text of lines)
-    for (const word of text.match(IDENTIFIER) ?? []) counts.set(word, (counts.get(word) ?? 0) + 1);
-  return counts;
+function forwards(name, params, target, args) {
+  if (!name || !target || target.split(".").at(-1) === name) return false;
+  const names = params
+    .split(",")
+    .map(parameterName)
+    .filter((item) => item !== "");
+  const passed = args
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item !== "");
+  const own = names.filter((item) => item !== "self" && item !== "cls");
+  return (
+    !names.includes(null) &&
+    own.length === passed.length &&
+    own.every((item, at) => item === passed[at])
+  );
+}
+
+/** Whether the added line at `at` declares a function that only forwards its call. */
+function forwarderAt(language, lines, at) {
+  const text = lines[at].text;
+  if (language === "py") {
+    const open = PY_FORWARDER_OPEN.exec(text);
+    const call = RETURNED_CALL.exec(lines[at + 1]?.text ?? "");
+    const after = lines[at + 2]?.text;
+    const ended = after === undefined || !after.trim() || indentOf(after) <= indentOf(text);
+    return Boolean(open && call && ended && forwards(open[1], open[2], call[1], call[2]));
+  }
+  for (const pattern of FORWARDERS) {
+    const found = pattern.exec(text);
+    if (found && forwards(found[1], found[2], found[3], found[4])) return true;
+  }
+  const open = FORWARDER_OPEN.exec(text);
+  const call = RETURNED_CALL.exec(lines[at + 1]?.text ?? "");
+  return Boolean(
+    open &&
+    call &&
+    CLOSING_BRACE.test(lines[at + 2]?.text ?? "") &&
+    forwards(open[1] ?? open[3], open[2] ?? open[4], call[1], call[2]),
+  );
 }
 
 const implementersOf = (lines, name) =>
   lines.filter(
-    (text) =>
-      /\b(?:implements|extends)\b/.test(text) && (text.match(IDENTIFIER) ?? []).includes(name),
+    (text) => IMPLEMENTS_OR_EXTENDS.test(text) && (text.match(IDENTIFIER) ?? []).includes(name),
   ).length;
 
 /**
- * A function or class added in this diff that the diff uses once, or an
- * interface it implements once. Callers of something new can only be in
- * the diff, tests included, so the count is complete; a name that a removed line
- * also declares is an edit to old code and is skipped.
+ * Abstractions that add a name and nothing else: a type or interface the diff
+ * implements exactly once, and a function that only forwards to another. Tests
+ * count as implementers, and a name that a removed line also declares is an
+ * edit to old code, so it is skipped. Private helpers used once are ordinary
+ * code and are not reported.
  */
-function singleUse(files, everything) {
+function emptyAbstractions(files, everything) {
   const lines = everything.flatMap((file) =>
     file.hunks.flatMap(({ lines: hunk }) => hunk.map((line) => line.text)),
   );
-  const counts = identifierCounts(lines);
   const oldNames = new Set(
     everything.flatMap((file) =>
-      file.removed.map((text) => declared(file.language, text)?.name).filter(Boolean),
+      file.removed.flatMap((text) => {
+        const name = INTERFACE_DECLARATION.exec(text)?.[1] ?? FORWARDER_NAME.exec(text)?.[1];
+        return name ? [name] : [];
+      }),
     ),
   );
   const hits = [];
   for (const file of files)
     for (const { lines: hunk } of file.hunks)
-      for (const line of hunk) {
-        const found = line.kind === "add" ? declared(file.language, line.text) : null;
-        if (!found || ENTRY_NAMES.has(found.name) || oldNames.has(found.name)) continue;
-        if (found.name.length < MIN_NAME_LENGTH) continue;
-        const own = (line.text.match(IDENTIFIER) ?? []).filter(
-          (word) => word === found.name,
-        ).length;
-        const uses = (counts.get(found.name) ?? 0) - own;
-        const single =
-          found.kind === "interface" ? implementersOf(lines, found.name) === 1 : uses === 1;
-        if (single) hits.push({ path: file.path, n: line.n, text: line.text });
+      for (const [at, line] of hunk.entries()) {
+        if (line.kind !== "add") continue;
+        const interfaceName = INTERFACE_DECLARATION.exec(line.text)?.[1];
+        const empty = interfaceName
+          ? !oldNames.has(interfaceName) && implementersOf(lines, interfaceName) === 1
+          : !oldNames.has(FORWARDER_NAME.exec(line.text)?.[1]) &&
+            forwarderAt(file.language, hunk, at);
+        if (empty) hits.push({ path: file.path, n: line.n, text: line.text });
       }
   return hits;
 }
@@ -365,39 +400,40 @@ function singleUse(files, everything) {
 const CHECKS = [
   {
     id: "swallowed",
-    label: "error swallowed into a quiet result",
-    fix: "let the error reach the caller, or handle it and say why in a comment",
+    label: "failure turned into a normal-looking value",
+    fix: "propagate it, or record why dropping it is safe",
     scan: swallowedErrors,
   },
   {
     id: "echo-comment",
-    label: "comment that only repeats the code under it",
-    fix: "delete it, or say why the code does this",
+    label: "comment saying what the next line already says",
+    fix: "delete it, or write down why the line exists",
     scan: echoComments,
   },
   {
     id: "silenced-type",
-    label: "cast or suppression that only silences the type checker",
-    fix: "fix the type, or narrow it with a guard and name the reason",
+    label: "type escape hatch used to quiet the compiler",
+    fix: "give the value its real type, or add a guard and say why it holds",
     scan: silencedTypes,
   },
   {
     id: "fallback",
-    label: "fallback or guard nobody asked for",
-    fix: "remove it, or keep it and name the case it covers",
+    label: "default or guard for a case nobody described",
+    fix: "drop it, or note which case it handles",
     scan: unrequestedFallbacks,
   },
   {
     id: "nesting",
-    label: "nesting that early returns would flatten",
-    fix: "return or continue early and keep the main path at one level",
+    label: "logic buried under several levels of conditions",
+    fix: "test the failing case first and leave, so the main path stays shallow",
     scan: deepNesting,
   },
   {
     id: "single-use",
-    label: "new abstraction with one caller or one implementation",
-    fix: "inline it, unless it is public or names a concept worth keeping",
-    scan: singleUse,
+    severity: "low",
+    label: "interface with a single implementation, or wrapper that only forwards",
+    fix: "use the concrete thing directly unless a second implementation is planned",
+    scan: emptyAbstractions,
   },
 ];
 
@@ -416,7 +452,7 @@ export function findCodeSlop(diff) {
     findings.push({
       id: check.id,
       sign: "code-slop",
-      severity: "medium",
+      severity: check.severity ?? "medium",
       label: hits.length > MAX_EXCERPTS ? `${check.label}, ${hits.length} in all` : check.label,
       fix: check.fix,
       count: hits.length,
@@ -453,6 +489,9 @@ async function defaultBase(exec, cwd) {
   return null;
 }
 
+/** Low findings are hints: they are shown only beside a medium one, never alone. */
+const reportable = (findings) => (findings.some((item) => item.severity !== "low") ? findings : []);
+
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
@@ -468,11 +507,19 @@ export async function reviewBranch(exec, cwd, base) {
     return "deslop code: could not find a default branch to compare against. Pass one: /deslop code <base>.";
   const mergeBase = (await git(exec, cwd, ["merge-base", "HEAD", against]))?.trim();
   if (!mergeBase) return `deslop code: could not find a merge base between HEAD and ${against}.`;
-  const diff = await git(exec, cwd, ["diff", "--no-color", "-U3", mergeBase]);
+  const diff = await git(exec, cwd, [
+    "diff",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "-U3",
+    mergeBase,
+    "--",
+  ]);
   if (diff === null) return "deslop code: git diff failed.";
   if (!diff.trim()) return `deslop code: no changes since ${against}.`;
 
-  const findings = findCodeSlop(diff);
+  const findings = reportable(findCodeSlop(diff));
   const examined = parseDiff(diff).filter((file) => !file.skipped).length;
   const proposals = findings.reduce((sum, item) => sum + item.count, 0);
   const cut =
