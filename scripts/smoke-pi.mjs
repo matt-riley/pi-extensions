@@ -28,7 +28,12 @@ let scripted;
 let requests = 0;
 let childRequests = 0;
 let offeredTools = [];
-const PLAN_TOOL_NAMES = ["plan_mode_question", "plan_mode_complete", "plan_fetch_url"];
+const PLAN_TOOL_NAMES = [
+  "plan_mode_question",
+  "plan_mode_complete",
+  "plan_fetch_url",
+  "plan_scout",
+];
 const resourceRequests = [];
 const judgmentRequests = [];
 const server = createServer(async (req, res) => {
@@ -672,7 +677,9 @@ export default function (pi) {
   for (const name of PLAN_TOOL_NAMES) {
     assert.ok(offeredTools.includes(name), `plan mode did not offer ${name}`);
   }
-  console.log("ok: plan mode offers plan_mode_question, plan_mode_complete, and plan_fetch_url");
+  console.log(
+    "ok: plan mode offers plan_mode_question, plan_mode_complete, plan_fetch_url, and plan_scout",
+  );
   await prompt("/plan exit");
   phase = "after-plan";
   await prompt("SMOKE_AFTER_PLAN: reply once and stop.");
