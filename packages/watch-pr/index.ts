@@ -17,10 +17,17 @@ const GH_TIMEOUT_MS = 20_000;
 const POLL_MS = 20_000;
 const MAX_WAIT_S = 600;
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+    // One listener per poll otherwise accumulates on the tool's signal for the
+    // whole wait (up to 30 at a 10-minute limit).
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
   });
 }
 
