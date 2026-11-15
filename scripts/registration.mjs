@@ -13,7 +13,7 @@ export const Input = unavailable, SelectList = unavailable, ScrollView = unavail
 
 const SDK_STUB = `data:text/javascript,${encodeURIComponent(`
 const unavailable = () => { throw new Error("SDK execution is unavailable in the registration stub"); };
-export const getAgentDir = unavailable, parseFrontmatter = unavailable,
+export const VERSION = "stub", getAgentDir = unavailable, parseFrontmatter = unavailable,
   createAgentSession = unavailable, DefaultResourceLoader = unavailable, SessionManager = unavailable;
 `)}`;
 

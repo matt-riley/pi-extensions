@@ -28,6 +28,7 @@ const HOST_EXPORTS = {
       "getAgentDir",
     ],
     "packages/plan-mode/index.ts": ["getAgentDir"],
+    "packages/doctor/index.ts": ["VERSION", "getAgentDir", "parseFrontmatter"],
   },
   "@earendil-works/pi-tui": {
     "packages/footer/index.ts": ["truncateToWidth", "visibleWidth"],

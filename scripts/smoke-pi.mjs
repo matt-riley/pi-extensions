@@ -657,6 +657,15 @@ export default function (pi) {
   await access(path.join(cwd, "smoke-done"));
   assert.ok(requests - before >= 3, "until should push the agent back at least once");
   console.log("ok: /until sends the agent back until the predicate exits 0");
+  const doctorStart = events.length;
+  await prompt("/doctor");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const doctorEvents = events.slice(doctorStart);
+  const doctorNote = JSON.stringify(doctorEvents);
+  assert.match(doctorNote, /doctor: /, `/doctor produced no report: ${doctorNote.slice(0, 400)}`);
+  assert.match(doctorNote, /tools: \d+ registered/);
+  assert.ok(doctorNote.includes(`pi ${piVersion} `), "the report names Pi's version");
+  console.log("ok: /doctor reports versions and the tool registry from a live Pi");
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

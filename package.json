@@ -51,7 +51,8 @@
       "./packages/review/index.ts",
       "./packages/watch-pr/index.ts",
       "./packages/workbench/index.ts",
-      "./packages/jobs/index.ts"
+      "./packages/jobs/index.ts",
+      "./packages/doctor/index.ts"
     ],
     "skills": [
       "./.agents/skills"

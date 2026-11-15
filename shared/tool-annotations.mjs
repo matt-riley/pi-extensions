@@ -46,6 +46,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "plan_mode_question",
   "plan_fetch_url",
   "plan_mode_complete",
+  "doctor_report",
 ]);
 
 /**
