@@ -1,0 +1,7 @@
+{
+  "name": "pi-docs-drift",
+  "version": "0.1.0",
+  "description": "Read-only check: which docs describe code that changed after the doc's last commit. Says \"can't tell\" when it cannot map a doc or read the history.",
+  "license": "MIT",
+  "type": "module"
+}
