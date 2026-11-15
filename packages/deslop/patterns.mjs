@@ -5,6 +5,9 @@
 //   - adamdunkels/deslop-text (its numbered warning signs, cited here as W1…W53)
 //   - stephenturner/skills deslop (its core rules and phrase/structure catalogues,
 //     cited here as "deslop rule N")
+// Further signs were added from the pattern categories in petergyang/no-ai-slop
+// (MIT). That source was used for ideas only: none of its wording, examples or
+// code is copied here.
 // Only the signs a regex can decide are here. The judgment calls in both skills
 // (passive voice as habit, repeated thematic points, personification) are left
 // to the TypeSafe questions in verify.mjs, which read the whole text.
@@ -186,6 +189,8 @@ const CHECKS = [
       "here's what",
       "here's where it gets interesting",
       "let me be clear",
+      "let me be frank",
+      "to be frank",
       "the truth is",
       "the uncomfortable truth is",
       "make no mistake",
@@ -430,6 +435,114 @@ const CHECKS = [
     fix: 'write "->" or a plain word',
     min: 2,
     pattern: /[→⇒⟶]/g,
+  },
+  {
+    id: "faux-insight",
+    sign: "faux-insight setup",
+    severity: "high",
+    label: "faux-insight setup",
+    fix: "drop the setup and state the claim",
+    pattern: phrases([
+      "what nobody tells you",
+      "what nobody told you",
+      "what they don't tell you",
+      "what they do not tell you",
+      "what no one tells you",
+      "what everyone misses",
+      "what most people miss",
+    ]),
+  },
+  {
+    id: "colon-reveal",
+    sign: "colon reveal",
+    severity: "medium",
+    label: "colon reveal",
+    fix: "write it as a plain sentence; keep colons for labels and lists",
+    pattern: new RegExp(
+      String.raw`(?:^|[.!?]\s+)(?:The|Here(?:['’]s|\s+is) the)\s+(?:` +
+        [
+          String.raw`(?:best|worst|only|real|key|funny)\s+part`,
+          String.raw`(?:kicker|catch|trick|secret|upshot|takeaway)`,
+        ].join("|") +
+        String.raw`):\s+[a-z]`,
+      "gm",
+    ),
+  },
+  {
+    id: "superficial-ing",
+    sign: "superficial -ing analysis",
+    severity: "medium",
+    label: "superficial -ing analysis",
+    fix: "say what actually changed and drop the -ing clause",
+    pattern:
+      /\b(?:highlighting|underscoring|showcasing|reflecting|demonstrating|emphasizing|emphasising)\s+(?:the\s+\w+(?:['’]s)?\s+|their\s+|its\s+|a\s+)?(?:commitment|dedication|passion|focus|determination)\s+to\b/gi,
+  },
+  {
+    id: "importance-puffery",
+    sign: "importance puffery",
+    severity: "medium",
+    label: "importance puffery",
+    fix: "state the fact and let the reader judge whether it matters",
+    pattern: phrases([
+      "a testament to",
+      "pivotal moment",
+      "watershed moment",
+      "cements its place",
+      "a defining moment",
+      "cannot be overstated",
+      "marks a new era",
+    ]),
+  },
+  {
+    id: "weasel",
+    sign: "weasel attribution",
+    severity: "medium",
+    label: "weasel attribution",
+    fix: "name the source, or cut the claim",
+    pattern: phrases([
+      "experts agree",
+      "studies show",
+      "research suggests",
+      "scientists say",
+      "critics say",
+      "observers note",
+    ]),
+  },
+  {
+    id: "dramatic-fragment",
+    sign: "dramatic fragment",
+    severity: "high",
+    label: "dramatic fragment",
+    fix: "use one complete sentence",
+    pattern:
+      /(?:^|[.!?]\s+)that(?:['’]s|\s+is)\s+it[.!]\s+that(?:['’]s|\s+is)\s+the\s+whole\s+(?:thing|point|story|idea)[.!]/gi,
+  },
+  {
+    id: "rhetorical-setup",
+    sign: "rhetorical setup",
+    severity: "high",
+    label: "rhetorical setup",
+    fix: "drop the setup and state the point",
+    pattern: new RegExp(
+      [String.raw`\bpicture\s+this:`, String.raw`\bask\s+yourself:`].join("|"),
+      "gi",
+    ),
+  },
+  {
+    id: "metadiscourse",
+    sign: "interpretive metadiscourse",
+    severity: "medium",
+    label: "interpretive metadiscourse",
+    fix: "delete the aside; the point should already be in the sentence",
+    pattern: phrases(["put simply", "simply put", "to put it another way"]),
+  },
+  {
+    id: "negative-listing",
+    sign: "negative listing",
+    severity: "medium",
+    label: "negative listing",
+    fix: "state what it is and drop the list of things it is not",
+    pattern: /(?:^|[.!?]\s+)[Nn]ot\s+an?\s+[\w-]+[.!]\s+[Nn]ot\s+an?\s+[\w-]+[.!]/g,
   },
 ];
 

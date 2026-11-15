@@ -442,6 +442,76 @@ test("specific sentences are not generic docs", () => {
     assert.deepEqual(ids(text), [], text);
 });
 
+test("the new strong signs are found, each with its sentence", () => {
+  const cases = {
+    "faux-insight": "What nobody tells you is that the cache is emptied on restart.",
+    "dramatic-fragment": "The parser reads the file once. That's it. That's the whole thing.",
+    "rhetorical-setup": "Picture this: the cache is already warm.",
+  };
+  for (const [id, sample] of Object.entries(cases)) {
+    const found = findSlop(sample).find((item) => item.id === id);
+    assert.ok(found, `${id} not found in: ${sample}`);
+    assert.equal(found.severity, "high");
+    assert.ok(found.excerpts[0].length > 0);
+    assert.ok(worthReporting([found]), `${id} alone should be worth a report`);
+  }
+});
+
+test("the new weak signs are found but do not report alone", () => {
+  const cases = {
+    "colon-reveal": "The best part: the cache warms itself.",
+    "superficial-ing":
+      "The new flag skips the retry, highlighting the team's commitment to faster runs.",
+    "importance-puffery": "The merge is a testament to the work on the cache.",
+    weasel: "Studies show the parser is faster now.",
+    metadiscourse: "Put simply, the cache is emptied on restart.",
+    "negative-listing": "Not a linter. Not a formatter. A checker.",
+  };
+  for (const [id, sample] of Object.entries(cases)) {
+    const found = findSlop(sample).find((item) => item.id === id);
+    assert.ok(found, `${id} not found in: ${sample}`);
+    assert.notEqual(found.severity, "high");
+    assert.equal(worthReporting([found]), false, `${id} should not report alone`);
+  }
+  assert.ok(ids("The release marks a pivotal moment for the tool.").includes("importance-puffery"));
+  assert.ok(ids("Experts agree the cache should be smaller.").includes("weasel"));
+});
+
+test("colon reveals do not flag labels, headings, lists or code", () => {
+  for (const sample of [
+    "Timeout: 15 seconds.",
+    "Note: the cache is empty on a cold start.",
+    "The default: markdown.",
+    "## The best part: the cache warms itself.",
+    "- The best part: the cache warms itself.",
+    "Call `The best part: the cache warms itself.` and exit.",
+    "The best part of the plan is the cache.",
+  ]) {
+    assert.equal(
+      findSlop(sample).some((item) => item.id === "colon-reveal"),
+      false,
+      sample,
+    );
+  }
+});
+
+test("the new signs leave ordinary technical prose alone", () => {
+  for (const sample of [
+    "Nobody told the parser about the new flag.",
+    "The log is highlighting the timeout in the output.",
+    "The test is important to the suite and shows the parser is faster.",
+    "That's it for the cache, so the parser runs next.",
+    "Think about it before you merge the change.",
+    "In two words, the cache is gone.",
+  ])
+    assert.deepEqual(ids(sample), [], sample);
+});
+
+test("to be frank and let me be frank are throat-clearing pivots", () => {
+  assert.ok(ids("To be frank, the cache is too large.").includes("pivot"));
+  assert.ok(ids("Let me be frank: the parser runs twice.").includes("pivot"));
+});
+
 test("the newer patterns stay linear on large hostile input", () => {
   const inputs = {
     notBut: "is not a ".repeat(60_000),
@@ -454,6 +524,11 @@ test("the newer patterns stay linear on large hostile input", () => {
     xNotY: `is a ${"w ".repeat(60_000)}, not`,
     generic: "feel ".repeat(40_000) + "designed with ".repeat(10_000),
     subjects: "The tool is here. The utility is here. ".repeat(4_000),
+    fauxInsight: "what nobody tells you ".repeat(40_000),
+    colonReveal: "The best part: x ".repeat(40_000),
+    superficial: "highlighting the team's commitment to ".repeat(20_000),
+    dramatic: "That's it. That's the whole ".repeat(20_000),
+    negativeList: "Not a x. Not a ".repeat(20_000),
   };
   for (const [name, text] of Object.entries(inputs)) {
     const start = performance.now();
