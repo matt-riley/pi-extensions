@@ -350,7 +350,7 @@ test("--concise adds the style to the rewrite, and the checks never see it", asy
   assert.equal(h.asks[0].state.original_prompt, "fix the build");
   assert.equal(h.asks[0].state.rewritten_prompt, "Fix the build and run npm run check.");
   const request = JSON.parse(h.fetchCalls[0].options.body);
-  assert.doesNotMatch(JSON.stringify(request.messages), /result first/i);
+  assert.doesNotMatch(JSON.stringify(request.messages), /Answer style/);
 });
 
 test("--concise alone styles a rewrite of the latest user prompt", async () => {
@@ -383,5 +383,31 @@ test("--concise styles a rewrite the person confirms after a rejected intent che
   await h.command("--concise fix the build");
   assert.equal(h.entries[0].data.action, "rewritten-confirmed");
   assert.equal(h.editor.text, `Fix the build.\n\n${CONCISE_STYLE}`);
-  assert.doesNotMatch(h.confirms[0].message, /result first/i);
+  assert.doesNotMatch(h.confirms[0].message, /Answer style/);
+});
+
+test("re-running --concise on text that already carries the style adds no second paragraph", async () => {
+  const carried = `fix the build\n\n${CONCISE_STYLE}`;
+  // The model may hand the paragraph back reworded; it must not survive next to the real one.
+  const h = harness({
+    candidate: "Fix the build and run npm run check.\n\nAnswer style (concise): be brief.",
+  });
+  await h.command(`--concise ${carried}`);
+  assert.equal(h.editor.text, `Fix the build and run npm run check.\n\n${CONCISE_STYLE}`);
+  assert.equal(h.editor.text.split("Answer style (concise):").length - 1, 1);
+  assert.equal(h.asks[0].state.original_prompt, "fix the build");
+  assert.doesNotMatch(
+    JSON.stringify(JSON.parse(h.fetchCalls[0].options.body).messages),
+    /be brief/,
+  );
+});
+
+test("the latest prompt carrying the style is restyled once, not stacked", async () => {
+  const h = harness({
+    lastPrompt: `make the tests green\n\n${CONCISE_STYLE}`,
+    candidate: "make the tests green",
+  });
+  await h.command("--concise");
+  assert.equal(h.editor.text, `make the tests green\n\n${CONCISE_STYLE}`);
+  assert.equal(h.entries[0].data.action, "unchanged");
 });

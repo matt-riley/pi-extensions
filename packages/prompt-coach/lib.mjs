@@ -33,20 +33,34 @@ export function usableNoul(answer) {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
 }
 
+const CONCISE_MARKER = "Answer style (concise):";
+
 /**
  * The concise reply style, written in the user's voice because it rides on the
- * user's prompt. Brevity covers the narration only: anything the person needs in
- * full to make a safe decision keeps its detail.
+ * user's prompt. Brevity covers the narration only: the messages a person needs
+ * whole to act safely are exempt. The opening marker lets a later run find the
+ * paragraph again, even when a model has reworded it.
  */
 export const CONCISE_STYLE =
-  "Reply style: result first. Put what happened, or the answer, in your opening sentence, with no preamble and no closing recap. " +
-  "Keep it short, and give full detail when I ask. " +
-  "Never shorten a confirmation before a destructive action, failing test output or an error message, or a security warning: those keep their full content.";
+  `${CONCISE_MARKER} open with the result and stop once the point is made, with no preamble and no wrap-up. ` +
+  "Brevity never applies to a confirmation before a destructive action, to failing test output, or to an error or security warning: give those in full. " +
+  "If I ask for more detail, give it.";
 
-/** Append the concise style to a prompt, once. */
+/** Drop trailing style paragraphs, the exact one or a reworded one, and nothing else. */
+export function stripConciseStyle(text) {
+  const paragraphs = String(text ?? "")
+    .trimEnd()
+    .split(/\n[ \t]*\n/);
+  while (paragraphs.length > 0 && paragraphs.at(-1).trimStart().startsWith(CONCISE_MARKER)) {
+    paragraphs.pop();
+  }
+  return paragraphs.join("\n\n");
+}
+
+/** The prompt followed by exactly one style paragraph, however many it carried before. */
 export function withConciseStyle(text) {
-  const prompt = String(text ?? "").trimEnd();
-  return prompt.includes(CONCISE_STYLE) ? prompt : `${prompt}\n\n${CONCISE_STYLE}`;
+  const prompt = stripConciseStyle(text);
+  return prompt ? `${prompt}\n\n${CONCISE_STYLE}` : CONCISE_STYLE;
 }
 
 /** `/improve --concise rough prompt`: a leading `--concise` word is the flag, nothing else is. */

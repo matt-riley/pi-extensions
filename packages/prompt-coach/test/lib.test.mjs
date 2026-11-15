@@ -5,6 +5,7 @@ import {
   CONCISE_STYLE,
   extractLastUserPrompt,
   parseImproveArgs,
+  stripConciseStyle,
   usableNoul,
   validateCandidate,
   withConciseStyle,
@@ -76,12 +77,35 @@ test("parseImproveArgs does not mistake a longer word or a later mention for the
   assert.deepEqual(parseImproveArgs(undefined), { concise: false, prompt: "" });
 });
 
-test("the concise style asks for the result first and keeps the safety detail", () => {
-  assert.match(CONCISE_STYLE, /result first/i);
+test("the concise style keeps its requirements", () => {
+  assert.match(CONCISE_STYLE, /\bresult\b/i);
   assert.match(CONCISE_STYLE, /no preamble/i);
   assert.match(CONCISE_STYLE, /destructive/i);
   assert.match(CONCISE_STYLE, /failing test output/i);
-  assert.match(CONCISE_STYLE, /full/i);
+  assert.match(CONCISE_STYLE, /\berror/i);
+  assert.match(CONCISE_STYLE, /security warning/i);
+  assert.match(CONCISE_STYLE, /in full/i);
+  assert.match(CONCISE_STYLE, /^Answer style \(concise\):/);
+});
+
+test("stripConciseStyle removes the style paragraph, however it was edited", () => {
+  const edited = "Fix the build.\n\nAnswer style (concise): reply in one line.\n";
+  assert.equal(stripConciseStyle(edited), "Fix the build.");
+  assert.equal(stripConciseStyle(`Fix the build.\n\n${CONCISE_STYLE}`), "Fix the build.");
+  assert.equal(stripConciseStyle("Fix the build."), "Fix the build.");
+  assert.equal(stripConciseStyle(CONCISE_STYLE), "");
+});
+
+test("an answer-style sentence in the middle of a prompt is left alone", () => {
+  const text = "Explain the Answer style (concise): option in the docs.\n\nThen fix it.";
+  assert.equal(stripConciseStyle(text), text);
+});
+
+test("withConciseStyle leaves exactly one style paragraph, even over an edited one", () => {
+  const edited = "Fix the build.\n\nAnswer style (concise): reply in one line.";
+  const result = withConciseStyle(edited);
+  assert.equal(result, `Fix the build.\n\n${CONCISE_STYLE}`);
+  assert.equal(result.split("Answer style (concise):").length - 1, 1);
 });
 
 test("withConciseStyle adds the style once, after the prompt", () => {

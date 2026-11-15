@@ -79,19 +79,19 @@ Add `--concise` when you want the agent's answer short:
 /improve --concise
 ```
 
-The rewrite is made and checked as usual. Afterwards one short paragraph is added
-to the end of what goes into the input box. It asks the agent to put the result
-in its first sentence, with no preamble and no closing recap, to keep replies
-short, and to give full detail when you ask. It also says that a confirmation
-before a destructive action, failing test output, an error message and a
-security warning are never shortened.
+The rewrite is made and checked as usual. Afterwards one short paragraph, starting
+`Answer style (concise):`, goes at the end of what lands in the input box. It asks
+the agent to open with the result, add no preamble and no wrap-up, and give more
+detail when you ask. It exempts three things from brevity: a confirmation before
+a destructive action, failing test output, and any error or security warning.
 
 The paragraph is added last, so neither the rewrite model nor the intent check
-sees it, and it is added once: running `/improve --concise` on text that already
-carries it changes nothing. It goes on whatever lands in the box, including your
-original when the model is unavailable or changes nothing, because the style is
-your choice and does not depend on the rewrite. The flag counts only as the first
-word. The `prompt-coach-decision` entry records `concise`.
+sees it. Before the rewrite, any style paragraph the text already carries is
+removed, even one a model reworded, so running `/improve --concise` again leaves
+exactly one. It goes on whatever lands in the box, including your original when
+the model is unavailable or changes nothing, because the style is your choice and
+does not depend on the rewrite. The flag counts only as the first word. The
+`prompt-coach-decision` entry records `concise`.
 
 It is a request in the prompt, so the agent can still ignore it. Nothing else
 changes how the agent writes, and there is no setting that makes it the default.

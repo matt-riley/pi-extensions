@@ -15,6 +15,7 @@ import { buildCoachQuestions } from "./battery.mjs";
 import {
   extractLastUserPrompt,
   parseImproveArgs,
+  stripConciseStyle,
   usableNoul,
   validateCandidate,
   withConciseStyle,
@@ -124,7 +125,9 @@ export default function piPromptCoachExtension(
     handler: async (args: string, ctx: ExtensionContext) => {
       const { concise, prompt: typed } = parseImproveArgs(args);
       const branch = ctx.sessionManager?.getBranch?.() ?? [];
-      const original = typed || extractLastUserPrompt(branch);
+      // The style is re-added last, so neither the model nor a second run sees an old copy.
+      const source = typed || extractLastUserPrompt(branch);
+      const original = concise ? stripConciseStyle(source) : source;
       if (!original) {
         notify(ctx, "Usage: /improve <rough prompt> (or run it after a user prompt)", "warning");
         return;
