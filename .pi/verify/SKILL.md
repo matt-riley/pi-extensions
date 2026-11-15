@@ -165,26 +165,8 @@ re-run at this revision; live rows were driven in isolated sessions with
 `--api-key "$(pi auth print-bearer-token --provider github-copilot)"`, so the
 model turns were real and billable.
 
-Live rows proven in the same run, in isolated sessions with a real provider:
-`repo_map` (`files: 425 · symbols indexed: 9046`), `code_search`
-(`# code_search "revisionSnapshot" — 30 matches`, definition first),
-`file_outline` (`L11 function revisionSnapshot (cwd)`), `find_definition`
-(`shared/revision.mjs:11 function revisionSnapshot (exported)`), `skill_select`
-(`implementation-review (p 1.00)`, `1 of 5`), `web_fetch` (`title: Example Domain`),
-`batch_web_fetch` (`2 URLs — 2 ok, 0 failed`), `web_answer`
-(`[passage 1 · 0.77]`), `web_search` (3 ranked results with URLs),
-`blast_radius` (`selectMain …: 1 caller file(s) outside the diff` →
-`packages/web-fetch/extract.mjs`), `watch_pr` (`closed`, `PR #63 head 5b0a8318`,
-`state: MERGED`), `view_context` (`{"tokens":3519,…,"percent":1.7595}`).
+Findings from this run still worth knowing (the others are covered in Launch and the table above):
 
-Findings from this run, reported rather than smoothed over:
-
-- `-e builtin:codemode` loads the extension but leaves the tool inactive, so the
-  first deferred-tool drive reported `codemode` as unavailable. `--tools +codemode`
-  is required; the Launch section now says so.
-- `/plan check` has no working drive: a scripted tmux run with `.pi/PLAN.md`
-  present left the TUI blank, never appended `## Plan comprehension check`, and
-  had to be killed by hand. Harness gap, listed as unproven above.
 - `rm -rf ./scratch` in a scratch workspace ran with **no** dialog: a regenerable
   target below the cwd is allowed by design. The dialog row needs a call the rules
   escalate (`git push --force`), not merely a destructive-looking one.
