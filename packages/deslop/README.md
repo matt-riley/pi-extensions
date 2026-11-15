@@ -83,41 +83,49 @@ The signs that need judgment (habitual passive voice, a point restated in
 three sections, a product given human intent) have no regular expression. The
 second TypeSafe request reads the whole rewrite and covers some of that ground.
 
-## Code slop: `/deslop code [base]`
+## Code review pass: `/deslop code [base]`
 
-The prose checks above read text. A second, separate pass reads code. It shares
-no patterns with the prose list and runs only when you ask for it, as
-`/deslop code` or `/deslop code <base>`. A directory that is itself named `code`
-is reached as `./code`.
+The prose checks above read text. This command reads code, as its own pass with
+its own list, and it runs only when you type it: `/deslop code` or
+`/deslop code <base>`. To clean a directory that is itself called `code`, write
+`./code`.
 
-The command runs `git diff` between the working tree and the merge base with the
-default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`,
-`master`), or with the base you name. It examines the added lines plus the few
-context lines git prints around them, skips tests, generated output and files that
-are not code, and prints each finding in the same format as the prose notes. Only
-read-only git commands run. It proposes and leaves every file as it was, so each
-fix is yours or the agent's to make after reading the code.
+**How it picks what to read.** It finds the commit where your branch left the
+base (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`, or
+the ref you pass) and diffs the working tree against it. Only lines the branch
+added are judged, with the few context lines git prints beside them so a check can
+see the line above or below. Test files, build output and anything that is not
+code are skipped, though tests still count when a check asks who uses a name.
 
-| Check | What it looks for |
+**What it does with the result.** It prints a list in the same format as the prose
+notes and stops there. The git calls are read-only and no file is touched, so
+whether to act on a line is a decision for you or the agent after reading the
+code.
+
+| Finding | Matches |
 | --- | --- |
-| Swallowed error | `catch` that returns `null`, `false` or an empty value, an empty `catch`, `.catch(() => [])`, a Python `except` that passes or returns nothing, a Go `if err != nil` that returns `nil`. A body that logs, rethrows, calls something or carries a comment is left alone. |
-| Echo comment | A one-line comment whose words all appear in the line under it, such as `// increment the counter` above `counter += 1`. A comment with a reason, a number or a directive is kept. |
-| Silenced type | `as any`, `<any>`, `as unknown as T` and a `@ts-ignore` or `@ts-expect-error` with no reason, in TypeScript files. |
-| Unrequested fallback | A chain of two `??` operators, or a comment that says `fallback`, `just in case`, `should never happen`, `legacy` or `backwards compatible`. |
-| Nesting | An `if`, `for` or `while` inside three other blocks, and an `else` after a block that already returned, threw or continued. |
-| Single use | A function, class or arrow function added by the diff and used once in it, or an interface that the diff implements once. A name that a removed line also declares is an edit, not a new abstraction, and is skipped. |
+| Failure turned into a normal-looking value | A `catch` whose whole body returns `null`, `false`, `undefined` or an empty value, an empty `catch`, `.catch(() => [])`, a Python `except` that only passes or returns nothing, a Go `if err != nil` that returns `nil`. Logging, rethrowing, a call or a comment in the body clears it. |
+| Comment saying what the next line already says | A one-line comment whose content words all occur in the line below, such as `// increment the counter` over `counter += 1`. A reason word, a colon, a digit or a lint directive clears it. |
+| Type escape hatch used to quiet the compiler | `as any`, `<any>`, `as unknown as T`, and a `@ts-ignore` or `@ts-expect-error` with no reason after it, in TypeScript files. |
+| Default or guard for a case nobody described | A real `a ?? b ?? c` chain, or a comment that says `fallback`, `just in case`, `should never happen`, `legacy` or `backwards compatible`. Two separate `??` on one line do not count. |
+| Logic buried under several levels of conditions | An `if`, `for` or `while` that sits inside three other blocks, and an `else` that follows a block which already returned, threw or continued. |
+| Interface with a single implementation, or wrapper that only forwards | An interface or abstract class the diff implements once, and a function whose body only passes its own parameters, in order, to one other function. |
 
-These are heuristics over text, with no parser. The single-use check is the
-noisiest: a helper extracted for readability is fine, and the proposal says to
-keep it when it names a concept or is public. Callers outside the diff cannot
-exist for something new, so the count is complete for new names, but an exported
-function with an external user is still a fair keep. Nesting is measured by
-indentation, so a hunk that starts deep inside a function undercounts rather than
-overcounts.
+The last row is a low finding. A low finding is listed only when a medium one is
+also present, so a diff with nothing but a forwarding wrapper reports no
+proposals. Private helpers that have a single caller are ordinary code and are
+not looked for at all.
 
-Limits: files git does not track yet are not in the diff, the diff is cut at
-400,000 characters, and a line longer than 500 characters is skipped as minified.
-`PI_DESLOP=0` turns the command off with the rest of the extension.
+**Where it can be wrong.** Every check is a pattern over text with no parser.
+Nesting is read from indentation, so a hunk that begins deep inside a function
+sees fewer enclosing blocks than there are. A forwarding wrapper is sometimes
+the public name for an internal function. A `catch` that returns nothing is
+sometimes correct, which is why the finding says to record the reason.
+
+**Limits.** Files git does not track yet are absent from the diff. The diff is
+cut at 400,000 characters, and a line over 500 characters is skipped as
+minified. Wrapper detection covers JavaScript, TypeScript and Python. `PI_DESLOP=0`
+turns the command off along with the rest of the extension.
 
 ## Limits
 
