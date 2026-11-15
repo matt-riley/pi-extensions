@@ -271,7 +271,9 @@ test("/deslop with no path shows usage without starting a turn", async () => {
   const pi = harness();
   await pi.deslop("  ");
   assert.equal(pi.messages.length, 0);
-  assert.deepEqual(pi.notices, [["Usage: /deslop <file-or-directory>", "info"]]);
+  assert.deepEqual(pi.notices, [
+    ["Usage: /deslop <file-or-directory> or /deslop code [base]", "info"],
+  ]);
 });
 
 test("/deslop respects the extension off switch", async () => {

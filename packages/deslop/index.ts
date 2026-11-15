@@ -19,6 +19,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { flagOff } from "../../shared/env-flag.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
+import { reviewBranch } from "./codeslop.mjs";
 import { createDeslopState, observeEdit, resetDeslopState } from "./deslop.mjs";
 
 /** `PI_DESLOP=0` turns the extension off. */
@@ -32,7 +33,8 @@ export default function piDeslopExtension(pi: ExtensionAPI) {
   const state = createDeslopState();
 
   pi.registerCommand("deslop", {
-    description: "Rewrite existing prose plainly: /deslop <file-or-directory>",
+    description:
+      "Rewrite existing prose plainly: /deslop <file-or-directory>. Review a branch's code: /deslop code [base]",
     handler: async (args, ctx) => {
       if (flagOff(process.env[DESLOP_ENV])) {
         ctx.ui?.notify?.("deslop is disabled (PI_DESLOP).", "info");
@@ -40,7 +42,17 @@ export default function piDeslopExtension(pi: ExtensionAPI) {
       }
       const path = args.trim();
       if (!path) {
-        ctx.ui?.notify?.("Usage: /deslop <file-or-directory>", "info");
+        ctx.ui?.notify?.("Usage: /deslop <file-or-directory> or /deslop code [base]", "info");
+        return;
+      }
+      const [mode, base, ...extra] = path.split(/\s+/);
+      if (mode === "code" && extra.length === 0) {
+        const report = await reviewBranch(
+          (cmd, argv, opts) => pi.exec(cmd, argv, opts),
+          ctx.cwd,
+          base,
+        );
+        ctx.ui?.notify?.(report, "info");
         return;
       }
       pi.sendUserMessage(

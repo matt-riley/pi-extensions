@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { findCodeSlop, parseDiff } from "../codeslop.mjs";
+import piDeslopExtension from "../index.ts";
+import { findCodeSlop, parseDiff, reviewBranch } from "../codeslop.mjs";
 import { formatFindings } from "../patterns.mjs";
 
 /** A unified diff for one file. Lines start with "+" added, " " context or "-" removed. */
@@ -282,4 +283,123 @@ test("a new function that its own test also calls is still counted by every user
   const testFile = added("src/a.test.ts", "assert.ok(wrapUser(1));");
   assert.equal(idsOf(source).includes("single-use"), true);
   assert.equal(idsOf(`${source}\n${testFile}`).includes("single-use"), false);
+});
+
+const SWALLOW_DIFF = added("src/a.ts", "try { run(); } catch { return null; }");
+
+/** A fake exec that answers git calls from a table of `subcommand` to stdout, or null for a failure. */
+function fakeGit(answers) {
+  const calls = [];
+  const exec = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    const sub = args.find((arg, at) => at > 0 && !arg.startsWith("-") && args[at - 1] !== "-C");
+    const out = answers[sub];
+    return out === null || out === undefined
+      ? { code: 1, stdout: "", stderr: "fatal" }
+      : { code: 0, stdout: out, stderr: "" };
+  };
+  return { exec, calls };
+}
+
+test("the branch review diffs against the merge base with the default branch", async () => {
+  const git = fakeGit({
+    "symbolic-ref": "origin/main\n",
+    "merge-base": "abc123\n",
+    diff: SWALLOW_DIFF,
+  });
+  const text = await reviewBranch(git.exec, "/repo");
+  assert.match(text, /^deslop code: 1 proposal in 1 file changed since origin\/main\./);
+  assert.match(text, /error swallowed into a quiet result \(code-slop, medium\)/);
+  assert.match(text, /Nothing was edited/);
+  const diffCall = git.calls.find((call) => call.includes("diff"));
+  assert.ok(diffCall.includes("abc123"), "diffs from the merge base");
+  assert.ok(diffCall.includes("--no-color"));
+  for (const call of git.calls)
+    assert.ok(
+      ["symbolic-ref", "rev-parse", "merge-base", "diff"].some((sub) => call.includes(sub)),
+      `only read-only git: ${call.join(" ")}`,
+    );
+});
+
+test("a named base is used as given, and an unsafe one is refused", async () => {
+  const git = fakeGit({ "merge-base": "abc123\n", diff: "" });
+  const text = await reviewBranch(git.exec, "/repo", "release/1.0");
+  assert.match(text, /no changes since release\/1\.0/i);
+  assert.ok(git.calls.some((call) => call.includes("release/1.0")));
+  const refused = await reviewBranch(git.exec, "/repo", "--output=/tmp/x");
+  assert.match(refused, /not a usable base/);
+});
+
+test("with no default branch, no merge base or a failing diff the review says so", async () => {
+  assert.match(await reviewBranch(fakeGit({}).exec, "/repo"), /could not find a default branch/);
+  const noBase = fakeGit({ "symbolic-ref": "origin/main", "merge-base": null });
+  assert.match(await reviewBranch(noBase.exec, "/repo"), /could not find a merge base/);
+  const noDiff = fakeGit({ "symbolic-ref": "origin/main", "merge-base": "abc", diff: null });
+  assert.match(await reviewBranch(noDiff.exec, "/repo"), /git diff failed/);
+});
+
+test("a clean diff reports no proposals", async () => {
+  const git = fakeGit({
+    "symbolic-ref": "origin/main",
+    "merge-base": "abc",
+    diff: added("src/a.ts", "export const total = items.length;"),
+  });
+  assert.match(await reviewBranch(git.exec, "/repo"), /^deslop code: no proposals in 1 file/);
+});
+
+function extension(exec) {
+  const commands = {};
+  const messages = [];
+  const notices = [];
+  piDeslopExtension({
+    registerCommand: (name, command) => (commands[name] = command),
+    sendUserMessage: (...args) => messages.push(args),
+    on: () => {},
+    exec,
+  });
+  const ctx = { cwd: "/repo", ui: { notify: (...args) => notices.push(args) } };
+  return { run: (args) => commands.deslop.handler(args, ctx), messages, notices };
+}
+
+test("/deslop code reports in the UI and never asks the agent to edit", async () => {
+  const git = fakeGit({ "symbolic-ref": "origin/main", "merge-base": "abc", diff: SWALLOW_DIFF });
+  const pi = extension(git.exec);
+  await pi.run("code");
+  assert.equal(pi.messages.length, 0);
+  assert.equal(pi.notices.length, 1);
+  assert.match(pi.notices[0][0], /^deslop code: 1 proposal/);
+  await pi.run("code develop");
+  assert.ok(git.calls.some((call) => call.includes("develop")));
+});
+
+test("/deslop with a path still sends the prose request, and PI_DESLOP=0 stops the code pass", async () => {
+  const git = fakeGit({});
+  const pi = extension(git.exec);
+  await pi.run("docs/guide.md");
+  assert.equal(pi.messages.length, 1);
+  assert.equal(git.calls.length, 0);
+  process.env.PI_DESLOP = "0";
+  try {
+    await pi.run("code");
+  } finally {
+    delete process.env.PI_DESLOP;
+  }
+  assert.equal(git.calls.length, 0);
+  assert.match(pi.notices.at(-1)[0], /disabled/);
+});
+
+test("the code checks stay fast on a huge diff of long and deeply nested lines", () => {
+  const long = "x".repeat(450);
+  const body = Array.from({ length: 30_000 }, (_, at) => `${" ".repeat(at % 40)}if (${long}) {`);
+  const inputs = [
+    added("src/a.ts", body.join("\n")),
+    added("src/b.ts", "a ?? ".repeat(80) + "b"),
+    added("src/c.ts", Array.from({ length: 20_000 }, (_, at) => `function f${at}() {}`).join("\n")),
+    added("tool.py", "except:\n".repeat(30_000)),
+  ];
+  for (const diff of inputs) {
+    const start = performance.now();
+    findCodeSlop(diff);
+    assert.ok(performance.now() - start < 1_500, "a check took longer than a second and a half");
+  }
 });

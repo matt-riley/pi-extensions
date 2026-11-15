@@ -7,6 +7,8 @@
 // shape formatFindings already prints. Every check is a heuristic: a hit is a
 // place to look, never a rewrite, and nothing here edits a file.
 
+import { formatFindings } from "./patterns.mjs";
+
 /** Diffs past this are cut: a generated change is not worth judging line by line. */
 const MAX_DIFF_CHARS = 400_000;
 /** A line longer than this is minified or generated, not code someone reads. */
@@ -415,7 +417,7 @@ export function findCodeSlop(diff) {
       id: check.id,
       sign: "code-slop",
       severity: "medium",
-      label: check.label,
+      label: hits.length > MAX_EXCERPTS ? `${check.label}, ${hits.length} in all` : check.label,
       fix: check.fix,
       count: hits.length,
       excerpts: hits
@@ -424,4 +426,63 @@ export function findCodeSlop(diff) {
     });
   }
   return findings;
+}
+
+const GIT_TIMEOUT_MS = 10_000;
+const SAFE_REF = /^[A-Za-z0-9_][\w./@^~-]*$/;
+const DEFAULT_BASES = ["origin/main", "origin/master", "main", "master"];
+
+/** Run one read-only git command; its trimmed stdout, or null when it fails. */
+async function git(exec, cwd, args) {
+  try {
+    const result = await exec("git", ["-C", cwd, ...args], { timeout: GIT_TIMEOUT_MS });
+    return result?.code === 0 ? String(result.stdout ?? "") : null;
+  } catch {
+    return null;
+  }
+}
+
+async function defaultBase(exec, cwd) {
+  const head = (
+    await git(exec, cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+  )?.trim();
+  if (head && SAFE_REF.test(head)) return head;
+  for (const candidate of DEFAULT_BASES)
+    if ((await git(exec, cwd, ["rev-parse", "--verify", "--quiet", candidate])) !== null)
+      return candidate;
+  return null;
+}
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/**
+ * The code pass over a branch: diff the working tree against the merge base
+ * with the default branch (or `base`), run the checks over what was added, and
+ * say what they found. Only read-only git commands run. `exec` matches pi.exec.
+ */
+export async function reviewBranch(exec, cwd, base) {
+  if (base !== undefined && !SAFE_REF.test(base))
+    return `deslop code: ${JSON.stringify(base)} is not a usable base ref.`;
+  const against = base ?? (await defaultBase(exec, cwd));
+  if (!against)
+    return "deslop code: could not find a default branch to compare against. Pass one: /deslop code <base>.";
+  const mergeBase = (await git(exec, cwd, ["merge-base", "HEAD", against]))?.trim();
+  if (!mergeBase) return `deslop code: could not find a merge base between HEAD and ${against}.`;
+  const diff = await git(exec, cwd, ["diff", "--no-color", "-U3", mergeBase]);
+  if (diff === null) return "deslop code: git diff failed.";
+  if (!diff.trim()) return `deslop code: no changes since ${against}.`;
+
+  const findings = findCodeSlop(diff);
+  const examined = parseDiff(diff).filter((file) => !file.skipped).length;
+  const proposals = findings.reduce((sum, item) => sum + item.count, 0);
+  const cut =
+    diff.length > MAX_DIFF_CHARS ? ` The diff was cut at ${MAX_DIFF_CHARS} characters.` : "";
+  const where = `in ${plural(examined, "file")} changed since ${against}`;
+  if (proposals === 0) return `deslop code: no proposals ${where}.${cut}`;
+  return [
+    `deslop code: ${plural(proposals, "proposal")} ${where}.${cut}`,
+    formatFindings(findings),
+    "These are heuristic proposals: each is a place to look, and none is a rewrite. " +
+      "Nothing was edited. Files git does not track yet are not included.",
+  ].join("\n");
 }
