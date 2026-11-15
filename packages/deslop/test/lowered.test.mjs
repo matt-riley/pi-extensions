@@ -611,3 +611,11 @@ test("the passes stay fast on a huge diff of long and repetitive lines", () => {
     assert.ok(performance.now() - start < 1_500, "a check took longer than a second and a half");
   }
 });
+
+test("assertions moved from one test file to another are not removed", () => {
+  const moved = [
+    diffOf("src/a.test.ts", ["-  assert.equal(add(1, 2), 3);", "-  assert.equal(add(2, 2), 4);"]),
+    added("src/b.test.ts", "assert.equal(add(1, 2), 3);", "assert.equal(add(2, 2), 4);"),
+  ].join("\n");
+  assert.deepEqual(kinds(moved), []);
+});

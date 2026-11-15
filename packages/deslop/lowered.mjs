@@ -14,8 +14,8 @@ const MAX_DIFF_CHARS = 400_000;
 const MAX_LINE_CHARS = 500;
 const MAX_EXCERPTS = 5;
 const MAX_EXCERPT_CHARS = 100;
-/** A reason is a short sentence: this many plain words after the directive. */
-const REASON_WORDS = 3;
+/** A reason is a short phrase: this many plain words once a directive and rule names are set aside. */
+const REASON_WORDS = 2;
 
 const SLASH_EXTENSIONS = new Set(
   "js mjs cjs jsx ts mts cts tsx jsonc go rs java kt c h cc cpp cs swift php".split(" "),
@@ -242,12 +242,15 @@ const TEST_CASE =
   /^\s*(?:(?:it|test|describe)\s*\(|func\s+Test|(?:async\s+)?def\s+test_|#\[test\])/;
 
 /**
- * Test files that keep existing but hold fewer assertions than before. A pair of
- * removed and added assertions cancels, so rewording one is fine. Strong when
- * assertions left tests that stayed; weak when a whole test case left too.
+ * Test files that keep existing but hold fewer assertions than before, when the
+ * diff as a whole removes more assertions than it adds: tests moved to another
+ * file, or an assertion reworded, cancel out. Strong when assertions left tests
+ * that stayed; weak when a whole test case left too.
  */
 function strippedAssertions(files) {
-  const hits = [];
+  const counts = [];
+  let added = 0;
+  let gone = 0;
   for (const file of files) {
     const style = commentStyleOf(file.path);
     if (!style || file.deleted || !isTest(file.path)) continue;
@@ -256,18 +259,19 @@ function strippedAssertions(files) {
       all.filter(
         (line) => line.kind === kind && ASSERTION.test(splitComment(line.text, style).code),
       );
-    const gone = asserts("del");
-    const fewer = gone.length - asserts("add").length;
-    if (fewer <= 0) continue;
-    const cases = all.filter((line) => line.kind === "del" && TEST_CASE.test(line.text)).length;
-    hits.push({
-      path: file.path,
-      n: gone[0].n,
-      text: `${fewer} fewer assertion${fewer === 1 ? "" : "s"}: ${gone[0].text.trim()}`,
-      weak: cases > 0,
-    });
+    const removedHere = asserts("del");
+    const fewer = removedHere.length - asserts("add").length;
+    added += asserts("add").length;
+    gone += removedHere.length;
+    if (fewer > 0) counts.push({ file, all, removedHere, fewer });
   }
-  return hits;
+  if (gone <= added) return [];
+  return counts.map(({ file, all, removedHere, fewer }) => ({
+    path: file.path,
+    n: removedHere[0].n,
+    text: `${fewer} fewer assertion${fewer === 1 ? "" : "s"}: ${removedHere[0].text.trim()}`,
+    weak: all.some((line) => line.kind === "del" && TEST_CASE.test(line.text)),
+  }));
 }
 
 /** Every way a test is made easier to pass. */
@@ -405,7 +409,8 @@ function rulesOff(files) {
   const hits = [];
   for (const file of files) {
     if (file.deleted || !LINT_CONFIG.test(file.path)) continue;
-    const style = commentStyleOf(file.path);
+    // Lint and compiler configs named .json are read with comments allowed (JSONC).
+    const style = commentStyleOf(file.path) ?? (extensionOf(file.path) === "json" ? "slash" : null);
     for (const { lines, at, line } of addedLines(file)) {
       if (style && splitComment(line.text, style).code.trim() === "") continue;
       if (![RULE_OFF, STRICT_OFF, IGNORE_LIST].some((pattern) => pattern.test(line.text))) continue;
