@@ -131,26 +131,46 @@ reason. It works from the text of the call: no registry lookups, no network.
 
 It asks for:
 
-- **Shell installs** that name a package: `npm install`, `npm i`, `npm add`,
-  `pnpm add`, `pnpm install <pkg>`, `yarn add`, `bun add`, `bun install <pkg>`,
-  `go get <pkg>` and `go install <pkg>` (a remote package, not `./cmd/tool`).
-  Chained commands, `sudo`, `env` and `bash -c "…"` are looked through.
+- **Shell installs** that name a package:
+  - JavaScript: `npm install`, `npm i`, `npm add`, `pnpm add`, `pnpm install <pkg>`,
+    `yarn add`, `bun add`, `bun install <pkg>`.
+  - Go: `go get <pkg>`, and `go install <pkg>` (a remote package, not `./cmd/tool`).
+  - Rust: `cargo add <crate>` and `cargo install <crate>`. With `--git` and no
+    crate name, the url is what it names. Anything with `--path` is a local crate and does not count.
+  - Python: `pip install <pkg>`, `pip3`, `python -m pip`, `uv pip install <pkg>`,
+    `uv add <pkg>` and `poetry add <pkg>`. `-e git+https://…` counts; `-e .`, `.`
+    and `./dist/x.whl` are local and do not.
+  - Chained commands, `sudo`, `env` and `bash -c "…"` are looked through.
 - **`edit` and `write` of `package.json`** that add a package, or change the
   version range of one, in `dependencies`, `devDependencies`,
   `optionalDependencies` or `peerDependencies`.
 - **`edit` and `write` of `go.mod`** that add or re-version a `require` line.
+- **`edit` and `write` of `Cargo.toml`** that add a crate, or change its version,
+  git url, path or registry, in `[dependencies]`, `[dev-dependencies]`,
+  `[build-dependencies]`, `[target.*.dependencies]` or `[workspace.dependencies]`.
+  Features, `optional` and `default-features` alone do not count.
+- **`edit` and `write` of `pyproject.toml`** that add or re-version a requirement in
+  `[project] dependencies`, `[project.optional-dependencies]`,
+  `[dependency-groups]`, `[tool.uv] dev-dependencies` or
+  `[tool.poetry.*dependencies]` (poetry's own `python` line is not a package).
+  A requirement string is compared whole, so a new extra, range or marker counts.
 
 It does not ask for:
 
-- `npm install`, `npm ci`, `pnpm install`, `yarn`, `yarn install` or
-  `bun install` with no package name. They only restore the lockfile.
-- Removing a dependency, editing `scripts`, `version`, `name` or any other
-  field, or changing the `go`, `module` or `replace` lines.
-- `Cargo.toml` and `pyproject.toml`; they are not covered yet.
+- Restoring from a lockfile or a requirements file: `npm install`, `npm ci`,
+  `pnpm install`, `yarn`, `yarn install` and `bun install` with no package name;
+  `cargo build`, `cargo fetch`, `cargo update`; `pip install -r requirements.txt`;
+  `uv sync`, `uv lock`; `poetry install`, `poetry update`, `poetry lock`.
+- Removing a dependency, editing `scripts`, `version`, `name`, `[package]`,
+  `[features]`, `[build-system]`, `[tool.*]` settings or any other field, or
+  changing the `go`, `module` or `replace` lines.
 
 An edit is judged against the file as it is on disk, with the edit applied in
-memory. If the result is not valid JSON, or the edit text is not in the file,
-the sentinel says nothing and the tool call fails or succeeds on its own.
+memory. If the result cannot be read (invalid JSON, or TOML the small reader in
+`toml.mjs` does not understand), or the edit text is not in the file, the sentinel
+says nothing and the tool call fails or succeeds on its own. A file that was
+already unreadable before the edit counts as empty, so fixing it prompts for
+every dependency in it.
 
 Approval works as for the other confirmations: it covers the same command (or
 the same file edit) until new user input, `/guardrail revoke` or a toggle. A call
@@ -162,9 +182,13 @@ Turn it off for the whole process with `PI_GUARDRAIL_DEPS=off`. `/guardrail off`
 turns it off for the session along with the rest of the gate.
 
 Limits: a package added by a script it runs (`npm run setup`), `npx`,
-`pnpm dlx`, `npm pkg set`, a lockfile edit, `overrides` or `resolutions`, a file written through
-a shell redirect, or a `go.mod` changed with `go mod edit` is not seen. Global
-installs (`npm install -g x`) are asked about like any other.
+`pnpm dlx`, `npm pkg set`, `uv run --with`, `uv tool install`, `pipx install`,
+`uv add -r requirements.txt`, `poetry add` from a file, `go mod edit`, a lockfile
+edit (`package-lock.json`, `Cargo.lock`, `uv.lock`, `poetry.lock`), `overrides` or
+`resolutions`, `[patch]` and `[replace]` in Cargo.toml, `[build-system] requires`,
+`requirements.txt` or `setup.py` edits, a file written through a shell redirect,
+or a TOML file the reader cannot parse is not seen. Global installs
+(`npm install -g x`) are asked about like any other.
 
 ## Configuration
 
