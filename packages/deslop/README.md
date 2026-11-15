@@ -159,7 +159,8 @@ second TypeSafe request reads the whole rewrite and covers some of that ground.
 The prose checks above read text. This command reads code, as its own pass with
 its own list, and it runs only when you type it: `/deslop code` or
 `/deslop code <base>`. To clean a directory that is itself called `code`, write
-`./code`.
+`./code`. The pass runs two lists over the same diff: the code habits below, and
+the [lowered bar checks](#lowered-bar-checks) that follow them.
 
 **How it picks what to read.** It finds the commit where your branch left the
 base (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`, or
@@ -197,6 +198,61 @@ sometimes correct, which is why the finding says to record the reason.
 cut at 400,000 characters, and a line over 500 characters is skipped as
 minified. Wrapper detection covers JavaScript, TypeScript and Python. `PI_DESLOP=0`
 turns the command off along with the rest of the extension.
+
+### Lowered bar checks
+
+A branch can go green by making green easier to reach: silence the check, skip
+the test, lower the threshold, leave the stub. The other checks here judge how
+code is written. These judge what the diff does to the bar the code has to clear.
+They run inside `/deslop code`, on the same diff and the same read-only git
+calls, because that command already knows which lines a branch added and removed.
+[done-gate](../done-gate/README.md) is the other candidate: it decides at the end
+of a turn whether the agent ran its checks, from edits it saw, and it neither reads
+a branch diff nor looks at config or workflow files. The checks live in
+`lowered.mjs`; findings are labelled `lowered-bar`.
+
+Only a change counts: an added line, a removed line, a deleted file. A
+suppression that was already in the file is not new. Each finding names
+`path:line` and a short excerpt, and ends with what to do. Nothing is rewritten.
+
+| Finding | Strong when the diff |
+| --- | --- |
+| New suppression of a lint, type or coverage check | adds `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`, `oxlint-disable`, `biome-ignore`, `# noqa`, `# type: ignore`, `//nolint`, `# pylint: disable`, `# pragma: no cover`, `istanbul ignore`, `c8 ignore`, `v8 ignore`, `nosemgrep`, `gitleaks:allow`, or a Rust `#[allow(...)]`. A directive counts only as a comment, so a quoted string or a sentence that mentions one is not flagged. |
+| Test skipped, deleted or stripped of assertions | adds `.skip` or `.only`, `xit`, `xdescribe`, `t.Skip`, `#[ignore]`, a pytest or unittest skip, or a node test `skip` option; deletes a test file while the file it tests stays; or removes more assertions than it adds across the test files that remain. |
+| Threshold lowered, CI check removed or lint rule switched off | lowers a coverage floor (`lines`, `branches`, `threshold`, `fail_under` and similar) or raises a budget ceiling (`maxSize`, `max-warnings` and similar) on the same key; removes a `run:` or `uses:` step or script line that runs a check (tests, lint, type-check, scan) from a workflow without adding it anywhere in the diff, or deletes such a workflow; adds `continue-on-error: true` or `|| true` to a check; or sets a rule to `off`, `0` or `allow`, starts an `ignore` list, or sets `strict` and its relatives to `false` in an ESLint, oxlint, Biome, Ruff, golangci, TypeScript or Cargo config. |
+| Stub, empty error handler or TODO standing in for the code | adds a throw or panic of "not implemented", `NotImplementedError`, `todo!()` or `unimplemented!()`; adds a `catch`, `except` or `if err != nil` block with nothing in it, or `.catch(() => {})`; or adds a function whose only body is a `TODO`, `FIXME` or `XXX` comment. |
+
+**Strong and weak.** A strong finding has severity `high`. A reason moves a hit to a
+weak finding, severity `low`, which is listed under the label "weak sign" and, like
+every low finding, shows only beside a stronger one. A reason is any of:
+
+- two or more plain words in the comment on the same line, once the directive and
+  rule names such as `no-console` or `E501` are set aside (a rule name is not a reason);
+- a comment-only line directly above or below that has two plain words;
+- for a skip call, a string argument of two plain words, as in
+  `t.Skip("flaky on shared runners")` (a test name such as `it.skip("adds")` is not one);
+- a commit message on the branch that is about that kind of change and says why:
+  it names the change (`suppress`, `skip`, `lower`, `stub` and similar) and uses a
+  reason word (`because`, `until`, `flaky`, `upstream`, `workaround`, `tracked`, an
+  issue number). A message downgrades only the finding category it is about. The
+  messages come from one read-only `git log` of the commits since the base, and
+  are fetched only when a strong finding exists.
+
+Two cases soften a finding for other causes: a removed whole test case (as
+opposed to assertions pulled out of a test that stays), and a `TODO` that cites an
+issue number or URL.
+
+**Where it can be wrong.** Everything is a pattern over lines, with no parser.
+Assertion counts are by line, so a test rewritten into a different assertion
+style can read as fewer assertions; counts are taken across the whole diff, so
+tests moved between files cancel. A deleted test file is excused only when a deleted
+source file has the same stem. A check moved into a shared workflow reads as
+removed. An empty `catch` around cleanup is flagged, with a comment in the block
+as the way to say it is deliberate. A bare `@ts-ignore` or empty `catch` can also
+appear in the code-slop list for its own reason; the type directive is reported
+only here. Only `.mjs`, `.ts`, `.py`, `.go` and `.rs` sources get the stub and
+empty-handler checks, and test files, lock files, generated output and Markdown
+are never read for them.
 
 ## Limits
 
