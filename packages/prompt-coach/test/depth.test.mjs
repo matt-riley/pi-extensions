@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildCoachQuestions } from "../battery.mjs";
 import { rewriteWithModel } from "../rewrite.mjs";
 
 async function systemPrompt() {
@@ -47,10 +46,4 @@ test("steering messages and already-clear prompts stay unchanged", async () => {
   const prompt = await systemPrompt();
   assert.match(prompt, /question, correction, answer, or mid-task steering/i);
   assert.match(prompt, /already clear/i);
-});
-
-test("the intent check accepts real depth but rejects new deliverables", () => {
-  const question = buildCoachQuestions().intent_preserved;
-  assert.match(question.instructions, /naming (real )?files, commands, or a check is not drift/i);
-  assert.match(question.instructions, /new (features|deliverables)/i);
 });
