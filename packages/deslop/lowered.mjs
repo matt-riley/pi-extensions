@@ -427,6 +427,113 @@ const weakerChecks = (files) => [
   ...rulesOff(files),
 ];
 
+const SOURCE_LANGUAGES = {
+  js: "js",
+  mjs: "js",
+  cjs: "js",
+  jsx: "js",
+  ts: "js",
+  mts: "js",
+  cts: "js",
+  tsx: "js",
+  py: "py",
+  go: "go",
+  rs: "rs",
+};
+const STUB_PHRASE = /not\s+(?:yet\s+)?implemented|unimplemented|\btodo\b/i;
+const MACRO_STUB = /\b(?:todo|unimplemented)!\s*\(|\bNotImplementedError\b/;
+const MESSAGE_STUB = /\bnew\s+\w*Error\s*\(|\bpanic!?\s*\(/;
+const TRACKER = /#\d+|https?:\/\/|\b[A-Z]{2,}-\d+/;
+const TODO_COMMENT = /^(?:TODO|FIXME|XXX)\b/i;
+
+/** An empty block holds at most this many comment lines before its closing line. */
+const LOOKAHEAD_LINES = 6;
+
+const indentOf = (text) => text.match(/^\s*/)[0].length;
+
+/**
+ * The first code line after `at`, and the comments before it. Comment-only lines
+ * are skipped, because a comment inside an empty block is not the block's body.
+ */
+function bodyAfter(lines, at, style) {
+  const comments = [];
+  for (let next = at + 1; next < lines.length && next <= at + LOOKAHEAD_LINES; next++) {
+    if (lines[next].kind === "del") continue;
+    const { code, comment } = splitComment(lines[next].text, style);
+    if (code.trim() === "" && comment !== null) comments.push(comment);
+    else return { code: code.trim(), text: lines[next].text, comments };
+  }
+  return null;
+}
+
+const commentsGiveReason = (comments) =>
+  comments.some((comment) => reasonWordCount(comment) >= REASON_WORDS);
+
+/** A catch, except or `if err != nil` block with nothing in it. */
+function emptyHandlerAt(language, lines, at, style) {
+  const code = splitComment(lines[at].text.replace(/\/\*.*?\*\//g, " "), style).code;
+  if (language === "js") {
+    if (
+      /\bcatch\b(?:\s*\([^)]*\))?\s*\{\s*\}/.test(code) ||
+      /\.catch\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*\{\s*\}\s*\)/.test(code)
+    )
+      return { comments: [...lines[at].text.matchAll(/\/\*(.*?)\*\//g)].map((found) => found[1]) };
+  }
+  const opens = {
+    js: /\bcatch\b[^{]*\{\s*$/,
+    go: /^\s*if\s+err\s*!=\s*nil\s*\{\s*$/,
+    py: /^\s*except\b[^:]*:\s*$/,
+  }[language];
+  if (!opens?.test(code)) return null;
+  const body = bodyAfter(lines, at, style);
+  const closes = language === "py" ? /^(?:pass|\.\.\.)$/ : /^\}/;
+  return body && closes.test(body.code) ? { comments: body.comments } : null;
+}
+
+/** A comment-only TODO that sits alone where a function body should be. */
+function todoBodyAt(language, lines, at, style) {
+  const { code, comment } = splitComment(lines[at].text, style);
+  if (code.trim() !== "" || !TODO_COMMENT.test(comment ?? "")) return null;
+  const before = lines[at - 1];
+  if (!before || before.kind === "del") return null;
+  const opener = splitComment(before.text, style).code.trimEnd();
+  if (!opener.endsWith(language === "py" ? ":" : "{")) return null;
+  const body = bodyAfter(lines, at, style);
+  if (!body) return null;
+  const ends =
+    language === "py"
+      ? /^(?:pass|\.\.\.)$/.test(body.code) || indentOf(body.text) <= indentOf(before.text)
+      : body.code.startsWith("}");
+  return ends ? { tracked: TRACKER.test(comment) } : null;
+}
+
+/** Work left undone: stubs that throw, empty error handlers, and a TODO where the code goes. */
+function unfinishedWork(files) {
+  const hits = [];
+  for (const file of files) {
+    const style = commentStyleOf(file.path);
+    const language = SOURCE_LANGUAGES[extensionOf(file.path)];
+    if (!style || !language || file.deleted || isTest(file.path)) continue;
+    for (const { lines, at, line } of addedLines(file)) {
+      const { code } = splitComment(line.text, style);
+      const stub =
+        MACRO_STUB.test(code) || (MESSAGE_STUB.test(code) && STUB_PHRASE.test(line.text));
+      const handler = emptyHandlerAt(language, lines, at, style);
+      const todo = todoBodyAt(language, lines, at, style);
+      if (!stub && !handler && !todo) continue;
+      hits.push({
+        path: file.path,
+        n: line.n,
+        text: line.text,
+        weak: todo
+          ? todo.tracked
+          : reasonNear(lines, at, style) || commentsGiveReason(handler?.comments ?? []),
+      });
+    }
+  }
+  return hits;
+}
+
 const CHECKS = [
   {
     id: "suppression",
@@ -445,6 +552,12 @@ const CHECKS = [
     label: "threshold lowered, CI check removed or lint rule switched off",
     fix: "restore it, or record why the bar can drop",
     scan: weakerChecks,
+  },
+  {
+    id: "unfinished",
+    label: "stub, empty error handler or TODO standing in for the code",
+    fix: "write the missing code, or note what tracks it",
+    scan: unfinishedWork,
   },
 ];
 

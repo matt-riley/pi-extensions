@@ -357,3 +357,108 @@ test("a clean config and workflow change produces no flags", () => {
   ].join("\n");
   assert.deepEqual(findLoweredBar(clean), []);
 });
+
+test("a stub that fails with not implemented is a strong flag", () => {
+  const cases = {
+    "src/a.ts": [
+      'export const sync = () => { throw new Error("not implemented"); };',
+      "  throw new NotImplementedError('todo');",
+      "  return Promise.reject(new Error(`Not yet implemented`));",
+    ],
+    "tool.py": ["    raise NotImplementedError", "    raise NotImplementedError('later')"],
+    "main.go": ['\tpanic("not implemented")', '\tpanic("TODO")'],
+    "lib.rs": ["    todo!()", '    unimplemented!("later")', '    todo!("wire this up")'],
+  };
+  for (const [file, lines] of Object.entries(cases))
+    for (const line of lines)
+      assert.deepEqual(kinds(added(file, line)), ["unfinished/high"], `${file}: ${line}`);
+});
+
+test("a stub with a comment saying why is weak", () => {
+  const stub = added(
+    "tool.py",
+    "    # subclasses supply the real parser for their format",
+    "    raise NotImplementedError",
+  );
+  assert.deepEqual(kinds(stub), ["unfinished/low"]);
+});
+
+test("an empty catch block is a strong flag", () => {
+  const cases = {
+    "src/a.ts": [
+      ["try { run(); } catch (error) {}"],
+      ["try { run(); } catch {}"],
+      ["load().catch(() => {});"],
+      ["} catch (error) {", "}"],
+      ["} catch (error) {", "  // ignore", "}"],
+    ],
+    "tool.py": [["except ValueError:", "    pass"]],
+    "main.go": [["if err != nil {", "}"]],
+  };
+  for (const [file, groups] of Object.entries(cases))
+    for (const lines of groups)
+      assert.deepEqual(kinds(added(file, ...lines)), ["unfinished/high"], lines.join(" | "));
+});
+
+test("a catch that handles the error, or explains the silence, is not flagged strongly", () => {
+  const handled = [
+    ["} catch (error) {", "  log(error);", "}"],
+    ["} catch (error) {", "  throw error;", "}"],
+    ["load().catch((error) => log(error));"],
+  ];
+  for (const lines of handled) assert.deepEqual(kinds(added("src/a.ts", ...lines)), []);
+  const explained = added(
+    "src/a.ts",
+    "} catch (error) {",
+    "  // the file may vanish between the stat and the read",
+    "}",
+  );
+  assert.deepEqual(kinds(explained), ["unfinished/low"]);
+  const goHandled = added("main.go", "if err != nil {", "\treturn err", "}");
+  assert.deepEqual(kinds(goHandled), []);
+});
+
+test("a TODO standing where the body should be is a strong flag", () => {
+  const cases = {
+    "src/a.ts": [["export function sync() {", "  // TODO: implement", "}"]],
+    "tool.py": [["def sync():", "    # TODO implement", "    pass"]],
+    "main.go": [["func Sync() error {", "\t// FIXME", "}"]],
+    "lib.rs": [["fn sync() {", "    // TODO", "}"]],
+  };
+  for (const [file, groups] of Object.entries(cases))
+    for (const lines of groups)
+      assert.deepEqual(kinds(added(file, ...lines)), ["unfinished/high"], lines.join(" | "));
+});
+
+test("a TODO beside real code, or one that names its tracker, is not a strong flag", () => {
+  const beside = added(
+    "src/a.ts",
+    "function sync() {",
+    "  // TODO: batch these",
+    "  push(items);",
+    "}",
+  );
+  assert.deepEqual(kinds(beside), []);
+  const tracked = added("src/a.ts", "function sync() {", "  // TODO(#412): implement", "}");
+  assert.deepEqual(kinds(tracked), ["unfinished/low"]);
+});
+
+test("stubs in a test file, a quoted example and removed stubs are not flagged", () => {
+  assert.deepEqual(kinds(added("src/a.test.ts", 'throw new Error("not implemented");')), []);
+  assert.deepEqual(
+    kinds(added("src/a.ts", "const sample = \"throw new Error('not implemented')\";")),
+    [],
+  );
+  assert.deepEqual(kinds(added("src/a.ts", "// throw new Error('not implemented')")), []);
+  assert.deepEqual(kinds(removed("src/a.ts", 'throw new Error("not implemented");')), []);
+  assert.deepEqual(kinds(added("docs/guide.md", "raise NotImplementedError")), []);
+});
+
+test("a clean source change produces no flags", () => {
+  const clean = [
+    added("src/a.ts", "export function sync(items) {", "  push(items);", "}"),
+    added("tool.py", "def sync(items):", "    push(items)"),
+    added("main.go", "func Sync() error {", "\treturn push()", "}"),
+  ].join("\n");
+  assert.deepEqual(findLoweredBar(clean), []);
+});
