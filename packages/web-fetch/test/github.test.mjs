@@ -8,6 +8,7 @@ import {
   parseGithubUrl,
   refPathCandidates,
 } from "../github.mjs";
+import { formatWebFetchResult } from "../format.mjs";
 
 // --- parsing ----------------------------------------------------------------
 
@@ -215,13 +216,18 @@ test("fetchGithub: tree renders listing", async () => {
   assert.match(outcome.markdown, /- lib\//);
 });
 
-test("fetchGithub: maxChars caps output", async () => {
+test("fetchGithub: maxChars flags a long body but keeps the rest for paging", async () => {
   setGhApiForTests(fakeApi);
   const { outcome } = await fetchGithub(parseGithubUrl("https://github.com/octo/cat"), {
     maxChars: 40,
   });
   assert.equal(outcome.truncated, true);
-  assert.ok(outcome.markdown.length < 200);
+  assert.ok(outcome.markdown.length > 40, "the remainder stays on the outcome");
+  const out = formatWebFetchResult(outcome, { maxChars: 40 });
+  assert.match(out, /content truncated at (\d+) of \d+ chars — use offset=\1 to continue/);
+  const shown = out.split("\n\n[content truncated")[0];
+  const start = shown.indexOf(outcome.markdown.slice(0, 8));
+  if (start >= 0) assert.ok(shown.slice(start).length <= 40);
 });
 
 test("fetchGithub: gh availability caching", async () => {

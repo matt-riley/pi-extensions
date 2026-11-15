@@ -122,10 +122,11 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
     annotations: OPEN_READ,
     description: WEB_FETCH_DESCRIPTION,
     promptSnippet:
-      "web_fetch(url, format?, maxChars?, timeoutMs?, headers?, includeImages?, followAlternates?): fetch a web page and get clean readable content (markdown by default) plus title/author/date metadata; GitHub URLs use the gh CLI; no JavaScript execution",
+      "web_fetch(url, format?, maxChars?, offset?, timeoutMs?, headers?, includeImages?, followAlternates?): fetch a web page and get clean readable content (markdown by default) plus title/author/date metadata; if a result is cut, pass offset to read the next window; GitHub URLs use the gh CLI; no JavaScript execution",
     promptGuidelines: [
       "Use web_fetch to fetch web pages: browser-like headers, redirect following, clean markdown extraction, and metadata. For GitHub URLs (repos, issues, PRs, files, releases, commits, gists) it uses the gh CLI for authenticated structured data.",
       "web_fetch does NOT execute JavaScript — use a browser automation tool for JS-rendered pages. Use format=raw to inspect the unmodified response body.",
+      "When a result says it was truncated, pass the given offset with the same URL to read the next window. The per-call budget stays at maxChars; do not raise maxChars just to see the rest.",
     ],
     parameters: Type.Object({
       url: Type.String({ description: "The http(s) URL to fetch" }),
@@ -134,7 +135,14 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         Type.Integer({
           minimum: 1000,
           description:
-            "Maximum characters of extracted content (default 60000; format=raw defaults to 200000).",
+            "Maximum characters of extracted content in this window (default 60000; format=raw defaults to 200000).",
+        }),
+      ),
+      offset: Type.Optional(
+        Type.Integer({
+          minimum: 0,
+          description:
+            "Character offset into the extracted content. When a previous result was truncated, pass the offset it gave to read the next window.",
         }),
       ),
       timeoutMs: Type.Optional(
@@ -185,6 +193,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
         1_000_000,
       );
       const timeoutMs = clampInt(params?.timeoutMs, settings.defaultTimeoutMs, 1000, 120_000);
+      const offset = clampInt(params?.offset, 0, 0, 10_000_000);
 
       const options = buildFetchOptions(params, settings, { format, maxChars, timeoutMs });
 
@@ -204,7 +213,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
               content: [{ type: "text", text: `web_fetch ${options.url}: ${status}` }],
             }),
         });
-        const text = formatWebFetchResult(outcome, { format, maxChars });
+        const text = formatWebFetchResult(outcome, { format, maxChars, offset });
         return { content: [{ type: "text", text }] };
       } catch (err) {
         return {
@@ -328,7 +337,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
     promptSnippet:
       "batch_web_fetch(requests, concurrency?, totalMaxChars?): fetch multiple URLs concurrently, one result block per URL with per-item failures",
     promptGuidelines: [
-      "Use batch_web_fetch to fetch many URLs in one call with bounded concurrency; each request item accepts the same options as web_fetch and failures are reported per item.",
+      "Use batch_web_fetch to fetch many URLs in one call with bounded concurrency; each request item accepts the same options as web_fetch, including offset, and failures are reported per item.",
     ],
     parameters: Type.Object({
       requests: Type.Array(
@@ -337,6 +346,12 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           format: Type.Optional(Type.String({ description: FORMAT_DESC })),
           maxChars: Type.Optional(
             Type.Integer({ minimum: 1000, description: "Per-item character cap (default 60000)." }),
+          ),
+          offset: Type.Optional(
+            Type.Integer({
+              minimum: 0,
+              description: "Character offset into this item's extracted content, as for web_fetch.",
+            }),
           ),
           headers: Type.Optional(
             Type.Record(Type.String(), Type.String(), {
@@ -404,6 +419,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
           url: String(raw?.url ?? "").trim(),
           format: pickFormat(raw?.format, settings.defaultFormat),
           maxChars: clampInt(raw?.maxChars, settings.defaultMaxChars, 1000, 1_000_000),
+          offset: clampInt(raw?.offset, 0, 0, 10_000_000),
           // Carried through to buildFetchOptions: a per-item header, image and
           // alternate setting has to reach the fetch, not just be accepted.
           headers: raw?.headers,
@@ -455,6 +471,7 @@ export default function piWebFetchExtension(pi: ExtensionAPI) {
             const emitted = formatWebFetchResult(outcome, {
               format: request.format,
               maxChars: allocation.cap,
+              offset: request.offset,
             });
             remainingBudget = chargeBudget(remainingBudget, emitted.length);
             results[i] = { index, request, outcome, cap: allocation.cap };

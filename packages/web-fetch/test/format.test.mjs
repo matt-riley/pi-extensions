@@ -36,9 +36,22 @@ test("a page renders the requested body, falling back to markdown when html is e
   assert.ok(formatWebFetchResult({ ...page, html: "" }, { format: "html" }).endsWith("# Body"));
 });
 
+function pageBody(formatted) {
+  const cut = formatted.split("\n\n[content truncated")[0];
+  const sep = cut.indexOf("\n\n");
+  return sep === -1 ? cut : cut.slice(sep + 2);
+}
+
 test("a truncated page says where it stopped and how to get more", () => {
-  const out = formatWebFetchResult({ ...page, truncated: true }, { maxChars: 500 });
-  assert.ok(out.endsWith("[content truncated at 500 chars — raise maxChars for more]"));
+  const body = "alpha bravo charlie delta echo foxtrot golf hotel";
+  const out = formatWebFetchResult({ ...page, markdown: body }, { maxChars: 20 });
+  assert.match(out, /content truncated at (\d+) of 49 chars — use offset=\1 to continue/);
+  assert.ok(!out.includes(body));
+  const end = Number(/offset=(\d+)/.exec(out)[1]);
+  assert.equal(pageBody(out), body.slice(0, end));
+  const rest = formatWebFetchResult({ ...page, markdown: body }, { maxChars: 40, offset: end });
+  assert.ok(!rest.includes("use offset="));
+  assert.equal(pageBody(out) + pageBody(rest), body);
 });
 
 test("json format is a single parseable document, capped to the limit", () => {
@@ -49,7 +62,20 @@ test("json format is a single parseable document, capped to the limit", () => {
     { ...page, markdown: "x".repeat(5000) },
     { format: "json", maxChars: 200 },
   );
-  assert.ok(capped.length < 600);
+  assert.ok(capped.length < 800);
+  const long = JSON.parse(capped);
+  assert.equal(long.truncated, true);
+  assert.equal(long.totalChars, 5000);
+  assert.equal(typeof long.nextOffset, "number");
+  assert.ok(long.content.length <= 200);
+  const page2 = JSON.parse(
+    formatWebFetchResult(
+      { ...page, markdown: "x".repeat(5000) },
+      { format: "json", maxChars: 200, offset: long.nextOffset },
+    ),
+  );
+  assert.equal(page2.offset, long.nextOffset);
+  assert.ok(page2.content.length > 0);
 });
 
 test("a text payload is fenced as code in markdown unless it is already prose", () => {
@@ -62,7 +88,9 @@ test("a text payload is fenced as code in markdown unless it is already prose", 
   );
   assert.equal(formatWebFetchResult({ ...code, mime: "text/plain" }), "let a = 1;");
   assert.equal(formatWebFetchResult(code, { format: "text" }), "let a = 1;");
-  assert.ok(formatWebFetchResult({ ...code, truncated: true }).endsWith("\n\n[truncated]"));
+  const long = { ...code, text: "let a = 1; " + "x".repeat(80) };
+  const cut = formatWebFetchResult(long, { maxChars: 20 });
+  assert.match(cut, /content truncated at (\d+) of \d+ chars — use offset=\1 to continue/);
 });
 
 test("a json text payload is pretty-printed, and invalid json is passed through", () => {
@@ -71,13 +99,14 @@ test("a json text payload is pretty-printed, and invalid json is passed through"
   assert.equal(formatWebFetchResult({ ...json, text: "{oops" }, { format: "json" }), "{oops");
 });
 
-test("raw output notes truncation with the limit that applied", () => {
+test("raw output notes truncation with the offset that continues it", () => {
   assert.equal(formatWebFetchResult({ kind: "raw", text: "abc" }), "abc");
-  assert.ok(
-    formatWebFetchResult({ kind: "raw", text: "abc", truncated: true }).endsWith(
-      "[truncated at 200000 chars — raise maxChars for more]",
-    ),
-  );
+  const body = "abcdefghij klmnopqrst uvwxyz";
+  const out = formatWebFetchResult({ kind: "raw", text: body }, { maxChars: 12 });
+  assert.match(out, /content truncated at (\d+) of 28 chars — use offset=\1 to continue/);
+  const end = Number(/offset=(\d+)/.exec(out)[1]);
+  const rest = formatWebFetchResult({ kind: "raw", text: body }, { maxChars: 20, offset: end });
+  assert.equal(body.slice(0, end) + rest.split("\n\n[content")[0], body);
 });
 
 test("a binary payload is declined with its size and a way forward", () => {
@@ -120,4 +149,18 @@ test("a batch counts ok, failed and skipped, and labels each item", () => {
       "Skipped: duplicate",
     ].join("\n"),
   );
+});
+
+test("an offset past the end returns an empty body and no continue hint", () => {
+  const out = formatWebFetchResult({ kind: "raw", text: "abc" }, { offset: 10 });
+  assert.equal(out, "");
+});
+
+test("the output window stays within the requested budget", () => {
+  const body = Array.from({ length: 80 }, (_, i) => `word${i}`).join(" ");
+  const out = formatWebFetchResult({ ...page, markdown: body }, { maxChars: 60 });
+  const cut = out.split("\n\n[content truncated")[0];
+  const bodyStart = cut.indexOf("word0");
+  assert.ok(bodyStart >= 0);
+  assert.ok(cut.slice(bodyStart).length <= 60);
 });

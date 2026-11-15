@@ -235,14 +235,12 @@ function outcome(parsed, fields) {
   };
 }
 
-// Truncate helper honoring opts.maxChars.
+// Flag whether the body is over the output budget. The cut itself happens
+// in format.mjs, so a later window can still be read with offset.
 function cap(text, opts) {
   const max = opts?.maxChars ?? 60000;
-  if (text.length <= max) return { text, truncated: false };
-  let cut = text.slice(0, max);
-  const lastBreak = Math.max(cut.lastIndexOf("\n"), cut.lastIndexOf(" "));
-  if (lastBreak > max * 0.6) cut = cut.slice(0, lastBreak);
-  return { text: `${cut.trimEnd()}\n… [truncated]`, truncated: true };
+  const value = String(text ?? "");
+  return { text: value, truncated: value.length > max };
 }
 
 const firstLine = (s) => (s ?? "").split("\n")[0] ?? "";

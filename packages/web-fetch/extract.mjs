@@ -57,13 +57,31 @@ export function isBinaryMime(mime) {
   return !isTextMime(mime) && !/html|xhtml/.test(mime);
 }
 
-// Word-boundary truncation: never cut mid-word when a break is nearby.
+// A window into `text` starting at `offset`, at most `maxChars` long.
+// Never cuts mid-word when a break is nearby. The returned `end` is the
+// offset to pass for the next window; `truncated` means more text follows.
+export function sliceText(text, maxChars, offset = 0) {
+  const source = String(text ?? "");
+  const total = source.length;
+  const budgetRaw = Number(maxChars);
+  const budget = Number.isFinite(budgetRaw) && budgetRaw > 0 ? Math.trunc(budgetRaw) : total;
+  const startRaw = Number(offset);
+  const start =
+    Number.isFinite(startRaw) && startRaw > 0 ? Math.min(Math.trunc(startRaw), total) : 0;
+  if (total - start <= budget) {
+    return { text: source.slice(start), start, end: total, total, truncated: false };
+  }
+  let end = start + budget;
+  const window = source.slice(start, end);
+  const lastBreak = Math.max(window.lastIndexOf("\n"), window.lastIndexOf(" "));
+  if (lastBreak > budget * 0.6) end = start + lastBreak;
+  while (end > start && /\s/.test(source[end - 1])) end--;
+  return { text: source.slice(start, end), start, end, total, truncated: end < total };
+}
+
 export function truncateText(text, maxChars) {
-  if (text.length <= maxChars) return { text, truncated: false };
-  let cut = text.slice(0, maxChars);
-  const lastBreak = Math.max(cut.lastIndexOf("\n"), cut.lastIndexOf(" "));
-  if (lastBreak > maxChars * 0.6) cut = cut.slice(0, lastBreak);
-  return { text: `${cut.trimEnd()}\n… [truncated]`, truncated: true };
+  const window = sliceText(text, maxChars, 0);
+  return { text: window.text, truncated: window.truncated };
 }
 
 // --- extraction pipeline ----------------------------------------------------
@@ -106,18 +124,16 @@ export function extractPage({
   const text = treeToText(main);
   const rawTextLength = text.length;
 
-  const mdCapped = truncateText(markdown, maxChars);
-  const htmlCapped = truncateText(html, maxChars);
-  const textCapped = truncateText(text, maxChars);
-
+  // Keep the full extracted text so a later window can be formatted with
+  // offset. The output budget is applied in format.mjs, not here.
   return {
     kind: "page",
     meta,
-    markdown: mdCapped.text,
-    html: htmlCapped.text,
-    text: textCapped.text,
+    markdown,
+    html,
+    text,
     rawTextLength,
-    truncated: mdCapped.truncated || htmlCapped.truncated || textCapped.truncated,
+    truncated: markdown.length > maxChars || html.length > maxChars || text.length > maxChars,
   };
 }
 

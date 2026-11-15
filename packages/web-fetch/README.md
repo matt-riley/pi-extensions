@@ -14,7 +14,7 @@ browser: pages that need JavaScript require a browser tool.
 ## Tools
 
 ```
-web_fetch(url, format?, maxChars?, timeoutMs?, headers?, includeImages?, followAlternates?)
+web_fetch(url, format?, maxChars?, offset?, timeoutMs?, headers?, includeImages?, followAlternates?)
 batch_web_fetch(requests, concurrency?, totalMaxChars?)
 web_search(query, max_results?)
 web_answer(url, question, max_spans?)
@@ -22,9 +22,13 @@ web_answer(url, question, max_spans?)
 
 `web_fetch` returns a metadata header (`title`, `url`, `published`, `author`,
 `site`, `lang`, `via`) followed by the extracted content in the requested
-format. `batch_web_fetch` fans out with bounded concurrency and reports each
-item's result (or failure) independently. `web_search` returns ranked
-DuckDuckGo results (title, URL, snippet) without an API key. `web_answer` and
+format. A long page is cut at `maxChars` (60,000 by default; 200,000 for
+`format=raw`). The cut is only in the tool output: the rest of the page is
+still there, and the result says so, with the `offset` to pass on the next
+call for the following window. `batch_web_fetch` fans out with bounded
+concurrency and reports each item's result (or failure) independently; each
+request can take the same `offset`. `web_search` returns ranked DuckDuckGo
+results (title, URL, snippet) without an API key. `web_answer` and
 `batch_web_fetch` use deferred exposure and load through tool search when needed.
 
 ## `web_answer`: the passage, not the page
