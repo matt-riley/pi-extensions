@@ -27,6 +27,7 @@ import {
   saveCache,
 } from "./cache.mjs";
 import { findRepoRoot, listRepoFiles, normalizeRel } from "./inventory.mjs";
+import { attachContext, clampContext, MAX_CONTEXT } from "./hit-context.mjs";
 import { searchRepo } from "./search.mjs";
 import {
   buildTreeLines,
@@ -319,11 +320,17 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       "scope to a subtree. Results are ranked definition-first and framed with the enclosing function/class " +
       "when the cache has symbols. A page shows at most 5 matches per file; when more remain the result ends " +
       "with a cursor, and passing it back (same query and options) returns the next hits. " +
+      "Set context=N (0-10) to get N numbered lines around each hit, in the file's exact text: enough to " +
+      "edit from without a separate read. A hit whose exact line repeats in its file says so, because such " +
+      "a line cannot anchor an edit alone. Independent queries can go in one turn as parallel calls; each " +
+      "result is labelled with its query and options. " +
       "Prefer this over grep when you need ranked, contextual results.",
     promptSnippet:
-      "code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?, cursor?): content search with definition-first ranking and enclosing function/class framing; pass the returned cursor to page on; prefer over grep when you need context or ranked results",
+      "code_search(query, path?, caseSensitive?, wholeWord?, regex?, maxResults?, context?, cursor?): content search with definition-first ranking and enclosing function/class framing; context=N adds the lines around each hit; pass the returned cursor to page on; prefer over grep when you need context or ranked results",
     promptGuidelines: [
       "Use code_search for content queries when ranking or context matters: definitions rank first and each hit is framed with its enclosing function/class. Narrow with path=<dir> when results are broad.",
+      "When you are about to edit what you search for, pass context=N (2 to 5 is usually enough) so the hit already shows the lines you will replace, and skip the separate read. If a hit says its line repeats in the file, include a neighbouring line in the edit.",
+      "Run independent code_search calls together in one turn rather than one after another.",
     ],
     parameters: Type.Object({
       query: Type.String({ description: "Text to find (plain substring unless regex=true)." }),
@@ -341,6 +348,14 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       ),
       maxResults: Type.Optional(
         Type.Integer({ minimum: 1, maximum: 100, description: "Max hits to return (default 30)." }),
+      ),
+      context: Type.Optional(
+        Type.Integer({
+          minimum: 0,
+          maximum: MAX_CONTEXT,
+          description:
+            "Lines to show above and below each hit (default 0). Use it when you will edit the match, to skip a separate read. Does not change which hits match or the cursor.",
+        }),
       ),
       cursor: Type.Optional(
         Type.String({
@@ -360,30 +375,36 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         scope = v.rel;
       }
       try {
-        const { hits, total, start, remaining, truncated, nextCursor, suggestion } =
-          await searchRepo({
-            cache: session.cache,
-            query,
-            opts: {
-              path: scope ?? undefined,
-              caseSensitive: params?.caseSensitive === true,
-              wholeWord: params?.wholeWord === true,
-              regex: params?.regex === true,
-              maxResults: params?.maxResults,
-              cursor: params?.cursor || undefined,
-            },
-            readFile: async (rel) => {
-              try {
-                return await readFile(join(session.root, rel), "utf8");
-              } catch {
-                return null;
-              }
-            },
-            exec,
-            root: session.root,
-            viaGit: session.viaGit,
-            signal,
-          });
+        const readSource = async (rel: string) => {
+          try {
+            return await readFile(join(session.root, rel), "utf8");
+          } catch {
+            return null;
+          }
+        };
+        const found = await searchRepo({
+          cache: session.cache,
+          query,
+          opts: {
+            path: scope ?? undefined,
+            caseSensitive: params?.caseSensitive === true,
+            wholeWord: params?.wholeWord === true,
+            regex: params?.regex === true,
+            maxResults: params?.maxResults,
+            cursor: params?.cursor || undefined,
+          },
+          readFile: readSource,
+          exec,
+          root: session.root,
+          viaGit: session.viaGit,
+          signal,
+        });
+        const context = clampContext(params?.context);
+        const { hits, omitted } = await attachContext({
+          hits: found.hits,
+          context,
+          readFile: readSource,
+        });
         return {
           content: [
             {
@@ -391,12 +412,20 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
               text: formatSearchHits({
                 query,
                 hits,
-                total,
-                start,
-                remaining,
-                truncated,
-                nextCursor,
-                suggestion,
+                total: found.total,
+                start: found.start,
+                remaining: found.remaining,
+                truncated: found.truncated,
+                nextCursor: found.nextCursor,
+                suggestion: found.suggestion,
+                options: {
+                  path: scope,
+                  caseSensitive: params?.caseSensitive === true,
+                  wholeWord: params?.wholeWord === true,
+                  regex: params?.regex === true,
+                  context,
+                },
+                contextOmitted: omitted,
               }),
             },
           ],

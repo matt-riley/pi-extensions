@@ -19,7 +19,7 @@ Method:
 Discipline:
 - Cite every factual claim with a URL you actually fetched. Never cite a search snippet as if you had read the page.
 - If you cannot verify something, put it in Gaps, not Findings.
-- Keep the brief under ~800 words. A brief is a scalpel, not a bibliography.
+- Keep the brief under ~800 words.
 
 Output format:
 

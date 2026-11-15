@@ -40,6 +40,34 @@ subagent({
 
 Unknown or disabled types error. There is no general-purpose fallback.
 
+## Briefs and when to delegate
+
+A child sees only its brief, so the orchestrator prompt, the tool text and the
+`scout` and `oracle` prompts all say the same things.
+
+A brief has five parts: the goal in one sentence; the context (the plan this job
+is part of, concrete paths and symbols, error text, decisions already made, and
+the conventions to follow); constraints; the deliverable; and how to verify, which
+means the exact command and the output that counts. The orchestrator is told to
+reread it as someone who has seen nothing else, and to replace "as discussed" or
+"the file above" with the decision or the path.
+
+Two jobs stay with the orchestrator: anything it can finish in one reply, and its
+whole assignment. It delegates separable pieces and keeps the plan, the
+integration and the final answer. When children return, the user cannot see what
+they wrote, so the orchestrator summarises each result in a sentence or two,
+with paths, before giving one answer.
+
+`scout` and `oracle` read the brief as the caller's account. If it points at
+something they cannot see, they say so on the first lines and do not guess. They
+do their own task rather than handing it on, and still never edit files or spawn
+agents. The `scout` also names the search or command behind a claim that
+matters, so the parent can repeat it.
+
+These are prompt rules, so a model can still ignore them. The preflight judgment
+below catches a brief that leans on unseen context, and the stale-path check
+catches a path that no longer exists.
+
 ## Built-in types
 
 | Type | Job | Writes |
