@@ -592,6 +592,27 @@ export default function (pi) {
   console.log(
     "ok: two failed fixes block native, shell and nested mutations until a real checkpoint",
   );
+  const fakeGithub = `ghp_${"Q7w3".repeat(9)}`;
+  const fakeOpenai = `sk-${"Lm4n".repeat(8)}`;
+  await writeFile(path.join(cwd, "smoke-secret.txt"), `token = "${fakeOpenai}"\nlabel = visible\n`);
+  scripted = [
+    { name: "bash", arguments: { command: `printf 'GITHUB_TOKEN=%s\\n' ${fakeGithub}` } },
+    { name: "read", arguments: { path: "smoke-secret.txt" } },
+  ];
+  const masked = await prompt("SMOKE_MASK: print a fixture token, then read a fixture file.");
+  // What the model is given: the finalized tool results. The command text the model itself
+  // wrote and the live partial output shown while a command runs are not tool results.
+  const maskedText = JSON.stringify(
+    masked.filter((event) => event.type === "message_end" && event.message?.role === "toolResult"),
+  );
+  assert.match(maskedText, /GITHUB_TOKEN=/, "the bash tool result was not captured");
+  assert.doesNotMatch(maskedText, new RegExp(fakeGithub), "bash output leaked a token");
+  assert.doesNotMatch(maskedText, new RegExp(fakeOpenai), "file read leaked a token");
+  assert.match(maskedText, /guardrail masked 1 secret/);
+  assert.match(maskedText, /label = visible/, "unrelated file content must stay readable");
+  console.log(
+    "ok: guardrail masks bash output and key shapes in file reads before the model sees them",
+  );
   scripted = undefined;
   phase = "blocked";
   await prompt("/plan start");

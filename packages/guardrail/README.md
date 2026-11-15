@@ -96,11 +96,38 @@ of the original.
 Dialogs share plan mode's FIFO queue (`shared/dialog-queue.mjs`): two flagged
 calls in one assistant message must not stack two prompts.
 
+## Secret masking
+
+Separate from the approval gate, guardrail patches `tool_result` so credentials
+never reach the model, the session log or a compaction:
+
+- **`bash` output** is masked in full: private key blocks, JWTs, AWS, GitHub,
+  OpenAI and Slack tokens, bearer tokens, URL credentials, and `NAME=value`
+  assignments whose name says key, token, secret, password or credential.
+- **File reads** (`read`) mask only definite key shapes: private key blocks,
+  `ghp_…`-style GitHub tokens, `sk-…` keys, AWS and Slack tokens. Source is full
+  of `token`, `password=` and example URLs, and masking those would corrupt code
+  being edited.
+- Other tools are untouched. Home paths and emails are not masked.
+- A masked result carries `<REDACTED:kind>` markers and a final line,
+  `[guardrail masked N secrets in this output]`.
+
+It uses the shared redactor (`shared/redact.mjs`) that TypeSafe requests use.
+`/guardrail off` turns off the gate, not the masking; `PI_GUARDRAIL_MASK=off`
+(or `PI_GUARDRAIL=off`) turns masking off for the process. Guardrail registers
+before typesafe, safe-compact, done-gate and diagnosis-nudge in the root manifest
+so each of them sees the masked text (a test pins the order).
+
+Limit: the live partial output Pi streams to the screen while a command runs is
+not a tool result and is not masked. A secret the model itself typed into a
+command is also not masked.
+
 ## Configuration
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PI_GUARDRAIL` | unset (on) | `off` / `0` / `false` disables the extension for the whole process |
+| `PI_GUARDRAIL_MASK` | unset (on) | `off` / `0` / `false` turns off secret masking for the whole process |
 | `PI_GUARDRAIL_TIMEOUT_MS` | `4000` | judge deadline; the failure path is `confirm` with a UI, `block` without one |
 | `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL` | — | shared with `pi-typesafe`; see `shared/systemone-config.mjs`. The judge uses Pi's classifier when one is registered. A failure is still `confirm` with a UI and `block` without one. |
 
