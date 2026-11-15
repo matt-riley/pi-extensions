@@ -137,3 +137,49 @@ test("a user: line inside a real user message is the user's own text and stays a
   assert.ok(result);
   assert.match(result.summary, /user: bob/);
 });
+
+test("an unresolved failure gets its own section, apart from ordinary context", async () => {
+  const result = await compose([
+    user("run the build"),
+    assistant("KEEPME running it"),
+    {
+      role: "toolResult",
+      toolName: "bash",
+      toolCallId: "t1",
+      isError: true,
+      content: [{ type: "text", text: "OPENPROBLEM build failed: missing export" }],
+    },
+    user("what happened?"),
+  ]);
+  assert.ok(result);
+  assert.match(section(result.summary, "Open problems") ?? "", /OPENPROBLEM build failed/);
+  assert.doesNotMatch(section(result.summary, "Context carried forward") ?? "", /OPENPROBLEM/);
+});
+
+test("every handoff says the work continues, so a compact never reads as the task being done", async () => {
+  const result = await compose(
+    [
+      user("fix the retry logic"),
+      assistant("All done. Everything is complete and the task is finished."),
+      user("thanks"),
+    ],
+    { note: "next: run the tests", restore: { path: "/tmp/x.jsonl", entries: 3 } },
+  );
+  assert.ok(result);
+  const resume = section(result.summary, "Resume") ?? "";
+  assert.match(resume, /not (?:a|the) (?:conclusion|end)/i);
+  assert.match(resume, /unfinished/i);
+  assert.match(resume, /newest user message/i);
+  const titles = [...result.summary.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    titles.filter((t) => /^(Goal|Resume|Agent note|Full transcript)/.test(t)),
+    ["Goal", "Agent note (verbatim)", "Resume", "Full transcript (searchable)"],
+  );
+});
+
+test("the resume section is the same fixed text whatever the session held", async () => {
+  const a = await compose([user("one"), assistant("KEEPME x")]);
+  const b = await compose([user("completely different"), assistant("KEEPME y"), user("more")]);
+  assert.ok(section(a.summary, "Resume"));
+  assert.equal(section(a.summary, "Resume"), section(b.summary, "Resume"));
+});

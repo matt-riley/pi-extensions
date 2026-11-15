@@ -88,9 +88,12 @@ function isUserRule(scores, segment) {
  * even when they mention a bug.
  */
 function hardKeep(scores, segment) {
-  if (isUserRule(scores, segment)) return true;
-  if (!scores) return false;
-  return segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
+  return isUserRule(scores, segment) || isOpenProblem(scores, segment);
+}
+
+/** A reported failure the next segment does not show being fixed. File contents never count. */
+function isOpenProblem(scores, segment) {
+  return Boolean(scores) && segment.tool !== "read" && (scores.unresolved ?? 0) >= KEEP_BELOW;
 }
 
 /** Tool output that names where it came from, so a pointer can stand in for it. */
@@ -258,7 +261,11 @@ async function buildEntries({
     if (disposition === "drop") return;
     if (disposition === "keep_verbatim") {
       const text = excerpt(segment.text, VERBATIM_MAX);
-      const section = constraint ? "constraints" : "context";
+      const section = constraint
+        ? "constraints"
+        : isOpenProblem(s, segment)
+          ? "problems"
+          : "context";
       entries.push({ ...base, section, text, lossy: text !== segment.text });
     } else if (disposition === "point" && !segment.path) {
       // Command output: name the command, never tell the reader to re-run it
@@ -346,6 +353,15 @@ export function memoizeAsk(ask, max = 2000) {
   };
 }
 
+/**
+ * Fixed text, never written by a model. A summary of finished steps reads like
+ * a finished task, and an agent that believes that stops; this says otherwise.
+ */
+const RESUME =
+  "This handoff is a pause, not a conclusion. The work above is unfinished unless the newest user " +
+  "message says otherwise. Carry on from that message and the open problems, and do not report " +
+  "the task as complete, or this summary as a result, on the strength of this handoff alone.";
+
 const bullets = (items) => items.map((text) => `- ${text.replace(/\n/g, "\n  ")}`).join("\n");
 
 /**
@@ -379,11 +395,13 @@ function renderHandoff({ goal, entries, fileLists, previousSummary, note, restor
     ["Goal", goal],
     ["Standing rules and constraints (verbatim)", bullets(bySection("constraints"))],
     ["Recent user messages (verbatim, oldest first)", bullets(bySection("recent"))],
+    ["Open problems (verbatim)", bullets(bySection("problems"))],
     ["Key decisions", bullets(bySection("decisions"))],
     ["Context carried forward", bullets(bySection("context"))],
     ["Pointers (re-read on demand)", bullets(pointers)],
     ["Earlier context", previousSummary ? excerpt(previousSummary, PREVIOUS_MAX) : ""],
     ["Agent note (verbatim)", defangSpeakerLabels(note)],
+    ["Resume", RESUME],
     ["Full transcript (searchable)", wayBack(restore)],
   ];
   return sections
