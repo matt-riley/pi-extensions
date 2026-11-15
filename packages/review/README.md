@@ -1,4 +1,4 @@
-# pi-review — semantic review of a change
+# pi-review: semantic review of a change
 
 Get a second look at a change: check it against the repository's preferences,
 find callers it might affect, and filter review findings that the diff does not
@@ -17,7 +17,7 @@ still handle mechanical rules.
 | Rule | What it asks |
 | --- | --- |
 | `overengineered` | Would a senior engineer call this more complicated than the problem requires? |
-| `unrequested_abstraction` | A new seam — module, interface, generic, registry — that nothing calls for |
+| `unrequested_abstraction` | A new seam (module, interface, generic or registry) that nothing calls for |
 | `speculative_scaffolding` | Code for a requirement that does not exist yet |
 | `unnecessary_dependency` | A package or helper for something stdlib, platform, or installed already covers |
 | `scope_creep` | Changes the task did not ask for (needs `task`) |
@@ -34,7 +34,7 @@ no `!` are reported by `conventionalProblems`.
 
 Thresholds live beside each rule in `rules.mjs`. A rule that needs a commit
 message, a task statement or test files is left out of the request rather than
-asked against null state — a question answered from nothing comes back as a
+asked against null state, since a question answered from nothing comes back as a
 confident "no".
 
 The diff is cut at 45,000 characters (the state limit is 60,000) and the output
@@ -57,8 +57,8 @@ quoted text is not in the diff, the finding is about code that is not there and
 no judgment is needed. The survivors are asked two questions each, in one
 request:
 
-- `support_N` — does the diff show the defect the finding names?
-- `severity_N` — nitpick, worth fixing, or blocking?
+- `support_N`: does the diff show the defect the finding names?
+- `severity_N`: nitpick, worth fixing, or blocking?
 
 Output is strongest first, each line carrying support, severity and whether the
 quotation was found. Dropped findings are listed separately with the reason.
@@ -72,7 +72,7 @@ Shared with `pi-typesafe`: `TYPESAFE_API_KEY` (or `LORE_TYPESAFE_API_KEY`, or
 
 ## Tests
 
-`npm test` — `packages/review/test/*.test.mjs` covers routing, the mechanical
+`npm test`: `packages/review/test/*.test.mjs` covers routing, the mechanical
 subject checks, quote extraction and the deterministic drop. The network is
 stubbed; `scripts/jev-questions.test.mjs` drives the question sets through the
 production validators.

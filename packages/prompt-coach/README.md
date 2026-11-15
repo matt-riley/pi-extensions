@@ -1,4 +1,4 @@
-# pi-prompt-coach — on-demand prompt improvement
+# pi-prompt-coach: on-demand prompt improvement
 
 Turn a rough request into a clearer one before sending it to the agent. A cheap
 hosted model writes the rewrite and TypeSafe checks whether the intent survived.
@@ -73,7 +73,7 @@ fails a rewrite that adds features or names things it never saw.
 ## What the model can read
 
 The model may open files in the working directory to name real paths. It gets
-three read-only tools — `read_file`, `list_dir` and `search_text` — for at most
+three read-only tools (`read_file`, `list_dir` and `search_text`) for at most
 six rounds. They are plain `node:fs` reads: there is no shell and no write tool,
 so it cannot run a command or change a file, and any other tool it asks for is
 refused. Paths are confined to the repository (symlinks that leave it are

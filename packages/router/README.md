@@ -1,4 +1,4 @@
-# pi-router — model routing for each task
+# pi-router: model routing for each task
 
 Let pi choose a model and thinking level for a task from three configured tiers:
 base, mid and frontier. Harder tasks can move up; a new task can return to base.
@@ -26,12 +26,12 @@ model will produce a better answer. Start with [Models](#models) and
 ## Behaviour
 
 Select `router/auto` in `/model` (or `--model router/auto`). Selecting a
-physical model instead deselects the router — ownership is a selection, not a
+physical model instead deselects the router. Ownership is a selection, not a
 state machine. The base is what the router holds at when it is not escalating:
 the first entry in the config's `base` list (`Luna@medium` by default, clamped
 by the cap through the fallback entry), defaulting to Luna.
 
-- **Judges at task boundaries** and when the previous turn ended stuck — by default
+- **Judges at task boundaries** and when the previous turn ended stuck. By default
   that means two or more failed tool calls on the previous turn (the stuck case),
   capped at 3 judgements per task. After five good turns in this repository, stuck
   also requires the previous turn to reach at least 2.5× the median good-turn
@@ -51,8 +51,8 @@ by the cap through the fallback entry), defaulting to Luna.
   switch for other retries.
 - **A usage cap is remembered until it expires.** At `agent_end` and `turn_end`
   the last assistant message is read. When `stopReason` is `error` and the text
-  is a usage limit — checked before an overload, because a leaked WebSocket
-  payload contains both `usage_limit_reached` and `429` — that physical
+  is a usage limit (checked before an overload, because a leaked WebSocket
+  payload contains both `usage_limit_reached` and `429`), that physical
   `provider/model` is cooled down. `Try again in ~N min` sets the length. With
   no suffix the wait is two minutes (`SHORT_USAGE_COOLDOWN_MS`), because the
   same sentence is also how a short throttle is worded. Cooled models are left
@@ -64,7 +64,7 @@ by the cap through the fallback entry), defaulting to Luna.
 - **Escalates in tiers, per task.** At `difficulty >= 1.5` the task routes to
   the mid tier, and at `>= 2.5` to the frontier tier. Within a task the router
   only moves up: a model already at or above the target tier holds, so nothing
-  downgrades a task in flight — the rules that tried were wrong exactly where it
+  downgrades a task in flight. The rules that tried were wrong exactly where it
   mattered most.
 - **Routes the (model, thinking) pair.** The config is an ordered list of
   explicit pairs, not a model list with reasoning bolted on afterward. A cap of
@@ -73,7 +73,7 @@ by the cap through the fallback entry), defaulting to Luna.
   Astra first and silently clamps it.
   The selected cap is never exceeded. Continuations hold the exact pair, and a
   task boundary may choose a stronger pair when the cap allows it. Pi's levels
-  are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — there is no
+  are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; there is no
   `ultra`. The pair order is policy, not a benchmark claim baked into code, so
   it can be tuned in the file.
 - **Comes back down only at a new task.** An easy rating at a task boundary
@@ -86,19 +86,19 @@ by the cap through the fallback entry), defaulting to Luna.
   forces that tier for the current task with no difficulty judgement. The
   override lasts until the next task boundary; continuations keep it. Usage-cap
   cooling and same-tier failover still apply. `/route preview` accepts the same
-  prefixes and reports `forced <tier>`. A prefix alone is not sent — the router
+  prefixes and reports `forced <tier>`. A prefix alone is not sent: the router
   warns and leaves the input unchanged.
 - **Requests outside the agent loop go to the base.** Compaction summaries and
   extension calls (`reason: "direct"`) carry no routing state and are not judged.
 - **Respects your model scoping.** With `--models` / `enabledModels` in play,
   routing stays inside that list rather than reaching for the whole catalogue.
-- **A missing judgement changes nothing.** Timeout, no key, unusable answer —
+- **A missing judgement changes nothing.** Timeout, no key, unusable answer:
   the current model keeps working, and a failed judgement is counted and
   cooling down rather than retried every turn. Never spend less by accident.
 - **Refuses a switch the target cannot hold.** The base model here reads 1M
   tokens while the Codex frontier models hold 272K, and this machine's p90
-  request context is 452K. Escalating anyway would compact the session — losing
-  the context the escalation was meant to reason over — so the router stays put
+  request context is 452K. Escalating anyway would compact the session, losing
+  the context the escalation was meant to reason over, so the router stays put
   and says why. In practice this makes escalation an early-task move, which is
   where the task-boundary design wanted it anyway.
 - **Subagent children hold the base without judging.** Children that still inherit
@@ -111,7 +111,7 @@ by the cap through the fallback entry), defaulting to Luna.
 
 The model lists live in `<agent-dir>/router.json` (usually
 `~/.pi/agent/router.json`), seeded with the built-in defaults on first load and
-re-read on every judgement — edit it while pi runs and the change takes effect
+re-read on every judgement, so you can edit it while pi runs and the change takes effect
 at the next task, no restart:
 
 ```json
@@ -145,7 +145,7 @@ at the next task, no restart:
   Luna entry after `Luna@medium` so a low cap still resolves base instead of
   falling through empty-handed.
 - A missing key keeps the built-in default; an explicit `[]` keeps the tier
-  empty, which is a decision — a rating that wants that tier holds the current
+  empty, which is a decision: a rating that wants that tier holds the current
   model and says why.
 - A broken file narrows routing to the defaults and warns once per session, so
   a typo costs a warning, not a session.
@@ -155,8 +155,8 @@ at the next task, no restart:
 
 Qualify a pattern with its provider (`openai-codex/gpt-6-astra`) to pin which
 subscription pays for it. **GPT models are restricted to `openai-codex` even
-when the pattern is unqualified** — the same model is sold by several
-subscriptions, and the catalogue order decided it once: a live run escalated to
+when the pattern is unqualified**, because the same model is sold by several
+subscriptions and the catalogue order decided it once: a live run escalated to
 `github-copilot/gpt-6-astra`. If no Codex GPT is available, GPT patterns are
 skipped rather than billed to a reseller, and the next pattern is tried. A
 pattern that names its provider is taken literally, and non-GPT patterns
@@ -218,7 +218,7 @@ or in-session with `/route shadow on` (which also writes the flag into
 
 While shadow mode is on and you are **not** on `router/auto`, each user turn
 runs the same gate, difficulty judgement budget, and `decideRoute` path as live
-routing would — so the log stays aligned with production behaviour. Shadow mode
+routing would, so the log stays aligned with production behaviour. Shadow mode
 makes the same judgement calls routing would on those turns; it respects the
 3-per-task cap and failure cooldown. With `router/auto` selected, normal routing
 runs and nothing is written to the shadow file.
@@ -283,7 +283,7 @@ And the two instruments TypeSafe could give:
 | Instrument | AUC | Verdict |
 | --- | --- | --- |
 | `difficulty` (score 0–3) | **0.70** | what the router uses |
-| `needs_frontier` (noul) | 0.55 | barely better than chance — rejected |
+| `needs_frontier` (noul) | 0.55 | barely better than chance, so rejected |
 
 At `difficulty >= 1.5` the rating is 77% precise at 48% recall on the judged
 sample and catches **7 of the 12** most expensive turns in it, including both
@@ -300,7 +300,7 @@ choice that has not been calibrated. The default mid list leads with
 `Luna@medium` base pair at the usual caps. Treat both boundaries as dials.
 
 An earlier version of this file claimed 11 of 12 at 1.5. That figure belonged to
-the `needs_frontier` question, which the router does not use — the audit that
+the `needs_frontier` question, which the router does not use. The audit that
 caught it is summarised at the bottom of this file.
 
 ## Knowing the threshold is set right
@@ -314,7 +314,7 @@ node scripts/difficulty-report.mjs  # the judged rating, against real spend, wit
 ```
 
 `difficulty-report.mjs` caches its judgements, so re-tuning costs nothing.
-Committed evidence at the time of writing: `difficulty >= 1.5` → 77% precision,
+Committed evidence at the time of writing: `difficulty >= 1.5` gave 77% precision,
 48% recall, $23 of wrong escalations against $34 of frontier spend left on
 cheaper models. Lower the threshold, find more, pay more.
 
@@ -328,7 +328,7 @@ order in `router.json`, not asserted by the router's measurement code.
 
 Routing is a data-flow decision as much as a model one, so it is worth being
 explicit: the judgement sends the prompt, the working directory, and (by default)
-the last four turns — including assistant replies — to TypeSafe. An escalation
+the last four turns (including assistant replies) to TypeSafe. An escalation
 then serves that conversation from a different provider than the one you were
 using. `PI_ROUTER_SHARE=prompt` omits recent conversation from both routing
 and playbook judgments (the current prompt and cwd still leave the machine).
@@ -341,7 +341,7 @@ extensions and the selected physical provider retain their own data flows.
 - **No tool or skill scoping.** Measured and rejected: 810 turns show shell in
   78%, edit 43% and read 38%, so scoping the common groups risks a turn that
   cannot work, and scoping the rare ones (memory, plan) left a 15%
-  escape-hatch rate — worse than the disease. Measured with a tool-group scoring script since removed; see git history before `fix/review-findings`.
+  escape-hatch rate, which is worse than the disease. Measured with a tool-group scoring script since removed; see git history before `fix/review-findings`.
 - **No per-turn switching.** It costs a full-context cache re-read (98.6% of
   everything this machine reads is a cache read) and buys nothing the task-level
   decision does not already get.
@@ -373,7 +373,7 @@ extensions and the selected physical provider retain their own data flows.
 
 ## Tests
 
-`node --test packages/router/test/*.test.mjs` — cases across the package cover
+`node --test packages/router/test/*.test.mjs`: cases across the package cover
 the decision helpers and what was measured, pair-cap selection, the config
 file's merge semantics, threshold routing, model resolution and scoping, the
 session and metrics arithmetic, usage-cap recognition and the effective ladder,
@@ -390,11 +390,11 @@ found real defects. Fixed, each with a test:
 | --- | --- | --- |
 | The judgement budget never reset | Three judgements early in a session made every later task unroutable | A task boundary resets it |
 | Step-down ignored the task boundary | A stuck, failing task could be downgraded mid-failure | Stepping down requires a new task |
-| The router assumed ownership of any model | Start A → user picks B → router escalates → easy task restored **A** | `model_select` ends ownership; the baseline is captured immediately before switching |
+| The router assumed ownership of any model | Start A -> user picks B -> router escalates -> easy task restored **A** | `model_select` ends ownership; the baseline is captured immediately before switching |
 | `PI_SUBAGENT_CHILD` was read per prompt | pi-subagents clears it before the child's first prompt, so children *were* routed | Captured at factory time |
 | A decision could land after `/route off` | A stale judgement still switched models | Re-checked after the await |
 | Failed judgements were free and unlimited | A dead judge was retried every turn | Counted as attempts, with a cooldown |
-| The score was coerced, not validated | `true` → 1, `[2]` → 2, `5` → 5 | A finite number inside the scale, or no decision |
+| The score was coerced, not validated | `true` -> 1, `[2]` -> 2, `5` -> 5 | A finite number inside the scale, or no decision |
 | Capacity was checked after selection | The best model was picked, then refused, while a fitting one existed | Candidates are filtered by capacity first, with headroom and output reserve |
 | `difficulty-report.mjs` judged empty state | An extraction refactor left a positional call where an object was expected | Object call, and the builder now throws on the wrong shape |
 
@@ -403,7 +403,7 @@ replaced it with pi's own selection/dispatch split: a manually picked model is a
 deselection, the baseline is configuration, and a decision that changes nothing
 mid-flight is just a held continuation. What replaced the state machine is
 router state on the session branch, which also follows forks and survives
-compaction — things the module-level version could not do.
+compaction, which the module-level version could not do.
 
 Still open, and written down rather than fixed: `difficulty` is a
 probability-weighted mean, so two very different distributions can share a 1.5;
@@ -435,15 +435,15 @@ Measured over 142 sessions, at the time of writing:
 Two things this settled by measuring rather than arguing:
 
 - **A switch is cheap and quickly amortised.** It pays full price for the prefix
-  once — p50 38k tokens, three-quarters of a cent — and the next request is
+  once (p50 38k tokens, three-quarters of a cent) and the next request is
   already mostly cache reads again. The audit's warning was right in principle
   and small in practice *at these context sizes*; the arithmetic changes at
   450k-token contexts, which is why the capacity filter exists.
 - **A failed tool call is not a difficulty signal.** Turns inside frontier
   episodes fail *less* than the corpus average (11% vs 32%), because routine
   test-fail-edit loops run on the cheap model and design work does not. Anyone
-  tempted to use tool failures as a quality label — including an earlier draft
-  of this report — is measuring churn.
+  tempted to use tool failures as a quality label, including an earlier draft
+  of this report, is measuring churn.
 
 Each decision also records a `router-decision` custom entry (which does not
 enter LLM context) with the rating, threshold, latency and outcome. That gives

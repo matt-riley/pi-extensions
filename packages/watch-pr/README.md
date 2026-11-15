@@ -1,4 +1,4 @@
-# pi-watch-pr — where a pull request stands
+# pi-watch-pr: where a pull request stands
 
 See what still needs attention on a pull request: failed or running checks,
 conflicts, requested changes, and unresolved review threads. It needs an
@@ -24,5 +24,5 @@ found through tool search.
 
 ## Tests
 
-`node --test packages/watch-pr/test/*.test.mjs` — check classification, each
+`node --test packages/watch-pr/test/*.test.mjs`: check classification, each
 verdict, thread filtering, and snapshot assembly against a fake `gh`.

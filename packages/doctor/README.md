@@ -1,4 +1,4 @@
-# pi-doctor — is my Pi set up the way I think it is?
+# pi-doctor: is my Pi set up the way I think it is?
 
 A read-only health report, for when a tool is missing or doubled, or routing or a
 subagent misbehaves.

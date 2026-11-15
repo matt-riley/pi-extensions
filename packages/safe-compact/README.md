@@ -27,7 +27,7 @@ sessions. The design was inspired by
 - Flags: `--compact-soft-at <pct>`, `--compact-at <pct>`, `--compact-cache-at <pct>`,
   `--compact-cache-for <minutes>` (see [Cache-aware hold](#cache-aware-hold)).
 - Needs `TYPESAFE_API_KEY` (shared with `pi-typesafe`); without it, native compaction is used.
-- `PI_SAFE_COMPACT_DIR` — where pre-compaction transcripts are written
+- `PI_SAFE_COMPACT_DIR`: where pre-compaction transcripts are written
   (default `~/.pi/agent/safe-compact`). Keep it out of your repositories.
 
 ## How it works
@@ -55,7 +55,7 @@ sessions. The design was inspired by
 6. **Fit.** The handoff ends with a fixed line code writes, never the model: the verbatim
    pre-compaction transcript and how to search it, because a handoff is a note plus a way to check
    it. (Measured on cross-session capsules, one search of the transcript a capsule replaced was
-   worth 20–33 points of recall — more than any wording of the note.) The handoff aims for 25% of
+   worth 20–33 points of recall, more than any wording of the note.) The handoff aims for 25% of
    what it replaces, at most 12K tokens. Over that, the
    least load-bearing entries are cut first: verbatim copies become excerpts, then plain context
    excerpts are dropped. Open problems are cut last; user constraints, the session's first user message, the newest 15 user messages and
@@ -63,7 +63,7 @@ sessions. The design was inspired by
 7. **Verify.** Jev checks that entries which restate their source (excerpts and decisions) are
    faithful, and that important segments are still represented. A gap re-includes that segment
    verbatim and the handoff is rebuilt, except tool output that can be re-read or re-run, which comes
-   back as a pointer (`path:lines`, or the command with "re-run only if safe"); a verbatim copy is taken as-is. The check runs once —
+   back as a pointer (`path:lines`, or the command with "re-run only if safe"); a verbatim copy is taken as-is. The check runs once;
    a re-ask against the rebuilt handoff can only flip a settled answer into forcing another
    segment, never uncover a gap the first pass missed.
 8. **Commit or fall back.** On the boundary path a handoff that cannot be verified or would still
@@ -125,7 +125,7 @@ Every judgment is one request, so a 58-segment span is 58 scoring requests plus 
 item. Scoring and verification always run to completion; the selections that turn a big tool result
 into a pointer instead of a copy are an enrichment, and stop being asked for 20 seconds in. If the
 handoff has still not finished at 90 seconds, or a phase would start after the clock is up, it is
-refused and pi's native summary runs — a half-judged handoff is never shipped. The compaction
+refused and pi's native summary runs, so a half-judged handoff is never shipped. The compaction
 details carry `judging.requests` and `judging.failed`, so a handoff missing a lost judgment does not
 read as a clean one.
 
@@ -135,9 +135,9 @@ Jev's own repeat of the identical request as the control:
 | run | requests | judgments changed |
 | --- | --- | --- |
 | same request, both times (control) | 58 + 58 | 0 of 58 |
-| segment scoring, 8 segments per request | 58 → 8 | 6 of 58 |
+| segment scoring, 8 segments per request | 58 -> 8 | 6 of 58 |
 | coverage, same request twice (control) | 58 + 58 | 2 of 58 |
-| coverage, 8 checks per request | 58 → 18 | 7 of 58 |
+| coverage, 8 checks per request | 58 -> 18 | 7 of 58 |
 
 Worse than the drift was its direction: the segments that flipped to `keep_verbatim` carried 21k
 tokens of verbatim copy where the unbatched run carried 0.6k, and verbatim copies are what push a
@@ -180,12 +180,12 @@ Run over the handoffs in `~/.pi/agent/sessions`:
 claims contradicted.** Retention was the weak side in this small sample. No
 contradictions were found among the claims that could be checked; that is not a
 guarantee about claims outside the sample. The last three instructions in the
-third session—the newest asks,
-including one whose vocabulary does appear in the handoff — came back at mean p=0.13 and 0.29 on two
+third session (the newest asks,
+including one whose vocabulary does appear in the handoff) came back at mean p=0.13 and 0.29 on two
 runs of the same input. Those two runs kept the same count (0 of 3) while the mean moved 0.16, so
 read the counts, not the mean, and read them as a small sample: two to six instructions per session.
 
-Claims outside the excerpt are counted but not scored — a 40k-character excerpt stands for 3-8% of
+Claims outside the excerpt are counted but not scored: a 40k-character excerpt stands for 3-8% of
 a 138-150k-token session, so *not_in_excerpt* is a limit of the exam, not evidence of invention.
 A handoff past ~54k characters cannot ride in the state beside the fact it is being checked and is
 refused with its size; the exam is for handoffs that fit.

@@ -1,4 +1,4 @@
-# pi-diagnosis-nudge — check the cause before writing the fix
+# pi-diagnosis-nudge: check the cause before writing the fix
 
 Helps the agent stop guessing after a failure. Ordinary tool failures get a short
 reminder to check the diagnosis. If two revised versions of the code fail the
@@ -57,9 +57,9 @@ policies still apply independently.
   the failing test passed.
 - A failed `typesafe_ask` call never nudges about itself.
 
-When a TypeSafe key is reachable, the failure is also classified —
-`transient`, `environment`, `code_bug`, `permission`, `user_error`,
-`no_failure` — and the output is checked for a credential. The class decides
+When a TypeSafe key is reachable, the failure is also classified as one of
+`transient`, `environment`, `code_bug`, `permission`, `user_error` or
+`no_failure`, and the output is checked for a credential. The class decides
 the advice, because a code bug reported as "retry after the flake" is the
 expensive version of this mistake, and a value that looks like a secret must
 not be quoted again. Advice appears only at 0.6 confidence or above: below
@@ -69,7 +69,7 @@ failure of the judgment leaves the deterministic nudge exactly as it was.
 
 A redaction is a leak signal in its own right: the redactor knows it replaced
 a credential before the request left, and the model answering "does this
-output contain a secret?" cannot see what was replaced — a first live run
+output contain a secret?" cannot see what was replaced. A first live run
 scored the token in `GH_TOKEN=<redacted>` at 0.77 for exactly that reason. So
 the count returned by the client raises the leak signal to certain, and the
 model is asked anyway, because it catches the shapes no rule covers yet.
@@ -78,11 +78,11 @@ skipped silently.
 
 ## Repository env facts
 
-When a bare command fails as “not found” and a launcher-backed alternative
+When a bare command fails as "not found" and a launcher-backed alternative
 succeeds in the same session (`python -m …`, `npx …`, and similar), the
 extension remembers a candidate fact. After three confirming sessions whose
 edited files do not overlap, the fact is shown on the next matching failure
-as one extra line on that tool result — never in the system prompt.
+as one extra line on that tool result, never in the system prompt.
 
 Facts are stored under `<agentDir>/diagnosis-nudge/env-facts/` (one JSON file
 per git root). Contradictions weigh five times a confirmation; at score zero or
@@ -95,8 +95,8 @@ display. No network calls are made.
 
 ## Tests
 
-`node --test packages/diagnosis-nudge/test/nudge.test.mjs` — the state machine
+`node --test packages/diagnosis-nudge/test/nudge.test.mjs`: the state machine
 and the content patch, including the re-arm and no-repeat cases.
 
-`node --test packages/diagnosis-nudge/test/env-facts.test.mjs` — env-fact
+`node --test packages/diagnosis-nudge/test/env-facts.test.mjs`: env-fact
 learning, confirmation, contradiction, display, commands and the kill switch.

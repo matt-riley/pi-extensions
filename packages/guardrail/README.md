@@ -1,4 +1,4 @@
-# pi-guardrail — stop destructive tool use before it runs
+# pi-guardrail: stop destructive tool use before it runs
 
 Checks tool calls before they run. Routine work can pass; risky actions may need
 your approval, and catastrophic operations are refused outright. It is a
@@ -15,12 +15,12 @@ The checks run in four layers:
 | Human confirmation | Actions that still require a decision. | Approve, Deny, or Suggest an alternative. |
 
 The policy lives in `policy*.mjs`; the optional judgment lives in `judge.mjs`.
-Without a usable judge, ambiguous calls need confirmation—or are blocked when
+Without a usable judge, ambiguous calls need confirmation, or are blocked when
 there is no interactive UI.
 
-The catastrophic set is refused with no dialog at all — home and filesystem
+The catastrophic set is refused with no dialog at all: home and filesystem
 roots, `.git` internals, private keys, disk wipes, credentials piped to a
-network command, and persistence (below) — because a tired `Enter` should not
+network command, and persistence (below), because a tired `Enter` should not
 be able to wipe `~`.
 
 ## Persistence is refused
@@ -40,7 +40,7 @@ and status commands still run.
 `sudo`/`doas` and `launchctl asuser` are looked through, and `sh -c "…"` payloads
 and scripts are classified as usual. The refusal stands even when the person
 asked for it: run those commands yourself, outside the agent. This is a rule,
-not a classifier — an unusual spelling can still slip past, as with the rest of
+not a classifier, so an unusual spelling can still slip past, as with the rest of
 the policy.
 
 ## Human authorization and control files
@@ -89,8 +89,8 @@ delete (rm) on home
 `Recommend` is shown only when the judgment is unambiguous (`recommendedAction`
 uses stricter bounds than routing does); a prompt that always recommends
 something teaches people to click it. **Suggest an alternative** opens a text
-input and returns the answer inside the block reason — the only channel back to
-the model — so "delete only ./dist" comes back as an instruction, not a retry
+input and returns the answer inside the block reason (the only channel back to
+the model), so "delete only ./dist" comes back as an instruction, not a retry
 of the original.
 
 Dialogs share plan mode's FIFO queue (`shared/dialog-queue.mjs`): two flagged
@@ -211,7 +211,7 @@ is **refused**, never assumed: there is nobody to ask, so the safe answer is no.
 This is a guardrail, not a sandbox. It reads what the model wrote, not what a
 binary or an obfuscated payload does.
 
-- One level of indirection is followed — heredoc bodies are treated as data,
+- One level of indirection is followed: heredoc bodies are treated as data,
   `sh -c "…"` and `node -e "…"` payloads are classified as shell first and as
   source second, `$(…)`, `eval` and `find -exec` bodies are evaluated as
   commands, and a referenced script (`bash x.sh` or `./x.sh`) is read (bounded
@@ -231,7 +231,7 @@ binary or an obfuscated payload does.
   `destructiveHint: true`, still requires scoped human authorization.
 - **Subagents are covered.** `pi-subagents` builds children with
   `DefaultResourceLoader({ agentDir, extensionFactories: [...] })`, and
-  `agentDir` is what makes pi load global extensions — so a child gets this
+  `agentDir` is what makes pi load global extensions, so a child gets this
   guardrail plus its own inline child policy. Child sessions have no UI, so the
   flagged band *blocks* there instead of prompting: an unattended agent gets a
   refusal, a human gets a dialog.
@@ -243,8 +243,8 @@ binary or an obfuscated payload does.
 ## Known tradeoffs
 
 - **Ordinary location is not a signal.** Outside protected control files,
-  a write outside the session's cwd is allowed —
-  the guardrail does not care which repo you are in, only whether the target is
+  a write outside the session's cwd is allowed.
+  The guardrail does not care which repo you are in, only whether the target is
   a secret, a system path, or a dotenv file. The rule that did care produced
   eight prompts in one session, all legitimate config writes in a sibling repo.
 - **A script that discusses destructive commands may still be judged.** Quoted
@@ -283,8 +283,8 @@ they are not a measurement of the current interruption rate.
 | block | 0.01% (3 calls) |
 
 The aggregate hides where it matters. Replaying the one session that set up
-this repo's oxlint/oxfmt/knip/fallow config — a session running from a *parent*
-directory while working in `~/.pi/.../pi-extensions` — went from 15 flagged
+this repo's oxlint/oxfmt/knip/fallow config (a session running from a *parent*
+directory while working in `~/.pi/.../pi-extensions`) went from 15 flagged
 calls (5.1%, eight of them dialogs about writing `knip.json`, `.fallowrc.json`,
 `.oxlintrc.json` and `package.json`) to **1 flagged call (0.3%)**, and that one
 is a silent judgment rather than a prompt. Three bugs, each now a regression
@@ -301,8 +301,8 @@ and keeps the raw signals (`--judge-json`), so a candidate threshold is scored
 offline by the production router and the judgments are paid for once.
 
 The sample says the intent line was doing almost all the interrupting. 64 of 150
-scored 0.70–0.85 on `intent_mismatch` and were ordinary work — `go test -race
-./...`, `pnpm build`, `rm -f` of a tracked file, a heredoc, a Blender render —
+scored 0.70–0.85 on `intent_mismatch` and were ordinary work (`go test -race
+./...`, `pnpm build`, `rm -f` of a tracked file, a heredoc, a Blender render),
 while `destructive` sat below 0.5 on 127 and `blast_radius` at 2 or above on
 2. At `intentMismatch: 0.6` the judge confirmed 92% of its own band; the
 interruption rate was **1.75% of mutating calls (about 1 in 57)**.
@@ -310,15 +310,15 @@ interruption rate was **1.75% of mutating calls (about 1 in 57)**.
 At **0.85** the same sample clears 62% of the band and interruption falls to
 **1.03% of mutating calls (about 1 in 97)**, with the `destructive >= 0.7` and
 `credentials` blocks untouched. Raising the other three lines was measured and
-rejected: `destructive` 0.5 → 0.9 changed one call, `credentials` 0.6 → 0.7 one,
-`blastRadius` 2 → 2.5 none. The 93 newly-cleared calls were screened against the
-classes that must never clear — unrecoverable deletion, history rewrite,
-credential reads, privilege change, remote effects — and every match was a
+rejected: `destructive` 0.5 to 0.9 changed one call, `credentials` 0.6 to 0.7 one,
+`blastRadius` 2 to 2.5 none. The 93 newly-cleared calls were screened against the
+classes that must never clear (unrecoverable deletion, history rewrite,
+credential reads, privilege change, remote effects), and every match was a
 tracked file, a regenerable artifact (rendered frames, `terraform.lock.hcl`), a
 scratch copy under `/tmp`, or the documented dummy `AKIA…EXAMPLE`.
 
 That screen is a reading of 93 commands, not a proof, which is what the labeled
-cases are for: `node scripts/validate-judge.mjs` is unmoved by the change —
+cases are for: `node scripts/validate-judge.mjs` is unmoved by the change:
 **24/24, 0 too strict, 0 too lax, 18/18 dangerous actions caught**.
 
 `node scripts/validate-judge.mjs` runs 24 labeled cases through the **whole**
@@ -353,15 +353,15 @@ touching thresholds, question wording, or the shape tables.
 
 `node --test packages/guardrail/test/*.test.mjs`:
 
-- `policy.test.mjs` — shapes, target classes, quoting, heredocs, chaining,
+- `policy.test.mjs`: shapes, target classes, quoting, heredocs, chaining,
   indirection, file tools, unknown tools, annotation hints.
-- `persistence.test.mjs` — the persistence denies (cron, launchd, systemd, `at`,
+- `persistence.test.mjs`: the persistence denies (cron, launchd, systemd, `at`,
   unit and plist writes) and the read-only commands that stay allowed.
-- `judge.test.mjs` — question shape, state, thresholds and their boundaries,
+- `judge.test.mjs`: question shape, state, thresholds and their boundaries,
   recommendations, and the failure paths (a `null` from the judge must never
   read as a confident zero).
-- `extension.test.mjs` — the whole path with a fake pi and a fake UI: approve,
+- `extension.test.mjs`: the whole path with a fake pi and a fake UI: approve,
   deny, suggest, cancelled dialog, no UI, kill switch, script reading, secret
   writes, annotation hints from `getAllTools`.
-- `shell-parse.test.mjs` — the shared parser, including the two real bugs its
+- `shell-parse.test.mjs`: the shared parser, including the two real bugs its
   callers hit: heredoc bodies parsed as shell, and quote desync inside `$( )`.

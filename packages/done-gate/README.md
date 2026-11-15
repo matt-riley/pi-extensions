@@ -1,4 +1,4 @@
-# pi-done-gate — no "done" on faith
+# pi-done-gate: no "done" on faith
 
 Reminds the agent to run checks when it tries to finish with unverified code
 changes. It gives the model one more turn to check its work or explain what it
@@ -76,8 +76,8 @@ none of them is `tsconfig.json` (app versus node, for example). With a key it
 picks one command. With no key, a failed request, or an unusable answer, every
 candidate stays in the reminder. Clear mappings never call it.
 
-A change that matches none of this — a Python file, a `go.mod`, a TypeScript
-file with no tsconfig — keeps the generic sentence.
+A change that matches none of this (a Python file, a `go.mod`, a TypeScript
+file with no tsconfig) keeps the generic sentence.
 
 ## Running the named checks (opt-in)
 
@@ -129,8 +129,8 @@ that can still act: the handler appends a `custom_message` entry and returns
 before the turn closes instead of after the user has already seen "done".
 
 `display: false` keeps that message out of the terminal. Per
-`message-types.md`, `display` controls rendering only — pi still converts the
-entry to a user message for the next request — so the enforcement is unchanged
+`message-types.md`, `display` controls rendering only. Pi still converts the
+entry to a user message for the next request, so the enforcement is unchanged
 and the transcript keeps the explanation and the checks, not a meta block.
 
 It never blocks a tool call. The model may answer the nudge by running the
@@ -143,10 +143,10 @@ message. When it fires and the run has a final assistant message, that message
 also goes to TypeSafe's System One
 (`jev-1.13.0` unless `TYPESAFE_MODEL` says otherwise) as three typed questions:
 
-- **asserts_verified** — does the message claim the changed code was verified,
+- **asserts_verified**: does the message claim the changed code was verified,
   or only describe what changed?
-- **acknowledges_gap** — does it say plainly what was left unverified?
-- **claims_remote** — does it assert that checks passed on a runner (CI, a
+- **acknowledges_gap**: does it say plainly what was left unverified?
+- **claims_remote**: does it assert that checks passed on a runner (CI, a
   workflow, GitHub Actions, a PR's checks), or that the work is merged,
   deployed or released?
 
@@ -160,7 +160,7 @@ TypeSafe reads that claim as done with the unverified edits unmentioned
 A claim that names its gap gets nothing added: the reminder already asked for
 exactly that, and repeating it would only teach the model to skip the nudge. So
 do runs with no prose claim, no credentials, a failed request, or an unusable
-answer. The judgment is one extra sentence or silence — never a block, never an
+answer. The judgment is one extra sentence or silence, never a block and never an
 error in the settle path. Thresholds and routing live in `claim.mjs`, not in a
 prompt, and `judgeDoneClaim` takes an injectable `ask` so the tests never touch
 the network.
@@ -223,7 +223,7 @@ remote evidence clears the reading.
 - **One nudge per user input**, and only after a `completed` run, never after an
   abort or error. It is appended with `display: false`.
 - **One claim judgment** rides along with that nudge, when the run has a final
-  assistant message to read — and a second, claim-only judgment when a run that
+  assistant message to read, and a second, claim-only judgment when a run that
   changed nothing earns the remote check above. Each is a single request with a
   4-second timeout, and
   credentials resolve exactly as they do for the guardrail
@@ -283,7 +283,7 @@ pilot retains its own narrower protocol. The completion reminder is unchanged.
 
 ## Tests
 
-`node --test packages/done-gate/test/*.test.mjs` — command recognition
+`node --test packages/done-gate/test/*.test.mjs`: command recognition
 (positive and negative, including `stylua --check` and `selene`), the
 dirty/verify state machine, cwd scoping and working-tree liveness, outcome
 gating, debug-tag line numbers against a real temporary git repo, the scoped

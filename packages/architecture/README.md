@@ -1,4 +1,4 @@
-# pi-architecture — do the imports respect the boundaries?
+# pi-architecture: do the imports respect the boundaries?
 
 A deterministic, read-only check of a repository's import structure against rules
 a person wrote, plus import cycles. TypeScript and JavaScript only. It uses no

@@ -1,4 +1,4 @@
-# pi-affected — which tests can this change reach?
+# pi-affected: which tests can this change reach?
 
 Test selection from the import graph. Read-only: it **runs no tests**, writes
 nothing, and uses no model, key or network. TypeScript and JavaScript only.

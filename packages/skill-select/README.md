@@ -1,4 +1,4 @@
-# pi-skill-select — on-demand skill selection for pi
+# pi-skill-select: on-demand skill selection for pi
 
 Find a local skill for the task at hand without keeping the whole library in
 the model's prompt. A skill is a `SKILL.md` file with instructions for a specific
@@ -12,7 +12,7 @@ with the read-only tool:
 skill_select(query?, limit?)
 ```
 
-Returns ranked matches — name, description, path — plus the reminder to read the
+Returns ranked matches (name, description, path) plus the reminder to read the
 chosen `SKILL.md`. With no query it browses the catalog alphabetically.
 
 ## Interactive discovery
@@ -65,7 +65,7 @@ and `.git` are skipped. Retired skills must not be selectable: an agent would
 otherwise follow guidance nobody maintains.
 
 Trade-off: library-only skills are invisible to pi's `/skill:name` command
-(pi never discovered them). The agent path is `skill_select` → `read` the
+(pi never discovered them). The agent path is `skill_select`, then `read` the
 returned `SKILL.md`, which is what the tool is for.
 
 ## Other harnesses
@@ -77,12 +77,12 @@ Code, Codex, Copilot, plain scripts) can search the library too:
 node "<collection-root>/scripts/skill-search.mjs" "<task>" [--limit N] [--json] [--root DIR]
 ```
 
-Replace `<collection-root>` with the collection’s absolute installation directory
+Replace `<collection-root>` with the collection's absolute installation directory
 (`pi list` shows managed package paths); it need not be the current directory.
 
 Exit codes: `0` matches, `1` none, `2` bad usage. Give the harness one line of
-instruction — *skill library at `~/.pi/agent/skill-library`; search it before
-improvising a specialist workflow* — and read the returned `SKILL.md`. The file
+instruction, *skill library at `~/.pi/agent/skill-library`; search it before
+improvising a specialist workflow*, and read the returned `SKILL.md`. The file
 format is already the Agent Skills standard, so nothing else is needed.
 
 ## TypeSafe selection
@@ -100,7 +100,7 @@ lore config) one Choice question re-ranks the result **by intent**:
   proceed without a skill unless one obviously applies. Candidates stay visible.
 
 Set `PI_SKILL_SELECT_TIEBREAK=0` to keep selection entirely local. Only the task text and
-candidate names/descriptions are sent — never the library files. It fails open: no key, a
+candidate names/descriptions are sent, never the library files. It fails open: no key, a
 provider error (3-second budget, `TYPESAFE_TIMEOUT_MS` to override) or an unusable answer all
 leave the lexical order untouched, and the call honours the tool's cancellation signal.
 
@@ -108,7 +108,7 @@ leave the lexical order untouched, and the call honours the tool's cancellation 
 
 `node scripts/skill-select-eval.mjs` runs `eval/cases.json` (54 cases) through lexical-only
 and TypeSafe selection: 19 `history` cases (the `SKILL.md` an agent actually read after a real
-`skill_select` call — a weak label), 25 hand-written `paraphrase` cases with little word
+`skill_select` call, a weak label), 25 hand-written `paraphrase` cases with little word
 overlap, and 10 `none` cases where no skill should apply. Labels are not independent ground
 truth; read the numbers as directional. Result on 2026-09-29 (115 skills, live Jev):
 
@@ -134,7 +134,7 @@ Deterministic, no model, no network:
 
 ## Tests
 
-`node --test packages/skill-select/test/library.test.mjs` — frontmatter parsing
+`node --test packages/skill-select/test/library.test.mjs`: frontmatter parsing
 (plain, folded, literal, quoted, BOM/CRLF), root resolution, nested discovery
 with name fallback, symlinked directories including a cycle, dedupe, ranking,
 and formatting. Regression fixtures check that foreign roots require explicit
