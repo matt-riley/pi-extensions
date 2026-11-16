@@ -35,7 +35,7 @@ export function installJobs(pi, widgets) {
     session = current;
     const publish = (text, wake) => {
       if (current.closed) return;
-      if (current.jobs.list().some((job) => job.owner === "human")) {
+      if (current.jobs.summary().some((job) => job.owner === "human")) {
         current.pending.push({ text, wake });
         return;
       }
@@ -46,7 +46,7 @@ export function installJobs(pi, widgets) {
     };
     current.jobs.on("change", () => {
       if (current.closed) return;
-      const jobs = current.jobs.list();
+      const jobs = current.jobs.summary();
       const running = jobs.filter((job) => job.status === "running").length;
       const status = running
         ? "jobs " + running + " running"
@@ -77,7 +77,7 @@ export function installJobs(pi, widgets) {
             "). Process completion is not task verification. Use terminal_read for output and evidence.",
           true,
         );
-      } else if (!current.jobs.list().some((item) => item.owner === "human")) {
+      } else if (!current.jobs.summary().some((item) => item.owner === "human")) {
         current.ctx.ui?.notify?.(
           "Job " + job.id + ": " + outcome,
           job.exit_code === 0 ? "info" : "warning",

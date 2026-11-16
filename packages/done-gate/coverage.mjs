@@ -129,7 +129,10 @@ const globToRegex = (glob) =>
 function matchTests(token, all) {
   const path = clean(token.replace(/^['"]|['"]$/g, ""));
   if (!path || path.startsWith("-")) return [];
-  if (path.includes("*")) return all.filter((file) => globToRegex(path).test(file));
+  if (path.includes("*")) {
+    const glob = globToRegex(path);
+    return all.filter((file) => glob.test(file));
+  }
   if (all.includes(path)) return [path];
   const under = all.filter((file) => file.startsWith(`${path}/`));
   if (under.length > 0) return under;

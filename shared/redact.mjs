@@ -69,7 +69,8 @@ function redactString(text, { literals, homeDir, maskEmails, only }, add, addPri
   }
   if (homeDir && !only) {
     out = out.replaceAll(homeDir, (match, offset, source) => {
-      const suffix = source.slice(offset + match.length);
+      // The test below looks at most two characters ahead; copying the rest is O(n) per match.
+      const suffix = source.slice(offset + match.length, offset + match.length + 2);
       if (suffix && !/^(?:[\\/\s"'(){}[\],;:!?<>`]|\.(?:\s|$))/.test(suffix)) return match;
       addPrivacy(1);
       return marker("home");

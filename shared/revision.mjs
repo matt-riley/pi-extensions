@@ -12,15 +12,19 @@ export async function revisionSnapshot(cwd) {
   try {
     const git = async (...args) =>
       (await run("git", args, { cwd, timeout: 10000, maxBuffer: 8 * 1024 * 1024 })).stdout;
-    const head = (await git("rev-parse", "HEAD")).trim();
+    // Independent reads: spawn them together, hash in the fixed order below.
+    const [rev, worktree, staged, untracked] = await Promise.all([
+      git("rev-parse", "HEAD"),
+      git("diff", "--binary", "HEAD"),
+      git("diff", "--cached", "--binary"),
+      git("ls-files", "--others", "--exclude-standard", "-z"),
+    ]);
+    const head = rev.trim();
     const hash = createHash("sha256");
     hash.update(head);
-    hash.update(await git("diff", "--binary", "HEAD"));
-    hash.update(await git("diff", "--cached", "--binary"));
-    for (const file of (await git("ls-files", "--others", "--exclude-standard", "-z"))
-      .split("\0")
-      .filter(Boolean)
-      .sort()) {
+    hash.update(worktree);
+    hash.update(staged);
+    for (const file of untracked.split("\0").filter(Boolean).sort()) {
       const target = path.resolve(cwd, file);
       const stat = await lstat(target);
       // Unknown/nonregular files cannot produce trusted evidence identity.

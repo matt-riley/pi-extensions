@@ -40,19 +40,19 @@ async function hashFile(cwd, file) {
 
 /** The tree now: HEAD, the fingerprint, and a content hash per dirty or untracked file. Null if git cannot say. */
 export async function takeSnapshot(cwd) {
-  const revision = await revisionSnapshot(cwd);
-  if (!revision) return null;
   try {
-    const names = [
-      ...nul(await git(cwd, "diff", "--name-only", "-z", "--relative", "HEAD")),
-      ...nul(await git(cwd, "ls-files", "--others", "--exclude-standard", "-z")),
-    ]
-      .filter(included)
-      .sort();
-    const unique = [...new Set(names)];
-    const files = new Map();
-    for (const file of unique.slice(0, MAX_FILES)) files.set(file, await hashFile(cwd, file));
-    return { ...revision, files, capped: unique.length > MAX_FILES };
+    const [revision, dirty, untracked] = await Promise.all([
+      revisionSnapshot(cwd),
+      git(cwd, "diff", "--name-only", "-z", "--relative", "HEAD"),
+      git(cwd, "ls-files", "--others", "--exclude-standard", "-z"),
+    ]);
+    if (!revision) return null;
+    const names = [...nul(dirty), ...nul(untracked)].filter(included).sort();
+    const all = [...new Set(names)];
+    const unique = all.slice(0, MAX_FILES);
+    const hashes = await Promise.all(unique.map((file) => hashFile(cwd, file)));
+    const files = new Map(unique.map((file, i) => [file, hashes[i]]));
+    return { ...revision, files, capped: all.length > MAX_FILES };
   } catch {
     return null;
   }

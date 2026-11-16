@@ -56,6 +56,11 @@ export class Jobs extends EventEmitter {
     return [...this.#jobs.keys()].map((id) => this.read(id));
   }
 
+  /** Id, status and owner of every job, without cleaning their output: cheap enough per chunk. */
+  summary() {
+    return [...this.#jobs.values()].map(({ id, status, owner }) => ({ id, status, owner }));
+  }
+
   evidence(id) {
     const job = this.#get(id);
     return structuredClone({
@@ -83,7 +88,7 @@ export class Jobs extends EventEmitter {
     if (watch !== undefined && (typeof watch !== "string" || !watch.trim() || watch.length > 500))
       throw new Error("A watch condition must contain 1–500 characters.");
     if (this.#jobs.size >= MAX_JOBS) throw new Error("Close a finished job first (20 job limit).");
-    if (this.list().filter((job) => job.status === "running").length >= 4)
+    if (this.summary().filter((job) => job.status === "running").length >= 4)
       throw new Error("Stop a running job first (4 running job limit).");
     const job = {
       id: randomUUID().slice(0, 8),

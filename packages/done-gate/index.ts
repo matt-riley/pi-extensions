@@ -87,9 +87,11 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
   const snapshot = async (cwd: string) => {
     try {
-      const revision = await revisionSnapshot(cwd);
+      const [revision, status] = await Promise.all([
+        revisionSnapshot(cwd),
+        git(cwd, ["status", "--porcelain", "--untracked-files=normal"]),
+      ]);
       if (!revision) return null;
-      const status = await git(cwd, ["status", "--porcelain", "--untracked-files=normal"]);
       return { ...revision, clean: status !== null && !status.trim() };
     } catch {
       return null;
@@ -123,8 +125,10 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
         cwd,
         read: (path: string) => readFile(join(cwd, path), "utf8").catch(() => null),
         listTests: async () => {
-          const tracked = await git(cwd, ["ls-files", "-z"]);
-          const untracked = await listUntracked(cwd);
+          const [tracked, untracked] = await Promise.all([
+            git(cwd, ["ls-files", "-z"]),
+            listUntracked(cwd),
+          ]);
           return tracked === null ? null : [...tracked.split("\0"), ...(untracked ?? [])];
         },
       });

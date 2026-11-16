@@ -84,8 +84,9 @@ function assistantModelKey(message) {
  */
 export function usageCapFromMessages(messages) {
   let last = null;
-  for (const entry of Array.isArray(messages) ? messages : []) {
-    const message = entry?.message ?? entry;
+  const list = Array.isArray(messages) ? messages : [];
+  for (let i = list.length - 1; i >= 0 && !last; i--) {
+    const message = list[i]?.message ?? list[i];
     if (message?.role === "assistant") last = message;
   }
   if (last?.stopReason !== "error") return null;
