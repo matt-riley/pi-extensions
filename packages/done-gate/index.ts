@@ -67,7 +67,7 @@ const MAX_UNTRACKED_BYTES = 1_000_000;
 const MAX_USER_RUNS = 20;
 
 export default function piDoneGateExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "done-gate");
   installMeasurement(pi);
   const state = createGateState();
   let lastClaim: string | undefined;

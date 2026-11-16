@@ -29,7 +29,7 @@ export const VERIFY_ENV = "PI_DESLOP_VERIFY";
 
 export default function piDeslopExtension(pi: ExtensionAPI) {
   // Before any `on`: Jev's token usage has to land on the tool result it rode on.
-  bindSystemOne(pi);
+  bindSystemOne(pi, "deslop");
   const state = createDeslopState();
 
   pi.registerCommand("deslop", {

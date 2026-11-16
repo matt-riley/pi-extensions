@@ -69,7 +69,7 @@ export default function piPromptCoachExtension(
     env?: Record<string, string | undefined>;
   } = {},
 ) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "prompt-coach");
   const ask = deps.ask ?? askSystemOne;
   const run: CoachExec = deps.exec ?? ((cmd, args, opts) => pi.exec(cmd, args, opts));
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;

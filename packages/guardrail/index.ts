@@ -146,7 +146,7 @@ function canonicalPath(path: string, seen = new Set<string>()): string {
 }
 
 export default function piGuardrailExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "guardrail");
   const enqueueDialog = createDialogQueue();
   const approvals = new Set<string>();
   let generation = 0;

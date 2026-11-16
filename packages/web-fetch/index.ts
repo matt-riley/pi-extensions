@@ -107,7 +107,7 @@ function buildFetchOptions(params, settings, { format, maxChars, timeoutMs }) {
 }
 
 export default function piWebFetchExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "web-fetch");
   pi.registerTool({
     name: "web_fetch",
     label: "web_fetch",

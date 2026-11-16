@@ -65,7 +65,7 @@ function formatLint(result: {
 }
 
 export default function piReviewExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "review");
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",

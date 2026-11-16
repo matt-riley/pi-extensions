@@ -72,7 +72,7 @@ function notify(ctx: UiCtx | undefined, message: string, level = "info") {
 
 export default function piSubagentsExtension(pi: ExtensionAPI) {
   if (process.env[CHILD_ENV] === "1") return;
-  bindSystemOne(pi);
+  bindSystemOne(pi, "subagents");
 
   let widgetCtx: UiCtx | undefined;
 

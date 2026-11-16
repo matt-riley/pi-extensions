@@ -105,7 +105,7 @@ interface PlanModeState {
 }
 
 export default function planMode(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "plan-mode");
   const state: PlanModeState = {
     enabled: false,
     previousTools: null,

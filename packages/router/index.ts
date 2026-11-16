@@ -151,7 +151,7 @@ export default function piRouterExtension(
     now?: () => number;
   } = {},
 ) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "router");
   const ask = deps.ask ?? askSystemOne;
   const usageCaps = createUsageCaps();
   const clock = deps.now ?? (() => Date.now());

@@ -24,7 +24,7 @@ const JobSchema = Type.Object({
 const Id = Type.String({ description: "A job id from terminal_start or terminal_list." });
 
 export function installJobs(pi, widgets) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "jobs");
   let session;
   const get = (ctx) => {
     if (session) {

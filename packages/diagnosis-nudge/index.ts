@@ -60,7 +60,7 @@ function actionOf(input) {
 }
 
 export default function piDiagnosisNudgeExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "diagnosis-nudge");
   const envFacts = createEnvFactsRuntime({
     getAgentDir: () => agentDirForEnv(),
     findRepoRoot,

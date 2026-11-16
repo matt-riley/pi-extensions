@@ -26,7 +26,7 @@ import { installSkillSearch } from "./command.mjs";
 const SELECT_TOOL = SKILL_SELECT_TOOLS[0];
 
 export default function piSkillSelectExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "skill-select");
   installSkillSearch(pi);
   pi.registerTool({
     name: SELECT_TOOL,

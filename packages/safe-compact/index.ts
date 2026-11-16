@@ -126,7 +126,7 @@ type Ask = (request: {
 const minutesAgo = (ageMs: number) => `${Math.floor(ageMs / 60_000)}m ago`;
 
 export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {}) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "safe-compact");
   // One memo per session: a retry or an overlapping span reuses old answers.
   const ask = memoizeAsk(options.ask ?? askSystemOne);
 

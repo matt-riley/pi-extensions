@@ -89,10 +89,16 @@ function withSessionUsage(result, priorUsage) {
  * returned tool result; compaction drafts use `compactionUsage` instead,
  * because that usage belongs on the entry Pi actually records.
  */
-function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage, pi } = {}) {
+function runWithSystemOneContext(ctx, fn, { attachUsage = false, priorUsage, pi, feature } = {}) {
   const parent = systemOneAls.getStore();
   const usage = parent?.usage ?? [];
-  return systemOneAls.run({ ctx: ctx ?? parent?.ctx, pi: pi ?? parent?.pi, usage }, async () => {
+  const store = {
+    ctx: ctx ?? parent?.ctx,
+    pi: pi ?? parent?.pi,
+    feature: feature ?? parent?.feature,
+    usage,
+  };
+  return systemOneAls.run(store, async () => {
     const result = await fn();
     if (!attachUsage || parent?.usage) return result;
     return withSessionUsage(result, priorUsage);
@@ -115,12 +121,15 @@ const boundHosts = new WeakSet();
 /**
  * Thread the Pi context into every handler this extension registers.
  *
+ * `feature` names the package in the Jev ledger entries those handlers write.
+ * Pi gives each extension its own `pi` object, so the name is fixed per host.
+ *
  * Called before the extension's own `on` / `registerTool` / `registerCommand`
  * / `registerVirtualModel`. The .mjs judges keep calling `askSystemOne()`
  * with no context argument; the registry arrives through the async store, so
  * it never becomes part of a memo key.
  */
-export function bindSystemOne(pi) {
+export function bindSystemOne(pi, feature) {
   if (!pi || typeof pi !== "object" || boundHosts.has(pi)) return pi;
   boundHosts.add(pi);
   if (typeof pi.on === "function") {
@@ -131,6 +140,7 @@ export function bindSystemOne(pi) {
           attachUsage: event === "tool_result",
           priorUsage: event === "tool_result" ? payload?.usage : undefined,
           pi,
+          feature,
         }),
       );
   }
@@ -145,6 +155,7 @@ export function bindSystemOne(pi) {
                 runWithSystemOneContext(args[4], () => def.execute(...args), {
                   attachUsage: true,
                   pi,
+                  feature,
                 })
             : def?.execute,
       });
@@ -158,7 +169,7 @@ export function bindSystemOne(pi) {
           ? {
               ...def,
               handler: (...args) =>
-                runWithSystemOneContext(args[1], () => def.handler(...args), { pi }),
+                runWithSystemOneContext(args[1], () => def.handler(...args), { pi, feature }),
             }
           : def,
       );
@@ -171,7 +182,7 @@ export function bindSystemOne(pi) {
           ? {
               ...def,
               route: (request, ctx) =>
-                runWithSystemOneContext(ctx, () => def.route(request, ctx), { pi }),
+                runWithSystemOneContext(ctx, () => def.route(request, ctx), { pi, feature }),
             }
           : def,
       );

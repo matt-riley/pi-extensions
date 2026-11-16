@@ -35,7 +35,7 @@ function capturingFetch(responseFactory) {
 }
 
 /** A pi that records appendEntry and runs the handler bindSystemOne wraps. */
-function sessionPi() {
+function sessionPi(feature) {
   const entries = [];
   const handlers = [];
   const pi = {
@@ -48,7 +48,7 @@ function sessionPi() {
       handlers.push({ event, handler });
     },
   };
-  bindSystemOne(pi);
+  bindSystemOne(pi, feature);
   return pi;
 }
 
@@ -540,8 +540,8 @@ test("tool, command, and virtual-model handlers record the Jev call", async () =
   assert.equal(entries.length, 3, "virtual model route recorded the call");
 });
 
-test("askSystemOne names the calling package when no feature is passed", async () => {
-  const pi = sessionPi();
+test("askSystemOne names the package its host was bound for when no feature is passed", async () => {
+  const pi = sessionPi("guardrail");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     jsonResponse({
@@ -570,13 +570,6 @@ test("askSystemOne names the calling package when no feature is passed", async (
   }
   assert.equal(pi.entries[0].data.feature, "guardrail");
   assert.equal(JSON.stringify(pi.entries[0]).includes("rm notes.txt"), false);
-  const { callingFeature } = await import("../../../shared/jev-ledger.mjs");
-  assert.equal(
-    callingFeature(
-      ["Error", "    at classifyCi (file:///workspace/scripts/ci-triage.mjs:10:1)"].join("\n"),
-    ),
-    "ci-triage",
-  );
 });
 
 test("a ctx whose ui getter throws still returns the Jev answer", async () => {

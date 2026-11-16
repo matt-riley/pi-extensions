@@ -75,7 +75,7 @@ const QUESTION_SCHEMA = Type.Object(
 );
 
 export default function piTypesafeExtension(pi: ExtensionAPI) {
-  bindSystemOne(pi);
+  bindSystemOne(pi, "typesafe");
   let screen = createInjectionScreen();
   pi.on("session_start", () => {
     screen = createInjectionScreen();

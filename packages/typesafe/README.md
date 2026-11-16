@@ -215,7 +215,8 @@ That is Pi 1.4's `appendEntry(customType: string, data?: unknown): void`. The
 custom entry stays in the session and does not enter the model context. The
 ledger makes no network request of its own.
 
-`data` holds the calling package or script, the model TypeSafe reported and the
+`data` holds the asking package (the name it passed to `bindSystemOne`, or a
+call's own `feature`), the model TypeSafe reported and the
 model that was requested, question ids and kinds, the answers (including
 probabilities or scores), latency, the transport (`classify` or `http`),
 redaction counts, and an outcome. The outcome is `ok`, an error class

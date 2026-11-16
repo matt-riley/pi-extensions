@@ -9,7 +9,6 @@
 import {
   appendLedgerEntry,
   buildLedgerEntry,
-  callingFeature,
   ledgerErrorClass,
   ledgerHttpStatus,
   TUNED_MODEL,
@@ -96,9 +95,10 @@ export async function askSystemOne({
   failurePolicy,
 } = {}) {
   const started = Date.now();
-  const sessionPi = sessionStore()?.pi;
+  const store = sessionStore();
+  const sessionPi = store?.pi;
   const namedFeature =
-    typeof feature === "string" && feature.trim() ? feature.trim() : callingFeature();
+    typeof feature === "string" && feature.trim() ? feature.trim() : (store?.feature ?? "unknown");
   const bag = {
     feature: namedFeature,
     requestedModel: "",
@@ -111,7 +111,7 @@ export async function askSystemOne({
     const config = resolveConfig(env);
     const requestedModel = typeof model === "string" && model.trim() ? model.trim() : config.model;
     bag.requestedModel = requestedModel;
-    const registry = (ctx ?? sessionStore()?.ctx)?.modelRegistry;
+    const registry = (ctx ?? store?.ctx)?.modelRegistry;
     const classifier = selectClassifier(registry, requestedModel, configuredBaseUrl(env, config));
     bag.transport = classifier ? "classify" : "http";
     // Redact before validating: the size and shape checks should describe what
@@ -144,7 +144,7 @@ export async function askSystemOne({
     if (!classifier && typeof fetchImpl !== "function") {
       throw new Error("A fetch implementation is required to call TypeSafe.");
     }
-    const sessionCtx = ctx ?? sessionStore()?.ctx;
+    const sessionCtx = ctx ?? store?.ctx;
     const result = classifier
       ? await askViaClassify({
           registry,
