@@ -6,8 +6,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "node scripts/check-conventions.mjs && tsc --noEmit && oxlint --deny-warnings . && oxfmt --check . && knip && fallow dead-code && node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
-    "lint": "oxlint --deny-warnings .",
+    "check": "node scripts/check-conventions.mjs && npm run lint:comments && tsc --noEmit && oxlint --deny-warnings . && oxfmt --check . && knip && fallow dead-code && node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'",
+    "lint": "npm run lint:comments && oxlint --deny-warnings .",
+    "lint:comments": "tsc --allowJs --checkJs --noEmit --strict --esModuleInterop --skipLibCheck --target es2022 --module nodenext scripts/comment-lint.mjs && node scripts/comment-lint.mjs",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
