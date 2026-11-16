@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { listRepoFiles } from "../../code-search/inventory.mjs";
+import { listRepoFiles } from "../../../shared/inventory.mjs";
 import { runArchitectureCheck } from "../check.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));

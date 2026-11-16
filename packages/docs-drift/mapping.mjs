@@ -14,7 +14,7 @@
 
 import { posix } from "node:path";
 
-import { normalizeRel } from "../code-search/inventory.mjs";
+import { normalizeRel } from "../../shared/inventory.mjs";
 
 const DOC_EXTENSION = /\.(?:md|mdx|markdown|rst|adoc|txt)$/i;
 const README = /^readme(?:\.[a-z]+)?$/i;

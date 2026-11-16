@@ -15,7 +15,7 @@ import { isAbsolute, matchesGlob, relative, resolve, sep } from "node:path";
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { excerpt, mapPool, usable } from "../../shared/spans.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
-import { findRepoRoot, listRepoFiles, normalizeRel } from "../code-search/inventory.mjs";
+import { findRepoRoot, listRepoFiles, normalizeRel } from "../../shared/inventory.mjs";
 import { isEnvFile, isSecretPath } from "../guardrail/policy-targets.mjs";
 import { evaluateBashCommand } from "../guardrail/policy-bash.mjs";
 

@@ -10,7 +10,7 @@ import {
   listRepoFiles,
   normalizeRel,
   walkRoot,
-} from "../inventory.mjs";
+} from "../../../shared/inventory.mjs";
 
 async function fixture(files) {
   const dir = await mkdtemp(join(tmpdir(), "pi-cs-inv-"));

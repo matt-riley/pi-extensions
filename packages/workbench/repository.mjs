@@ -1,5 +1,5 @@
 import path from "node:path";
-import { findRepoRoot, listRepoFiles } from "../code-search/inventory.mjs";
+import { findRepoRoot, listRepoFiles } from "../../shared/inventory.mjs";
 
 export async function projectFiles(cwd, exec) {
   const { root } = await findRepoRoot(cwd, exec);

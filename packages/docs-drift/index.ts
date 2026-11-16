@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { findRepoRoot, normalizeRel } from "../code-search/inventory.mjs";
+import { findRepoRoot, normalizeRel } from "../../shared/inventory.mjs";
 import { checkDocs, formatJson, formatText } from "./stale.mjs";
 
 const USAGE = "Usage: /docs-drift [--json] [path...]";

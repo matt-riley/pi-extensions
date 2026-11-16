@@ -6,7 +6,7 @@
 // hand-rolled gitignore matcher when git is unavailable or the dir is not a
 // repo. node_modules, .git, and the .pi/cache dir are always excluded.
 //
-// `exec` is injected (pi.exec from index.ts, a fake in tests) so this module
+// `exec` is injected (each caller's pi.exec, a fake in tests) so this module
 // stays plain .mjs and testable with node --test.
 
 import { readFileSync } from "node:fs";

@@ -21,7 +21,6 @@
       "forbid": ["packages/**"],
       "except": [
         "packages/$1/**",
-        "packages/code-search/inventory.mjs",
         "packages/code-search/ts-parser.mjs",
         "packages/done-gate/gate.mjs",
         "packages/guardrail/policy-bash.mjs",

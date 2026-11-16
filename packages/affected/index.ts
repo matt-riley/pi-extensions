@@ -15,7 +15,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
-import { findRepoRoot, listRepoFiles } from "../code-search/inventory.mjs";
+import { findRepoRoot, listRepoFiles } from "../../shared/inventory.mjs";
 import { formatAffected, selectAffected } from "./affected.mjs";
 import { changedFiles } from "./changed.mjs";
 

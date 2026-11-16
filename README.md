@@ -144,12 +144,13 @@ with a reason. Prompt references to bundled skills are checked by
 Package directories are not independent installations. These are the main links
 between them:
 
-- **workbench** uses **code-search**'s file inventory. Its optional planning,
-  subagent and footer actions appear only when those commands are loaded.
+- **workbench**'s optional planning, subagent and footer actions appear only
+  when those commands are loaded. It, code-search and several other packages
+  share the repository file inventory in `shared/inventory.mjs`.
 - **jobs** uses **workbench** text sanitization and **done-gate** check detection.
   **diagnosis-nudge** also uses **done-gate** check detection. Jobs, subagents and
   both gates share revision fingerprints and completed-job evidence adapters.
-- **typesafe** uses **code-search**'s inventory and **guardrail**'s path policy.
+- **typesafe** uses **guardrail**'s path policy.
 - **plan-mode** uses **web-fetch** for `plan_fetch_url`. It retains tools by
   runtime annotations, not a sibling-name list; `readOnlyHint: true` is trusted
   only for tools registered by this collection.

@@ -26,7 +26,7 @@ import {
   refreshCache,
   saveCache,
 } from "./cache.mjs";
-import { findRepoRoot, listRepoFiles, normalizeRel } from "./inventory.mjs";
+import { findRepoRoot, listRepoFiles, normalizeRel } from "../../shared/inventory.mjs";
 import { attachContext, clampContext, MAX_CONTEXT } from "./hit-context.mjs";
 import { searchRepo } from "./search.mjs";
 import {

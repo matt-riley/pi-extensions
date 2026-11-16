@@ -17,7 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { findRepoRoot } from "../code-search/inventory.mjs";
+import { findRepoRoot } from "../../shared/inventory.mjs";
 import { installCheckpoint } from "./checkpoint.mjs";
 import { agentDirForEnv, createEnvFactsRuntime } from "./env-facts.mjs";
 import { flagOff } from "../../shared/env-flag.mjs";

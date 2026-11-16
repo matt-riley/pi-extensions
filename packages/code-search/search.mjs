@@ -22,7 +22,7 @@
 // the search it belongs to and the identity of the matched content.
 
 import { createHash } from "node:crypto";
-import { escapeRegExp } from "./gitignore.mjs";
+import { escapeRegExp } from "../../shared/gitignore.mjs";
 import { bindingOf, contentIdentity, decodeCursor, encodeCursor } from "./cursor.mjs";
 
 // Extensions we never scan as text (binary images, archives, compiled, …).
