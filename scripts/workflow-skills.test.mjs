@@ -89,3 +89,18 @@ test("the restate prompt asks for a plain restatement and forbids acting", async
   assert.match(text, /\$@/, "the brief passed as arguments must reach the model");
   assert.doesNotMatch(text, /skill_select|the `\w+` skill/);
 });
+
+test("the garden prompt proposes durable lint rules while keeping its scan read-only and approval-gated", async () => {
+  const text = await readFile(root + "prompts/garden.md", "utf8");
+  for (const sentence of [
+    "Do not fix findings during this scan.",
+    "At 3 distinct occurrences, draft the exact preventive change and ask for approval.",
+    "Prefer an existing lint rule for mechanically checkable smells; if none covers the pattern, propose writing a custom rule in the repository’s native tooling.",
+    "Keep judgment-only concerns as review guidance rather than unreliable lint.",
+    "Include the detection boundary, a failing example, legitimate passing examples and false-positive risks in a proposed rule.",
+    "Use parser and declaration/type information for comment rules; preserve useful documentation, including Go documentation comments, rationale, licenses and directives.",
+    "After approval, implement the rule with regression tests and wire it into the normal check command and existing CI gate.",
+    "Run it against the proposal's failing and passing examples without lowering thresholds or adding blanket suppressions.",
+  ])
+    assert.ok(text.includes(sentence), sentence);
+});
