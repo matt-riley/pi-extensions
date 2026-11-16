@@ -582,9 +582,14 @@ function sentenceAround(text, start, end) {
     .slice(from, Math.min(to + 1, text.length))
     .replace(/\s+/g, " ")
     .trim();
-  return sentence.length > MAX_EXCERPT_CHARS
-    ? `${sentence.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
-    : sentence;
+  return clipExcerpt(sentence);
+}
+
+/** Cut to MAX_EXCERPT_CHARS at a word boundary, marking the cut. */
+function clipExcerpt(text) {
+  return text.length > MAX_EXCERPT_CHARS
+    ? `${text.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
+    : text;
 }
 
 function finding(check, count, excerpts, passages = [0]) {
@@ -730,11 +735,7 @@ function machinegunFinding(spans) {
             fix: "combine them with commas or subordinate clauses",
           },
           run.length,
-          [
-            joined.length > MAX_EXCERPT_CHARS
-              ? `${joined.slice(0, MAX_EXCERPT_CHARS - 1).replace(/\S+$/, "")}…`
-              : joined,
-          ],
+          [clipExcerpt(joined)],
           [index],
         );
       }
@@ -783,8 +784,6 @@ function renamedSubjectFinding(spans) {
   return null;
 }
 
-const SEVERITY_ORDER = ["high", "medium", "low"];
-
 /**
  * Every pattern the text carries, most severe first. `passages` lists the
  * paragraphs a sign appears in, which is what lets a weak sign count only
@@ -821,7 +820,7 @@ export function findSlop(text) {
     if (extra) findings.push(extra);
   }
   return findings.sort(
-    (left, right) => SEVERITY_ORDER.indexOf(left.severity) - SEVERITY_ORDER.indexOf(right.severity),
+    (left, right) => SEVERITY_WEIGHT[right.severity] - SEVERITY_WEIGHT[left.severity],
   );
 }
 

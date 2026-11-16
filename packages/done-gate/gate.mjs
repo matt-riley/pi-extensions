@@ -9,7 +9,7 @@
 // edit outside the session cwd never arms it, and an edit the working tree no
 // longer carries is dropped before the nudge is built.
 
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { repoRelativePath } from "../../shared/paths.mjs";
 import { hasCommandSubstitution, splitSegments } from "../../shared/shell-parse.mjs";
 import { logText } from "./evidence.mjs";
 
@@ -129,21 +129,7 @@ export function createGateState() {
 }
 
 export function resetGateState(state) {
-  state.dirty.clear();
-  state.edited.clear();
-  state.verificationStatus = "unknown";
-  state.verificationRevision = null;
-  state.remoteVerificationStatus = "unknown";
-  state.remoteVerificationRevision = null;
-  state.nudged = false;
-  state.verificationSeen = false;
-  state.behaviorVerified = false;
-  state.testGap = null;
-  state.remoteVerificationSeen = false;
-  state.remoteNudged = false;
-  state.runs = [];
-  state.claimGapNudged = false;
-  return state;
+  return Object.assign(state, createGateState());
 }
 
 /**
@@ -169,24 +155,6 @@ export function isRemoteVerifyCommand(command) {
   return (
     standalone(command) && REMOTE_VERIFY_COMMANDS.some((pattern) => pattern.test(command.trim()))
   );
-}
-
-/**
- * The edited path relative to the session cwd, or null when it is outside it.
- *
- * The nudge asks for the repo's checks, so the gate may only track files those
- * checks can cover: a `/tmp` probe or a home dotfile is not one. No cwd means
- * no filtering (tests, and any host that omits the field).
- */
-function repoRelativePath(cwd, path) {
-  if (typeof cwd !== "string" || !cwd) {
-    return path;
-  }
-  const rel = relative(resolve(cwd), resolve(cwd, path));
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    return null;
-  }
-  return rel;
 }
 
 /** A started check is attempted, not evidence of a pass. */
@@ -218,6 +186,8 @@ export function observeToolResult(
 ) {
   if (EDIT_TOOLS.has(toolName)) {
     const raw = typeof input?.path === "string" ? input.path : undefined;
+    // The nudge asks for the repo's checks, so only files those checks can cover
+    // count: a `/tmp` probe or a home dotfile is not one. No cwd, no filtering.
     const path = raw ? repoRelativePath(cwd, raw) : null;
     if (isError !== true && path && !DOC_FILE.test(path)) {
       invalidateEvidence(state, null);

@@ -29,7 +29,7 @@ import {
   parseDdgResults,
   parseSearxngResults,
 } from "./search.mjs";
-import { FORMATS, loadSettings } from "./settings.mjs";
+import { FORMATS, clampInt, loadSettings } from "./settings.mjs";
 
 const FORMAT_DESC =
   `Output format: ${FORMATS.join(", ")}. ` +
@@ -71,17 +71,9 @@ const ANSWER_DESCRIPTION = [
 const SEARCH_SNIPPET =
   "web_search(query, max_results?): search the web (keyless DuckDuckGo by default; SearXNG instance via webFetchSearxngUrl) — returns ranked results with titles, URLs, and snippets; use for current/source-backed information beyond your training data";
 
-const FORMAT_DEFAULT_BY_TOOL = "markdown";
-
-function pickFormat(paramsFormat, settingsDefault, fallback = FORMAT_DEFAULT_BY_TOOL) {
+function pickFormat(paramsFormat, settingsDefault) {
   const value = typeof paramsFormat === "string" ? paramsFormat : settingsDefault;
-  return isKnownFormat(value) ? value : fallback;
-}
-
-function clampInt(value, fallback, min, max) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(n)));
+  return isKnownFormat(value) ? value : "markdown";
 }
 
 function errorText(prefix, err) {

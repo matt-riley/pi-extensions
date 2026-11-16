@@ -400,6 +400,10 @@ function hasFlagCount(args, letter) {
 /** An awk program that shells out or writes: system(), `| getline`, `print | "cmd"`, `print > f`. */
 export const AWK_SIDE_EFFECT = /\bsystem\s*\(|\|\s*getline|\|&|\bprintf?\b[^;{}]*(?:>|\|)/;
 
+/** `-o`, `-oFILE`, `--output` or `--output=FILE`: sort and shuf write a file. */
+const writesOutputFile = (args) =>
+  args.some((a) => a.startsWith("-o") || a === "--output" || a.startsWith("--output="));
+
 const HEAD_RULES = {
   // awk is read-only until its program shells out (system, pipes, getline from
   // a command) or prints into a file; a program read with -f is unseen.
@@ -415,7 +419,7 @@ const HEAD_RULES = {
   date: (args) =>
     args.some((a) => a === "-s" || a.startsWith("--set")) ? "date --set …" : undefined,
   sed: (args) =>
-    args.some((a) => a === "-i" || a.startsWith("-i") || a === "--in-place")
+    args.some((a) => a.startsWith("-i") || a === "--in-place")
       ? "sed -i (in-place edit) …"
       : undefined,
   find: (args) => {
@@ -427,18 +431,8 @@ const HEAD_RULES = {
     }
     return undefined;
   },
-  sort: (args) =>
-    args.some(
-      (a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="),
-    )
-      ? "sort -o (writes a file) …"
-      : undefined,
-  shuf: (args) =>
-    args.some(
-      (a) => a === "-o" || a.startsWith("-o") || a === "--output" || a.startsWith("--output="),
-    )
-      ? "shuf -o (writes a file) …"
-      : undefined,
+  sort: (args) => (writesOutputFile(args) ? "sort -o (writes a file) …" : undefined),
+  shuf: (args) => (writesOutputFile(args) ? "shuf -o (writes a file) …" : undefined),
   tar: (args) => {
     const list = args.some((a) => a === "-t" || a === "--list" || /^-[a-zA-Z]*t[a-zA-Z]*$/.test(a));
     if (!list) return "tar (not list-only) …";
@@ -522,9 +516,7 @@ const HEAD_RULES = {
       ? "iostat <interval> (repeats forever — add a count: iostat 1 3) …"
       : undefined,
   sysctl: (args) =>
-    args.some((a) => a === "-w" || a.startsWith("-w") || a === "--write")
-      ? "sysctl -w (write) …"
-      : undefined,
+    args.some((a) => a.startsWith("-w") || a === "--write") ? "sysctl -w (write) …" : undefined,
   xmllint: (args) =>
     args.some((a) => a === "-o" || a === "--output") ? "xmllint --output (write) …" : undefined,
 };
@@ -622,11 +614,15 @@ function blockedGit(args) {
   return undefined;
 }
 
-function blockedPkg(head, args) {
+/** The first non-flag argument (lowercased) and everything after it. */
+function subcommand(args) {
   let j = 0;
   while (j < args.length && args[j].startsWith("-")) j++;
-  const sub = args[j]?.toLowerCase();
-  const rest = args.slice(j + 1);
+  return { sub: args[j]?.toLowerCase(), rest: args.slice(j + 1) };
+}
+
+function blockedPkg(head, args) {
+  const { sub, rest } = subcommand(args);
   if (!sub) {
     // Bare invocation: npm/pnpm/bun print help; yarn runs install.
     if (head === "yarn" && (args.length === 0 || !args.every((a) => a.startsWith("-")))) {
@@ -651,22 +647,16 @@ function blockedPkg(head, args) {
 }
 
 function blockedCargo(args) {
-  let j = 0;
-  while (j < args.length && args[j].startsWith("-")) j++;
-  const sub = args[j]?.toLowerCase();
+  const { sub } = subcommand(args);
   if (!sub) return undefined; // bare cargo prints help
   if (!CARGO_READ_ONLY.has(sub)) return `cargo ${sub} …`;
   return undefined;
 }
 
 function blockedGo(args) {
-  let j = 0;
-  while (j < args.length && args[j].startsWith("-")) j++;
-  const sub = args[j]?.toLowerCase();
-  const rest = args.slice(j + 1);
+  const { sub, rest } = subcommand(args);
   if (!sub) return undefined; // bare go prints help
-  if (sub === "env" && rest.some((a) => a === "-w" || a.startsWith("-w")))
-    return "go env -w (write) …";
+  if (sub === "env" && rest.some((a) => a.startsWith("-w"))) return "go env -w (write) …";
   if (!GO_READ_ONLY.has(sub)) return `go ${sub} …`;
   return undefined;
 }
@@ -703,11 +693,8 @@ export function blockedBashSegment(segment) {
   if (head === "go") return blockedGo(args);
   if (INTERPRETER_FLAGS[head]) return blockedInterpreter(head, args, tokens.length);
 
-  const rule = HEAD_RULES[head];
-  if (rule) {
-    const blocked = rule(args);
-    if (blocked) return blocked;
-  }
+  const blocked = HEAD_RULES[head]?.(args);
+  if (blocked) return blocked;
 
   if (!READ_ONLY_HEADS.has(head)) return `${head} (not in read-only allowlist) …`;
   return undefined;

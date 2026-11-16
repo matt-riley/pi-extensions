@@ -23,7 +23,8 @@ export const DEFAULT_SETTINGS = {
   searxngUrl: "",
 };
 
-function clampInt(value, min, max, fallback) {
+/** `value` truncated and clamped to [min, max]; a non-number gives `fallback`. */
+export function clampInt(value, fallback, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(n)));
@@ -54,13 +55,13 @@ export function sanitizeSettings(raw) {
   const format = pickFormat(src.DefaultFormat ?? src.defaultFormat);
   if (format) out.defaultFormat = format;
 
-  const maxChars = clampInt(src.DefaultMaxChars ?? src.defaultMaxChars, 1000, 1_000_000, undefined);
+  const maxChars = clampInt(src.DefaultMaxChars ?? src.defaultMaxChars, undefined, 1000, 1_000_000);
   if (maxChars !== undefined) out.defaultMaxChars = maxChars;
 
-  const timeout = clampInt(src.DefaultTimeoutMs ?? src.defaultTimeoutMs, 1000, 120_000, undefined);
+  const timeout = clampInt(src.DefaultTimeoutMs ?? src.defaultTimeoutMs, undefined, 1000, 120_000);
   if (timeout !== undefined) out.defaultTimeoutMs = timeout;
 
-  const concurrency = clampInt(src.BatchConcurrency ?? src.batchConcurrency, 1, 10, undefined);
+  const concurrency = clampInt(src.BatchConcurrency ?? src.batchConcurrency, undefined, 1, 10);
   if (concurrency !== undefined) out.batchConcurrency = concurrency;
 
   if (typeof (src.UserAgent ?? src.userAgent) === "string")

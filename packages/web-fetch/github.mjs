@@ -19,6 +19,9 @@ let ghStatus = null; // null = unknown, true/false = cached probe
 
 // --- URL parsing ------------------------------------------------------------
 
+/** Repo URL segments whose single numeric child is one numbered item. */
+const NUMBERED = { issues: "issue", pull: "pull", pulls: "pull", discussions: "discussion" };
+
 // Returns null for non-GitHub hosts, and a descriptor for GitHub hosts:
 //   { kind: "repo"|"profile"|"gist"|"blob"|"tree"|"raw"|"issue"|"pull"|
 //          "discussion"|"release"|"releases"|"commit"|"commits"|"generic",
@@ -64,22 +67,12 @@ export function parseGithubUrl(url) {
       const [ref = "", ...pathSegs] = rest;
       return { kind: sub, owner, repo, ref, path: pathSegs.join("/") };
     }
-    case "issues": {
-      if (rest.length === 1 && /^\d+$/.test(rest[0])) {
-        return { kind: "issue", owner, repo, number: Number(rest[0]) };
-      }
-      return { kind: "generic", owner, repo, sub };
-    }
+    case "issues":
     case "pull":
-    case "pulls": {
-      if (rest.length === 1 && /^\d+$/.test(rest[0])) {
-        return { kind: "pull", owner, repo, number: Number(rest[0]) };
-      }
-      return { kind: "generic", owner, repo, sub };
-    }
+    case "pulls":
     case "discussions": {
       if (rest.length === 1 && /^\d+$/.test(rest[0])) {
-        return { kind: "discussion", owner, repo, number: Number(rest[0]) };
+        return { kind: NUMBERED[sub], owner, repo, number: Number(rest[0]) };
       }
       return { kind: "generic", owner, repo, sub };
     }
@@ -183,36 +176,25 @@ export function setGhApiForTests(fn) {
 // Fetches a parsed GitHub URL via gh and renders it into the standard outcome
 // shape. Returns { usedGh, outcome } — outcome is undefined when the kind was
 // not handled (usedGh false).
+const FETCHERS = {
+  repo: fetchRepo,
+  profile: fetchProfile,
+  gist: fetchGist,
+  blob: fetchFile,
+  raw: fetchFile,
+  tree: fetchTree,
+  issue: fetchIssue,
+  pull: fetchPull,
+  discussion: fetchDiscussion,
+  release: fetchRelease,
+  releases: fetchReleases,
+  commit: fetchCommit,
+  commits: fetchCommits,
+};
+
 export async function fetchGithub(parsed, opts = {}) {
-  switch (parsed.kind) {
-    case "repo":
-      return { usedGh: true, outcome: await fetchRepo(parsed, opts) };
-    case "profile":
-      return { usedGh: true, outcome: await fetchProfile(parsed, opts) };
-    case "gist":
-      return { usedGh: true, outcome: await fetchGist(parsed, opts) };
-    case "blob":
-    case "raw":
-      return { usedGh: true, outcome: await fetchFile(parsed, opts) };
-    case "tree":
-      return { usedGh: true, outcome: await fetchTree(parsed, opts) };
-    case "issue":
-      return { usedGh: true, outcome: await fetchIssue(parsed, opts) };
-    case "pull":
-      return { usedGh: true, outcome: await fetchPull(parsed, opts) };
-    case "discussion":
-      return { usedGh: true, outcome: await fetchDiscussion(parsed, opts) };
-    case "release":
-      return { usedGh: true, outcome: await fetchRelease(parsed, opts) };
-    case "releases":
-      return { usedGh: true, outcome: await fetchReleases(parsed, opts) };
-    case "commit":
-      return { usedGh: true, outcome: await fetchCommit(parsed, opts) };
-    case "commits":
-      return { usedGh: true, outcome: await fetchCommits(parsed, opts) };
-    default:
-      return { usedGh: false };
-  }
+  if (!Object.hasOwn(FETCHERS, parsed.kind)) return { usedGh: false };
+  return { usedGh: true, outcome: await FETCHERS[parsed.kind](parsed, opts) };
 }
 
 function outcome(parsed, fields) {

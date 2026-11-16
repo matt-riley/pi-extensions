@@ -111,6 +111,17 @@ function notify(ctx: UiLite, message: string) {
   if (ctx.hasUI) ctx.ui?.notify?.(message, "info");
 }
 
+/** A reader for files under `root`: their text, or null when unreadable. */
+const readRepoFile =
+  (root: string) =>
+  async (rel: string): Promise<string | null> => {
+    try {
+      return await readFile(join(root, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
+
 export default function piCodeSearchExtension(pi: ExtensionAPI) {
   const exec = makeExec(pi);
   // One in-flight refresh per repo root; sibling tool calls share it.
@@ -119,12 +130,11 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   async function getSession(
     root: string,
     viaGit: boolean,
-    ctx: UiLite,
     onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
   ): Promise<SessionState> {
     const existing = inflight.get(root);
     if (existing) return existing;
-    const p = buildSession(root, viaGit, ctx, onUpdate).finally(() => inflight.delete(root));
+    const p = buildSession(root, viaGit, onUpdate).finally(() => inflight.delete(root));
     inflight.set(root, p);
     return p;
   }
@@ -132,7 +142,6 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
   async function buildSession(
     root: string,
     viaGit: boolean,
-    ctx: UiLite,
     onUpdate?: (update: { content: Array<{ type: string; text: string }> }) => void,
   ): Promise<SessionState> {
     const cachePath = cachePathFor(root);
@@ -153,13 +162,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
           return null;
         }
       },
-      readFile: async (rel) => {
-        try {
-          return await readFile(join(root, rel), "utf8");
-        } catch {
-          return null;
-        }
-      },
+      readFile: readRepoFile(root),
       onProgress: (done, total) => {
         onUpdate?.({ content: [{ type: "text", text: `Indexing… ${done}/${total} files` }] });
       },
@@ -192,7 +195,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     // The root and whether it came from git are needed here anyway; passing
     // both down saves buildSession a second `git rev-parse`.
     const { root, viaGit } = await findRepoRoot(cwd, exec);
-    const session = await getSession(root, viaGit, ctx, onUpdate);
+    const session = await getSession(root, viaGit, onUpdate);
     if (session.built) {
       session.built = false; // only the first caller reports the build
       notify(
@@ -218,27 +221,18 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
     return { ok: true, rel };
   }
 
-  async function readRootJson(root: string, names: string[]): Promise<unknown | null> {
-    for (const name of names) {
-      try {
-        return JSON.parse(await readFile(join(root, name), "utf8"));
-      } catch {
-        // try next
-      }
+  async function readRootJson(root: string, name: string): Promise<unknown | null> {
+    try {
+      return JSON.parse(await readFile(join(root, name), "utf8"));
+    } catch {
+      return null;
     }
-    return null;
   }
 
   function loadGraph(root: string, files: Record<string, CacheEntry>) {
     return loadImportGraph({
       files: Object.keys(files),
-      readFile: async (rel: string) => {
-        try {
-          return await readFile(join(root, rel), "utf8");
-        } catch {
-          return null;
-        }
-      },
+      readFile: readRepoFile(root),
     });
   }
 
@@ -272,7 +266,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
       const testFiles = findTestFiles(rels);
       let pkg: string[] | null = null;
       if (files["package.json"]) {
-        const json = await readRootJson(session.root, ["package.json"]);
+        const json = await readRootJson(session.root, "package.json");
         pkg = packageHighlights("package.json", json);
       }
       const entries = Object.entries(files).map(([rel, e]) => ({ rel, ...e }));
@@ -375,13 +369,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         scope = v.rel;
       }
       try {
-        const readSource = async (rel: string) => {
-          try {
-            return await readFile(join(session.root, rel), "utf8");
-          } catch {
-            return null;
-          }
-        };
+        const readSource = readRepoFile(session.root);
         const found = await searchRepo({
           cache: session.cache,
           query,
@@ -528,13 +516,7 @@ export default function piCodeSearchExtension(pi: ExtensionAPI) {
         kind,
         cache: session.cache,
         graph,
-        readFile: async (rel) => {
-          try {
-            return await readFile(join(session.root, rel), "utf8");
-          } catch {
-            return null;
-          }
-        },
+        readFile: readRepoFile(session.root),
       });
       return {
         content: [

@@ -34,7 +34,7 @@ import type {
   ModelRouteRequest,
 } from "@earendil-works/pi-coding-agent";
 
-import { flagOff } from "../../shared/env-flag.mjs";
+import { flagOff, positiveNumber } from "../../shared/env-flag.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import {
@@ -92,6 +92,7 @@ import {
 
 const PROVIDER = "router";
 const MODEL_ID = "auto";
+const VIRTUAL_KEY = `${PROVIDER}/${MODEL_ID}`;
 const COMMAND = "route";
 /** Default thinking for the virtual selection when pi does not supply one. */
 const DEFAULT_THINKING = "medium";
@@ -121,11 +122,6 @@ interface RouterState {
   base: string | null;
   /** Manual !tier override for this task, cleared at the next task boundary. */
   forcedTier?: RouteTier | null;
-}
-
-function envNumber(name, fallback, env = process.env) {
-  const value = Number(env?.[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function parseThinking(raw, fallback, levels = THINKING_LEVELS) {
@@ -195,9 +191,9 @@ export default function piRouterExtension(
 
   const config = {
     enabled: !flagOff(process.env?.PI_ROUTER),
-    threshold: envNumber("PI_ROUTER_THRESHOLD", DIFFICULTY_THRESHOLD),
-    frontierThreshold: envNumber("PI_ROUTER_FRONTIER_THRESHOLD", FRONTIER_THRESHOLD),
-    timeoutMs: envNumber("PI_ROUTER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS),
+    threshold: positiveNumber(process.env.PI_ROUTER_THRESHOLD, DIFFICULTY_THRESHOLD),
+    frontierThreshold: positiveNumber(process.env.PI_ROUTER_FRONTIER_THRESHOLD, FRONTIER_THRESHOLD),
+    timeoutMs: positiveNumber(process.env.PI_ROUTER_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
   };
 
   // Counters are for /route status, not decisions; the authoritative routing
@@ -222,6 +218,14 @@ export default function piRouterExtension(
   let pending: { prompt: string; answers: unknown } | null = null;
   let pendingForcedTier: RouteTier | null = null;
   let pendingForcedPrompt: string | null = null;
+
+  /** Drop everything held for the current task: its playbook and pre-fetched answers. */
+  function resetTask() {
+    playbook = undefined;
+    pending = null;
+    pendingForcedTier = null;
+    pendingForcedPrompt = null;
+  }
 
   /** Baseline for stuck-turn detection in this cwd. */
   function stuckBaseline(ctx: ExtensionContext) {
@@ -288,7 +292,7 @@ export default function piRouterExtension(
       }
     }
     // The virtual model is a selection, never a destination.
-    return list.filter((entry) => modelKey(entry) !== `${PROVIDER}/${MODEL_ID}`);
+    return list.filter((entry) => modelKey(entry) !== VIRTUAL_KEY);
   }
 
   const { runShadowLog, handleShadowCommand, resetShadowSession } = createShadowLogger({
@@ -296,7 +300,7 @@ export default function piRouterExtension(
     config,
     shareWindow,
     isSubagentChild,
-    virtualModelKey: `${PROVIDER}/${MODEL_ID}`,
+    virtualModelKey: VIRTUAL_KEY,
     parseThinking,
     defaultThinking: DEFAULT_THINKING,
     candidates,
@@ -488,15 +492,17 @@ export default function piRouterExtension(
 
     if (planned.decided && !planned.decided.forced) counters.judged++;
 
-    const nextModel = planned.model;
-    const nextKey = planned.key;
-    const nextThinking = planned.thinking;
+    const {
+      model: nextModel,
+      key: nextKey,
+      thinking: nextThinking,
+      decided,
+      boundary,
+      outcome,
+      contextTokens,
+    } = planned;
     const nextTier = planned.tier as RouteTier;
     const nextState = planned.state as RouterState;
-    const decided = planned.decided;
-    const boundary = planned.boundary;
-    const outcome = planned.outcome;
-    const contextTokens = planned.contextTokens;
     const currentKey = modelKey(heldModel) ?? heldKey;
 
     if (decided && planned.warning === "too-big") {
@@ -608,7 +614,7 @@ export default function piRouterExtension(
   };
 
   pi.on("input", (event, ctx) => {
-    if (modelKey(ctx?.model ?? null) !== `${PROVIDER}/${MODEL_ID}`) return;
+    if (modelKey(ctx?.model ?? null) !== VIRTUAL_KEY) return;
     const parsed = parseTierOverridePrefix(event?.text ?? "");
     if (!parsed) return;
     if (!parsed.rest) {
@@ -657,8 +663,7 @@ export default function piRouterExtension(
       });
 
       if (boundary.route || playbook === undefined) {
-        const routing =
-          config.enabled && modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
+        const routing = config.enabled && modelKey(ctx?.model ?? null) === VIRTUAL_KEY;
         let type = NO_PLAYBOOK;
         try {
           const result = await judge({
@@ -721,21 +726,13 @@ export default function piRouterExtension(
   pi.on("turn_end", noteUsageCap);
 
   pi.on("session_start", (_event, ctx) => {
-    counters.turns = 0;
-    counters.judged = 0;
-    counters.escalated = 0;
-    counters.steppedDown = 0;
-    counters.held = 0;
-    counters.tooBig = 0;
+    for (const key of Object.keys(counters)) counters[key] = 0;
     last = null;
     lastState = null;
-    playbook = undefined;
-    pending = null;
-    pendingForcedTier = null;
-    pendingForcedPrompt = null;
+    resetTask();
     resetShadowSession();
     setPlaybookStatus(ctx, null);
-    const selected = modelKey(ctx?.model ?? null) === `${PROVIDER}/${MODEL_ID}`;
+    const selected = modelKey(ctx?.model ?? null) === VIRTUAL_KEY;
     setStatus(
       ctx,
       !config.enabled
@@ -867,10 +864,7 @@ export default function piRouterExtension(
         config.enabled = false;
         generation++;
         for (const controller of judgments) controller.abort();
-        playbook = undefined;
-        pending = null;
-        pendingForcedTier = null;
-        pendingForcedPrompt = null;
+        resetTask();
         setPlaybookStatus(ctx, null);
         setStatus(ctx, "router: off");
         notify(
@@ -883,10 +877,7 @@ export default function piRouterExtension(
       if (action === "on" || action === "enable") {
         config.enabled = true;
         generation++;
-        playbook = undefined;
-        pending = null;
-        pendingForcedTier = null;
-        pendingForcedPrompt = null;
+        resetTask();
         setStatus(ctx, "router: armed");
         notify(ctx, "Router on.", "info");
         return;
@@ -919,7 +910,7 @@ export default function piRouterExtension(
       notify(
         ctx,
         [
-          `Router ${config.enabled ? "on" : "OFF"} · select ${PROVIDER}/${MODEL_ID} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${!config.enabled ? "none (off)" : shareWindow ? "prompt + recent turns" : "prompt only"}`,
+          `Router ${config.enabled ? "on" : "OFF"} · select ${VIRTUAL_KEY} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${!config.enabled ? "none (off)" : shareWindow ? "prompt + recent turns" : "prompt only"}`,
           `models ${configPath}${loaded.error ? ` (broken: ${loaded.error}; using defaults)` : ""}`,
           `base ${lists(loaded.base)} · mid ${lists(loaded.mid)} · frontier ${lists(loaded.frontier)}`,
           `ladder ${ladder.line}`,

@@ -125,6 +125,19 @@ export default function planMode(pi: ExtensionAPI) {
     if (ctx.hasUI) ctx.ui?.notify?.(message, "info");
   }
 
+  /** The plan file when one exists on disk; otherwise notify (`noPlan` when none was written) and null. */
+  function currentPlanFile(ctx: UiCtx, noPlan: string): string | null {
+    if (!state.planPath) {
+      notify(ctx, noPlan);
+      return null;
+    }
+    if (!existsSync(state.planPath)) {
+      notify(ctx, `Plan file missing (${state.planPath}) — re-plan or restore it first.`);
+      return null;
+    }
+    return state.planPath;
+  }
+
   function updateStatus(ctx: UiCtx) {
     if (!ctx.hasUI || !ctx.ui) return;
     if (state.enabled) {
@@ -218,14 +231,8 @@ export default function planMode(pi: ExtensionAPI) {
   }
 
   async function editPlanFile(ctx: UiCtx) {
-    if (!state.planPath) {
-      notify(ctx, "No plan file to edit yet — finish planning first.");
-      return;
-    }
-    if (!existsSync(state.planPath)) {
-      notify(ctx, `Plan file missing (${state.planPath}) — re-plan or restore it first.`);
-      return;
-    }
+    const planPath = currentPlanFile(ctx, "No plan file to edit yet — finish planning first.");
+    if (!planPath) return;
     if (!ctx.hasUI || !ctx.ui?.editor) {
       notify(ctx, "No interactive editor available in this mode — edit the plan file directly.");
       return;
@@ -234,7 +241,6 @@ export default function planMode(pi: ExtensionAPI) {
     // time; read the file only when our turn comes so external edits made
     // while a question dialog was up are not clobbered.
     const editor = ctx.ui.editor;
-    const planPath = state.planPath;
     const outcome = await enqueueDialog(async () => {
       let current: string;
       try {
@@ -287,15 +293,8 @@ export default function planMode(pi: ExtensionAPI) {
         return;
       }
       if (arg === "check") {
-        if (!state.planPath) {
-          notify(ctx, "No plan file yet — finish planning first.");
-          return;
-        }
-        const checkPath = state.planPath;
-        if (!existsSync(checkPath)) {
-          notify(ctx, `Plan file missing (${checkPath}) — re-plan or restore it first.`);
-          return;
-        }
+        const checkPath = currentPlanFile(ctx, "No plan file yet — finish planning first.");
+        if (!checkPath) return;
         let currentPlan: string;
         try {
           currentPlan = await readFile(checkPath, "utf8");
@@ -340,18 +339,11 @@ export default function planMode(pi: ExtensionAPI) {
         return;
       }
       if (arg === "approve") {
-        if (!state.planPath) {
-          notify(
-            ctx,
-            "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).",
-          );
-          return;
-        }
-        const planFile = state.planPath;
-        if (!existsSync(planFile)) {
-          notify(ctx, `Plan file missing (${planFile}) — re-plan or restore it first.`);
-          return;
-        }
+        const planFile = currentPlanFile(
+          ctx,
+          "No plan to approve yet — finish planning first (the agent calls plan_mode_complete).",
+        );
+        if (!planFile) return;
         exitPlanMode(ctx, `Plan approved — leaving plan mode. Implementing from ${planFile}.`);
         await pi.sendUserMessage(
           `The plan is approved. Read ${planFile} and implement it exactly as written.`,
@@ -508,9 +500,7 @@ export default function planMode(pi: ExtensionAPI) {
         });
         const decision = decideGate({ question, options, recommended }, judged);
         if (decision.answer) {
-          if (ctx.hasUI && ctx.ui?.notify) {
-            ctx.ui.notify(`Plan mode: answered from context — ${decision.reason}`, "info");
-          }
+          notify(ctx, `Plan mode: answered from context — ${decision.reason}`);
           return {
             content: [
               {
