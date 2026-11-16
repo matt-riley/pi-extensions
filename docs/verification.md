@@ -121,11 +121,21 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Background jobs, real terminal | `node .pi/verify/jobs.mjs` | Real Pi live logs, follow/scroll/resize/cancel, same-PTY input and detach/reattach, Ctrl+C to the program, explicit human line input, real failed exit status, and owned-process cleanup across reload/session/shutdown. Isolated tmux is only the test terminal, not an extension dependency; no personal config or model requests. |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
-The current `deadwood` build does not scan this repository's `.mjs` modules
-and reports unresolved sibling imports plus the intentionally host-provided Pi
-SDK as missing dependencies. Its failure is not a useful dead-code verdict here;
-record that limitation and use the repository's Knip/Fallow gates rather than
-adding runtime dependencies or suppressions to satisfy it.
+The installed `deadwood 0.1.2` reports incomplete analysis for computed imports
+and flags the intentionally host-provided Pi SDK as an unlisted dependency in
+this collection. Its failure is not a clean dead-code verdict; record that gap
+and use the repository’s Knip/Fallow gates rather than adding runtime dependencies
+or suppressions to satisfy it.
+
+For quality changes, run `node .pi/verify/quality.mjs`: independent temporary
+fixtures invoke the real `crap` and `deadwood` binaries, require a known complex
+function and unused file to be reported, and check that the scan preserves source.
+It also exercises the AST comment rule against narration and legitimate JSDoc.
+`npm run smoke` additionally drives `/quality` through real Pi RPC and a scripted
+read/edit, preserving documentation. This proves command/scan/agent wiring, not
+real-model smell detection, generated lint-rule quality or Go parser semantics.
+The native comment rule in this collection is deliberately JS/TS-only; target
+repositories get their own native-rule implementation through the agent workflow.
 
 Choose additional acceptance-specific checks for changes outside that smoke's
 coverage. A green registration stub alone is insufficient. For UI/native work,

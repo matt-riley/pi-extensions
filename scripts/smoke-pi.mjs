@@ -378,6 +378,7 @@ export default function (pi) {
     "skill-search",
     "usage",
     "deslop",
+    "quality",
   ])
     assert.ok(names.has(name), `Missing command ${name}`);
   assert.equal(names.has("influencer"), false, "extracted extension must not load here");
@@ -875,6 +876,43 @@ export default function (pi) {
   assert.match(created, /^# AGENTS\.md\n\nA small Python CLI\./);
   assert.match(created, /Run `pytest` from this directory\./);
   console.log("ok: /agents creates and updates AGENTS.md in a live Pi");
+  execFileSync("git", ["init", "--quiet"], { cwd, timeout: 5000 });
+  const qualitySource =
+    "/** Count tracks processed records. */\nexport let count = 0;\n// increment count\ncount++;\n";
+  await writeFile(path.join(cwd, "quality-smell.ts"), qualitySource);
+  scripted = [
+    { name: "read", arguments: { path: "quality-smell.ts" } },
+    {
+      name: "edit",
+      arguments: {
+        path: "quality-smell.ts",
+        edits: [{ oldText: "// increment count\ncount++;", newText: "count++;" }],
+      },
+    },
+  ];
+  const qualityEvents = await prompt("/quality", true);
+  const qualityRequest = JSON.stringify(resourceRequests.at(-1));
+  assert.match(
+    qualityRequest,
+    /Inspect the whole repository, not just the current diff or comments\./,
+  );
+  assert.match(
+    qualityRequest,
+    /Wire prevention into the repository’s normal check command and existing CI gate\./,
+  );
+  for (const tool of ["crap", "deadwood"]) assert.ok(qualityRequest.includes(tool));
+  assert.ok(
+    qualityEvents.some(
+      (event) => event.type === "tool_execution_end" && event.toolName === "edit" && !event.isError,
+    ),
+  );
+  assert.equal(
+    await readFile(path.join(cwd, "quality-smell.ts"), "utf8"),
+    qualitySource.replace("// increment count\n", ""),
+  );
+  console.log(
+    "ok: /quality scans and dispatches repository-wide cleanup; scripted edit preserves documentation in live Pi",
+  );
   console.log(
     "Offline host smoke passed; model reasoning, UI and external providers were not tested.",
   );

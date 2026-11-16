@@ -1,0 +1,7 @@
+{
+  "name": "pi-quality",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run crap and deadwood, clean up repository-wide code smells and establish native lint prevention",
+  "type": "module"
+}
