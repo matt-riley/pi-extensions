@@ -8,7 +8,7 @@
 // Everything here fails open: no key, a timeout, or a malformed answer means
 // "no opinion", never a blocked or altered spawn. Thresholds live in THRESHOLDS.
 
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { askSystemOne, noulValue, usableNumber } from "../../shared/systemone.mjs";
 import { findStalePaths } from "./stalepaths.mjs";
 
 const TIMEOUT_MS = "6000";
@@ -26,14 +26,6 @@ const THRESHOLDS = {
   /** Above this, flag the worker's diff as beyond the task. */
   outOfScope: 0.6,
 };
-
-function usable(raw) {
-  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
-
-const noul = (answer) => (answer?.type === "noul" ? usable(answer.noul) : null);
 
 const yesNo = (yes, no) => ({ true: yes, false: no });
 
@@ -92,10 +84,10 @@ export function preflightQuestions({ writeCapable }) {
  * undefined); `hints` are advisory lines appended to the child's task.
  */
 export function routePreflight(answers, { writeCapable } = {}) {
-  const selfContained = noul(answers?.self_contained);
-  const deliverable = noul(answers?.has_deliverable);
-  const scope = noul(answers?.has_scope);
-  const decision = noul(answers?.needs_decision);
+  const selfContained = noulValue(answers?.self_contained);
+  const deliverable = noulValue(answers?.has_deliverable);
+  const scope = noulValue(answers?.has_scope);
+  const decision = noulValue(answers?.needs_decision);
 
   if (selfContained !== null && selfContained < THRESHOLDS.selfContained) {
     return {
@@ -209,7 +201,7 @@ export async function triageResult({ agent, task, text, signal, askImpl }) {
   );
   const answer = answers?.outcome;
   if (answer?.type !== "choice" || typeof answer.choice !== "string") return undefined;
-  const confidence = usable(answer.probabilities?.[answer.choice] ?? answer.confidence);
+  const confidence = usableNumber(answer.probabilities?.[answer.choice] ?? answer.confidence);
   return confidence === null ? answer.choice : `${answer.choice} (${confidence.toFixed(2)})`;
 }
 
@@ -221,7 +213,7 @@ export async function checkDiffScope({ task, diff, signal, askImpl }) {
     { task: task.slice(0, MAX_TASK_CHARS), diff },
     { signal, askImpl },
   );
-  const p = noul(answers?.out_of_scope);
+  const p = noulValue(answers?.out_of_scope);
   return p !== null && p > THRESHOLDS.outOfScope
     ? `scope check: diff likely goes beyond the task (p=${p.toFixed(2)}) — review it before accepting`
     : undefined;

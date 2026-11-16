@@ -11,8 +11,7 @@
 // the question becomes "would this be surprising to someone who asked for
 // exactly what the action says it does?".
 
-import { askSystemOne } from "../../shared/systemone.mjs";
-import { usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne, noulValue, scoreValue } from "../../shared/systemone.mjs";
 import { TUNED_MODEL } from "../../shared/jev-ledger.mjs";
 import { humanRequest } from "./provenance.mjs";
 
@@ -48,16 +47,6 @@ export const THRESHOLDS = Object.freeze({
 
 const MAX_REQUEST_CHARS = 600;
 const MAX_ACTION_CHARS = 1500;
-
-function noulValue(answer) {
-  if (!answer || answer.type !== "noul") return null;
-  return usableNumber(answer.noul);
-}
-
-function scoreValue(answer) {
-  if (!answer || answer.type !== "score") return null;
-  return usableNumber(answer.score);
-}
 
 /**
  * The four questions, batched as one request.

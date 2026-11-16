@@ -6,17 +6,13 @@
 // run that failed, a log that reports failures or no tests, and a test count
 // the log never shows are all findings.
 
+import { messageText } from "../../shared/message-text.mjs";
+
 const LOG_CHARS = 4000;
 
 /** The text of a tool result's content, as its last 4,000 characters. */
 export function logText(content) {
-  const text =
-    typeof content === "string"
-      ? content
-      : (Array.isArray(content) ? content : [])
-          .filter((part) => part?.type === "text" && typeof part.text === "string")
-          .map((part) => part.text)
-          .join("\n");
+  const text = messageText(content, "\n");
   return text.length > LOG_CHARS ? text.slice(text.length - LOG_CHARS) : text;
 }
 

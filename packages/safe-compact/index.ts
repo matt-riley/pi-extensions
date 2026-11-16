@@ -18,6 +18,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { positiveNumber } from "../../shared/env-flag.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne, compactionUsage } from "../../shared/systemone-session.mjs";
 import { LOCAL_DESTRUCTIVE, LOCAL_READ } from "../../shared/tool-annotations.mjs";
@@ -122,11 +123,6 @@ type Ask = (request: {
   signal?: AbortSignal;
 }) => Promise<unknown>;
 
-const percentFlag = (raw: unknown, fallback: number) => {
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-};
-
 const minutesAgo = (ageMs: number) => `${Math.floor(ageMs / 60_000)}m ago`;
 
 export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {}) {
@@ -165,8 +161,8 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   let fallback = false;
 
   const thresholds = () => {
-    const hard = Math.min(percentFlag(pi.getFlag("compact-at"), DEFAULT_HARD), MAX_HARD);
-    const soft = Math.min(percentFlag(pi.getFlag("compact-soft-at"), DEFAULT_SOFT), hard - 1);
+    const hard = Math.min(positiveNumber(pi.getFlag("compact-at"), DEFAULT_HARD), MAX_HARD);
+    const soft = Math.min(positiveNumber(pi.getFlag("compact-soft-at"), DEFAULT_SOFT), hard - 1);
     return { soft, hard };
   };
 
@@ -174,8 +170,9 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   const lastCache = (ctx: ExtensionContext) => {
     const message = branchMessages(ctx).findLast((m: any) => m?.role === "assistant");
     return cacheWarmth(message, {
-      minRatio: Math.min(percentFlag(pi.getFlag("compact-cache-at"), DEFAULT_CACHE_AT), 100) / 100,
-      maxAgeMs: percentFlag(pi.getFlag("compact-cache-for"), DEFAULT_CACHE_FOR_MIN) * 60_000,
+      minRatio:
+        Math.min(positiveNumber(pi.getFlag("compact-cache-at"), DEFAULT_CACHE_AT), 100) / 100,
+      maxAgeMs: positiveNumber(pi.getFlag("compact-cache-for"), DEFAULT_CACHE_FOR_MIN) * 60_000,
     });
   };
 

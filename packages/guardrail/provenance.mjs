@@ -11,6 +11,8 @@
 // paraphrase. Pure functions over a session branch; the entry point decides
 // what to do with the answer.
 
+import { messageText } from "../../shared/message-text.mjs";
+
 const MAX_COMMAND_CHARS = 2000;
 const MIN_COMMAND_CHARS = 10;
 const MAX_AGREEMENT_CHARS = 40;
@@ -28,15 +30,6 @@ function messageOf(entry) {
   return entry?.message ?? entry;
 }
 
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join("\n");
-}
-
 const squash = (text) =>
   String(text ?? "")
     .replace(/\s+/g, " ")
@@ -48,7 +41,7 @@ export function humanRequest(branch, maxChars = 600) {
   for (let i = branch.length - 1; i >= 0; i--) {
     const message = messageOf(branch[i]);
     if (message?.role !== "user") continue;
-    const text = textOf(message.content).trim();
+    const text = messageText(message.content, "\n").trim();
     if (text && !isAgreement(text)) return text.slice(0, maxChars);
   }
   return null;
@@ -88,7 +81,7 @@ export function quotedFromOutput(branch, command) {
   const userText = squash(
     messages
       .filter((message) => message?.role === "user")
-      .map((message) => textOf(message.content))
+      .map((message) => messageText(message.content, "\n"))
       .join("\n"),
   );
   if (userText.includes(wanted)) return [];
@@ -112,7 +105,7 @@ export function quotedFromOutput(branch, command) {
   const sources = [];
   for (const message of messages.slice(start)) {
     if (message?.role !== "toolResult" || message.isError === true) continue;
-    if (!squash(textOf(message.content)).includes(wanted)) continue;
+    if (!squash(messageText(message.content, "\n")).includes(wanted)) continue;
     const target = targets.get(message.toolCallId) ?? null;
     if (userPointedAt(userText, target)) continue;
     const label = [message.toolName ?? "tool", target].filter(Boolean).join(" ");

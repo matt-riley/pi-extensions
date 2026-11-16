@@ -1,6 +1,8 @@
 // Mirrors pi 1.4.0 tool_search / codemode searchTools: BM25 over deferred and
 // codemode tools, and the registration rule for which tools start declared.
 
+import { isPlainObject } from "./systemone-request.mjs";
+
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -42,14 +44,10 @@ export function tokenize(text) {
     .map(stem);
 }
 
-function isObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function schemaText(schema, parts) {
-  if (!isObject(schema)) return;
+  if (!isPlainObject(schema)) return;
   if (typeof schema.description === "string") parts.push(schema.description);
-  if (isObject(schema.properties)) {
+  if (isPlainObject(schema.properties)) {
     for (const [name, property] of Object.entries(schema.properties)) {
       parts.push(name);
       schemaText(property, parts);

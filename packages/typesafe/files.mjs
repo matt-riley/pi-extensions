@@ -13,8 +13,8 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, matchesGlob, relative, resolve, sep } from "node:path";
 
 import { blockedBashCommand } from "../../shared/bash-policy.mjs";
-import { excerpt, mapPool, usable } from "../../shared/spans.mjs";
-import { askSystemOne } from "../../shared/systemone.mjs";
+import { excerpt, mapPool } from "../../shared/spans.mjs";
+import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
 import { findRepoRoot, listRepoFiles, normalizeRel } from "../../shared/inventory.mjs";
 import { isEnvFile, isSecretPath } from "../guardrail/policy-targets.mjs";
 import { evaluateBashCommand } from "../guardrail/policy-bash.mjs";
@@ -169,22 +169,22 @@ export async function askFiles({
 
 /** The value a file is ranked by: probability for noul, position for score. */
 function rankValue(answer) {
-  if (answer?.type === "noul") return usable(answer.noul);
-  if (answer?.type === "score") return usable(answer.score);
+  if (answer?.type === "noul") return usableNumber(answer.noul);
+  if (answer?.type === "score") return usableNumber(answer.score);
   return null;
 }
 
 function summarizeAnswer(id, answer) {
   if (answer?.type === "noul") {
-    const value = usable(answer.noul);
+    const value = usableNumber(answer.noul);
     return value === null ? `${id} n/a` : `${id} noul ${value.toFixed(2)}`;
   }
   if (answer?.type === "score") {
-    const value = usable(answer.score);
+    const value = usableNumber(answer.score);
     return value === null ? `${id} n/a` : `${id} score ${value.toFixed(2)}`;
   }
   if (answer?.type === "choice" && typeof answer.choice === "string") {
-    const confidence = usable(answer.confidence);
+    const confidence = usableNumber(answer.confidence);
     return `${id} choice "${answer.choice}"${confidence === null ? "" : ` (${confidence.toFixed(2)})`}`;
   }
   return `${id} n/a`;

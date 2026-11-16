@@ -14,3 +14,15 @@ export function flagOff(value) {
       .toLowerCase(),
   );
 }
+
+/** A positive finite number from a flag or env value, else `fallback`. Blank and junk fall back. */
+export function positiveNumber(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+/** Like positiveNumber, but only a whole number counts. */
+export function positiveInteger(value, fallback) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
+}

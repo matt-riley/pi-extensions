@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
+import { mapPool } from "../shared/spans.mjs";
 import { discoverSkills, rankSkills, resolveRoots } from "../packages/skill-select/library.mjs";
 import { selectSkills } from "../packages/skill-select/select.mjs";
 
@@ -57,27 +58,17 @@ const RUN = {
   },
 };
 
-async function pool(items, worker) {
-  const results = Array.from({ length: items.length });
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: CONCURRENCY }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await worker(items[index]);
-      }
-    }),
-  );
-  return results;
-}
-
 const report = {};
 for (const variant of variants) {
-  const rows = await pool(cases, async (c) => {
-    const started = Date.now();
-    const out = await RUN[variant](c.query);
-    return { ...c, ...out, ms: Date.now() - started };
-  });
+  const rows = await mapPool(
+    cases,
+    async (c) => {
+      const started = Date.now();
+      const out = await RUN[variant](c.query);
+      return { ...c, ...out, ms: Date.now() - started };
+    },
+    CONCURRENCY,
+  );
   const labelled = rows.filter((r) => r.source !== "none");
   const none = rows.filter((r) => r.source === "none");
   const split = (source) => rows.filter((r) => r.source === source);

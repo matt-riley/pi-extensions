@@ -6,19 +6,10 @@
 // path or line range is always real. `ask` is injectable so callers test
 // without a network.
 
-import { askSystemOne } from "./systemone.mjs";
+import { askSystemOne, noulValue } from "./systemone.mjs";
 
 const DEFAULT_MAX_CANDIDATES = 40;
 const DEFAULT_MAX_CANDIDATE_CHARS = 400;
-
-// Number(null) is 0, which would read as a confident "no". Absent stays absent.
-export function usable(raw) {
-  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
-
-export const yes = (answer) => (answer?.type === "noul" ? usable(answer.noul) : null);
 
 /** Head-and-tail excerpt: the start says what it is, the end says how it ended. */
 export function excerpt(text, max) {
@@ -84,7 +75,7 @@ export async function rateCandidates({
       },
       signal,
     });
-    return yes(answers?.rating);
+    return noulValue(answers?.rating);
   });
 }
 

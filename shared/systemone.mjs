@@ -270,6 +270,16 @@ export function usableNumber(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+/** A noul answer's probability, or null when the answer is absent or another type. */
+export function noulValue(answer) {
+  return answer?.type === "noul" ? usableNumber(answer.noul) : null;
+}
+
+/** A score answer's value, or null when the answer is absent or another type. */
+export function scoreValue(answer) {
+  return answer?.type === "score" ? usableNumber(answer.score) : null;
+}
+
 /** Render answers as compact text for the model to read. */
 export function formatAnswers({ model, usage, answers, redactions, privacyRedactions } = {}) {
   const lines = [];

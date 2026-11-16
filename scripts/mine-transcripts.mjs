@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { messageText } from "../shared/message-text.mjs";
 
 const SESSIONS_DIR = path.join(homedir(), ".pi", "agent", "sessions");
 const MAX_TEXT = 400;
@@ -70,15 +71,6 @@ export function parseArgs(argv) {
   return opts;
 }
 
-function messageText(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((part) => part && part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n");
-}
-
 // Pure: one transcript's raw JSONL lines -> that transcript's user messages,
 // oldest first. Malformed lines are skipped. cwd tracks the session header.
 export function extractUserMessages(lines, source = "") {
@@ -97,7 +89,7 @@ export function extractUserMessages(lines, source = "") {
     }
     const message = entry?.message;
     if (entry?.type !== "message" || message?.role !== "user") continue;
-    const text = messageText(message.content).replace(/\s+/g, " ").trim();
+    const text = messageText(message.content, "\n").replace(/\s+/g, " ").trim();
     if (!text) continue;
     const raw = entry.timestamp ?? message.timestamp;
     const ts = typeof raw === "number" ? new Date(raw).toISOString() : (raw ?? "");
@@ -137,7 +129,7 @@ export function extractContext(lines, line, source = "") {
           .map((part) => `${part.name}(${JSON.stringify(part.arguments)})`)
           .join("\n")
       : "";
-    const text = [messageText(message.content), calls].filter(Boolean).join("\n");
+    const text = [messageText(message.content, "\n"), calls].filter(Boolean).join("\n");
     result.push({
       source,
       line: index + 1,

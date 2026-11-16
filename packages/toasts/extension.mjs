@@ -1,4 +1,5 @@
 // Top-right toast overlay: reroute extension ctx.ui.notify in TUI mode only.
+import { positiveNumber } from "../../shared/env-flag.mjs";
 import { createToastQueue, createToastStack } from "./toast.mjs";
 
 const WIDGET_KEY = "toasts:bridge";
@@ -7,12 +8,7 @@ const MIN_HEIGHT = 8;
 
 /** @param {Record<string, string | undefined>} env */
 export function readToastSettings(env = process.env) {
-  const num = (key, fallback) => {
-    const raw = env[key];
-    if (raw === undefined || raw === "") return fallback;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
+  const num = (key, fallback) => positiveNumber(env[key], fallback);
   return {
     capture: env.PI_TOAST_CAPTURE !== "0",
     width: num("PI_TOAST_WIDTH", 44),

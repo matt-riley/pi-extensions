@@ -9,6 +9,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { positiveNumber } from "../../shared/env-flag.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { buildCoachQuestions } from "./battery.mjs";
@@ -36,10 +37,8 @@ type CoachExec = (
 
 type CoachFetch = typeof fetch;
 
-function envNumber(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
+const envNumber = (name: string, fallback: number): number =>
+  positiveNumber(process.env[name], fallback);
 
 function notify(ctx: ExtensionContext, text: string, level = "info") {
   try {

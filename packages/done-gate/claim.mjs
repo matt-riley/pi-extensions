@@ -15,8 +15,7 @@
 // no line at all, because a missing sentence is a smaller problem than a run
 // that cannot finish.
 
-import { askSystemOne } from "../../shared/systemone.mjs";
-import { usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne, noulValue } from "../../shared/systemone.mjs";
 
 /** Short on purpose: the run has finished and the person is waiting for it. */
 export const CLAIM_TIMEOUT_MS = 4000;
@@ -29,11 +28,6 @@ const THRESHOLDS = {
 
 const MAX_CLAIM_CHARS = 1500;
 const MAX_FILES = 50;
-
-function noulValue(answer) {
-  if (!answer || answer.type !== "noul") return null;
-  return usableNumber(answer.noul);
-}
 
 /**
  * The two questions, batched as one request.

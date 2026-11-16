@@ -14,8 +14,7 @@
 // At most MAX_REPORTS notes per file per user prompt. A third would be the
 // extension arguing with a sentence the agent has already decided to keep.
 
-import { isAbsolute, relative, resolve, sep } from "node:path";
-
+import { repoRelativePath } from "../../shared/paths.mjs";
 import { addedFindings, findSlop, formatFindings, worthReporting } from "./patterns.mjs";
 import { verifyFindings, verifyRewrite } from "./verify.mjs";
 
@@ -30,14 +29,6 @@ export function createDeslopState() {
 export function resetDeslopState(state) {
   state.pending.clear();
   state.reports.clear();
-}
-
-/** The edited path relative to the session cwd, or null when it is outside it. */
-function repoRelativePath(cwd, path) {
-  if (typeof cwd !== "string" || !cwd) return path;
-  const rel = relative(resolve(cwd), resolve(cwd, path));
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-  return rel;
 }
 
 /**

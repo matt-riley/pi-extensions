@@ -5,7 +5,7 @@
 // says so when no skill fits. Strictly fail-open: disabled, keyless, a provider
 // error or an unusable answer all leave the lexical order untouched.
 
-import { flagOff } from "../../shared/env-flag.mjs";
+import { flagOff, positiveInteger } from "../../shared/env-flag.mjs";
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { DEFAULT_LIMIT, rankSkills } from "./library.mjs";
@@ -30,10 +30,7 @@ export function tiebreakEnabled(env = process.env) {
 
 /** A usable override only; a blank or junk value must not fall back to 30s. */
 function shortBudget(env) {
-  const configured = Number(env?.TYPESAFE_TIMEOUT_MS);
-  return Number.isInteger(configured) && configured > 0
-    ? String(configured)
-    : String(TIEBREAK_TIMEOUT_MS);
+  return String(positiveInteger(env?.TYPESAFE_TIMEOUT_MS, TIEBREAK_TIMEOUT_MS));
 }
 
 // Why not just break ties? A tiebreak can only reorder the lexical top few, so a

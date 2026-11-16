@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { messageText } from "../shared/message-text.mjs";
 import { tokensFromUsage } from "../packages/subagents/result.mjs";
 import { findSessionFiles, percentile } from "./lib/sessions.mjs";
 
@@ -74,7 +75,7 @@ function readKeys(message, cwd) {
 function transcriptOf(message) {
   const fromDetails = message?.details?.transcript;
   if (typeof fromDetails === "string" && fromDetails.trim()) return fromDetails.trim();
-  const match = textOf(message?.content).match(/(?:^|\n)transcript: ([^\n]+)/);
+  const match = messageText(message?.content, "\n").match(/(?:^|\n)transcript: ([^\n]+)/);
   return match ? match[1].trim() : null;
 }
 
@@ -117,15 +118,6 @@ function timeOf(record) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-}
-
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n");
 }
 
 function argsOf(call) {
@@ -248,7 +240,7 @@ function spawnsFromFile(file) {
       : (open[0] ?? null);
     if (!spawn) continue;
     open.splice(open.indexOf(spawn), 1);
-    const body = textOf(message.content);
+    const body = messageText(message.content, "\n");
     if (message.isError === true || body.startsWith("Task rejected:")) {
       spawns.splice(spawns.indexOf(spawn), 1);
       continue;

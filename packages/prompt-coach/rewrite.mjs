@@ -16,6 +16,7 @@
 // the environment still works as an override and, when set, wins.
 
 import { flagOff } from "../../shared/env-flag.mjs";
+import { messageText } from "../../shared/message-text.mjs";
 import { gatherProjectContext } from "./context.mjs";
 import { READ_TOOLS, runReadTool } from "./readtools.mjs";
 
@@ -116,15 +117,6 @@ const SYSTEM_PROMPT = [
 
 function endpoint(baseUrl) {
   return `${String(baseUrl).replace(/\/$/, "")}/chat/completions`;
-}
-
-function textFromContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join(" ");
 }
 
 function stripFence(text) {
@@ -293,7 +285,7 @@ async function rewriteViaEnvKey({
       for (const call of calls) messages.push(await answerToolCall(call, cwd, filesRead));
       continue;
     }
-    const text = textFromContent(message?.content);
+    const text = messageText(message?.content);
     if (!text.trim()) throw new Error(`${provider.name} rewrite returned no text`);
     return {
       text: stripFence(text),

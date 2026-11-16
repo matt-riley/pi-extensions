@@ -28,7 +28,7 @@ import { readFileSync, statSync, realpathSync, lstatSync, readlinkSync } from "n
 import { isAbsolute, resolve, dirname, basename, join } from "node:path";
 
 import { OWNED_TOOL_NAMES } from "../../shared/tool-annotations.mjs";
-import { flagOff } from "../../shared/env-flag.mjs";
+import { flagOff, positiveNumber } from "../../shared/env-flag.mjs";
 import { createDialogQueue } from "../../shared/dialog-queue.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { evaluateToolCall } from "./policy.mjs";
@@ -56,8 +56,7 @@ const DENY = "⛔ Deny";
 const SUGGEST = "✏️ Suggest an alternative";
 
 function timeoutMs(env = process.env) {
-  const value = Number(env?.PI_GUARDRAIL_TIMEOUT_MS);
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
+  return positiveNumber(env?.PI_GUARDRAIL_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
 }
 
 /** One-line rendering of what is about to run. */

@@ -8,6 +8,7 @@
 // scrubbed with the same literals the request used, in case one echoes a key.
 
 import { redactSecrets } from "./redact.mjs";
+import { isPlainObject } from "./systemone-request.mjs";
 
 const FRAME_SKIP = /\/(?:shared\/(?:systemone|jev-ledger)\.mjs|node_modules\/|test\/)/;
 
@@ -220,10 +221,6 @@ export function buildLedgerEntry({
     ...(typeof errorClass === "string" ? { errorClass } : {}),
     ...(Number.isInteger(status) ? { status } : {}),
   };
-}
-
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** A ledger object, or a session custom entry of type jev-decision. Anything else is dropped. */

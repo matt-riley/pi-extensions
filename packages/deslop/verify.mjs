@@ -16,7 +16,7 @@
 // false`, and the caller falls back to what the deterministic check can stand
 // behind on its own.
 
-import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne, noulValue } from "../../shared/systemone.mjs";
 
 /** Short on purpose: this rides on an edit result the agent is waiting for. */
 const VERIFY_TIMEOUT_MS = 4000;
@@ -31,11 +31,6 @@ export const THRESHOLDS = Object.freeze({
   meaningPreserved: 0.5,
   stillFormulaic: 0.7,
 });
-
-function noulValue(answer) {
-  if (!answer || answer.type !== "noul") return null;
-  return usableNumber(answer.noul);
-}
 
 // Drop the last word when truncating: a cut credential cannot be recognised by
 // the shared redactor at the transport boundary.

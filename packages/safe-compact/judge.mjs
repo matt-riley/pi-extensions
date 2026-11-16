@@ -5,8 +5,8 @@
 // that segment.mjs produced. `ask` is injectable so the whole module runs in
 // tests without a network.
 
-import { askSystemOne } from "../../shared/systemone.mjs";
-import { excerpt, mapPool, rateCandidates, topIndices, usable, yes } from "../../shared/spans.mjs";
+import { askSystemOne, noulValue, scoreValue, usableNumber } from "../../shared/systemone.mjs";
+import { excerpt, mapPool, rateCandidates, topIndices } from "../../shared/spans.mjs";
 
 import { trimForScoring } from "./scoring-text.mjs";
 
@@ -92,14 +92,14 @@ export async function judgeSegment({ goal, segment, next, ask = askSystemOne, si
   });
   const choice = answers?.disposition;
   return {
-    load_bearing: yes(answers?.load_bearing),
-    user_constraint: yes(answers?.user_constraint),
-    decision: yes(answers?.decision),
-    unresolved: yes(answers?.unresolved),
-    recoverable: yes(answers?.recoverable),
+    load_bearing: noulValue(answers?.load_bearing),
+    user_constraint: noulValue(answers?.user_constraint),
+    decision: noulValue(answers?.decision),
+    unresolved: noulValue(answers?.unresolved),
+    recoverable: noulValue(answers?.recoverable),
     disposition:
       choice?.type === "choice" && typeof choice.choice === "string" ? choice.choice : null,
-    confidence: usable(choice?.confidence),
+    confidence: usableNumber(choice?.confidence),
   };
 }
 
@@ -177,12 +177,11 @@ export async function judgeMoment({
     },
     signal,
   });
-  const midFlight = yes(answers?.mid_flight);
-  const completed = yes(answers?.completed);
-  const debugging = yes(answers?.debugging);
-  const switched = yes(answers?.switched_gears);
-  const needsHistory =
-    answers?.needs_history?.type === "score" ? usable(answers.needs_history.score) : null;
+  const midFlight = noulValue(answers?.mid_flight);
+  const completed = noulValue(answers?.completed);
+  const debugging = noulValue(answers?.debugging);
+  const switched = noulValue(answers?.switched_gears);
+  const needsHistory = scoreValue(answers?.needs_history);
   // Unknown counts against compacting: waiting one more turn is cheap.
   const settled = midFlight !== null && debugging !== null;
   const finished = (completed ?? 0) >= 0.5 || (settled && midFlight < 0.4 && debugging < 0.4);
@@ -214,7 +213,7 @@ export function verifyEntries({ entries, ask = askSystemOne, signal }) {
       },
       signal,
     });
-    return yes(answers?.faithful);
+    return noulValue(answers?.faithful);
   });
 }
 
@@ -269,6 +268,6 @@ export function verifyCoverage({ handoff, segments, ask = askSystemOne, signal }
       },
       signal,
     });
-    return yes(answers?.covered);
+    return noulValue(answers?.covered);
   });
 }

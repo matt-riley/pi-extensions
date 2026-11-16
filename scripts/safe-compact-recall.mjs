@@ -18,7 +18,8 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { memoizeAsk } from "../packages/safe-compact/plan.mjs";
-import { mapPool, yes } from "../shared/spans.mjs";
+import { mapPool } from "../shared/spans.mjs";
+import { noulValue } from "../shared/systemone.mjs";
 import { askSystemOne } from "../shared/systemone.mjs";
 import { validateRequest } from "../shared/systemone-request.mjs";
 
@@ -286,7 +287,7 @@ export async function examine({
         questions: retentionQuestion(),
         signal,
       });
-      return yes(answers?.conveyed);
+      return noulValue(answers?.conveyed);
     },
     CONCURRENCY,
   );

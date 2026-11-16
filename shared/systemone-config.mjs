@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { positiveInteger } from "./env-flag.mjs";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
 
@@ -15,11 +16,6 @@ const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
 export const DEFAULT_MODEL = "jev-1.13.0";
 
 const DEFAULT_TIMEOUT_MS = 30000;
-
-function positiveInteger(value, fallback) {
-  const numeric = Number(value);
-  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
-}
 
 function normalizeBaseUrl(value) {
   const raw = String(value ?? "").trim() || DEFAULT_BASE_URL;
