@@ -9,7 +9,10 @@ plan and all content outside the bounded section below. If the marker already
 exists more than once, or its closing marker is missing, report the ambiguity
 rather than rewriting the file. Create the file only when it does not exist.
 
-On `save` (the default), update only one section between these exact markers:
+On `save` (the default), first reach a safe pause: finish or back out the current
+atomic step, start nothing new, and leave no child running (wait for it, or ask me
+to stop it with `/subagents`). Then update only one section between these exact
+markers:
 
 ```markdown
 <!-- delegated-task:start -->
@@ -20,13 +23,15 @@ On `save` (the default), update only one section between these exact markers:
 - Completed acceptance evidence: criterion, command/result, source transcript:
 - Remaining work and unexercised criteria:
 - Blocker or required decision:
-- Next action:
+- Tree state: clean, or the uncommitted paths and why they are left:
+- First action on resume:
 <!-- delegated-task:end -->
 ```
 
 Keep it short: source pointers rather than pasted logs; distinguish execution
 completion from verified acceptance. Preserve existing evidence with its original
 revision instead of silently relabeling it current. Do not copy credentials.
+After saving, tell me whether the working tree is clean and what the first action on resume is.
 
 On `resume`, read the section and relevant evidence, then compare its revision
 and scope with current Git state and the user's latest request. Stale evidence

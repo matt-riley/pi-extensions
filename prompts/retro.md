@@ -38,4 +38,8 @@ Review what this session did and save durable memories so future sessions benefi
 - A blocker -> `blocker`
 - Something left unfinished for a future session -> `open_loop`
 
-Use the repository scope for project-specific items and global otherwise. At the end, list what you saved and what the check changed (updated, amended, or kept as new). Do not edit code.
+Use the repository scope for project-specific items and global otherwise.
+
+5. A learning about how a skill or prompt in this collection should behave is not a memory. Propose it as an edit to that file (the problem, the proposed text, the file) and list it for approval; do not save it with lore_save and do not apply it. Anything a lint or script could enforce goes to `.pi/garden.md` (the `/garden` queue) instead.
+
+At the end, list what you saved, what the check changed (updated, amended, or kept as new), and the proposed skill or prompt edits awaiting approval. Do not edit code.

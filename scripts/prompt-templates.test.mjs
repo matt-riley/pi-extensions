@@ -75,3 +75,50 @@ test("blast proves the one safety fact by a run and leaves the code under review
     "Do not edit the code under review. Scratch scripts go outside the tree and are deleted after.",
   ]);
 });
+
+test("catchup is read-only and lists only decisions the reply alone can settle", async () => {
+  const text = await prompt("catchup");
+  assertFrontmatter(text, "[focus]");
+  assert.ok(text.includes("${@:-this session}"), "the focus argument reaches the model");
+  assertSentences(text, [
+    "This is read-only: do not edit files, start work or launch children.",
+    "What changed since my last message, in under 100 words",
+    "Each one must be decidable from your reply alone: the call I have to make, your pick, what it changes, the evidence, and the risk.",
+    "Work you can still do yourself is not an item.",
+  ]);
+});
+
+test("handoff save pauses safely and records the tree state and first resume action", async () => {
+  const text = await prompt("handoff");
+  assertSentences(text, [
+    "first reach a safe pause: finish or back out the current\natomic step, start nothing new, and leave no child running",
+    "- Tree state: clean, or the uncommitted paths and why they are left:",
+    "- First action on resume:",
+    "After saving, tell me whether the working tree is clean and what the first action on resume is.",
+  ]);
+});
+
+test("recall sweeps the shared record and tags every thread with one status", async () => {
+  const text = await prompt("recall");
+  assertSentences(text, [
+    "When the topic names a feature or bug, also sweep the shared record:",
+    "reverts via `git log --oneline --grep=Revert`. Reverted fixes are what transcripts alone miss.",
+    "Give each thread exactly one status tag: `[merged #N]`, `[open PR #N]`, `[in flight <branch>]`, `[verified, uncommitted]`, `[reverted #N]` or `[planned, not started]`.",
+  ]);
+});
+
+test("retro routes collection behaviour to a proposed file edit, not a memory", async () => {
+  const text = await prompt("retro");
+  assertSentences(text, [
+    "A learning about how a skill or prompt in this collection should behave is not a memory.",
+    "Propose it as an edit to that file (the problem, the proposed text, the file) and list it for approval; do not save it with lore_save and do not apply it.",
+    "Anything a lint or script could enforce goes to `.pi/garden.md` (the `/garden` queue) instead.",
+  ]);
+});
+
+test("implementation review points at a run-proven check for findings that matter", async () => {
+  const text = await read(".agents/skills/implementation-review/SKILL.md");
+  assertSentences(text, [
+    "When a finding matters enough to prove by a run, recommend `/interrogate` for it rather than asserting it harder.",
+  ]);
+});
