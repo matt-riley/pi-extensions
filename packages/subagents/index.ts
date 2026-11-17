@@ -7,14 +7,14 @@ import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combineSignals } from "./combine-signals.mjs";
-import { CROSS_FAMILY, resolveCrossFamily } from "./cross-family.mjs";
+import { CROSS_FAMILY, resolveCrossFamily, resolvePanel } from "./cross-family.mjs";
 import { physicalParentKeyForCrossFamily } from "../router/parent-physical.mjs";
 import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
-import { OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
+import { LOCAL_READ, OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
 import { orchestratorPrompt, TASK_DESCRIPTION, TOOL_DESCRIPTION } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
@@ -493,6 +493,28 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       return "";
     }
   }
+
+  pi.registerTool({
+    name: "review_panel",
+    label: "review_panel",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Seats for a multi-model panel: up to three authenticated models, one per vendor, from roles.panel in " +
+      "~/.pi/agent/router.json, else its tiers; plus a judge outside the parent's vendor from roles.judge. " +
+      "Returns {seats, judge?, notes}. A panel with fewer than two vendors says so: it repeats one set of " +
+      "blind spots. Pass each seat as subagent's model. Reads config only.",
+    promptSnippet:
+      "review_panel(): model seats (one per vendor) and a judge for interrogate or arena",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const routerFile = path.join(getAgentDir(), "router.json");
+      const panel = await resolvePanel(ctx?.modelRegistry, ctx?.model, routerFile, {
+        physicalParentKey: physicalParentKeyForCrossFamily(ctx?.model, ctx, routerFile),
+      });
+      return { content: [{ type: "text", text: JSON.stringify(panel) }], details: panel };
+    },
+  });
 
   pi.registerCommand("subagents", {
     description: "Toggle subagents on/off, or steer/stop a running child",

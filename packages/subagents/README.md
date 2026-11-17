@@ -67,6 +67,35 @@ tree.
   left no commit and no change. Otherwise it is kept and `/subagents` lists it;
   `git worktree remove <path>` deletes it once grafted.
 
+## Panels
+
+`review_panel()` (deferred, read-only) returns
+`{ seats: string[], judge?: string, notes: string[] }` for skills that fan out
+across models (`interrogate`, `arena`). Pass each seat as a child's `model`.
+
+- **One seat per vendor.** Seats are distinct vendors as `modelFamily` reads them
+  from the model id, so `claude-fable-*` and `claude-opus-*` share one seat: two
+  models from one vendor tend to share its blind spots. At most three seats.
+- **Seats** come from `roles.panel` in `~/.pi/agent/router.json`, in order, then
+  from the `frontier`, `mid` and `base` tiers. Only authenticated models count.
+- **The judge** is the first `roles.judge` entry (else the panel list, then the
+  tiers) that is authenticated and outside the parent's vendor. With the parent
+  on `router/auto`, the vendor comes from its last physical model.
+- A panel with fewer than two vendors, and a missing judge, come back as notes.
+  Skills report them: a one-vendor panel is the same blind spots repeated.
+
+```json
+{
+  "frontier": ["claude-opus-5-5", "gpt-5.6-sol"],
+  "roles": {
+    "panel": ["claude-fable-5-2", "gemini-4-carbon", "gpt-5.6-sol"],
+    "judge": ["claude-opus-5-5", "gemini-4-carbon"]
+  }
+}
+```
+
+The router ignores `roles`; only this package reads it.
+
 ## Briefs and when to delegate
 
 A child sees only its brief, so the orchestrator prompt, the tool text and the
