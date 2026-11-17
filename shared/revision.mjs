@@ -9,6 +9,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 const run = promisify(execFile);
 
+// How many characters of a commit sha, patch id or tree id a reply shows. One
+// number, so the same value is not cut at 12 on one surface and 16 on another.
+const SHORT_SHA = 12;
+
+/** A hash as the short form a reply or a row displays; a missing one is "". */
+export const shortSha = (value, width = SHORT_SHA) => String(value ?? "").slice(0, width);
+
 export async function revisionSnapshot(cwd) {
   try {
     const git = async (...args) =>

@@ -6,7 +6,7 @@
 // patch stays the same, and an amended commit keeps a branch name while the
 // patch changes.
 
-import { defaultBase, patchId } from "./revision.mjs";
+import { defaultBase, patchId, shortSha } from "./revision.mjs";
 
 export const VERDICT_ENTRY = "verifier-verdict";
 
@@ -72,7 +72,7 @@ export function latestVerdict(branch) {
  */
 export function verifiedLine(verdict, currentPatchId) {
   if (!verdict) return "verified: no verdict recorded";
-  const at = String(verdict.head ?? "").slice(0, 12) || "an unknown commit";
+  const at = shortSha(verdict.head) || "an unknown commit";
   if (verdict.verdict !== "verified")
     return `verified: no (latest verifier verdict was ${verdict.verdict ?? "unreadable"} at ${at})`;
   if (!verdict.patchId)

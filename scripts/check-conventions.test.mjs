@@ -8,6 +8,7 @@ import {
   checkSkillReferences,
   controlByteErrors,
   fileSizeReport,
+  harnessIsolationErrors,
   runtimeImports,
   scriptEntryErrors,
   sharedHelperErrors,
@@ -121,6 +122,54 @@ test("an importable script must guard its entry point, and a mention is not a re
   );
 });
 
+test("a terminal harness must isolate the pi config it runs against", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "harness-isolation-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, ".pi", "verify"), { recursive: true });
+  const write = (name, source) => writeFileSync(path.join(root, ".pi", "verify", name), source);
+  // The four assignments a real harness writes, then the session pi runs under.
+  const ALL =
+    'const env = ["HOME=" + fixture, "XDG_CONFIG_HOME=" + fixture, ' +
+    '"PI_CODING_AGENT_DIR=" + agent, "PI_CODING_AGENT_SESSION_DIR=" + sessions];\n';
+  const LAUNCH = 'tmux("new-session", "-d", "-s", "ui", "pi");\n';
+
+  write("good.mjs", ALL + LAUNCH);
+  assert.deepEqual(harnessIsolationErrors(root), []);
+
+  // One missing variable is one finding, named so the fix is obvious.
+  write("missing-home.mjs", ALL.replace('"HOME=" + fixture, ', "") + LAUNCH);
+  assert.deepEqual(
+    harnessIsolationErrors(root).map((error) => error.split(":")[0]),
+    [".pi/verify/missing-home.mjs"],
+  );
+  assert.match(harnessIsolationErrors(root)[0], /without HOME=, so the run can reach/);
+
+  // A comment naming the variables is not an assignment, a value built in a
+  // template literal is, and a script that starts no session is out of scope.
+  write(
+    "prose-only.mjs",
+    "// HOME= XDG_CONFIG_HOME= PI_CODING_AGENT_DIR= PI_CODING_AGENT_SESSION_DIR=\n" + LAUNCH,
+  );
+  write(
+    "built.mjs",
+    'const env = ["HOME=" + fixture, "XDG_CONFIG_HOME=" + fixture];\n' +
+      "const dir = \x60PI_CODING_AGENT_DIR=\x24{agent}\x60;\n" +
+      "const sessions = \x60PI_CODING_AGENT_SESSION_DIR=\x24{root}\x60;\n" +
+      LAUNCH,
+  );
+  write("no-session.mjs", 'console.log("nothing to launch");\n');
+  const files = harnessIsolationErrors(root).map((error) => error.split(":")[0]);
+  assert.deepEqual(
+    [...new Set(files)],
+    [".pi/verify/missing-home.mjs", ".pi/verify/prose-only.mjs"],
+    "a comment does not satisfy the rule, a built value does, and no session is out of scope",
+  );
+  assert.equal(
+    files.filter((file) => file.endsWith("prose-only.mjs")).length,
+    4,
+    "one finding per missing variable, so the fix is a checklist",
+  );
+});
 test("runtime imports distinguish erased types, mixed bindings, empty imports and dynamic imports", () => {
   const found = runtimeImports(
     `

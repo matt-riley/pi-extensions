@@ -12,6 +12,7 @@
 // escape that would repaint the terminal.
 
 import { flagOff } from "../../shared/env-flag.mjs";
+import { shortSha } from "../../shared/revision.mjs";
 import { VERDICT_ENTRY } from "../../shared/verdict.mjs";
 
 export const ROUTER_DECISION = "router-decision";
@@ -204,13 +205,13 @@ const VERDICT_TONE = { verified: "success", failed: "error" };
 
 function verifierVerdict(data) {
   const verdict = clean(data.verdict) || "unreadable";
-  const head = clean(data.head).slice(0, 12);
+  const head = shortSha(clean(data.head));
   return {
     tag: "verifier",
     tone: VERDICT_TONE[verdict] ?? "warning",
     head: join([verdict, head && `at ${head}`]),
     details: details([
-      detail("patch id", clean(data.patchId).slice(0, 16) || null),
+      detail("patch id", shortSha(clean(data.patchId)) || null),
       detail("base", data.base),
       detail("run", data.id),
       detail("at", data.at),
