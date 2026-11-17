@@ -5,3 +5,4 @@ coverage/
 PLAN.md
 .pi/cache/
 PLAN.md.*
+!packages/router/playbooks/plan.md
