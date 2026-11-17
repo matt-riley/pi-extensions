@@ -402,6 +402,32 @@ function decorateLine(line, palette, open, close, marks) {
   return inBold ? result + close : result;
 }
 
+const PILL = /\[\[([^[\]\n]{1,32})\]\]/g;
+
+/**
+ * A heading's icon comes from its words, not its pills, so `## Scope [[Observed]]`
+ * is iconed as Scope. Pills outside inline code are drawn as in prose.
+ */
+function decorateHeading(title, palette, marks) {
+  const words = title.replace(PILL, "").trim();
+  const iconned = withLabelIcon(words, palette);
+  const icon = iconned.slice(0, iconned.length - words.length);
+  if (!palette.pills) return icon + title;
+  const parts = title.split(/(`+[^`]*?`+)/g);
+  return (
+    icon +
+    parts
+      .map((part, i) =>
+        i % 2
+          ? part
+          : part.replace(PILL, (match, label) =>
+              label.trim() ? pill(label, palette, marks.unchecked) : match,
+            ),
+      )
+      .join("")
+  );
+}
+
 /**
  * Apply colors to assistant Markdown, leaving fenced code and inline code alone.
  * `marks.unchecked` draws checked-claim pills as questions; `marks.stale` is a
@@ -422,8 +448,13 @@ export function decorate(markdown, palette, marks = {}) {
       fence = fenceMatch[1];
       out.push(line);
     } else if (HEADING.test(line)) {
-      // pi already colors headings; they only take an icon.
-      out.push(line.replace(HEADING, (_, hashes, title) => hashes + withLabelIcon(title, palette)));
+      // pi already colors headings; they take an icon and their pills.
+      out.push(
+        line.replace(
+          HEADING,
+          (_, hashes, title) => hashes + decorateHeading(title, palette, marks),
+        ),
+      );
     } else {
       out.push(decorateLine(line, palette, open, close, marks));
     }
@@ -441,7 +472,7 @@ export function replyGuidance() {
     "These rules shape replies written to the user in this terminal. It colors pills, adds icons, and cannot change text size.",
     "",
     `- **Label every reply.** Start the first substantive line with a bold label, even for a one-line update, and give each subject in a multi-part reply a short heading or a bullet with a bold lead label. Write the label as a plain word; the terminal adds its icon. Never type icon glyphs. Labels with an icon: ${titled(Object.keys(LABEL_ICONS))}. Prefer these; any other label shows without an icon.`,
-    "- **Shape follows information.** Use `├──` and `└──` for what belongs to what, `→` for a sequence, `✓` or `✗` beside a checked item. Write tree rows as indented lines directly under their parent with no list dash, one line per row. A one-line answer can stay one line.",
+    "- **Shape follows information.** Use `├──` and `└──` for what belongs to what, `→` for a sequence, `✓` or `✗` beside a checked item. Write tree rows as indented lines directly under their parent with no list dash, one line per row. Keep tree rows and pills out of code fences: nothing inside a fence is drawn. A one-line answer can stay one line.",
     "- **Bold the anchor terms.** Bold the projects, components, choices and statuses under discussion where they carry the point: a first mention in a section, a bullet's lead label such as **Cause:**, and the decision the user must make. One to three bold spans per paragraph or bullet; bolding every noun erases the signal.",
     "- **Pills are required, not optional.** A pill is `[[Word]]` beside the subject it describes; the terminal colors it and adds its icon from the word. A pill names a state or an ask, never an adjective. Use exactly these words so the same state always reads the same:",
     `  - **Red, something is wrong:** ${pills(v.error.core)}. Every failure and blocker carries one.`,

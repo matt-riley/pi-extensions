@@ -36,7 +36,7 @@ There is nothing to configure after you [install the collection](../../README.md
    failure, ask and unchecked claim carries a pill, and that each attention pill
    is followed by its action (**Check:**, **Do:**, **Next:** …). The word lists
    are read from the same tables that color the pills, so the rules and the
-   drawing cannot drift apart. It is about 1,500 tokens (5,935 characters) on
+   drawing cannot drift apart. It is about 1,500 tokens (6,013 characters) on
    every request; it never changes within a session, so after the first request
    it is normally read from the prompt cache. It shows in safe-compact's
    `view_context` size view. RPC, JSON and print runs get no section, because
@@ -65,7 +65,10 @@ asks for where a check ran (`[[Passed locally]]` against `[[Passed on CI]]`),
 because a local pass is not a CI pass.
 
 Headings and leading bold labels such as **Cause:**, **Fix:**, **Risk:**,
-**Plan:** and **Next:** take an icon from their word. `✓` takes the success
+**Plan:** and **Next:** take an icon from their word. A pill at the end of a
+heading (`## Scope [[Observed]]`) is drawn as in prose; put it last, because its
+closing reset can end pi's heading color for any text after it. Pills inside a
+code fence are left as typed. `✓` takes the success
 color, `✗` the error color, `→` the accent color, and `├──`/`└──` are dimmed.
 
 ## Tied to the collection
