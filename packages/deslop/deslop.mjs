@@ -42,11 +42,10 @@ export function changeOf(toolName, input) {
   if (toolName === "write") {
     return typeof input?.content === "string" ? { before: "", after: input.content } : null;
   }
-  const edits = Array.isArray(input?.edits)
-    ? input.edits
-    : typeof input?.newText === "string"
-      ? [{ oldText: input.oldText, newText: input.newText }]
-      : [];
+  let edits = [];
+  if (Array.isArray(input?.edits)) edits = input.edits;
+  else if (typeof input?.newText === "string")
+    edits = [{ oldText: input.oldText, newText: input.newText }];
   const usable = edits.filter((edit) => typeof edit?.newText === "string");
   if (usable.length === 0) return null;
   return {
@@ -67,11 +66,10 @@ function evidence(judged) {
 
 /** The note for a first pass. Advice, in the source skills' own terms. */
 function findingsNote(path, findings, judged, verify) {
-  const verified = judged?.judged
-    ? `TypeSafe reads them as making the text worse for its reader${evidence(judged)}.`
-    : verify
-      ? "TypeSafe was unavailable, so this is the pattern check alone."
-      : "TypeSafe verification is switched off, so this is the pattern check alone.";
+  let verified = "TypeSafe verification is switched off, so this is the pattern check alone.";
+  if (judged?.judged)
+    verified = `TypeSafe reads them as making the text worse for its reader${evidence(judged)}.`;
+  else if (verify) verified = "TypeSafe was unavailable, so this is the pattern check alone.";
   return [
     `deslop: the text this edit added to ${path} carries machine-writing patterns. ${verified}`,
     formatFindings(findings),

@@ -206,13 +206,12 @@ function main() {
   if (report.decisions.count) {
     const position = report.decisions.thresholdPosition;
     if (position) {
+      let note = "";
+      if (position.percentile < 0.1) note = "  <- escalates almost everything";
+      else if (position.percentile > 0.95) note = "  <- escalates almost nothing";
       console.log(
         `\n   the threshold sits above ${pct(position.percentile)} of ${num(position.n)} observed ratings` +
-          (position.percentile < 0.1
-            ? "  <- escalates almost everything"
-            : position.percentile > 0.95
-              ? "  <- escalates almost nothing"
-              : ""),
+          note,
       );
     }
     console.log("\n   rating band   n   escalated   held   missed   needless");

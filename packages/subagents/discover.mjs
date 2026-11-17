@@ -25,7 +25,9 @@ const READ_ONLY_DEFAULT_TOOLS = [
 ];
 
 export function parseToolList(value) {
-  const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  let raw = [];
+  if (Array.isArray(value)) raw = value;
+  else if (typeof value === "string") raw = value.split(",");
   const tools = raw
     .filter((item) => typeof item === "string")
     .map((item) => item.trim())

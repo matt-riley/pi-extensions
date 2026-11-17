@@ -257,22 +257,20 @@ async function buildEntries({
       });
       return;
     }
-    const disposition = pinned
-      ? "keep_verbatim"
-      : pointed.has(segment.id)
-        ? "point"
-        : classify(s, segment);
+    let disposition;
+    if (pinned) disposition = "keep_verbatim";
+    else if (pointed.has(segment.id)) disposition = "point";
+    else disposition = classify(s, segment);
     const open = hardKeep(s, segment) ? 1 : 0;
     // Unscored segments weigh the most: not knowing is no reason to cut first.
     const base = { segment, disposition, index, pinned, weight: open + (s?.load_bearing ?? 1) };
     if (disposition === "drop") return;
     if (disposition === "keep_verbatim") {
       const text = excerpt(segment.text, VERBATIM_MAX);
-      const section = constraint
-        ? "constraints"
-        : isOpenProblem(s, segment)
-          ? "problems"
-          : "context";
+      let section;
+      if (constraint) section = "constraints";
+      else if (isOpenProblem(s, segment)) section = "problems";
+      else section = "context";
       entries.push({ ...base, section, text, lossy: text !== segment.text });
     } else if (disposition === "point" && !segment.path) {
       // Command output: name the command, never tell the reader to re-run it

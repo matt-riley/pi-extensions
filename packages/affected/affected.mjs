@@ -72,10 +72,11 @@ async function packageCommands(changed, fileSet, readFile) {
       if (dir === "") break;
     }
     const dir = chosen ?? nearest ?? "";
-    found.set(
-      dir,
-      chosen === null ? null : chosen === "" ? "npm test" : `npm test --workspace ${chosen}`,
-    );
+    let command;
+    if (chosen === null) command = null;
+    else if (chosen === "") command = "npm test";
+    else command = `npm test --workspace ${chosen}`;
+    found.set(dir, command);
   }
   return [...found]
     .sort(([a], [b]) => (a < b ? -1 : 1))
@@ -177,7 +178,9 @@ export async function selectAffected({
       : "(repository)";
     reasons.push(`${entry.kind} ${where} ${entry.detail}`);
   }
-  const mode = wanted.length === 0 ? "nothing" : reasons.length > 0 ? "fallback" : "selected";
+  let mode = "selected";
+  if (wanted.length === 0) mode = "nothing";
+  else if (reasons.length > 0) mode = "fallback";
   const selection = [...selected].sort();
   const complete =
     mode === "selected" && gaps.unreached.length + gaps.nonJs.length + gaps.deleted.length === 0;

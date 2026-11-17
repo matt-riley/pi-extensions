@@ -35,8 +35,11 @@ function fakeAsk({ coverage = () => 0.9, faithful = () => 0.9 } = {}) {
       const noise = text.includes("NOISE");
       const mid = text.includes("MIDMARK");
       const file = state.segment.tool === "read";
+      let loadBearing = 0.3;
+      if (mid) loadBearing = 0.9;
+      else if (noise) loadBearing = 0.05;
       Object.assign(answers, {
-        load_bearing: noul(mid ? 0.9 : noise ? 0.05 : 0.3),
+        load_bearing: noul(loadBearing),
         user_constraint: noul(constraint ? 0.95 : 0.02),
         decision: noul(0.05),
         unresolved: noul(0.02),

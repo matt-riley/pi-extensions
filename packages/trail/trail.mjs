@@ -79,11 +79,10 @@ export async function checkEvidence(evidence, cwd, git) {
     checked += 1;
     const [, written, line] = match;
     if (stale.includes(written)) continue;
-    const file = written.startsWith("~/")
-      ? join(homedir(), written.slice(2))
-      : isAbsolute(written)
-        ? written
-        : resolve(cwd, written);
+    let file;
+    if (written.startsWith("~/")) file = join(homedir(), written.slice(2));
+    else if (isAbsolute(written)) file = written;
+    else file = resolve(cwd, written);
     if (!existsSync(file)) problems.push(`${written} does not exist`);
     else if (!lineExists(file, Number(line))) problems.push(`${written} has no line ${line}`);
   }

@@ -130,8 +130,9 @@ export function routeAnswer(answers, passages, { maxSpans = DEFAULT_MAX_SPANS } 
     .filter((entry) => entry.probability !== null && entry.probability >= 0.5)
     .sort((left, right) => right.probability - left.probability || left.index - right.index);
   const spans = ranked.slice(0, maxSpans);
-  const verdict =
-    answered !== null && answered >= 0.5 ? "answered" : spans.length ? "closest" : "not_found";
+  let verdict = "not_found";
+  if (answered !== null && answered >= 0.5) verdict = "answered";
+  else if (spans.length) verdict = "closest";
   return { answered, spans, verdict };
 }
 

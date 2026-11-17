@@ -107,24 +107,21 @@ export function preview(ctx, item, text, state, { ScrollView, matchesKey, trunca
   return ctx.ui.custom(
     (tui, theme, keys, done) => {
       const lines = text
-        .replace(/\p{Cc}/gu, (char) =>
-          char === "\n" ? char : char === "\t" ? "    " : JSON.stringify(char).slice(1, -1),
-        )
+        .replace(/\p{Cc}/gu, (char) => {
+          if (char === "\n") return char;
+          if (char === "\t") return "    ";
+          return JSON.stringify(char).slice(1, -1);
+        })
         .split("\n");
       const body = {
         render: (width) =>
-          lines.map((line) =>
-            theme.fg(
-              line.startsWith("+")
-                ? "success"
-                : line.startsWith("-")
-                  ? "error"
-                  : line.startsWith("@@")
-                    ? "accent"
-                    : "text",
-              truncateToWidth(line, Math.max(1, width)),
-            ),
-          ),
+          lines.map((line) => {
+            let color = "text";
+            if (line.startsWith("+")) color = "success";
+            else if (line.startsWith("-")) color = "error";
+            else if (line.startsWith("@@")) color = "accent";
+            return theme.fg(color, truncateToWidth(line, Math.max(1, width)));
+          }),
         invalidate() {},
       };
       const view = new ScrollView(body);

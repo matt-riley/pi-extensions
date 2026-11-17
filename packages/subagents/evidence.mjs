@@ -11,7 +11,10 @@ export function collectEvidence(events, event) {
   } else if (event?.type === "tool_execution_end") {
     const record = events.findLast((item) => item.id === event.toolCallId);
     if (record) {
-      record.success = event.isError === false ? true : event.isError === true ? false : null;
+      let success = null;
+      if (event.isError === false) success = true;
+      else if (event.isError === true) success = false;
+      record.success = success;
       record.output = (event.result?.content ?? [])
         .filter((part) => part.type === "text")
         .map((part) => part.text)
@@ -46,13 +49,10 @@ export function assessEvidence({
   for (const check of checks)
     if (check.observed?.success !== true) gaps.push(`Not passed: ${check.criterion}`);
   const failed = checks.some((check) => check.observed?.success === false);
-  const outcome = failed
-    ? "failed"
-    : checks.length && !gaps.length
-      ? "verified"
-      : evidence.length || checks.length
-        ? "partial"
-        : "unknown";
+  let outcome = "unknown";
+  if (failed) outcome = "failed";
+  else if (checks.length && !gaps.length) outcome = "verified";
+  else if (evidence.length || checks.length) outcome = "partial";
   return {
     outcome,
     scope: "Only the parent-specified acceptance command contracts; not a model judgment",

@@ -215,11 +215,10 @@ function goRequirements(text) {
 // not one this module understands or its edits do not apply to the file.
 function textAfter(before, input) {
   if (typeof input?.content === "string") return input.content;
-  const edits = Array.isArray(input?.edits)
-    ? input.edits
-    : typeof input?.oldText === "string"
-      ? [{ oldText: input.oldText, newText: input.newText }]
-      : [];
+  let edits = [];
+  if (Array.isArray(input?.edits)) edits = input.edits;
+  else if (typeof input?.oldText === "string")
+    edits = [{ oldText: input.oldText, newText: input.newText }];
   if (!edits.length || typeof before !== "string") return null;
   let text = before;
   for (const { oldText, newText } of edits) {

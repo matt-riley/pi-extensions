@@ -746,14 +746,10 @@ export default function piRouterExtension(
     resetShadowSession();
     setPlaybookStatus(ctx, null);
     const selected = modelKey(ctx?.model ?? null) === VIRTUAL_KEY;
-    setStatus(
-      ctx,
-      !config.enabled
-        ? "router: off"
-        : selected
-          ? "router: armed"
-          : "router: idle — /model router/auto",
-    );
+    let status = "router: idle — /model router/auto";
+    if (!config.enabled) status = "router: off";
+    else if (selected) status = "router: armed";
+    setStatus(ctx, status);
   });
 
   async function previewRoute(raw: string, ctx: ExtensionContext) {
@@ -814,13 +810,13 @@ export default function piRouterExtension(
     const stuckLine = boundary.stuckCheck ?? stuckCheckDescription(baseline);
 
     const unknown = !decided || (decided.escalate === null && !decided.forced);
-    const tier = decided?.forced
-      ? decided.tier
-      : unknown
-        ? null
-        : decided.escalate
-          ? decided.tier
-          : BASE_TIER;
+    let tier: RouteTier | null = null;
+    if (decided) {
+      if (decided.forced) tier = decided.tier;
+      else if (decided.escalate === null) tier = null;
+      else if (decided.escalate) tier = decided.tier;
+      else tier = BASE_TIER;
+    }
     const pick = tier ? chooseModelForTier(liveOffers, tier, tiers, undefined, selected) : null;
     const fits = pick ? fittingOffers.some((entry) => modelKey(entry) === pick.key) : null;
     const report = {
@@ -840,17 +836,15 @@ export default function piRouterExtension(
       return;
     }
     const pairLine = report.pair ? `${report.pair.key} @ ${report.pair.thinking}` : "(not chosen)";
-    const difficulty = decided?.forced
-      ? `forced ${tier}`
-      : unknown
-        ? "difficulty unknown"
-        : `difficulty ${decided.difficulty.toFixed(2)} — ${tier}`;
-    const fitLine =
-      fits === null
-        ? `context ${contextTokens} tokens`
-        : fits
-          ? `context fits (${contextTokens} tokens)`
-          : `context does not fit (${contextTokens} tokens)`;
+    let difficulty = "difficulty unknown";
+    if (decided) {
+      if (decided.forced) difficulty = `forced ${tier}`;
+      else if (!unknown) difficulty = `difficulty ${decided.difficulty.toFixed(2)} — ${tier}`;
+    }
+    let fitLine;
+    if (fits === null) fitLine = `context ${contextTokens} tokens`;
+    else if (fits) fitLine = `context fits (${contextTokens} tokens)`;
+    else fitLine = `context does not fit (${contextTokens} tokens)`;
     notify(
       ctx,
       [
@@ -920,10 +914,13 @@ export default function piRouterExtension(
       const lastLine = last
         ? `last judgement: difficulty ${last.difficulty.toFixed(2)} — ${last.reason}`
         : "no judgement yet";
+      let sharing = "prompt only";
+      if (!config.enabled) sharing = "none (off)";
+      else if (shareWindow) sharing = "prompt + recent turns";
       notify(
         ctx,
         [
-          `Router ${config.enabled ? "on" : "OFF"} · select ${VIRTUAL_KEY} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${!config.enabled ? "none (off)" : shareWindow ? "prompt + recent turns" : "prompt only"}`,
+          `Router ${config.enabled ? "on" : "OFF"} · select ${VIRTUAL_KEY} to route · cap is the selected reasoning level · threshold ${config.threshold}/${config.frontierThreshold} · sharing ${sharing}`,
           `models ${configPath}${loaded.error ? ` (broken: ${loaded.error}; using defaults)` : ""}`,
           `base ${lists(loaded.base)} · mid ${lists(loaded.mid)} · frontier ${lists(loaded.frontier)}`,
           `ladder ${ladder.line}`,

@@ -101,9 +101,11 @@ export async function findCode({ goal, path = ".", cwd, exec, ask = askSystemOne
     4,
   );
   signal?.throwIfAborted();
+  let status = "no_match";
+  if (unknown.length || notRead.length) status = "incomplete";
+  else if (matches.length) status = "matches";
   return {
-    status:
-      unknown.length || notRead.length ? "incomplete" : matches.length ? "matches" : "no_match",
+    status,
     judged: results.filter((r) => typeof r.probability === "number").length,
     matches,
     unknown,

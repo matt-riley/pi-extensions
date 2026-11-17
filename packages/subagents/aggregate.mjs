@@ -40,13 +40,10 @@ export function aggregate(results, { expectSha } = {}) {
   });
   const gaps = rows.filter((r) => r.verdict === "GAP");
   const required = rows.filter((r) => r.required);
-  const overall = !rows.length
-    ? "INCOMPLETE"
-    : required.every((r) => r.verdict === "PASS")
-      ? "PASS"
-      : required.some((r) => r.verdict === "GAP")
-        ? "INCOMPLETE"
-        : "ISSUES";
+  let overall = "ISSUES";
+  if (!rows.length) overall = "INCOMPLETE";
+  else if (required.every((r) => r.verdict === "PASS")) overall = "PASS";
+  else if (required.some((r) => r.verdict === "GAP")) overall = "INCOMPLETE";
   return { rows, gaps, overall };
 }
 

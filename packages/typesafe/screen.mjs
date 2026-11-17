@@ -46,13 +46,11 @@ export function createInjectionScreen({
     try {
       if (!resolveApiKey(env)) return undefined;
       const text = (event.content ?? [])
-        .map((block) =>
-          block.type === "text"
-            ? block.text
-            : block.type === "resource"
-              ? block.resource?.text
-              : "",
-        )
+        .map((block) => {
+          if (block.type === "text") return block.text;
+          if (block.type === "resource") return block.resource?.text;
+          return "";
+        })
         .filter(Boolean)
         .join("\n");
       const structured =

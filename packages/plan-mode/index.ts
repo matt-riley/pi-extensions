@@ -768,11 +768,10 @@ export default function planMode(pi: ExtensionAPI) {
         }
         return { content: [{ type: "text", text }] };
       } catch (error) {
-        const reason = signal?.aborted
-          ? "cancelled by the user"
-          : error instanceof Error
-            ? error.message
-            : String(error);
+        let reason;
+        if (signal?.aborted) reason = "cancelled by the user";
+        else if (error instanceof Error) reason = error.message;
+        else reason = String(error);
         return {
           content: [
             {

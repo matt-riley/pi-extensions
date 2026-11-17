@@ -148,13 +148,12 @@ export function pickPanel(available, patterns, { size = 3, preferred = [] } = {}
       families.add(family);
       seats.push(key);
     } else if (fromRoles) {
-      notes.push(
-        !key
-          ? `roles.panel: ${pattern} is not authenticated; skipped`
-          : family
-            ? `roles.panel: ${key} skipped, ${family} already has a seat (one seat per vendor)`
-            : `roles.panel: ${key} skipped, its vendor is unknown`,
-      );
+      let note;
+      if (!key) note = `roles.panel: ${pattern} is not authenticated; skipped`;
+      else if (family)
+        note = `roles.panel: ${key} skipped, ${family} already has a seat (one seat per vendor)`;
+      else note = `roles.panel: ${key} skipped, its vendor is unknown`;
+      notes.push(note);
     }
   };
   for (const pattern of preferred) take(pattern, true);

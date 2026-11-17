@@ -13,7 +13,9 @@ const cut = (tui, text, width) => stripVTControlCharacters(tui.truncateToWidth(t
 
 /** Work state describes activity, never test success or task completion. */
 export function workLabel(busy, statuses) {
-  return statuses?.has("plan-mode") ? "planning" : busy ? "working" : "ready";
+  if (statuses?.has("plan-mode")) return "planning";
+  if (busy) return "working";
+  return "ready";
 }
 
 export function workspaceLine(data, width, apply, tui) {

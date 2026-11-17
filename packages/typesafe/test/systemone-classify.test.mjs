@@ -390,16 +390,18 @@ test("retries: a 429 result from classify is not asked again", async () => {
 });
 
 test("retries: the fetch wrapper retries 429 then 529 and classify sets maxRetries to 0", async () => {
-  const { fetchImpl, calls: httpCalls } = capturingFetch((n) =>
-    n === 1
-      ? jsonResponse({ error: "rate limited" }, { status: 429, headers: { "retry-after": "20" } })
-      : n === 2
-        ? jsonResponse({ error: "overloaded" }, { status: 529 })
-        : jsonResponse({
-            answers: { pick: { type: "noul", noul: 0.5 } },
-            usage: { input_tokens: 2, output_tokens: 1 },
-          }),
-  );
+  const { fetchImpl, calls: httpCalls } = capturingFetch((n) => {
+    if (n === 1)
+      return jsonResponse(
+        { error: "rate limited" },
+        { status: 429, headers: { "retry-after": "20" } },
+      );
+    if (n === 2) return jsonResponse({ error: "overloaded" }, { status: 529 });
+    return jsonResponse({
+      answers: { pick: { type: "noul", noul: 0.5 } },
+      usage: { input_tokens: 2, output_tokens: 1 },
+    });
+  });
   const { ctx, calls } = classifierCtx(async (_model, _context, options) => {
     const response = await options.fetch("https://api.typesafe.ai/v1/systemone", {
       method: "POST",
@@ -484,13 +486,11 @@ test("direct HTTP fallback: no TypeSafe classifier keeps the POST to /systemone"
 
 test("direct HTTP fallback: 429 then 529 still retries on the HTTP transport", async () => {
   const { ctx, calls } = emptyRegistry();
-  const { fetchImpl, calls: httpCalls } = capturingFetch((n) =>
-    n === 1
-      ? jsonResponse({ error: "rate limited" }, { status: 429 })
-      : n === 2
-        ? jsonResponse({ error: "overloaded" }, { status: 529 })
-        : jsonResponse({ answers: { pick: { type: "noul", noul: 0.5 } } }),
-  );
+  const { fetchImpl, calls: httpCalls } = capturingFetch((n) => {
+    if (n === 1) return jsonResponse({ error: "rate limited" }, { status: 429 });
+    if (n === 2) return jsonResponse({ error: "overloaded" }, { status: 529 });
+    return jsonResponse({ answers: { pick: { type: "noul", noul: 0.5 } } });
+  });
   const result = await askSystemOne({
     state: { note: "hello" },
     questions: NOUL,

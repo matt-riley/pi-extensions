@@ -94,12 +94,10 @@ export async function checkDocs({ exec, root, readFile, prefixes = [] }) {
     .sort();
 
   const head = await git("rev-parse", "--verify", "-q", "HEAD");
-  const blocker =
-    head.code !== 0
-      ? "no commits yet, so there is no history"
-      : shallow.stdout.trim() === "true"
-        ? "shallow clone: the history is incomplete (fetch it with `git fetch --unshallow`)"
-        : null;
+  let blocker = null;
+  if (head.code !== 0) blocker = "no commits yet, so there is no history";
+  else if (shallow.stdout.trim() === "true")
+    blocker = "shallow clone: the history is incomplete (fetch it with `git fetch --unshallow`)";
   if (blocker) return report(paths.map((path) => unknown(path, blocker)));
 
   const found = new Map();
@@ -154,9 +152,10 @@ async function judge({ git, path, files, find, readFile }) {
     }
   }
 
-  const list = [...changed.values()].sort((a, b) =>
-    a.date === b.date ? (a.path < b.path ? -1 : 1) : a.date < b.date ? 1 : -1,
-  );
+  const list = [...changed.values()].sort((a, b) => {
+    if (a.date === b.date) return a.path < b.path ? -1 : 1;
+    return a.date < b.date ? 1 : -1;
+  });
   return {
     path,
     status: list.length > 0 ? STALE : CURRENT,

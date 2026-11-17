@@ -26,7 +26,8 @@ function runGit(args, { cwd } = {}) {
       args,
       { cwd, timeout: 60_000, maxBuffer: 64 * 1024 * 1024 },
       (error, stdout, stderr) => {
-        const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        let code = 0;
+        if (error) code = typeof error.code === "number" ? error.code : 1;
         resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? error?.message) });
       },
     );
@@ -154,7 +155,9 @@ export function createWorktrees({ agentDir, exec = runGit, tree = workingTree })
 /** One line for the tool result naming where the child worked. */
 export function worktreeLine(wt, left) {
   const commits = `${left.commits} commit${left.commits === 1 ? "" : "s"}`;
-  const state = !left.known ? "state unknown" : left.changed ? "changed" : "no changes";
+  let state = "no changes";
+  if (!left.known) state = "state unknown";
+  else if (left.changed) state = "changed";
   return (
     `worktree: ${wt.path} (branch ${wt.branch}, base ${wt.base.slice(0, 12)}, ${commits}, ${state}). ` +
     "It started with your uncommitted changes copied in; nothing was merged back."

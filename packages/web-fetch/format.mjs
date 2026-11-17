@@ -115,12 +115,9 @@ function isPlainTextMime(mime) {
 }
 
 function formatBinary(outcome) {
-  const size =
-    outcome.sizeHint != null
-      ? `${outcome.sizeHint} bytes`
-      : outcome.probedBytes != null
-        ? `≥ ${outcome.probedBytes} bytes`
-        : "unknown size";
+  let size = "unknown size";
+  if (outcome.sizeHint != null) size = `${outcome.sizeHint} bytes`;
+  else if (outcome.probedBytes != null) size = `≥ ${outcome.probedBytes} bytes`;
   const lines = [
     `Binary payload — not extracted (${outcome.mime || "unknown content-type"}, ${size}).`,
     `URL: ${outcome.finalUrl ?? ""}`,
@@ -146,7 +143,9 @@ export function formatBatchResult(items, { concurrency } = {}) {
   ];
   for (const item of items) {
     lines.push("");
-    const status = item.error ? "FAILED" : item.skipped ? "SKIPPED" : "OK";
+    let status = "OK";
+    if (item.error) status = "FAILED";
+    else if (item.skipped) status = "SKIPPED";
     lines.push(`--- [${item.index + 1}/${total}] ${status} ${item.request.url}`);
     if (item.error) {
       lines.push(item.error);

@@ -123,13 +123,17 @@ export function formatReport(report) {
   const { rules, violations, cycles, coverage } = report;
   const out = [];
   const cycleCount = cycles?.length ?? 0;
-  const headline = report.ok
-    ? coverage.complete
-      ? "Architecture check: no violations, no cycles, coverage complete."
-      : "Architecture check: no violations or cycles in the files it could follow. Coverage is INCOMPLETE, so this is not a clean result."
-    : `Architecture check: ${violations.length} violations, ${cycleCount} cycles${
-        rules.errors.length > 0 ? `, ${rules.errors.length} rules-file errors` : ""
-      }. Coverage ${coverage.complete ? "complete" : "INCOMPLETE"}.`;
+  let headline;
+  if (!report.ok) {
+    headline = `Architecture check: ${violations.length} violations, ${cycleCount} cycles${
+      rules.errors.length > 0 ? `, ${rules.errors.length} rules-file errors` : ""
+    }. Coverage ${coverage.complete ? "complete" : "INCOMPLETE"}.`;
+  } else if (coverage.complete) {
+    headline = "Architecture check: no violations, no cycles, coverage complete.";
+  } else {
+    headline =
+      "Architecture check: no violations or cycles in the files it could follow. Coverage is INCOMPLETE, so this is not a clean result.";
+  }
   out.push(headline);
   out.push(
     rules.present

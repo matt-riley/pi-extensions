@@ -37,10 +37,13 @@ const INLINE_FLAGS = {
   js: new Set(["-e", "--eval", "-p", "--print"]),
 };
 const FAMILY = { python3: "python", python: "python", ruby: "ruby", perl: "perl", php: "php" };
-const inlineFlags = (head) =>
-  INLINE_FLAGS[
-    SHELL_HEADS.has(head) ? "shell" : head === "osascript" ? "osascript" : (FAMILY[head] ?? "js")
-  ];
+const inlineFlags = (head) => {
+  let family;
+  if (SHELL_HEADS.has(head)) family = "shell";
+  else if (head === "osascript") family = "osascript";
+  else family = FAMILY[head] ?? "js";
+  return INLINE_FLAGS[family];
+};
 const SCRIPT_FILE = /\.(mjs|cjs|js|ts|tsx|py|rb|pl|php|sh|bash|zsh)$/;
 /** The payload of an inline flag written without a space: `-c"…"`, `--eval=…`. */
 function gluedPayload(arg, flags) {

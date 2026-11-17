@@ -192,7 +192,11 @@ function main() {
     events.push(...found);
   }
 
-  events.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  events.sort((a, b) => {
+    if (a.ts < b.ts) return -1;
+    if (a.ts > b.ts) return 1;
+    return 0;
+  });
   const shown = events.slice(-opts.limit);
 
   if (opts.json) {
@@ -203,11 +207,10 @@ function main() {
   const window = [opts.project && `project ~ ${opts.project}`, opts.grep && `grep ${opts.grep}`]
     .filter(Boolean)
     .join(", ");
-  const scope = window
-    ? window
-    : cutoff === null
-      ? "all sessions"
-      : `since ${new Date(cutoff).toISOString().slice(0, 10)}`;
+  let scope;
+  if (window) scope = window;
+  else if (cutoff === null) scope = "all sessions";
+  else scope = `since ${new Date(cutoff).toISOString().slice(0, 10)}`;
   console.log(`# ${events.length} user messages across ${sessions} sessions (${scope})`);
   console.log(`# showing the newest ${shown.length}; widen with --limit, --since, or --all`);
   for (const event of shown) console.log(formatMessage(event));

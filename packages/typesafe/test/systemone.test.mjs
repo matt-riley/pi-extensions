@@ -605,13 +605,11 @@ test("askSystemOne surfaces HTTP failures with status detail and no key", async 
 const QUESTION = { a: { type: "noul", instructions: "?" } };
 
 test("askSystemOne retries 429 and 529 with backoff, then succeeds", async () => {
-  const { fetchImpl, calls } = capturingFetch((n) =>
-    n === 1
-      ? jsonResponse({ error: "rate limited" }, { status: 429 })
-      : n === 2
-        ? jsonResponse({ error: "overloaded" }, { status: 529 })
-        : jsonResponse({ answers: { a: { type: "noul", noul: 0.5 } } }),
-  );
+  const { fetchImpl, calls } = capturingFetch((n) => {
+    if (n === 1) return jsonResponse({ error: "rate limited" }, { status: 429 });
+    if (n === 2) return jsonResponse({ error: "overloaded" }, { status: 529 });
+    return jsonResponse({ answers: { a: { type: "noul", noul: 0.5 } } });
+  });
   const result = await askSystemOne({
     state: "s",
     questions: QUESTION,

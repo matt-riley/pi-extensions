@@ -111,7 +111,9 @@ for (const testCase of CASES) {
   // decide" — deferred, not wrong.
   const got = decision.verdict === "judge" && policyOnly ? "deferred" : decision.verdict;
   rows.push({ ...testCase, got, reason: decision.reason ?? "policy", signals: decision.signals });
-  const mark = got === "deferred" ? "->  " : got === testCase.want ? "ok  " : "MISS";
+  let mark = "MISS";
+  if (got === "deferred") mark = "->  ";
+  else if (got === testCase.want) mark = "ok  ";
   console.log(
     `${mark} ${truncate(testCase.cmd)} want=${testCase.want.padEnd(7)} got=${String(got).padEnd(8)} ${policyOnly ? "" : (decision.reason ?? "")}`,
   );

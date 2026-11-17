@@ -245,12 +245,9 @@ export function observeToolResult(
     return;
   }
   if (toolName === "bash" && isVerifyCommand(input?.command)) {
-    const status =
-      isError === true
-        ? "failed"
-        : isError === false && sameRevision(before, after)
-          ? "passed"
-          : "unknown";
+    let status = "unknown";
+    if (isError === true) status = "failed";
+    else if (isError === false && sameRevision(before, after)) status = "passed";
     state.verificationStatus = status;
     state.verificationSeen = status === "passed";
     state.verificationRevision = status === "passed" ? after : null;
@@ -459,16 +456,20 @@ export function buildNudge(state, debugHits = [], claimText = null, commands = n
   const files = [...state.dirty];
   const gap = state.verificationSeen && !state.behaviorVerified ? state.testGap : null;
   const staticOnly = state.verificationSeen && !state.behaviorVerified && !gap;
+  let doneLine;
+  if (gap) {
+    const why =
+      gap.why === "unknown"
+        ? `the gate could not tell which test files \`${gap.command}\` ran`
+        : "no test file it ran imports or names the changed files";
+    doneLine = `Done check: ${files.length} file(s) changed (${list(files)}). \`${gap.command}\` passed, but ${why}, so it does not show the changed code ran.`;
+  } else if (staticOnly) {
+    doneLine = `Done check: ${files.length} file(s) changed and only compile or lint checks ran after the last edit (${list(files)}). That shows the code builds, not that the changed path ran.`;
+  } else {
+    doneLine = `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`;
+  }
   const lines = [
-    gap
-      ? `Done check: ${files.length} file(s) changed (${list(files)}). \`${gap.command}\` passed, but ${
-          gap.why === "unknown"
-            ? `the gate could not tell which test files \`${gap.command}\` ran`
-            : "no test file it ran imports or names the changed files"
-        }, so it does not show the changed code ran.`
-      : staticOnly
-        ? `Done check: ${files.length} file(s) changed and only compile or lint checks ran after the last edit (${list(files)}). That shows the code builds, not that the changed path ran.`
-        : `Done check: ${files.length} file(s) changed after the last verification run (${list(files)}).`,
+    doneLine,
     checkSentence(commands, staticOnly, gap),
     "or say plainly why verification does not apply.",
     "Then close with your explanation of the work plus one line to name the check that reached the changed code and what it showed,",

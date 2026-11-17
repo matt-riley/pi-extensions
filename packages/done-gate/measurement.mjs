@@ -122,12 +122,10 @@ export function installMeasurement(pi) {
           ...(baseline === undefined ? {} : { baseline: { command: baseline, samples: [] } }),
         };
         for (let i = 0; i < runs; i++) {
-          const order =
-            baseline === undefined
-              ? ["candidate"]
-              : i % 2 === 0
-                ? ["baseline", "candidate"]
-                : ["candidate", "baseline"];
+          let order;
+          if (baseline === undefined) order = ["candidate"];
+          else if (i % 2 === 0) order = ["baseline", "candidate"];
+          else order = ["candidate", "baseline"];
           for (const name of order) {
             boundedSignal.throwIfAborted();
             const before = await revisionSnapshot(cwd);

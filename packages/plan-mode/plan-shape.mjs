@@ -21,8 +21,10 @@ function sections(plan) {
   let fence = null;
   lines.forEach((line, index) => {
     const marker = FENCE.exec(line)?.[1];
-    if (marker) fence = fence === null ? marker[0] : fence === marker[0] ? null : fence;
-    else if (fence === null) {
+    if (marker) {
+      if (fence === null) fence = marker[0];
+      else if (fence === marker[0]) fence = null;
+    } else if (fence === null) {
       const heading = HEADING.exec(line);
       if (heading) headings.push({ index, level: heading[1].length, title: heading[2] });
     }

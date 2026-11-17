@@ -62,12 +62,10 @@ function timeoutMs(env = process.env) {
 /** One-line rendering of what is about to run. */
 function describeAction(toolName, input) {
   const name = String(toolName ?? "tool");
-  const raw =
-    typeof input?.command === "string"
-      ? input.command
-      : typeof input?.path === "string"
-        ? input.path
-        : (JSON.stringify(input ?? {}) ?? "");
+  let raw: string;
+  if (typeof input?.command === "string") raw = input.command;
+  else if (typeof input?.path === "string") raw = input.path;
+  else raw = JSON.stringify(input ?? {}) ?? "";
   if (name === "terminal_send") return `${name}: ${raw}`; // Show every byte being approved.
   const text = String(raw).replace(/\s+/g, " ").trim();
   if (text.length <= MAX_ACTION_CHARS) return `${name}: ${text}`;
@@ -222,15 +220,13 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     const dependency = decision?.verdict === "block" ? null : dependencyGate(toolName, input, cwd);
     if (dependency) {
       const confirming = decision?.verdict === "confirm";
+      let reason = dependency.reason;
+      if (confirming && decision?.reason) reason = `${decision.reason}; ${dependency.reason}`;
+      else if (decision?.verdict === "judge") reason = decision.reason;
       decision = {
         ...decision,
         verdict: decision?.verdict === "judge" ? "judge" : "confirm",
-        reason:
-          confirming && decision?.reason
-            ? `${decision.reason}; ${dependency.reason}`
-            : decision?.verdict === "judge"
-              ? decision.reason
-              : dependency.reason,
+        reason,
         evidence: {
           ...decision?.evidence,
           approvalScopes: [...(decision?.evidence?.approvalScopes ?? []), ...dependency.scopes],
@@ -316,18 +312,14 @@ export default function piGuardrailExtension(pi: ExtensionAPI) {
     const scopes: string[] = [...new Set<string>(decision?.evidence?.approvalScopes ?? [])];
     // Shell scopes include the entire invocation, so approving a push cannot
     // bless a newly appended command. File edits intentionally cover that file.
-    const scopeKey =
-      toolName !== "terminal_send" && scopes.length
-        ? JSON.stringify([
-            cwd,
-            scopes.sort(),
-            toolName === "bash"
-              ? input.command
-              : scopes.every((scope) => scope.startsWith("control:"))
-                ? null
-                : [toolName, input],
-          ])
-        : null;
+    let scopeKey: string | null = null;
+    if (toolName !== "terminal_send" && scopes.length) {
+      let detail;
+      if (toolName === "bash") detail = input.command;
+      else if (scopes.every((scope) => scope.startsWith("control:"))) detail = null;
+      else detail = [toolName, input];
+      scopeKey = JSON.stringify([cwd, scopes.sort(), detail]);
+    }
     if (scopeKey && approvals.has(scopeKey)) {
       state.allowed += 1;
       return undefined;

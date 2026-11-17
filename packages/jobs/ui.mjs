@@ -28,19 +28,12 @@ export async function showLogs(ctx, jobs, id, state, { ScrollView, matchesKey, t
             if (state.follow) view.scrollToEnd();
             else view.scrollTo(state.offset);
             state.offset = view.scrollTop;
+            let suffix = "";
+            if (job.signal) suffix = " (signal " + job.signal + ")";
+            else if (job.exit_code !== null && job.exit_code !== undefined)
+              suffix = " (exit " + job.exit_code + ")";
             return [
-              theme.fg(
-                "accent",
-                "Job " +
-                  id +
-                  " — " +
-                  job.status +
-                  (job.signal
-                    ? " (signal " + job.signal + ")"
-                    : job.exit_code !== null && job.exit_code !== undefined
-                      ? " (exit " + job.exit_code + ")"
-                      : ""),
-              ),
+              theme.fg("accent", "Job " + id + " — " + job.status + suffix),
               theme.fg("muted", safe(job.command)),
               theme.fg(
                 "dim",

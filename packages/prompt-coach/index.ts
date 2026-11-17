@@ -189,11 +189,12 @@ export default function piPromptCoachExtension(
           action = "rewritten";
           message = "Improved prompt is in the input box: edit it and press Enter.";
         } else {
-          const why = intentError
-            ? `the TypeSafe intent check could not run (${intentError})`
-            : intentProbability === null
-              ? "the TypeSafe intent check gave no usable answer"
-              : `the TypeSafe intent check scored it ${intentProbability.toFixed(2)}, below the ${intentThreshold.toFixed(2)} threshold`;
+          let why;
+          if (intentError) why = `the TypeSafe intent check could not run (${intentError})`;
+          else if (intentProbability === null)
+            why = "the TypeSafe intent check gave no usable answer";
+          else
+            why = `the TypeSafe intent check scored it ${intentProbability.toFixed(2)}, below the ${intentThreshold.toFixed(2)} threshold`;
           message = `Rewrite not used: ${why}; original is in the input box.`;
           if (await confirmRejected(ctx, original, validation.text, why)) {
             placed = validation.text;

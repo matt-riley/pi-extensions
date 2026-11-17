@@ -86,7 +86,9 @@ function childReadKeys(transcript, sessionFile, cwd) {
     : path.resolve(path.dirname(sessionFile), transcript);
   const keys = [];
   for (const record of readRecords(full)) {
-    const message = record?.type === "message" ? record.message : record?.role ? record : null;
+    let message = null;
+    if (record?.type === "message") message = record.message;
+    else if (record?.role) message = record;
     if (message?.role !== "assistant") continue;
     keys.push(...readKeys(message, cwd));
   }

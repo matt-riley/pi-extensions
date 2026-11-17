@@ -9,6 +9,8 @@
   "rules": {
     // Callbacks stay at most three levels deep, so parser loops read as loops.
     "max-nested-callbacks": ["warn", 3],
+    // Nested conditionals hide branch order; use if/else or a switch.
+    "no-nested-ternary": "warn",
     // A leading underscore marks a parameter that exists for the signature (an
     // optional hook, a positional contract) rather than for its value.
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],

@@ -63,7 +63,10 @@ function pairOf(entry) {
 
 /** A string or pair array, with blanks and malformed entries dropped. */
 function patternsOf(value) {
-  const list = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  let list;
+  if (Array.isArray(value)) list = value;
+  else if (value === undefined || value === null) list = [];
+  else list = [value];
   return list.map(pairOf).filter(Boolean);
 }
 

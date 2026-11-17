@@ -48,11 +48,9 @@ export function installJobs(pi, widgets) {
       if (current.closed) return;
       const jobs = current.jobs.summary();
       const running = jobs.filter((job) => job.status === "running").length;
-      const status = running
-        ? "jobs " + running + " running"
-        : jobs.length
-          ? "jobs " + jobs.length
-          : "";
+      let status = "";
+      if (running) status = "jobs " + running + " running";
+      else if (jobs.length) status = "jobs " + jobs.length;
       if (status !== current.status) {
         current.status = status;
         current.ctx.ui?.setStatus?.("jobs", status || undefined);
