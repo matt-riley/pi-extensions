@@ -264,6 +264,15 @@ declare module "@earendil-works/pi-coding-agent" {
     getThinkingLevel(): string;
     /** Persist extension data. Custom entries do NOT enter LLM context. */
     appendEntry(customType: string, data?: unknown): void;
+    /** Pi 0.80.4+: draw custom entries of this type in the interactive transcript. */
+    registerEntryRenderer(
+      customType: string,
+      renderer: (
+        entry: { customType: string; data?: unknown },
+        options: { expanded: boolean },
+        theme: { fg?: (color: string, text: string) => string },
+      ) => { render(width: number): string[]; invalidate(): void } | undefined,
+    ): void;
     getFlag(name: string): unknown;
     /** Effective settings (global + project merged); compaction budget lives under `compaction`. */
     getSettings?(): {

@@ -31,6 +31,7 @@ const HOST_EXPORTS = {
     "packages/doctor/index.ts": ["VERSION", "getAgentDir", "parseFrontmatter"],
   },
   "@earendil-works/pi-tui": {
+    "packages/decision-rows/index.ts": ["truncateToWidth"],
     "packages/footer/index.ts": ["truncateToWidth", "visibleWidth"],
     "packages/toasts/index.ts": ["truncateToWidth", "visibleWidth"],
     "packages/jobs/index.ts": ["ScrollView", "matchesKey", "truncateToWidth"],

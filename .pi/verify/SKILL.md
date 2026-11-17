@@ -44,6 +44,7 @@ node .pi/verify/workbench.mjs --upgrade        # prior-HEAD footer upgraded thro
 node .pi/verify/jobs.mjs                       # real tmux + pi, /jobs logs, PTY takeover, shutdown
 bash .pi/verify/jobs-linux.sh                  # GNU script PTY primitives in an offline container
 node .pi/verify/toasts.mjs                     # real TUI: extension notify becomes a toast, then clears
+node .pi/verify/decision-rows.mjs              # real TUI: saved decision entries draw as rows, not sent to the model
 ```
 
 Requirements: `pi` 1.4.0 or later on `PATH` (`PI_SMOKE_BIN` overrides the binary
@@ -115,6 +116,7 @@ Offline coverage (run every row on every change):
 | `/until <cmd>` sends the agent back until the predicate exits 0 | `npm run smoke` | `ok: /until sends the agent back until the predicate exits 0` |
 | `/climb` measures the baseline first, refuses a red gate, stops on a met target (the attempt loop is covered only by `node --test packages/until`) | `npm run smoke` | `ok: /climb measures the baseline first and refuses a red gate in a live Pi` |
 | Extension `ctx.ui.notify` becomes a self-clearing top-right toast; `PI_TOAST_CAPTURE=0` leaves pi's own row; narrow terminals hide it | `node .pi/verify/toasts.mjs` | the three `ok:` lines plus `Local real-TUI toasts acceptance passed at HEAD …` |
+| Saved router, Jev, verifier and prompt-coach entries draw one row each; quiet entries draw nothing; ctrl+o adds details; the next provider request carries none of it | `node .pi/verify/decision-rows.mjs` | the three `ok:` lines plus `Local real-TUI decision-rows acceptance passed at HEAD …` |
 | Workbench: command groups, intent search, cancel, built-in preparation, draft recovery, `/files` reference, `/changes` previews, Neovim handoff, `/eixt` -> `/exit` suggestion, resize, working->ready | `node .pi/verify/workbench.mjs --regular` | the five `ok:` lines plus `Local real-TUI acceptance passed at HEAD …` |
 | Footer: actual work state, and a prior-HEAD footer upgrading through `/reload` | `node .pi/verify/workbench.mjs --upgrade` | `ok: prior HEAD footer upgrades through actual /reload` plus the lifecycle line |
 | `/jobs` live logs, follow/scroll/resize/cancel, same-PTY input, detach/reattach, Ctrl+C, human line input, `/exit` and `/reload` stopping owned processes | `node .pi/verify/jobs.mjs` | the five `ok:` lines plus `Local real-TUI jobs acceptance passed at HEAD …` |

@@ -34,6 +34,7 @@ README's extension table, which indexes every package.
   These widgets are injected into its plain `.mjs` logic; no runtime package is installed.
   The footer entrypoint likewise imports only `visibleWidth` and `truncateToWidth` and
   injects them into `extension.mjs`/`workspace.mjs`; its tests use `test/tui-fixture.mjs`.
+  The decision-rows entrypoint imports only `truncateToWidth` and injects it into `rows.mjs`.
 - `.pi/architecture.json` is live, not documentation:
   `packages/architecture/test/repo-rules.test.mjs` checks this repository during
   `npm test`. `shared/` is a leaf, packages must not import `scripts/` or each
