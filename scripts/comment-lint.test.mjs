@@ -54,6 +54,32 @@ test("handles prefix, postfix, call and ordinary block-comment narration", () =>
     assert.deepEqual(lintComments("sample.ts", source), [], source);
 });
 
+test("reports narration of literal returns and declarations", () => {
+  for (const source of [
+    "// return 0\nreturn 0;",
+    "// return true\nreturn true;",
+    "// return null\nreturn null;",
+    "// define port\nconst port = 8080;",
+    "// define port\nconst port = readPort();",
+    "// declare cache\nlet cache = new Map();",
+    "// initialise cache\nlet cache = new Map();",
+  ])
+    assert.equal(lintComments("sample.ts", source).length, 1, source);
+  for (const source of [
+    "// return 0 because the API treats it as success\nreturn 0;",
+    '// return "ok"\nreturn "ok";',
+    "/** define port */\nconst port = 8080;",
+    "// define other\nconst port = 8080;",
+    "// define port and validate it\nconst port = 8080;",
+    "// define port\n\nconst port = 8080;",
+    "const port = 8080; // define port",
+    "// define port\nfunction port() {}",
+    '// define port\nconst port = 1, host = "x";',
+    'const text = "// define port";',
+  ])
+    assert.deepEqual(lintComments("sample.ts", source), [], source);
+});
+
 test("does not pretend to parse Go documentation as JavaScript", () => {
   assert.deepEqual(
     lintComments(

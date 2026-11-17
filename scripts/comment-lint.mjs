@@ -151,8 +151,19 @@ function commentRanges(tree, source) {
 
 /** @param {ts.Node} node @returns {string[]} */
 function narration(node) {
-  if (ts.isReturnStatement(node) && node.expression && ts.isIdentifier(node.expression))
-    return [`return ${node.expression.text.toLowerCase()}`];
+  if (ts.isReturnStatement(node) && node.expression) {
+    const expression = node.expression;
+    if (ts.isIdentifier(expression)) return [`return ${expression.text.toLowerCase()}`];
+    if (isLiteral(expression)) return [`return ${expression.getText().toLowerCase()}`];
+  }
+  if (ts.isVariableStatement(node)) {
+    const declarations = node.declarationList.declarations;
+    if (declarations.length !== 1) return [];
+    const declaration = declarations[0];
+    if (!ts.isIdentifier(declaration.name) || !declaration.initializer) return [];
+    const name = declaration.name.text.toLowerCase();
+    return [`define ${name}`, `declare ${name}`, `initialize ${name}`, `initialise ${name}`];
+  }
   if (!ts.isExpressionStatement(node)) return [];
   const expr = node.expression;
   if (
@@ -174,6 +185,16 @@ function narration(node) {
   if (ts.isCallExpression(expr) && ts.isIdentifier(expr.expression))
     return [`call ${expr.expression.text.toLowerCase()}`];
   return [];
+}
+
+/** @param {ts.Expression} node */
+function isLiteral(node) {
+  return (
+    ts.isNumericLiteral(node) ||
+    node.kind === ts.SyntaxKind.TrueKeyword ||
+    node.kind === ts.SyntaxKind.FalseKeyword ||
+    node.kind === ts.SyntaxKind.NullKeyword
+  );
 }
 
 if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
