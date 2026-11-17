@@ -6,12 +6,9 @@
 // whole loop — re-check the predicate there, and either stop or send the
 // failing output back.
 
-import { appendFileSync } from "node:fs";
-
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { startRunLog } from "../../shared/runs.mjs";
-import { tsvRow } from "../../shared/tsv.mjs";
+import { appendRunRow, startRunLog } from "../../shared/runs.mjs";
 import { installClimb } from "./climb-run.mjs";
 import { TSV_HEADER, decide, kickoffMessage, parseArgs } from "./loop.mjs";
 
@@ -31,12 +28,7 @@ export default function piUntilExtension(pi: ExtensionAPI) {
   const climb = installClimb(pi, { isOtherLoopActive: () => loop !== undefined });
 
   const log = (cells: unknown[]) => {
-    if (!loop) return;
-    try {
-      appendFileSync(loop.logPath, tsvRow([new Date().toISOString(), ...cells]));
-    } catch {
-      // The log is a convenience; never let it break the loop.
-    }
+    if (loop) appendRunRow(loop.logPath, cells);
   };
 
   const finish = (ctx: ExtensionContext, title: string, level: string) => {
