@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +111,44 @@ test("a settle with no change counts no attempt and halts after three", async (t
   await h.settle();
   assert.equal(await h.settle(), undefined);
   assert.match(h.notes.at(-1).title, /no attempt counted/);
+});
+
+test("a same-size edit sharing the index entry's mtime is still seen", async (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), "climb-racy-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args) =>
+    execFileSync("git", [
+      "-C",
+      cwd,
+      "-c",
+      "user.name=T",
+      "-c",
+      "user.email=t@example.test",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ]).toString();
+  const stamp = new Date("2020-01-01T00:00:00Z");
+  git("init", "-q");
+  writeFileSync(join(cwd, "a.txt"), "one");
+  utimesSync(join(cwd, "a.txt"), stamp, stamp);
+  git("add", ".");
+  // The entry and the index file now share one timestamp tick. A copied index
+  // stamped with the current time is newer than every entry, so git would trust
+  // the stat cache and miss the same-size edit below.
+  utimesSync(join(cwd, ".git", "index"), stamp, stamp);
+  writeFileSync(join(cwd, "a.txt"), "two");
+  utimesSync(join(cwd, "a.txt"), stamp, stamp);
+
+  // The tree of the edited content, built independently of workingTreeId.
+  const blob = execFileSync("git", ["-C", cwd, "hash-object", "-w", "--stdin"], {
+    input: "two",
+  }).toString();
+  const expected = execFileSync("git", ["-C", cwd, "mktree"], {
+    input: `100644 blob ${blob.trim()}\ta.txt\n`,
+  }).toString();
+
+  assert.equal(await workingTreeId(cwd), expected.trim(), "the edit is not the old content");
 });
 
 test("the tree id ignores commits and the run logs, and sees a new file", async (t) => {

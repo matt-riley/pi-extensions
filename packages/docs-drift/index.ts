@@ -12,20 +12,14 @@ import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { piExec } from "../../shared/exec.mjs";
 import { findRepoRoot, normalizeRel } from "../../shared/inventory.mjs";
 import { checkDocs, formatJson, formatText } from "./stale.mjs";
 
 const USAGE = "Usage: /docs-drift [--json] [path...]";
 
 export default function piDocsDriftExtension(pi: ExtensionAPI) {
-  const exec = async (cmd: string, args: string[], opts?: { timeout?: number }) => {
-    const result = await pi.exec(cmd, args, { timeout: opts?.timeout ?? 10_000 });
-    return {
-      code: result.code,
-      stdout: String(result.stdout ?? ""),
-      stderr: String(result.stderr ?? ""),
-    };
-  };
+  const exec = piExec(pi);
 
   pi.registerCommand("docs-drift", {
     description:

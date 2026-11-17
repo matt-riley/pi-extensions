@@ -132,11 +132,15 @@ Any intervening edit invalidates earlier evidence for the final state.
 | Background jobs, real terminal | `node .pi/verify/jobs.mjs` | Real Pi live logs, follow/scroll/resize/cancel, same-PTY input and detach/reattach, Ctrl+C to the program, explicit human line input, real failed exit status, and owned-process cleanup across reload/session/shutdown. Isolated tmux is only the test terminal, not an extension dependency; no personal config or model requests. |
 | Cleanup | Smoke's `finally` closes processes/server and removes temporary files | No user config/session edits; report cleanup failure |
 
-The installed `deadwood 0.1.2` reports incomplete analysis for computed imports
-and flags the intentionally host-provided Pi SDK as an unlisted dependency in
-this collection. Its failure is not a clean dead-code verdict; record that gap
-and use the repository’s Knip/Fallow gates rather than adding runtime dependencies
-or suppressions to satisfy it.
+`deadwood.toml` declares the manifest entrypoints, the host-provided Pi SDK, the
+Node builtin it misreads and the `mkdir` the coverage script uses; `deadwood .`
+finds that config on its own, so a run no longer reports this collection’s
+conventions as findings. The installed
+`deadwood 0.1.2` still reports incomplete analysis for the manifest-driven import
+in `scripts/registration.mjs`, and calls `@types/node` unused because it reads
+imports rather than tsconfig `types`. Exit 2 is that incomplete analysis, not a
+dead-code verdict: record the gap and use the repository’s Knip/Fallow gates
+rather than adding dependencies or suppressions.
 
 For quality changes, run `node .pi/verify/quality.mjs`: independent temporary
 fixtures invoke the real `crap` and `deadwood` binaries, require a known complex

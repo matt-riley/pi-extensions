@@ -6,11 +6,8 @@
 // rejected attempt is undone before the next one counts, by comparing the
 // tree's content with the last accepted state.
 
-import { appendFileSync } from "node:fs";
-
 import { parseCounters } from "../../shared/measure.mjs";
-import { startRunLog } from "../../shared/runs.mjs";
-import { tsvRow } from "../../shared/tsv.mjs";
+import { appendRunRow, startRunLog } from "../../shared/runs.mjs";
 import {
   CLIMB_TSV_HEADER,
   IDLE_LIMIT,
@@ -57,12 +54,7 @@ export function installClimb(pi, { isOtherLoopActive = () => false, treeId = wor
   const exec = (cmd, args, opts) => pi.exec(cmd, args, opts);
 
   const log = (cells) => {
-    if (!loop) return;
-    try {
-      appendFileSync(loop.logPath, tsvRow([new Date().toISOString(), ...cells]));
-    } catch {
-      // The log is a convenience; never let it break the loop.
-    }
+    if (loop) appendRunRow(loop.logPath, cells);
   };
   const finish = (ctx, title, level) => {
     loop = undefined;

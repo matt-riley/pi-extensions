@@ -4,7 +4,8 @@
     "packages/*/index.ts",
     "packages/*/test/*.test.mjs",
     "scripts/*.mjs",
-    "scripts/*.test.mjs"
+    "scripts/*.test.mjs",
+    "shared/test/*.test.mjs"
   ],
   "project": ["packages/**/*.{ts,mjs}", "shared/**/*.mjs", "scripts/**/*.mjs", "types/**/*.d.ts"],
   "ignoreBinaries": ["nvim"],

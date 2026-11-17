@@ -199,7 +199,7 @@ async function scanRepo({ cache, query, opts, readFile, signal, paging }) {
   }
 
   const page = rankPage({ perFile, opts, paging });
-  const suggestion = page.total === 0 ? suggestNames(query, files, cache) : [];
+  const suggestion = page.total === 0 ? suggestSymbols(query, files, cache) : [];
   return { ...page, suggestion, scanned };
 }
 
@@ -268,7 +268,7 @@ async function gitGrepSearch({ cache, query, opts, exec, root, signal, paging })
   );
   const page = rankPage({ perFile, opts, paging });
   const suggestion =
-    page.total === 0 ? suggestNames(query, Object.keys(cache?.files ?? {}), cache) : [];
+    page.total === 0 ? suggestSymbols(query, Object.keys(cache?.files ?? {}), cache) : [];
   return { ...page, suggestion };
 }
 
@@ -427,7 +427,8 @@ export function enclosingSymbol(entry, lineNo) {
   return best;
 }
 
-function suggestNames(query, files, cache) {
+/** Near-miss symbol names for a query that matched nothing, best first. */
+export function suggestSymbols(query, files, cache) {
   const seen = new Set();
   const q = String(query ?? "").toLowerCase();
   if (!q) return [];

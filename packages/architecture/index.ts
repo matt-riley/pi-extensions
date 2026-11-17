@@ -14,6 +14,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { piExec } from "../../shared/exec.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { findRepoRoot, listRepoFiles } from "../../shared/inventory.mjs";
 import { formatReport, runArchitectureCheck } from "./check.mjs";
@@ -21,14 +22,7 @@ import { formatReport, runArchitectureCheck } from "./check.mjs";
 const RULES_PATH = ".pi/architecture.json";
 
 export default function piArchitectureExtension(pi: ExtensionAPI) {
-  const exec = async (cmd: string, args: string[], opts?: { timeout?: number }) => {
-    const result = await pi.exec(cmd, args, { timeout: opts?.timeout ?? 10_000 });
-    return {
-      code: result.code,
-      stdout: String(result.stdout ?? ""),
-      stderr: String(result.stderr ?? ""),
-    };
-  };
+  const exec = piExec(pi);
 
   const check = async (ctx: ExtensionContext) => {
     const { root } = await findRepoRoot(ctx.cwd ?? process.cwd(), exec);

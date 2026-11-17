@@ -4,8 +4,7 @@
 // answers them, and this file applies the only thing code is good at — a
 // threshold, a sort, and a line a person can act on.
 
-import { askSystemOne } from "../../shared/systemone.mjs";
-import { usableNumber } from "../../shared/systemone.mjs";
+import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
 import { DEFAULT_THRESHOLD, RULES_BY_ID, buildQuestionSet } from "./rules.mjs";
 
 /**
@@ -84,6 +83,23 @@ export function formatFindings(findings) {
   return findings
     .map((finding) => finding.id + " " + finding.probability.toFixed(2) + " — " + finding.label)
     .join("\n");
+}
+
+/**
+ * The tool's text: why nothing was judged, what the subject got wrong, and the
+ * findings above threshold. "Not judged" and "nothing found" read differently
+ * on purpose — a failed request is not a pass.
+ */
+export function formatLint(result) {
+  const lines = [];
+  if (!result.judged) lines.push("Not judged: " + (result.reason ?? "no judgment"));
+  if (result.truncated)
+    lines.push("Diff cut at " + MAX_DIFF_CHARS + " characters; only the first part was judged.");
+  for (const problem of result.subject ?? []) lines.push("subject: " + problem);
+  const body = formatFindings(result.findings ?? []);
+  if (body) lines.push(body);
+  else if (result.judged) lines.push("No findings above threshold.");
+  return lines.join("\n");
 }
 
 /**

@@ -268,7 +268,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
   const onBeforeSettle = async (event: any, ctx: any) => {
     if (!state.verificationSeen && state.dirty.size > 0 && userRuns.length > 0) {
-      const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as any[];
+      const branch: Array<{ message?: unknown }> = ctx?.sessionManager?.getBranch?.() ?? [];
       const hit = userBashEvidence({
         messages: branch.map((entry) => entry?.message),
         started: userRuns,
