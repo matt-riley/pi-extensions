@@ -198,3 +198,47 @@ describe("reply guidance", () => {
       /Keep pills out of paths, commands, code, literal output, files, commit messages, pull request text/,
     ));
 });
+
+describe("collection marks", () => {
+  const marked = (text, marks) =>
+    stripSgr(decorate(text, createPalette(theme), marks))
+      .replace(/[]/g, "|")
+      .replaceAll(" ", " ");
+
+  test("a checked claim over unchecked edits is drawn as a question, word kept", () => {
+    assert.equal(marked("[[Done]]", { unchecked: true }), "| Done · unchecked|");
+    assert.equal(marked("[[Completed]]", { unchecked: true }), "| Done · unchecked|");
+    assert.equal(marked("[[Passed 12/12]]", { unchecked: true }), "| Passed 12/12 · unchecked|");
+    assert.match(
+      decorate("[[Done]]", createPalette(theme), { unchecked: true }),
+      /bg-searchMatchBg/,
+    );
+  });
+
+  test("other pills are drawn as written", () => {
+    assert.equal(marked("[[Failed]] [[Observed]]", { unchecked: true }), "| Failed| | Observed|");
+    assert.equal(marked("[[Done]]", { unchecked: false }), "| Done|");
+  });
+
+  test("a code span naming a missing path is marked after the span", () => {
+    const stale = new Set(["src/gone.ts"]);
+    assert.equal(
+      marked("see `src/gone.ts:12` now", { stale }),
+      "see `src/gone.ts:12` <warning> missing</> now",
+    );
+    assert.equal(marked("see `src/here.ts`", { stale }), "see `src/here.ts`");
+  });
+
+  test("a line about deleting or moving the file is not marked", () => {
+    const stale = new Set(["src/gone.ts"]);
+    assert.equal(marked("Removed `src/gone.ts`.", { stale }), "Removed `src/gone.ts`.");
+    assert.equal(marked("Renamed `src/gone.ts` to x.", { stale }), "Renamed `src/gone.ts` to x.");
+  });
+
+  test("the missing marker has no icon when icons are off", () => {
+    const out = stripSgr(
+      decorate("`a/b.ts`", createPalette(theme, { icons: false }), { stale: new Set(["a/b.ts"]) }),
+    );
+    assert.equal(out, "`a/b.ts` <warning>missing</>");
+  });
+});

@@ -16,9 +16,15 @@ const cwd = path.join(fixture, "workspace");
 const agent = path.join(fixture, "agent");
 const socket = "pi-emphasis-" + process.pid;
 const ESC = String.fromCharCode(27);
-const REPLY = "**Cause:** [[Failed: 3 tests]] then [[Passed on CI]], literal `[[Done]]` stays.";
+const REPLY =
+  "**Cause:** [[Failed: 3 tests]] then [[Passed on CI]], `src/gone.ts` and literal `[[Done]]` stays.";
+const EDIT_REPLY = "[[Done]] wrote a.js, it stays.";
+// What the fixture model does on each request of a run: "edit" calls the write
+// tool once; anything else is a text reply.
+let script = [];
 const RULE = "Pills are required, not optional.";
 let sawRule = [];
+let lastRequestAt = 0;
 
 const server = createServer(async (req, res) => {
   // Read the request only to learn whether the rule reached the prompt; never log it.
@@ -26,6 +32,7 @@ const server = createServer(async (req, res) => {
   req.setEncoding("utf8");
   for await (const chunk of req) body += chunk;
   sawRule.push(body.includes(RULE));
+  lastRequestAt = Date.now();
   res.writeHead(200, { "content-type": "text/event-stream" });
   const chunk = (delta, finish_reason) => ({
     id: "emphasis-fixture",
@@ -34,8 +41,24 @@ const server = createServer(async (req, res) => {
     model: "fixture",
     choices: [{ index: 0, delta, finish_reason }],
   });
-  res.write("data: " + JSON.stringify(chunk({ role: "assistant", content: REPLY }, null)) + "\n\n");
-  res.write("data: " + JSON.stringify(chunk({}, "stop")) + "\n\n");
+  const step = script.shift() ?? "reply";
+  if (step === "edit") {
+    const call = {
+      index: 0,
+      id: "call_edit",
+      type: "function",
+      function: {
+        name: "write",
+        arguments: JSON.stringify({ path: "a.js", content: "export default 2;\n" }),
+      },
+    };
+    res.write("data: " + JSON.stringify(chunk({ role: "assistant", tool_calls: [call] }, null)) + "\n\n");
+    res.write("data: " + JSON.stringify(chunk({}, "tool_calls")) + "\n\n");
+  } else {
+    const content = step === "edit-reply" ? EDIT_REPLY : REPLY;
+    res.write("data: " + JSON.stringify(chunk({ role: "assistant", content }, null)) + "\n\n");
+    res.write("data: " + JSON.stringify(chunk({}, "stop")) + "\n\n");
+  }
   res.end("data: [DONE]\n\n");
 });
 
@@ -58,8 +81,9 @@ async function waitFor(pattern) {
 }
 
 /** Start pi in tmux with `env`, send one prompt, and return the plain and escaped reply line. */
-async function run(env) {
+async function run(env, steps = [], extensions = []) {
   sawRule = [];
+  script = steps;
   tmux(
     "new-session",
     "-d",
@@ -100,14 +124,18 @@ async function run(env) {
     "regular",
     "-e",
     path.join(root, "packages/emphasis/index.ts"),
+    ...extensions.flatMap((name) => ["-e", path.join(root, "packages", name, "index.ts")]),
   );
   await waitFor(/fixture/);
   tmux("send-keys", "-t", "ui", "-l", "show the pills");
   tmux("send-keys", "-t", "ui", "Enter");
   const plain = await waitFor(/stays\./);
+  // A run can continue after its reply (done-gate's nudge); end it only once the
+  // fixture has been quiet, so a late request is not counted in the next run.
+  while (Date.now() - lastRequestAt < 1500) await delay();
   const line = (text) => text.split("\n").find((row) => row.includes("stays.")) ?? "";
   // Pills join their words with no-break spaces so they cannot wrap; compare as plain spaces.
-  const result = { plain: line(plain).replaceAll(" ", " "), escaped: line(screen(true)), sawRule: sawRule.slice() };
+  const result = { plain: line(plain).replaceAll("\u00a0", " "), escaped: line(screen(true)), sawRule: sawRule.slice() };
   tmux("kill-session", "-t", "ui");
   return result;
 }
@@ -151,7 +179,7 @@ try {
     }),
   );
 
-  const on = await run([]);
+  const on = await run([], [], ["done-gate"]);
   assert.deepEqual(on.sawRule, [true], "the reply_style section reached the model");
   assert.ok(on.plain.includes(" Failed: 3 tests"), "pill drawn with its icon: " + on.plain);
   assert.ok(on.plain.includes(" Passed on CI"), "detail kept: " + on.plain);
@@ -167,7 +195,21 @@ try {
   for (const word of ["Failed", "Passed"])
     assert.ok(style(word).includes(ESC + "[48;"), word + " pill has a panel background");
   assert.notEqual(style("Failed"), style("Passed"), "tones are colored apart");
+  assert.ok(on.plain.includes("src/gone.ts \uf127 missing"), "missing path marked: " + on.plain);
+  assert.ok(!on.plain.includes("unchecked"), "no edits, so no claim is doubted: " + on.plain);
   console.log("ok: pills, label icons and the reply_style section in a real TUI");
+  console.log("ok: a missing path in inline code is marked");
+
+  // The model writes a.js, then claims [[Done]] with no check run: done-gate's
+  // own state, published through shared/evidence-state.mjs, marks the claim.
+  const edited = await run([], ["edit", "edit-reply", "edit-reply"], ["done-gate"]);
+  assert.ok(edited.plain.includes("\uf128 Done · unchecked"), "claim doubted: " + edited.plain);
+  console.log("ok: [[Done]] after an unchecked edit is drawn as unchecked, from done-gate's state");
+  // Control: the same run without done-gate has nobody to say the edit was unchecked.
+  const alone = await run([], ["edit", "edit-reply"]);
+  assert.ok(alone.plain.includes("\uf00c Done"), "claim as written without done-gate: " + alone.plain);
+  assert.ok(!alone.plain.includes("unchecked"), "no doubt without done-gate: " + alone.plain);
+  console.log("ok: without done-gate the same claim is drawn as written");
 
   const off = await run(["PI_EMPHASIS=0"]);
   assert.deepEqual(off.sawRule, [false], "no reply_style section with PI_EMPHASIS=0");

@@ -34,6 +34,7 @@ import { messageText } from "../../shared/message-text.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { revisionSnapshot } from "../../shared/revision.mjs";
 import { completedJobCheck } from "../../shared/job-evidence.mjs";
+import { noteUncheckedEdits } from "../../shared/evidence-state.mjs";
 // Namespace import too: /reload can serve a cached gate.mjs, and a binding added
 // since the process started has to be read as a property, where a named import
 // fails. See the livePaths call below.
@@ -77,6 +78,8 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
   // `!` checks Matt started, with the tree each started on. Only a start: whether
   // the run passed comes from the message Pi saves when it finishes.
   const userRuns: { command: string; at: number; before: any }[] = [];
+  // emphasis reads this to mark a [[Done]] written over edits no check covered.
+  const publish = () => noteUncheckedEdits(state.dirty.size > 0);
 
   // null means git could not answer — no repo, no HEAD, git missing. That is
   // not the same as "nothing changed", so callers must not read it as one.
@@ -163,6 +166,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     backgroundChecks.clear();
     resetGateState(state);
     lastClaim = undefined;
+    publish();
   });
 
   pi.on("input", async () => {
@@ -171,6 +175,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     backgroundChecks.clear();
     resetGateState(state);
     lastClaim = undefined;
+    publish();
   });
 
   // The claim judgment needs the message that closes the run, so keep the last
@@ -208,7 +213,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     if (epoch === generation) checks.set(event.toolCallId, { before, generation: epoch });
   });
 
-  pi.on("tool_result", async (event, ctx) => {
+  const onToolResult = async (event: any, ctx: any) => {
     if (event.toolName === "terminal_start") {
       const launched = checks.get(event.toolCallId);
       checks.delete(event.toolCallId);
@@ -252,9 +257,16 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       isError: event?.isError,
       cwd: ctx?.cwd,
     });
+  };
+  pi.on("tool_result", async (event, ctx) => {
+    try {
+      await onToolResult(event, ctx);
+    } finally {
+      publish();
+    }
   });
 
-  pi.on("agent_before_settle", async (event, ctx) => {
+  const onBeforeSettle = async (event: any, ctx: any) => {
     if (!state.verificationSeen && state.dirty.size > 0 && userRuns.length > 0) {
       const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as any[];
       const hit = userBashEvidence({
@@ -383,5 +395,12 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
       ],
       continue: true,
     };
+  };
+  pi.on("agent_before_settle", async (event, ctx) => {
+    try {
+      return await onBeforeSettle(event, ctx);
+    } finally {
+      publish();
+    }
   });
 }

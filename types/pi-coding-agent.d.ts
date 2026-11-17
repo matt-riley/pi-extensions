@@ -252,6 +252,9 @@ declare module "@earendil-works/pi-coding-agent" {
     messageType: string;
     isStreaming?: boolean;
     availableWidth?: number;
+    /** Saved entry's id and ISO time; undefined for a live message. */
+    messageId?: string;
+    timestamp?: string;
   }
 
   /** The object every extension's default export receives. */
