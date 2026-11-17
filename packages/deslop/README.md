@@ -68,9 +68,9 @@ checked here:
 
 | Severity | Signs |
 | --- | --- |
-| High (strong) | Filler phrases (W1), "not X, it is Y" and "not X but Y" contrasts (W2), marketing adjectives (W5), generic openings (W6), paired adjectives (W9), "excited to announce" (W15), "whether you're X or Y" (W16), throat-clearing pivots (W17), corporate and internet cliches (W21, W25, W36), runs of short punchy sentences (W34), one-line closers such as "that's it", parenthetical asides repeated three times, faux-insight setups, dramatic fragments, rhetorical setups |
-| Medium (weak) | Dash asides, em dash or double hyphen (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3), "X, not Y" contrasts (contrastive framing), one subject renamed with a new synonym each time, colon reveals, superficial -ing analysis, importance puffery, weasel attribution, interpretive metadiscourse, negative listing |
-| Low (weak) | "very" (W20), curly quotes (W27), "quietly" (W45), unicode arrows (deslop rule 9), invented hyphenated labels, forced groups of three, sentences that fit any project's docs |
+| High (strong) | Filler phrases (W1), "not X, it is Y" and "not X but Y" contrasts (W2), marketing adjectives (W5), generic openings (W6), paired adjectives (W9), "excited to announce" (W15), "whether you're X or Y" (W16), throat-clearing pivots (W17), corporate and internet cliches (W21, W25, W36), runs of short punchy sentences (W34), one-line closers such as "that's it", parenthetical asides repeated three times, faux-insight setups, dramatic fragments, rhetorical setups, chat replies left in the document |
+| Medium (weak) | Dash asides, em dash or double hyphen (W3), self-posed rhetorical questions (W4), stacked hedging (W8), text narrating its own structure (W10), mechanical transitions (W11), exclamation clusters (W18), emoji as emphasis or in headings (W23, W30), sincerity intensifiers (W38), "serves as" for "is" (deslop rule 3), "X, not Y" contrasts (contrastive framing), one subject renamed with a new synonym each time, colon reveals, superficial -ing analysis, importance puffery, weasel attribution, interpretive metadiscourse, negative listing, puffed-up verbs |
+| Low (weak) | "very" (W20), curly quotes (W27), "quietly" (W45), unicode arrows (deslop rule 9), invented hyphenated labels, forced groups of three, sentences that fit any project's docs, wordy phrases |
 
 A strong sign is enough for a report on its own. A weak sign counts only
 beside others in the same paragraph: a medium and a low, or three lows, report
@@ -141,6 +141,21 @@ a habit that models repeat.
   the sentence, such as `put simply` or `to put it another way`. Weak.
 - **Negative listing.** Two `Not a …` sentences in a row before saying what
   the thing is. Weak. State what it is and drop the list.
+- **Chat reply left in the document.** Lines that answer or sign off to a
+  reader as if in a chat, such as `I hope this helps`, `great question`,
+  `happy coding`, `stay tuned`, or a sentence opening with `Certainly!`. Strong.
+- **Puffed-up verb.** `empowers`, `streamlines`, `fosters`, `boasts` and
+  `revolutionizes`, where a plain verb says what happens. Medium.
+- **Wordy phrase.** `in order to`, `due to the fact that`, `in the event that`
+  and similar, where a short form exists. Low.
+
+Later additions to existing signs: the `not just X, it's Y` contrast also
+matches across a dash or a colon, and `not only does it X, it also Y` counts.
+Filler covers `it is important to note`, `plays a crucial role` and
+`a myriad of`; marketing covers `state-of-the-art` and `harness the power of`;
+pivots cover `let's dive into`, `let me explain` and `this is where X comes in`.
+`Ultimately`, `Notably` and `Importantly` count as mechanical transitions, and
+`Bottom line:` or `Spoiler:` before a lowercase punchline as a colon reveal.
 
 The dash threshold follows deslop-text's figures for internal documents: one in
 a title is fine and two in a paragraph are a finding.
