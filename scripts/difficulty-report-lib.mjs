@@ -4,7 +4,7 @@ import { DIFFICULTY_THRESHOLD, routeFromDifficulty } from "../packages/router/mo
  * Whether the router would leave the base at `threshold` for this rating.
  * Reuses routeFromDifficulty so the report cannot drift from production.
  */
-export function routerWouldCatchTurn(difficulty, thresholds = {}) {
+function routerWouldCatchTurn(difficulty, thresholds = {}) {
   if (!Number.isFinite(difficulty)) return false;
   const route = routeFromDifficulty(
     { difficulty: { type: "score", score: difficulty } },

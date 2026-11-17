@@ -30,7 +30,7 @@ export const CURRENT = {
 
 // The calibration published for this four-dimension split puts the lines
 // higher: destructive 0.9, exfiltration 0.7, beyond-scope 0.85, impact 2.5.
-export const PUBLISHED = {
+const PUBLISHED = {
   destructive: 0.9,
   intentMismatch: 0.85,
   credentials: 0.7,

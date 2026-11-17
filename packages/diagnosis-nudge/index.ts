@@ -27,7 +27,7 @@ import { resolveApiKey } from "../../shared/systemone-config.mjs";
 import { appendNudge, createNudgeState, observeToolResult, resetNudgeState } from "./nudge.mjs";
 import { judgeFailure, memoKeyFor, shouldTriage, triageText } from "./triage.mjs";
 
-export const TRIAGE_ENV = "PI_DIAGNOSIS_TRIAGE";
+const TRIAGE_ENV = "PI_DIAGNOSIS_TRIAGE";
 
 /** Off means off: anything but a yes leaves the deterministic nudge alone. */
 function triageEnabled(env = process.env) {

@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url";
 import { askSystemOne } from "../shared/systemone.mjs";
 
 /** The tail matters most: a log names the error where it stops. */
-export const MAX_LOG_CHARS = 6000;
+const MAX_LOG_CHARS = 6000;
 
 export const CLASSES = {
   flaky:

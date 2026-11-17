@@ -50,7 +50,7 @@ const WIDEST_PROMOTION = Math.max(...Object.keys(PROMOTIONS).map((name) => name.
 const q = (name) => "`" + name + "`";
 
 /** One correction, whatever the caller called its text field. */
-export function normalizeCluster(item) {
+function normalizeCluster(item) {
   const text = typeof item === "string" ? item : (item?.correction ?? item?.text ?? "");
   return {
     text: String(text).trim().slice(0, MAX_CORRECTION_CHARS),

@@ -172,7 +172,7 @@ export function summarise({ constraints, claims, retention, grounding }) {
 }
 
 /** Text of one message entry, whatever shape its content took. */
-export function messageText(message) {
+function messageText(message) {
   const content = message?.content ?? message?.summary ?? "";
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return String(content ?? "");
@@ -182,7 +182,7 @@ export function messageText(message) {
     .join("\n");
 }
 
-export function readSession(file) {
+function readSession(file) {
   const entries = readFileSync(file, "utf8")
     .split(/\r?\n/)
     .flatMap((line) => {
@@ -239,7 +239,7 @@ export function excerptOf(replaced, { budget = EXCERPT_CHARS, perMessage = 2_000
 }
 
 /** Newest session with a compaction, or the named one. */
-export function findSession(selector = "newest") {
+function findSession(selector = "newest") {
   const root = path.join(homedir(), ".pi", "agent", "sessions");
   const files = readdirSync(root).flatMap((dir) => {
     const base = path.join(root, dir);

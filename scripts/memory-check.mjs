@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 import { askSystemOne } from "../shared/systemone.mjs";
 import { usableNumber } from "../shared/systemone.mjs";
 
-export const DEFAULT_BIN = process.env.LORE_BIN ?? "lore";
+const DEFAULT_BIN = process.env.LORE_BIN ?? "lore";
 const MAX_CANDIDATES = 5;
 const MAX_MEMORY_CHARS = 1200;
 const MAX_CONTENT_CHARS = 900;
