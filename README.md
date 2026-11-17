@@ -108,7 +108,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-diagnosis-nudge`](./packages/diagnosis-nudge/README.md) | Nudge the agent to check its diagnosis; pause edits after two failed revised checks. |
 | [`pi-done-gate`](./packages/done-gate/README.md) | Remind the agent to check unverified code changes before it calls the work done. |
 | [`pi-deslop`](./packages/deslop/README.md) | Flag machine-writing patterns in prose the agent just edited, and check the rewrite with TypeSafe. |
-| [`pi-until`](./packages/until/README.md) | Keep the agent working until your check passes, within a limit you set. |
+| [`pi-until`](./packages/until/README.md) | Keep the agent working until your check passes, or until a metric reaches a target one measured change at a time (`/climb`), within a limit you set. |
 | [`pi-guardrail`](./packages/guardrail/README.md) | Check risky tool calls, ask for approval when needed, and refuse catastrophic operations. |
 | [`pi-router`](./packages/router/README.md) | Route tasks to models, with optional escalation for harder work. |
 | [`pi-prompt-coach`](./packages/prompt-coach/README.md) | Rewrite a rough request with a hosted model, then check that it still asks for the same thing. |

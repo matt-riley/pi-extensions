@@ -38,6 +38,59 @@ needs `--` (e.g. `npm test -- --grep x`) belongs in a script or `sh -c '…'`.
 
 The command is yours, typed at the prompt. The model never supplies it.
 
+## /climb: a metric loop
+
+`/until` asks "is it green". `/climb` asks "is the number better", one change
+per measurement.
+
+```
+/climb [--max N] [--min N] [--runs N] [--higher|--lower] --target <number> --gate "<cmd>" <metric-cmd> [-- task]
+/climb stop
+/climb            # status
+```
+
+```
+/climb --target 25 --gate "npm test" node bench/parse.mjs -- make parsing faster
+```
+
+- `<metric-cmd>` prints one JSON line, the counter contract `measure_command`
+  uses: `{"value": 41.2, "completed": 100, "cached": 0}`. Zero or cached work,
+  a missing value, or a non-zero exit is not a sample.
+- `--gate` is the regression check and must exit 0 (`npm test`).
+- `--runs` (3 to 10, default 3) samples per measurement; `--lower` (default) or
+  `--higher` says which way is better; `--max` (default 20) caps attempts;
+  `--min` (default 1) is the attempt floor before a met target ends the run.
+
+Behaviour:
+
+- **Baseline first.** Starting the loop runs the gate and the metric on the
+  untouched tree. A red gate or a failed measurement starts nothing; a baseline
+  that already meets the target ends at once.
+- **One attempt per settle.** Each time the run is about to settle, the gate
+  runs, then the metric `--runs` times. The attempt is kept only when the gate
+  passes and its whole range clears the best accepted range (for `--lower`, its
+  maximum is below the best minimum). Otherwise it is rejected.
+- **The agent reverts; the loop checks.** On a rejection the agent is told to
+  revert in full and stop. The next settle compares the tree's content with the
+  last accepted state and counts no attempt until they match. The comparison is
+  a git tree id built in a throwaway index from every non-ignored file, so it
+  does not change when the agent commits an accepted state, and it never
+  touches your index, refs or files.
+- **Never commits.** A kept attempt is reported with its tree id; committing is
+  left to the agent under whatever you authorised.
+- A settle with nothing changed, or a revert that does not match, counts no
+  attempt; three in a row end the loop. An aborted or errored run ends it too.
+- One TSV row per attempt and per revert check (`ts, iteration, hypothesis,
+  before, after, range, gate, verdict`) is appended to
+  `.pi/runs/climb-<timestamp>.tsv`. The hypothesis is the agent's
+  `Hypothesis:` line, or the first line of its last message.
+
+Both commands are yours; the model never supplies them. `/climb` and `/until`
+do not run at the same time.
+
+`.pi/runs/` gets a `.gitignore` of `*` when either loop creates it, so the logs
+stay out of git and out of working-tree fingerprints.
+
 ## How
 
 `agent_before_settle` is pi's final actionable boundary: a handler can append a

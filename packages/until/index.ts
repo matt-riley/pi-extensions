@@ -6,12 +6,13 @@
 // whole loop — re-check the predicate there, and either stop or send the
 // failing output back.
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync } from "node:fs";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { startRunLog } from "../../shared/runs.mjs";
 import { tsvRow } from "../../shared/tsv.mjs";
+import { installClimb } from "./climb-run.mjs";
 import { TSV_HEADER, decide, kickoffMessage, parseArgs } from "./loop.mjs";
 
 const PREDICATE_TIMEOUT_MS = 10 * 60_000;
@@ -27,6 +28,7 @@ interface Loop {
 
 export default function piUntilExtension(pi: ExtensionAPI) {
   let loop: Loop | undefined;
+  const climb = installClimb(pi, { isOtherLoopActive: () => loop !== undefined });
 
   const log = (cells: unknown[]) => {
     if (!loop) return;
@@ -108,13 +110,15 @@ export default function piUntilExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const dir = join(ctx.cwd ?? process.cwd(), ".pi", "runs");
-      const logPath = join(dir, `until-${new Date().toISOString().replace(/[:.]/g, "-")}.tsv`);
+      if (climb.active()) {
+        ctx.ui?.notify?.("until: /climb is running; stop it first", "error");
+        return;
+      }
+      let logPath: string;
       try {
-        mkdirSync(dir, { recursive: true });
-        appendFileSync(logPath, TSV_HEADER);
+        logPath = startRunLog(ctx.cwd ?? process.cwd(), "until", TSV_HEADER);
       } catch (error) {
-        ctx.ui?.notify?.(`until: cannot write ${logPath}: ${String(error)}`, "error");
+        ctx.ui?.notify?.(`until: cannot write the log: ${String(error)}`, "error");
         return;
       }
       loop = { command: parsed.command, task: parsed.task, max: parsed.max, iteration: 0, logPath };
