@@ -7,7 +7,7 @@
 // Pure-ish: the cache and the import graph are passed in; file reads (context
 // lines) are injected.
 
-import { levenshtein } from "./search.mjs";
+import { suggestSymbols } from "./search.mjs";
 
 const DEF_KINDS = new Set([
   "function",
@@ -88,7 +88,7 @@ export async function resolveDefinition({ symbol, fromFile, kind, cache, graph, 
   }
 
   if (candidates.length === 0 && !external) {
-    const suggestions = await suggestDefs(q, files, cache);
+    const suggestions = suggestSymbols(q, files, cache);
     if (suggestions.length > 0)
       note.push(`no definition found — did you mean: ${suggestions.join(", ")}?`);
   }
@@ -191,16 +191,4 @@ function followReexports(startRel, name, { cache, graph, depth, visited, alsoNam
     if (resolved.type === "external") return { external: resolved.pkg };
   }
   return null;
-}
-
-async function suggestDefs(q, files, cache) {
-  const seen = new Set();
-  for (const rel of files) {
-    for (const s of cache.files[rel]?.symbols ?? []) {
-      const name = s.name?.toLowerCase();
-      if (!name || seen.has(name)) continue;
-      if (levenshtein(q, name) <= 2 && name !== q) seen.add(name);
-    }
-  }
-  return [...seen].sort((a, b) => levenshtein(q, a) - levenshtein(q, b)).slice(0, 3);
 }
