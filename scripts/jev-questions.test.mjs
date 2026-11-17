@@ -242,6 +242,15 @@ const CASES = {
       ask,
       env: {},
     }),
+  "promote corrections without guidance": (ask) =>
+    promoteCorrections({
+      corrections: [
+        { text: "added a second cache writer beside the owner", occurrences: 2 },
+        { text: "wrote an invalid status string", occurrences: 3 },
+      ],
+      ask,
+      env: {},
+    }),
   "web answer": (ask) =>
     answerFromPage({
       url: "https://example.test/page",

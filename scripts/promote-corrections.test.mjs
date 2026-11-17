@@ -13,8 +13,10 @@ import {
 const choice = (value) => ({ type: "choice", choice: value, confidence: 0.7 });
 const noul = (value) => ({ type: "noul", noul: value });
 
-test("the tiers are ordered from cheapest to most expensive", () => {
+test("the tiers are ordered from most structural to least, architecture and types ahead of lint", () => {
   assert.deepEqual(Object.keys(PROMOTIONS), [
+    "architecture",
+    "types",
     "test",
     "lint",
     "guardrail",
@@ -157,9 +159,36 @@ test("the report pairs each tier with what it means", () => {
       { text: "unknown", promotion: null, covered: 0.4 },
     ],
   });
-  assert.match(text, /1\. lint {5} — printed examples/);
-  assert.match(text, /a lint rule, type check or script check/i);
-  assert.match(text, /2\. \? {8} · already covered 0\.40 — unknown/);
+  assert.match(text, /1\. lint {8} — printed examples/);
+  assert.match(text, /A lint rule or script check would catch it/);
+  assert.match(text, /2\. \? {11} · already covered 0\.40 — unknown/);
+});
+
+test("the structural tiers say what they change, and the widest name still aligns", () => {
+  assert.match(
+    PROMOTIONS.architecture,
+    /one owner for the piece of state, one supported way to do it, and the old way an agent would copy deleted\./,
+  );
+  assert.match(PROMOTIONS.types, /A type change would make the bad state unwritable/);
+  const text = formatPromotions({
+    judged: true,
+    rows: [
+      { text: "two writers for the cache", promotion: "architecture", covered: null },
+      { text: "status string typo", promotion: "types", covered: null },
+    ],
+  });
+  assert.match(text, /1\. architecture — two writers for the cache/);
+  assert.match(text, /2\. types {7} — status string typo/);
+});
+
+test("the classifier is asked for the most structural fix, in tier order", () => {
+  const { instructions, criteria } = buildQuestions(1).promotion_0;
+  assert.ok(
+    instructions.includes(
+      "Prefer removing the wrong way over making it unwritable in types, types over a check, a check over an interruption, and an interruption over prose.",
+    ),
+  );
+  assert.equal(criteria, PROMOTIONS);
 });
 
 test("more clusters than the cap are dropped rather than paid for", () => {
