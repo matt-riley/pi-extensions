@@ -24,3 +24,26 @@ test("worker and verifier hold the brief's bar and report base problems", () => 
     );
   }
 });
+
+test("each principle sits in its suggested home", () => {
+  const feature = read("packages/router/playbooks/feature.md");
+  assert.match(feature, /Name the data shape first, and what concurrent actors share, and/);
+  assert.match(feature, /Settle product and scope trade-offs by what the user experiences first\./);
+
+  assert.match(
+    read("packages/router/playbooks/perf.md"),
+    /Explain the number before you trust it: what work it counts and why it is that size\./,
+  );
+  assert.match(
+    read("packages/done-gate/measurement.mjs"),
+    /Explain the number \(what work it counts, why it is that size\) before trusting or reporting it\./,
+  );
+
+  const design = read(".agents/skills/interface-design/SKILL.md");
+  for (const rule of [
+    /model the domain as a type, table or state machine so the bad state cannot be written\./,
+    /make it idempotent, so running it twice leaves the same state as running it once\./,
+    /sketch the design as if the requirement had been there from the start, then compare it with the bolt-on\./,
+  ])
+    assert.match(design, rule);
+});
