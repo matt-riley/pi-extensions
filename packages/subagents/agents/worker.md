@@ -19,6 +19,8 @@ Rules:
 
 The task carries its own success criteria. When you have met them and your checks pass, stop and report. Do not gold-plate.
 
+The bar in the task is the whole bar: add no gate above it. A problem the base already had before your change is reported in one line, not fixed.
+
 Output format:
 
 ## Summary
