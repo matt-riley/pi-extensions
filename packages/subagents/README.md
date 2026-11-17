@@ -42,7 +42,8 @@ subagent({
 })
 ```
 
-Unknown or disabled types error. There is no general-purpose fallback.
+Unknown or disabled types error. There is no general-purpose fallback. Every
+result carries an `id:` line; `swarm_report` reads finished results by it.
 
 ## Worktrees
 
@@ -95,6 +96,20 @@ across models (`interrogate`, `arena`). Pass each seat as a child's `model`.
 ```
 
 The router ignores `roles`; only this package reads it.
+
+## Swarm results
+
+`swarm_report({ slices: [{ id, slice?, required? }], expect_sha? })` (deferred,
+read-only) aggregates finished children by the `id:` on their results, from the
+child's own final text rather than a summary of it.
+
+- A slice is a **gap** when its child did not finish cleanly, when the first
+  non-blank line does not open with `PASS`, `ISSUES` or `BLOCKED`, or, with
+  `expect_sha`, when the text does not name that commit (full or a 7+ prefix).
+- Overall is `PASS` only when every required slice passed; with none marked
+  required, all are. A gap in a required slice makes it `INCOMPLETE`, and so does
+  an empty swarm. Otherwise `ISSUES`. Gaps in optional slices are still listed.
+- Only the 50 most recent finished children of this session are kept.
 
 ## Briefs and when to delegate
 

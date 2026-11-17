@@ -74,8 +74,7 @@ PI_CODING_AGENT_DIR="$tmp/agent" PI_CODING_AGENT_SESSION_DIR="$tmp/sessions" \
   Add `--tools +codemode` (or `"defaultTools": ["+codemode"]` in the fixture
   settings). Without it, every deferred-tool row silently drives nothing.
 - Deferred tools (`plan_mode_*`, `find_code`,
-  `diagnosis_checkpoint`, `measure_command`, `blast_radius`, `watch_pr`, `decision_log`,
-  `review_panel`, `terminal_*`) stay out of the default tool list, so the model reaches them
+  `diagnosis_checkpoint`, `measure_command`, `blast_radius`, `watch_pr`, `decision_log`, `review_panel`, `swarm_report`, `terminal_*`) stay out of the default tool list, so the model reaches them
   through codemode's `searchTools` (plan mode activates its own three). Drive
   them from a normally loaded session: with explicit `-e` paths only, a live
   drive here reported them as unavailable to the model.

@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { aggregate, formatAggregate } from "./aggregate.mjs";
 import { combineSignals } from "./combine-signals.mjs";
 import { CROSS_FAMILY, resolveCrossFamily, resolvePanel } from "./cross-family.mjs";
 import { physicalParentKeyForCrossFamily } from "../router/parent-physical.mjs";
@@ -34,6 +35,8 @@ let enabled = false;
 let runsPruned = false;
 
 const KEEP_RUNS = 200;
+// Finished children swarm_report can read by id; the oldest are forgotten first.
+const KEEP_RESULTS = 50;
 
 interface Worktree {
   root: string;
@@ -90,6 +93,15 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   const worktrees = () => (worktreeStore ??= createWorktrees({ agentDir: getAgentDir() }));
   // Worktrees made in this session: removed at shutdown only when the child left nothing.
   const made: Worktree[] = [];
+  const finished = new Map<string, { agent: string; status: string; text: string }>();
+
+  function remember(id: string, record: { agent: string; status: string; text: string }) {
+    finished.set(id, record);
+    for (const key of finished.keys()) {
+      if (finished.size <= KEEP_RESULTS) break;
+      finished.delete(key);
+    }
+  }
 
   const pool = createPool({
     onChange() {
@@ -436,6 +448,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           const changed = before ? changedFiles(before, await snapshotChanges(cwd)) : [];
           changes = await describeChanges(cwd, changed);
         }
+        remember(entry.id, { agent: agent.name, status: result.status, text: result.text ?? "" });
         const [triage, scopeWarning] = await Promise.all([
           clean
             ? triageResult({ agent: agent.name, task, text: result.text, signal: abortSignal })
@@ -445,6 +458,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             : undefined,
         ]);
         const note = [
+          `id: ${entry.id}`,
           modelNote,
           placeLine,
           triage ? `triage: ${triage}` : "",
@@ -513,6 +527,58 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         physicalParentKey: physicalParentKeyForCrossFamily(ctx?.model, ctx, routerFile),
       });
       return { content: [{ type: "text", text: JSON.stringify(panel) }], details: panel };
+    },
+  });
+
+  pi.registerTool({
+    name: "swarm_report",
+    label: "swarm_report",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Aggregate finished subagent results by the id on each result. A slice whose child did not finish, " +
+      "whose text does not open with PASS, ISSUES or BLOCKED, or (with expect_sha) that does not name the " +
+      "commit it checked is a GAP, and a gap is never a pass. Overall is PASS only when every required " +
+      "slice passed; with none marked required, all are. Reads results from this session only.",
+    promptSnippet:
+      "swarm_report(slices, expect_sha?): PASS / ISSUES / INCOMPLETE over finished subagent ids; gaps are not passes",
+    parameters: Type.Object({
+      slices: Type.Array(
+        Type.Object({
+          id: Type.String({ description: "The id: line on a subagent result" }),
+          slice: Type.Optional(
+            Type.String({ description: "Name for the row; defaults to the id" }),
+          ),
+          required: Type.Optional(Type.Boolean()),
+        }),
+        { maxItems: 32 },
+      ),
+      expect_sha: Type.Optional(
+        Type.String({ description: "Commit every worker was told to check and record" }),
+      ),
+    }),
+    async execute(_toolCallId, params) {
+      const slices: { id?: unknown; slice?: unknown; required?: unknown }[] = Array.isArray(
+        params?.slices,
+      )
+        ? params.slices
+        : [];
+      const results = slices.map((item) => {
+        const id = String(item?.id ?? "");
+        const found = finished.get(id);
+        return {
+          slice: typeof item?.slice === "string" && item.slice ? item.slice : id,
+          required: item?.required === true ? true : item?.required === false ? false : undefined,
+          status: found?.status ?? "missing (no finished result with this id)",
+          text: found?.text,
+        };
+      });
+      const expectSha =
+        typeof params?.expect_sha === "string" && params.expect_sha.trim()
+          ? params.expect_sha.trim()
+          : undefined;
+      const report = aggregate(results, { expectSha });
+      return { content: [{ type: "text", text: formatAggregate(report) }], details: report };
     },
   });
 
