@@ -451,7 +451,7 @@ Measured over 142 sessions, at the time of writing:
 | Estimated extra cost of those episodes | $82.85 (same tokens at the cheap rate; quality not compared) |
 | Cache share inside episodes | 79% (corpus-wide: 98.6%) |
 
-Two things this settled by measuring:
+Measuring settled two things:
 
 - **A switch is cheap and quickly amortised.** It pays full price for the prefix
   once (p50 38k tokens, three-quarters of a cent) and the next request is

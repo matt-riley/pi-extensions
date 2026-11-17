@@ -290,7 +290,7 @@ After every change to its state, the gate publishes one fact to
 covered. [pi-emphasis](../emphasis/README.md) reads it to draw a `[[Done]]` or
 `[[Passed]]` pill written over such edits as "Done · unchecked". The gate itself
 still decides nothing more and blocks nothing; with emphasis absent the fact is
-simply unread.
+unread.
 
 ## Behaviour
 
@@ -380,8 +380,10 @@ pilot retains its own narrower protocol. The completion reminder is unchanged.
 
 ## Tests
 
-`node --test packages/done-gate/test/*.test.mjs`: command recognition and kind (compile or lint versus runs the code), the evidence check on a tests-passed claim (failed run, failure and zero-test logs, count mismatch, hedged claims),
-(positive and negative, including `stylua --check` and `selene`), the
+`node --test packages/done-gate/test/*.test.mjs`: command recognition and kind
+(compile or lint versus runs the code, positive and negative, including
+`stylua --check` and `selene`), the evidence check on a tests-passed claim
+(failed run, failure and zero-test logs, count mismatch, hedged claims), the
 dirty/verify state machine, cwd scoping and working-tree liveness, outcome
 gating, debug-tag line numbers against a real temporary git repo, the scoped
 command mapping (Go packages, nested modules, golangci, nearest tsconfig, Lua
