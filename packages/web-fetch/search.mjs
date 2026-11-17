@@ -120,6 +120,11 @@ function decodeDdgUrl(href) {
 
 const MAX_FIELD_CHARS = 1000;
 
+/** First href among an anchor's attributes, or "" when it has none. */
+function hrefOf(attrs) {
+  return (attrs ?? []).find((attribute) => attribute.name === "href")?.value ?? "";
+}
+
 // Pull title/href/snippet out of one result block's token range. A mini
 // open/close stack tracks nesting so text inside <b> snippet emphasis and
 // the nested result__extras markup are handled correctly, and only the
@@ -138,23 +143,17 @@ function extractBlock(tokens, start, end) {
       if (VOID_TAGS.has(t.name)) continue;
       if (t.name === "a" && tokenHasClass(t, "result__a")) {
         inTitle++;
-        if (!href) {
-          for (const a of t.attrs ?? []) {
-            if (a.name === "href") href = a.value;
-          }
-        }
+        if (!href) href = hrefOf(t.attrs);
       } else if (t.name === "a" && tokenHasClass(t, "result__snippet")) {
         inSnippet++;
       }
       stack.push(t.name);
     } else if (t.type === "close") {
-      for (let k = stack.length - 1; k >= 0; k--) {
-        if (stack[k] === t.name) {
-          if (t.name === "a" && inTitle) inTitle--;
-          else if (t.name === "a" && inSnippet) inSnippet--;
-          stack.length = k;
-          break;
-        }
+      const k = stack.findLastIndex((name) => name === t.name);
+      if (k >= 0) {
+        if (t.name === "a" && inTitle) inTitle--;
+        else if (t.name === "a" && inSnippet) inSnippet--;
+        stack.length = k;
       }
     } else if (t.type === "text") {
       // Tokenizer text is already entity-decoded.
@@ -212,26 +211,21 @@ export function parseDdgResults(html, { limit = 5 } = {}) {
   const bodies = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
-    if (t.type === "tag") {
-      if (!VOID_TAGS.has(t.name)) {
-        if (t.name === "div" && tokenHasClass(t, "result__body")) {
-          const wrapperClass = opens.length > 0 ? tokenClass(tokens[opens[opens.length - 1]]) : "";
-          const isAdWrapper = /(^|\s)result--ad(\s|$)/.test(wrapperClass);
-          if (!isAdWrapper) bodies.push({ start: i, end: -1 });
-        }
-        opens.push(i);
-      }
-    } else if (t.type === "close") {
+    if (t.type === "close") {
       const openIdx = opens.pop();
       if (openIdx !== undefined) {
-        for (const b of bodies) {
-          if (b.start === openIdx && b.end === -1) {
-            b.end = i;
-            break;
-          }
-        }
+        const body = bodies.find((b) => b.start === openIdx && b.end === -1);
+        if (body) body.end = i;
       }
+      continue;
     }
+    if (t.type !== "tag" || VOID_TAGS.has(t.name)) continue;
+    if (t.name === "div" && tokenHasClass(t, "result__body")) {
+      const wrapperClass = opens.length > 0 ? tokenClass(tokens[opens[opens.length - 1]]) : "";
+      const isAdWrapper = /(^|\s)result--ad(\s|$)/.test(wrapperClass);
+      if (!isAdWrapper) bodies.push({ start: i, end: -1 });
+    }
+    opens.push(i);
   }
 
   // Pass 2: extract fields from each captured block.
