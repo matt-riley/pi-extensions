@@ -423,11 +423,24 @@ export default function (pi) {
   console.log(`ok: real host loads ${manifest.pi.extensions.length} manifest extensions`);
   const skillCommands = commands.commands.filter((command) => command.source === "skill");
   assert.deepEqual(skillCommands.map((command) => command.name).sort(), [
+    "skill:arena",
     "skill:implementation-review",
     "skill:interface-design",
+    "skill:interrogate",
+    "skill:swarm",
     "skill:test-driven-development",
   ]);
-  for (const name of ["review", "pr", "test", "refactor", "design", "workflow"])
+  for (const name of [
+    "review",
+    "pr",
+    "test",
+    "refactor",
+    "design",
+    "workflow",
+    "interrogate",
+    "arena",
+    "swarm",
+  ])
     assert.ok(names.has(name), `Missing workflow prompt ${name}`);
   phase = "resources";
   const resourceCases = [
@@ -444,6 +457,8 @@ export default function (pi) {
     ["/test example.mjs", "test-driven-development"],
     ["/refactor example.mjs", "interface-design"],
     ["/design cache API", "cache API"],
+    ["/interrogate the retry change", "Use the `interrogate` skill"],
+    ["/skill:interrogate", "# Interrogate"],
     ["/verify-setup create", "meaningful acceptance check rejects a known-bad case"],
     [
       "/workflow fix the retry bug",

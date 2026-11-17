@@ -12,8 +12,11 @@ test("owned workflow skills have portable metadata and package registration", as
   assert.deepEqual(manifest.pi.skills, ["./.agents/skills"]);
   const skills = await discoverSkills({ roots: [skillRoot] });
   assert.deepEqual(skills.map((skill) => skill.name).sort(), [
+    "arena",
     "implementation-review",
     "interface-design",
+    "interrogate",
+    "swarm",
     "test-driven-development",
   ]);
   for (const skill of skills) {
@@ -28,7 +31,7 @@ test("owned workflow skills have portable metadata and package registration", as
 
 test("realistic tasks route to owned workflows offline", async () => {
   const skills = await discoverSkills({ roots: [skillRoot] });
-  assert.equal(skills.length, 3, "do not pass by testing an empty catalogue");
+  assert.equal(skills.length, 6, "do not pass by testing an empty catalogue");
   const cases = [
     ["Review this PR for correctness and security regressions", "implementation-review"],
     ["Check the staged diff for actionable bugs", "implementation-review"],
@@ -36,6 +39,10 @@ test("realistic tasks route to owned workflows offline", async () => {
     ["Implement a feature one tested vertical slice at a time", "test-driven-development"],
     ["Refactor this module boundary without changing behavior", "interface-design"],
     ["Design a smaller public interface for the cache", "interface-design"],
+    ["Interrogate this change and find its blind spots", "interrogate"],
+    ["Stress test this change before landing it", "interrogate"],
+    ["Arena this: competing implementations of the cache", "arena"],
+    ["Swarm this check across every package", "swarm"],
   ];
   for (const [query, expected] of cases)
     assert.equal(rankSkills(skills, query, { limit: 1 })[0]?.name, expected, query);
@@ -68,12 +75,45 @@ test("every owned workflow is used by a prompt", async () => {
     "implementation-review": ["review", "pr"],
     "test-driven-development": ["test"],
     "interface-design": ["design", "refactor"],
+    interrogate: ["interrogate"],
+    arena: ["arena"],
+    swarm: ["swarm"],
   };
   for (const [skill, names] of Object.entries(prompts))
     for (const name of names) {
       const text = await readFile(root + "prompts/" + name + ".md", "utf8");
       assert.ok(text.includes("the `" + skill + "` skill"), name);
     }
+});
+
+test("the run-proven skills keep the rules that make their results trustworthy", async () => {
+  const read = (name) => readFile(skillRoot + "/" + name + "/SKILL.md", "utf8");
+  const rules = {
+    interrogate: [
+      "Report findings. Do not fix them.",
+      'Spawn one `adversary` per seat in a\n   single turn, each with `isolation: "worktree"` and its seat\'s `model`.',
+      "A finding whose\n   command exits 0 on rerun is dropped, whatever its prose says.",
+      "Drop it if it only shows behaviour the intent allows.",
+      "A panel of one vendor is the same blind spots repeated: say so.",
+    ],
+    arena: [
+      "Candidates see only the task.",
+      "Never give it model names.",
+      "Read every candidate end to end yourself and score it per criterion.",
+      "A candidate that returns nothing is a dropout: continue and\n   say so.",
+    ],
+    swarm: [
+      "Do not tally the results by reading them yourself.",
+      "A second gap\n   stays a gap.",
+      "`INCOMPLETE` is not a pass: never round\nit up.",
+    ],
+  };
+  for (const [name, sentences] of Object.entries(rules)) {
+    const text = await read(name);
+    for (const sentence of sentences) assert.ok(text.includes(sentence), `${name}: ${sentence}`);
+  }
+  const prompt = await readFile(root + "prompts/interrogate.md", "utf8");
+  assert.ok(prompt.includes("Report findings; do not fix them."));
 });
 
 test("verification recipes require a safe failure witness or an explicit coverage gap", async () => {
