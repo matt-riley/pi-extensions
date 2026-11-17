@@ -1,6 +1,7 @@
 import { afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,6 +74,54 @@ describe("stale lookup", () => {
     writeFileSync(join(cwd, "src/here.ts"), "");
     const found = createStaleLookup()("`src/here.ts` and `src/gone.ts:12`", cwd);
     assert.deepEqual([...found], ["src/gone.ts"]);
+  });
+});
+
+describe("shortened paths", () => {
+  test("a path that ends a known file is not missing; a lookalike still is", () => {
+    const lookup = createStaleLookup({
+      find: () => [
+        "decision-rows/rows.mjs",
+        "rows.mjs/x.ts",
+        "./decision-rows/rows.mjs",
+        "ows.mjs/a.b",
+      ],
+      listFiles: () => ["packages/decision-rows/rows.mjs", "packages/a/rows.mjs"],
+    });
+    assert.deepEqual(
+      [...lookup("`x`", "/repo")],
+      ["rows.mjs/x.ts", "./decision-rows/rows.mjs", "ows.mjs/a.b"],
+    );
+  });
+
+  test("the file list is read only when something looks missing, and is reused", () => {
+    let lists = 0;
+    let clock = 0;
+    let missing = [];
+    const lookup = createStaleLookup({
+      find: () => missing,
+      listFiles: () => (lists++, ["src/a/b.ts"]),
+      now: () => clock,
+    });
+    lookup("`a`", "/repo");
+    assert.equal(lists, 0);
+    missing = ["a/b.ts"];
+    assert.equal(lookup("`b`", "/repo").size, 0);
+    lookup("`c`", "/repo");
+    assert.equal(lists, 1);
+    clock = 10_000;
+    lookup("`d`", "/repo");
+    assert.equal(lists, 2);
+  });
+
+  test("a real repository resolves a shortened path through git", (t) => {
+    const cwd = mkdtempSync(join(tmpdir(), "emphasis-git-"));
+    t.after(() => rmSync(cwd, { recursive: true, force: true }));
+    mkdirSync(join(cwd, "packages/rows"), { recursive: true });
+    writeFileSync(join(cwd, "packages/rows/rows.mjs"), "");
+    execFileSync("git", ["init", "-q", cwd]);
+    const found = createStaleLookup()("`rows/rows.mjs` and `rows/gone.mjs`", cwd);
+    assert.deepEqual([...found], ["rows/gone.mjs"]);
   });
 });
 
