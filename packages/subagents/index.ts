@@ -14,6 +14,7 @@ import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
+import { shortSha } from "../../shared/revision.mjs";
 import { VERDICT_ENTRY, verdictEntry } from "../../shared/verdict.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { LOCAL_READ, OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
@@ -460,7 +461,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             id: entry.id,
           });
           pi.appendEntry(VERDICT_ENTRY, recorded);
-          verdictNote = `verdict recorded: ${recorded.verdict}, patch ${recorded.patchId?.slice(0, 12) ?? "unknown"} against ${recorded.base ?? "no default branch"}`;
+          verdictNote = `verdict recorded: ${recorded.verdict}, patch ${shortSha(recorded.patchId) || "unknown"} against ${recorded.base ?? "no default branch"}`;
         }
         const [triage, scopeWarning] = await Promise.all([
           clean

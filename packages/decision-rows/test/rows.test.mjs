@@ -196,7 +196,7 @@ test("a verifier verdict names the verdict and the commit it ended on", () => {
   assert.equal(row.tone, "success");
   assert.equal(row.head, "verified · at 0123456789ab");
   assert.deepEqual(row.details, [
-    "patch id: fedcba9876543210",
+    "patch id: fedcba987654",
     "base: origin/main",
     "run: verifier-1",
     "at: 2026-11-17T10:00:00.000Z",

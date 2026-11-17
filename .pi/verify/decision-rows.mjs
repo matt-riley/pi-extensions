@@ -164,7 +164,8 @@ try {
   console.log("ok: six collapsed rows drawn, done-gate answer included; held router decision and routine Jev answer draw nothing");
 
   key("C-o");
-  const expanded = await waitFor(/patch id: fedcba9876543210/);
+  // 12 characters: the width shared/revision.mjs shortSha gives every hash.
+  const expanded = await waitFor(/patch id: fedcba987654\b/);
   assert.match(expanded, /new task: yes/);
   assert.match(expanded, /files read: 1/);
   assert.doesNotMatch(expanded, new RegExp(SECRET));
@@ -175,7 +176,7 @@ try {
   assert.ok(bodies.length >= 1, "the provider received a request");
   const last = bodies.at(-1);
   assert.ok(last.includes("say hi"), "the captured request is the one for this prompt");
-  for (const marker of [MARK, HELD, SECRET, "fedcba9876543210", "playbook debug"])
+  for (const marker of [MARK, HELD, SECRET, "fedcba987654", "playbook debug"])
     assert.ok(!last.includes(marker), `request body leaked ${marker}`);
   console.log("ok: the next provider request carries no entry data and no row text");
 
