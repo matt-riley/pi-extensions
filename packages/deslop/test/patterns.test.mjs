@@ -201,7 +201,7 @@ test("one coined label, or an ordinary compound, is not a finding", () => {
   for (const text of [
     "The read-only mode skips writes and the built-in path stays on.",
     "A non-blocking gate and a multi-line flow share one open-source loop.",
-    "Use the state-of-the-art loop, then a long-running pass.",
+    "Use the end-to-end loop, then a long-running pass.",
     "The dead-code check passes in every full-text mode.",
     "Call `stale-branch checks` and `merge-order gate` by name.",
   ])
@@ -529,6 +529,110 @@ test("the newer patterns stay linear on large hostile input", () => {
     superficial: "highlighting the team's commitment to ".repeat(20_000),
     dramatic: "That's it. That's the whole ".repeat(20_000),
     negativeList: "Not a x. Not a ".repeat(20_000),
+  };
+  for (const [name, text] of Object.entries(inputs)) {
+    const start = performance.now();
+    findSlop(text);
+    assert.ok(performance.now() - start < 1_000, `${name} took longer than a second`);
+  }
+});
+
+test("a not-just contrast is found across a dash or a colon as well as a comma", () => {
+  for (const sample of [
+    "It's not just a linter — it's a philosophy.",
+    "It's not just a linter—it's a philosophy.",
+    "It's not just a linter -- it's a philosophy.",
+    "This isn't about speed: it's about trust.",
+    "Not only does it build, it also tests.",
+  ])
+    assert.ok(ids(sample).includes("contrast"), sample);
+});
+
+test("the stock phrases models reach for are strong signs on one sighting", () => {
+  const cases = {
+    filler: [
+      "It is important to note that the cache expires.",
+      "It plays a crucial role in the release.",
+      "A myriad of options are available.",
+      "Navigating the complexities of the build is hard.",
+    ],
+    marketing: [
+      "Our state-of-the-art engine is unparalleled.",
+      "Unlock the full potential of your data.",
+      "Harness the power of the cache.",
+    ],
+    "generic-opening": ["In the ever-evolving landscape of tooling, tests matter."],
+    pivot: [
+      "Let's dive into the details.",
+      "Let me explain.",
+      "This is where the cache comes in.",
+      "Without further ado, the steps.",
+    ],
+    cliche: ["It's a win-win.", "Take your workflow to the next level."],
+    "chat-residue": [
+      "I hope this helps!",
+      "Great question! The cache is cleared on restart.",
+      "Certainly! Here is the config.",
+      "Happy coding!",
+      "Let me know if you have any questions.",
+    ],
+  };
+  for (const [id, samples] of Object.entries(cases)) {
+    for (const sample of samples) {
+      const found = findSlop(sample).find((item) => item.id === id);
+      assert.ok(found, `${id} not found in: ${sample}`);
+      assert.equal(found.severity, "high", sample);
+    }
+  }
+});
+
+test("puffed verbs, wordy phrases and soft transitions stay weak", () => {
+  const cases = {
+    "puffed-verb": "This library streamlines the release.",
+    wordy: "In order to run the tool, type run.",
+    transition: "Ultimately, the choice is yours.",
+    meta: "By the end of this guide, you will be able to deploy.",
+    "importance-puffery": "This underscores the importance of tests.",
+    "colon-reveal": "Bottom line: ship it.",
+  };
+  for (const [id, sample] of Object.entries(cases)) {
+    const found = findSlop(sample).find((item) => item.id === id);
+    assert.ok(found, `${id} not found in: ${sample}`);
+    assert.notEqual(found.severity, "high");
+    assert.equal(worthReporting([found]), false, `${id} should not report alone`);
+  }
+});
+
+test("a paragraph of weak signs together is worth a report", () => {
+  const text =
+    "This library streamlines releases. Ultimately, it fosters trust in order to ship faster.";
+  assert.ok(worthReporting(findSlop(text)));
+});
+
+test("the new phrase lists leave ordinary technical prose alone", () => {
+  for (const sample of [
+    "Enter the password, then press return.",
+    "Run sudo to elevate your privileges.",
+    "Take your time with the migration.",
+    "Of course the cache is cleared on restart.",
+    "The role is important to the deploy.",
+    "Sure, the parser runs once.",
+    "The dive log is stored in the cache.",
+    "The bottom line of the table is the total.",
+    "It is not just the cache that is cleared.",
+  ])
+    assert.deepEqual(ids(sample), [], sample);
+});
+
+test("the added patterns stay linear on large hostile input", () => {
+  const inputs = {
+    notJustDash: "not just a ".repeat(40_000) + "— x",
+    notOnly: "not only does ".repeat(30_000) + ", x",
+    playsRole: "plays a ".repeat(60_000),
+    whereComesIn: "this is where ".repeat(30_000),
+    everEvolving: "in the ever-evolving ".repeat(30_000),
+    nextLevel: "take your ".repeat(60_000),
+    chat: "Certainly ".repeat(60_000),
   };
   for (const [name, text] of Object.entries(inputs)) {
     const start = performance.now();
