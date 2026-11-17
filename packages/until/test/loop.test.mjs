@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_MAX, RULE, decide, kickoffMessage, parseArgs, tail, tsvRow } from "../loop.mjs";
+import { tsvRow } from "../../../shared/tsv.mjs";
+import { DEFAULT_MAX, RULE, decide, kickoffMessage, parseArgs, tail } from "../loop.mjs";
 
 test("parses status, stop, command, task and --max", () => {
   assert.deepEqual(parseArgs(""), { kind: "status" });

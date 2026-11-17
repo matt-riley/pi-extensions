@@ -9,7 +9,7 @@
 // "no opinion", never a blocked or altered spawn. Thresholds live in THRESHOLDS.
 
 import { askSystemOne, noulValue, usableNumber } from "../../shared/systemone.mjs";
-import { findStalePaths } from "./stalepaths.mjs";
+import { findStalePaths } from "../../shared/stalepaths.mjs";
 
 const TIMEOUT_MS = "6000";
 const MAX_TASK_CHARS = 4000;

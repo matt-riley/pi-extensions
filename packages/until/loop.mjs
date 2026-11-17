@@ -1,5 +1,7 @@
 // loop.mjs — pure logic for /until: argument parsing, the per-settle decision,
-// and the TSV decision-log row. index.ts owns pi wiring, exec and the filesystem.
+// and the TSV decision-log header. index.ts owns pi wiring, exec and the filesystem.
+
+import { tsvRow } from "../../shared/tsv.mjs";
 
 export const DEFAULT_MAX = 20;
 const TAIL_LINES = 40;
@@ -74,18 +76,6 @@ export function decide(loop, outcome, result) {
     `Make the smallest change the evidence justifies, then stop so I can re-check. ${RULE} If this is a genuine dead end, say so plainly instead of spinning.`,
   ].join("\n");
   return { action: "continue", iteration, message, summary };
-}
-
-/** One TSV row; cells are single-line and spreadsheet-formula safe. */
-export function tsvRow(cells) {
-  return (
-    cells
-      .map((c) => {
-        const s = String(c ?? "").replace(/[\t\r\n]+/g, " ");
-        return /^[=+\-@]/.test(s) ? `'${s}` : s;
-      })
-      .join("\t") + "\n"
-  );
 }
 
 export const TSV_HEADER = tsvRow(["ts", "iteration", "exit", "summary"]);

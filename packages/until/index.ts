@@ -11,7 +11,8 @@ import { join } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { TSV_HEADER, decide, kickoffMessage, parseArgs, tsvRow } from "./loop.mjs";
+import { tsvRow } from "../../shared/tsv.mjs";
+import { TSV_HEADER, decide, kickoffMessage, parseArgs } from "./loop.mjs";
 
 const PREDICATE_TIMEOUT_MS = 10 * 60_000;
 const STATUS_ID = "until";
