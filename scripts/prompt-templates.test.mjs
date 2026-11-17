@@ -116,6 +116,15 @@ test("retro routes collection behaviour to a proposed file edit, not a memory", 
   ]);
 });
 
+test("mine lists the classifier's tiers in the order the script defines them", async () => {
+  const { PROMOTIONS } = await import("./promote-corrections.mjs");
+  const text = await prompt("mine");
+  const tiers = Object.keys(PROMOTIONS)
+    .map((name) => "`" + name + "`")
+    .join(", ");
+  assert.ok(text.includes("It returns one of " + tiers + " per cluster"), tiers);
+});
+
 test("implementation review points at a run-proven check for findings that matter", async () => {
   const text = await read(".agents/skills/implementation-review/SKILL.md");
   assertSentences(text, [

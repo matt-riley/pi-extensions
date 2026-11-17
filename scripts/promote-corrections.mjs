@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// promote-corrections.mjs — turn a repeated correction into the cheapest fix
+// promote-corrections.mjs — turn a repeated correction into the most structural fix
 // that would have stopped it.
 //
 // /mine finds the clusters; this decides what to do with each one. The
 // judgement is a Choice over the promotion tiers, in the order a maintainer
-// should try them: a test or lint that catches it mechanically beats a policy
-// that interrupts, which beats a line of prose the model may not read.
+// should try them: a structure that leaves one way to do it beats a type that
+// makes the mistake unwritable, which beats a test or lint that catches it,
+// which beats a policy that interrupts, which beats a line of prose the model
+// may not read.
 //
 // A second question separates "the guidance is missing" from "the guidance was
 // there and was ignored", which is the difference between writing a new line and
@@ -27,8 +29,12 @@ const MAX_CORRECTION_CHARS = 500;
 const MAX_GUIDANCE_CHARS = 12000;
 
 export const PROMOTIONS = {
+  architecture:
+    "A structural change would remove the wrong way: one owner for the piece of state, one supported way to do it, and the old way an agent would copy deleted.",
+  types:
+    "A type change would make the bad state unwritable: the compiler rejects the mistake before anything runs.",
   test: "A test or assertion would catch it: the correction is a behaviour the checks can exercise.",
-  lint: "A lint rule, type check or script check would catch it: the correction is a rule about shape.",
+  lint: "A lint rule or script check would catch it: the correction is a rule about shape.",
   guardrail:
     "A tool-call policy would catch it: the correction is about an action that must be confirmed or refused.",
   agents:
@@ -37,6 +43,8 @@ export const PROMOTIONS = {
     "A prompt template or skill would make the right steps the default: the correction is a repeated workflow.",
   none: "Nothing durable applies: the correction was task-specific and would mislead later work.",
 };
+
+const WIDEST_PROMOTION = Math.max(...Object.keys(PROMOTIONS).map((name) => name.length));
 
 /** A backticked reference to a state path, the way these prompts name their input. */
 const q = (name) => "`" + name + "`";
@@ -80,10 +88,11 @@ export function buildQuestions(count, { guidance } = {}) {
         q(path) +
         " and its " +
         q("corrections." + index + ".occurrences") +
-        " in the state: a correction the user had to give more than once. What is the cheapest " +
-        "durable fix that would have stopped it recurring? Prefer a check over an interruption, " +
-        "and an interruption over prose. Answer 'none' when the correction was specific to that " +
-        "task and a durable rule would misfire later.",
+        " in the state: a correction the user had to give more than once. What is the most " +
+        "structural durable fix that would have stopped it recurring? Prefer removing the wrong " +
+        "way over making it unwritable in types, types over a check, a check over an " +
+        "interruption, and an interruption over prose. Answer 'none' when the correction was " +
+        "specific to that task and a durable rule would misfire later.",
       criteria: PROMOTIONS,
     };
     if (guidance) {
@@ -171,7 +180,7 @@ export function formatPromotions({ rows, judged, reason } = {}) {
   const lines = [];
   if (!judged) lines.push("Not promoted: " + (reason ?? "no judgment"));
   for (const [index, row] of (rows ?? []).entries()) {
-    const where = row.promotion ? row.promotion.padEnd(9) : "?".padEnd(9);
+    const where = (row.promotion ?? "?").padEnd(WIDEST_PROMOTION);
     const covered =
       typeof row.covered === "number" ? " · already covered " + row.covered.toFixed(2) : "";
     lines.push(index + 1 + ". " + where + covered + " — " + row.text);

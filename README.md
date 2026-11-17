@@ -176,7 +176,7 @@ judge; a failed real request reports that it could not judge.
 | Script | What it decides |
 | --- | --- |
 | `scripts/ci-triage.mjs` | Classify a CI failure as flaky, regression, infra, configuration or dependency, with confidence. Used by `/triage --ci`. |
-| `scripts/promote-corrections.mjs` | Suggest a durable fix for a repeated correction: test, lint, guardrail, guidance, prompt or none. Used by `/mine`. |
+| `scripts/promote-corrections.mjs` | Suggest a durable fix for a repeated correction: architecture, types, test, lint, guardrail, guidance, prompt or none. Used by `/mine`. |
 | `scripts/memory-check.mjs` | Check a proposed memory for duplicates, contradictions or refinements. Used by `/retro`. |
 
 ## Related
