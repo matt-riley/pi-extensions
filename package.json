@@ -60,7 +60,8 @@
       "./packages/affected/index.ts",
       "./packages/docs-drift/index.ts",
       "./packages/agents/index.ts",
-      "./packages/quality/index.ts"
+      "./packages/quality/index.ts",
+      "./packages/trail/index.ts"
     ],
     "skills": [
       "./.agents/skills"

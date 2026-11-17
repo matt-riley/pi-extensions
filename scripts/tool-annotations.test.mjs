@@ -50,6 +50,7 @@ const EXPECTED = new Map([
   ["doctor_report", { annotations: LOCAL_READ, deferred: true }],
   ["architecture_check", { annotations: LOCAL_READ, deferred: true }],
   ["affected_tests", { annotations: LOCAL_READ, deferred: true }],
+  ["decision_log", { annotations: LOCAL_DESTRUCTIVE, deferred: true }],
 ]);
 
 test("every tool declares annotations and only rare tools are deferred", async () => {

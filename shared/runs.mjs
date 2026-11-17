@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Create `<cwd>/.pi/runs` with its ignore file, and return its path. Throws when it cannot. */
-function ensureRunsDir(cwd) {
+export function ensureRunsDir(cwd) {
   const dir = join(cwd, ".pi", "runs");
   mkdirSync(dir, { recursive: true });
   const ignore = join(dir, ".gitignore");
