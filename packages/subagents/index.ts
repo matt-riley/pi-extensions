@@ -580,9 +580,10 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       const results = slices.map((item) => {
         const id = String(item?.id ?? "");
         const found = finished.get(id);
+        const required = item?.required;
         return {
           slice: typeof item?.slice === "string" && item.slice ? item.slice : id,
-          required: item?.required === true ? true : item?.required === false ? false : undefined,
+          required: typeof required === "boolean" ? required : undefined,
           status: found?.status ?? "missing (no finished result with this id)",
           text: found?.text,
         };
@@ -666,8 +667,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         notify(ctx, `No subagent ${id}`);
         return;
       }
-      const actions =
-        entry.status === "running" ? ["Steer", "Stop"] : entry.status === "queued" ? ["Stop"] : [];
+      let actions: string[] = [];
+      if (entry.status === "running") actions = ["Steer", "Stop"];
+      else if (entry.status === "queued") actions = ["Stop"];
       if (actions.length === 0) {
         notify(ctx, `${id} is no longer steerable or stoppable (status: ${entry.status})`);
         return;

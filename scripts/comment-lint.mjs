@@ -170,12 +170,9 @@ function narration(node) {
     (ts.isPostfixUnaryExpression(expr) || ts.isPrefixUnaryExpression(expr)) &&
     ts.isIdentifier(expr.operand)
   ) {
-    const action =
-      expr.operator === ts.SyntaxKind.PlusPlusToken
-        ? "increment"
-        : expr.operator === ts.SyntaxKind.MinusMinusToken
-          ? "decrement"
-          : null;
+    let action = null;
+    if (expr.operator === ts.SyntaxKind.PlusPlusToken) action = "increment";
+    else if (expr.operator === ts.SyntaxKind.MinusMinusToken) action = "decrement";
     if (action)
       return [
         `${action} ${expr.operand.text.toLowerCase()}`,

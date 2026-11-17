@@ -334,12 +334,9 @@ function parseArgs(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const flags = parseArgs(process.argv.slice(2));
-  const memory =
-    flags.memory === "-"
-      ? fs.readFileSync(0, "utf8")
-      : flags.memory?.startsWith("@")
-        ? fs.readFileSync(flags.memory.slice(1), "utf8")
-        : flags.memory;
+  let memory = flags.memory;
+  if (flags.memory === "-") memory = fs.readFileSync(0, "utf8");
+  else if (flags.memory?.startsWith("@")) memory = fs.readFileSync(flags.memory.slice(1), "utf8");
   if (!memory || !String(memory).trim()) {
     console.error('memory-check: pass --memory "text", --memory - (stdin) or --file path');
     process.exitCode = 2;

@@ -68,11 +68,14 @@ const server = createServer(async (req, res) => {
   const isChild = JSON.stringify(user?.content).includes("SMOKE_CHILD_TASK");
   if (isChild) childRequests++;
   let tool;
-  let content = isChild
-    ? phase === "verifier"
-      ? "## Verdict\n**verified**: the fixture reply was observed.\n\nSMOKE_CHILD_OK"
-      : "SMOKE_CHILD_OK"
-    : "SMOKE_PARENT_OK";
+  let content = "SMOKE_PARENT_OK";
+  if (isChild) {
+    if (phase === "verifier") {
+      content = "## Verdict\n**verified**: the fixture reply was observed.\n\nSMOKE_CHILD_OK";
+    } else {
+      content = "SMOKE_CHILD_OK";
+    }
+  }
   if (scripted) {
     tool = scripted.shift();
     if (tool) content = null;
@@ -108,46 +111,47 @@ const server = createServer(async (req, res) => {
     phase !== "after-plan" &&
     phase !== "resources"
   ) {
-    tool =
-      phase === "blocked"
-        ? { name: "bash", arguments: { command: "touch smoke-blocked" } }
-        : phase === "verifier"
-          ? {
-              name: "subagent",
-              arguments: {
-                agent: "verifier",
-                task: "SMOKE_CHILD_TASK: Reply with the fixture verdict. Do not call tools.",
-                timeout_ms: 20000,
-              },
-            }
-          : phase === "worktree"
+    if (phase === "blocked") {
+      tool = { name: "bash", arguments: { command: "touch smoke-blocked" } };
+    } else if (phase === "verifier") {
+      tool = {
+        name: "subagent",
+        arguments: {
+          agent: "verifier",
+          task: "SMOKE_CHILD_TASK: Reply with the fixture verdict. Do not call tools.",
+          timeout_ms: 20000,
+        },
+      };
+    } else if (phase === "worktree") {
+      tool = {
+        name: "subagent",
+        arguments: {
+          agent: "worker",
+          task: "SMOKE_CHILD_TASK: Write a new file smoke-wt.txt, then reply SMOKE_CHILD_OK.",
+          isolation: "worktree",
+          timeout_ms: 20000,
+        },
+      };
+    } else {
+      tool = {
+        name: "subagent",
+        arguments: {
+          agent: "scout",
+          task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
+          timeout_ms: 20000,
+          ...(phase === "verified" || phase === "failed"
             ? {
-                name: "subagent",
-                arguments: {
-                  agent: "worker",
-                  task: "SMOKE_CHILD_TASK: Write a new file smoke-wt.txt, then reply SMOKE_CHILD_OK.",
-                  isolation: "worktree",
-                  timeout_ms: 20000,
-                },
+                acceptance: [
+                  {
+                    criterion: "Fixture command completes",
+                    command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
+                  },
+                ],
               }
-            : {
-                name: "subagent",
-                arguments: {
-                  agent: "scout",
-                  task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
-                  timeout_ms: 20000,
-                  ...(phase === "verified" || phase === "failed"
-                    ? {
-                        acceptance: [
-                          {
-                            criterion: "Fixture command completes",
-                            command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
-                          },
-                        ],
-                      }
-                    : {}),
-                },
-              };
+            : {}),
+        },
+      };
+    }
     content = null;
   }
   const delta = tool
@@ -397,11 +401,10 @@ export default function (pi) {
               scopeLine === `control:overwrite:${agentsApproval}` ||
               scopeLine === `control:create:${agentsApproval}`,
           );
-      const answer = /Guardrail/.test(event.title ?? "")
-        ? approved
-          ? "✅ Approve"
-          : "⛔ Deny"
-        : undefined;
+      let answer;
+      if (/Guardrail/.test(event.title ?? "")) {
+        answer = approved ? "✅ Approve" : "⛔ Deny";
+      }
       child.stdin.write(
         `${JSON.stringify({ type: "extension_ui_response", id: event.id, ...(answer ? { value: answer } : { cancelled: true }) })}\n`,
       );
