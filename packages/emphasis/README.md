@@ -68,6 +68,31 @@ Headings and leading bold labels such as **Cause:**, **Fix:**, **Risk:**,
 **Plan:** and **Next:** take an icon from their word. `✓` takes the success
 color, `✗` the error color, `→` the accent color, and `├──`/`└──` are dimmed.
 
+## Tied to the collection
+
+Three things the original cannot do, because they read what the rest of this
+collection already knows. None changes what is stored or sent to the model.
+
+- **Claims checked against done-gate.** [pi-done-gate](../done-gate/README.md)
+  publishes when the run has code edits no passing check covered. A `[[Done]]`,
+  `[[Passed]]`, `[[Verified]]` or `[[Fixed]]` pill (and their synonyms) written
+  during that time is drawn yellow with a question mark, as "Done · unchecked".
+  The word stays; the pill says what the run can show. A saved message is judged
+  by its own timestamp, so resizing or switching theme later draws it the same.
+  Other pills, including `[[Observed]]`, are drawn as written.
+- **Missing paths.** When a finished reply names a path in inline code, such as
+  `` `src/gate.ts:12` ``, that does not exist under the session's cwd, a dim
+  "missing" follows the span. It uses the existence check subagents run on child
+  tasks (`shared/stalepaths.mjs`): only paths with a directory and an extension,
+  never URLs, and not on a line about creating, deleting, removing, renaming or
+  moving a file. Results are cached for two seconds and never checked while a
+  reply is still streaming.
+- **Extension messages and summaries.** Custom messages from extensions
+  (background-job notices, `/until`, `/footer details`), expanded skill blocks,
+  and branch and compaction summaries get the same bold, marks, labels and
+  pills, without the two checks above. This needs pi 1.5.1; older pi draws
+  assistant replies only.
+
 ## Settings
 
 Environment variables, set before starting pi:
@@ -76,6 +101,8 @@ Environment variables, set before starting pi:
 - `PI_EMPHASIS_GUIDANCE=0`: keep the drawing, write your own rules.
 - `PI_EMPHASIS_PILL_ICONS=0`: no icons in pills or on labels.
 - `PI_EMPHASIS_ROUND_CAPS=0`: square chips, for fonts without Nerd Font symbols.
+- `PI_EMPHASIS_EVIDENCE=0`: draw claim pills as written, whatever done-gate saw.
+- `PI_EMPHASIS_PATHS=0`: check no paths.
 - `PI_EMPHASIS_COLOR`: theme color for bold text (default `mdLink`). An unknown
   color name makes the transformer throw; pi then shows the reply undecorated.
 
@@ -85,7 +112,14 @@ To add a word, icon or synonym, edit the tables at the top of `emphasis.mjs`.
 
 - A bold span that continues onto a second source line is colored only on its
   first line.
-- Pills are drawn on assistant replies only, not on extension messages such as
-  background-job notices.
+- The claim check knows only this process: a restored session's older replies
+  are drawn as written. It follows done-gate's judgment, which resets on each
+  prompt and ignores documentation edits. An edit reverted before the run ends
+  still marks a claim written while it was in the tree.
+- There is no check of CI claims: done-gate counts a CI pass only from a
+  `gh pr view` status rollup, so `[[Passed on CI]]` after a green `gh pr checks`
+  would be marked wrongly.
+- Paths are resolved against the session's cwd; a reply giving paths relative
+  to somewhere else will see them marked.
 - The original was checked on macOS in Ghostty and the Herdr app; this port has
   the same terminal assumptions.

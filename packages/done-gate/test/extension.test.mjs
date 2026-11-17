@@ -380,3 +380,26 @@ test("files the run's own log lists are enough to tell", async (t) => {
   const h = await editedThenRan(t, {}, "make test", "PASS a.test.js (1 test)\n");
   assert.equal(await h.settle(), undefined);
 });
+
+test("publishes unchecked edits for emphasis: an edit opens a span, a covering check closes it", async (t) => {
+  const { resetEvidenceState, uncheckedEditsAt } =
+    await import("../../../shared/evidence-state.mjs");
+  resetEvidenceState();
+  t.after(resetEvidenceState);
+  const h = harness(t);
+  assert.equal(uncheckedEditsAt(), undefined, "nothing is known before done-gate publishes");
+  await h.reset();
+  assert.equal(uncheckedEditsAt(), false);
+  h.write("export default 2;\n");
+  await h.edit();
+  const editedAt = Date.now();
+  assert.equal(uncheckedEditsAt(), true);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await h.check();
+  assert.equal(uncheckedEditsAt(), false, "a passing check that reaches the edit clears it");
+  assert.equal(uncheckedEditsAt(editedAt), true, "a message written in between stays unchecked");
+  h.write("export default 3;\n");
+  await h.edit();
+  await h.reset();
+  assert.equal(uncheckedEditsAt(), false, "a new prompt starts a new run");
+});

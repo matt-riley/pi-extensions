@@ -262,6 +262,7 @@ export function createPalette(
     failed: fg("error"),
     arrow: fg("accent"),
     tree: fg("dim"),
+    warn: fg("warning"),
     roundCaps,
     icons,
   };
@@ -302,9 +303,19 @@ function withLabelIcon(label, palette) {
   return icon ? `${icon} ${label}` : label;
 }
 
-function pill(label, palette) {
-  const style = palette.pills[toneOf(label)];
-  const { icon, word } = splitLabel(label);
+/**
+ * Success words that claim the work was checked. Over edits no check has
+ * covered they are drawn as a question, with the word kept: the reply still
+ * says what it says, the pill says what the run can show.
+ */
+const CHECKED_CLAIMS = new Set(["done", "passed", "verified", "fixed"]);
+
+function pill(label, palette, unchecked = false) {
+  const split = splitLabel(label);
+  const doubted = unchecked && CHECKED_CLAIMS.has(split.key);
+  const style = palette.pills[doubted ? "warning" : toneOf(label)];
+  const icon = doubted ? QUESTION : split.icon;
+  const word = doubted ? `${split.word} · unchecked` : split.word;
   // No-break spaces keep a two-word pill on one line when pi wraps the paragraph.
   const text = (
     icon && word && palette.icons ? `${icon} ${word}` : word || label.trim()
@@ -328,7 +339,23 @@ const MARKS = [
   [/[├└]──/g, "tree"],
 ];
 
-function decorateLine(line, palette, open, close) {
+// A line about removing or moving a file names a path that is meant to be gone.
+const GONE_ON_PURPOSE = /\b(?:delet|remov|renam|mov|drop)\w*/i;
+
+/** The path an inline code span names, without backticks or a :line suffix. */
+const codePath = (span) =>
+  span
+    .replace(/^`+|`+$/g, "")
+    .trim()
+    .replace(/(?::\d+)+$/, "");
+
+/** A marker after a code span whose path does not exist under the session's cwd. */
+function missingMark(palette) {
+  return " " + palette.warn(`${palette.icons ? "\uf127 " : ""}missing`);
+}
+
+function decorateLine(line, palette, open, close, marks) {
+  const stale = marks.stale?.size && !GONE_ON_PURPOSE.test(line) ? marks.stale : null;
   const labelled = line.replace(
     LEAD_LABEL,
     (_, before, label, after) => before + withLabelIcon(label, palette) + after,
@@ -340,7 +367,8 @@ function decorateLine(line, palette, open, close) {
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) {
       // pi's code color ends with a foreground reset; restore the bold color after it.
-      result += inBold ? parts[i] + open : parts[i];
+      const mark = stale?.has(codePath(parts[i])) ? missingMark(palette) : "";
+      result += parts[i] + mark + (inBold ? open : "");
       continue;
     }
     let prose = parts[i];
@@ -356,7 +384,7 @@ function decorateLine(line, palette, open, close) {
     result += prose.replace(INLINE, (match, slashes, marker, label) => {
       if (label !== undefined) {
         if (!palette.pills || !label.trim()) return match;
-        return pill(label, palette) + (inBold ? sgr(1) + open : "");
+        return pill(label, palette, marks.unchecked) + (inBold ? sgr(1) + open : "");
       }
       if (slashes.length % 2 === 1) return match; // escaped marker
       if (!inBold) {
@@ -374,8 +402,12 @@ function decorateLine(line, palette, open, close) {
   return inBold ? result + close : result;
 }
 
-/** Apply colors to assistant Markdown, leaving fenced code and inline code alone. */
-export function decorate(markdown, palette) {
+/**
+ * Apply colors to assistant Markdown, leaving fenced code and inline code alone.
+ * `marks.unchecked` draws checked-claim pills as questions; `marks.stale` is a
+ * set of paths to mark as missing where an inline code span names one.
+ */
+export function decorate(markdown, palette, marks = {}) {
   const [open, close] = palette.bold("\u0000").split("\u0000");
   const out = [];
   let fence;
@@ -393,7 +425,7 @@ export function decorate(markdown, palette) {
       // pi already colors headings; they only take an icon.
       out.push(line.replace(HEADING, (_, hashes, title) => hashes + withLabelIcon(title, palette)));
     } else {
-      out.push(decorateLine(line, palette, open, close));
+      out.push(decorateLine(line, palette, open, close, marks));
     }
   }
   return out.join("\n");

@@ -283,6 +283,15 @@ remotely. Say which one you have.
 A claim that names its gap is still left alone. Only successful, revision-bound
 remote evidence clears the reading.
 
+## Shown in replies
+
+After every change to its state, the gate publishes one fact to
+`shared/evidence-state.mjs`: whether the tree carries edits no passing check has
+covered. [pi-emphasis](../emphasis/README.md) reads it to draw a `[[Done]]` or
+`[[Passed]]` pill written over such edits as "Done · unchecked". The gate itself
+still decides nothing more and blocks nothing; with emphasis absent the fact is
+simply unread.
+
 ## Behaviour
 
 - **Edits** are successful `edit` / `write` calls to non-doc files inside the
