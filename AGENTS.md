@@ -117,7 +117,9 @@ development-only).
   `coverage/lcov.info`; needs pi and Node 24+.
 
 Fixing beats suppressing: the only rule exceptions are the six in
-`.oxlintrc.json`, each with its reason next to it. `fallow fix` can remove unused
+`.oxlintrc.json`, each with its reason next to it. An inline `eslint-disable`,
+`oxlint-disable` or `@ts-*` suppression also needs a reason, inline or in the
+comment directly above it, or `npm run lint:comments` fails. `fallow fix` can remove unused
 exports automatically, but it edited re-exports without their imports once, so run
 the tests after any auto-fix.
 
