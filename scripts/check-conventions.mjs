@@ -228,6 +228,14 @@ const SHARED_HELPERS = [
   },
 ];
 
+/** A harness that runs pi must pin all four, or it reads and writes the user's config. */
+const HARNESS_ISOLATION = [
+  "HOME",
+  "XDG_CONFIG_HOME",
+  "PI_CODING_AGENT_DIR",
+  "PI_CODING_AGENT_SESSION_DIR",
+];
+
 const FUNCTION_LIKE = new Set([
   ts.SyntaxKind.FunctionDeclaration,
   ts.SyntaxKind.FunctionExpression,
@@ -297,6 +305,47 @@ export function scriptEntryErrors(root) {
       errors.push(
         `${relative}: exports a function but reads process.argv at module scope; guard the entry point on import.meta.url`,
       );
+  }
+  return errors;
+}
+
+/**
+ * A real-terminal harness runs pi against a throwaway HOME and agent directory.
+ * Drop one of those variables from the launch and the run silently reaches the
+ * user's own `~/.pi`, which `.pi/verify/SKILL.md` says never happens. Only
+ * string literals are read, so prose in a comment cannot satisfy the rule, and
+ * a script that starts no tmux session is outside it.
+ */
+export function harnessIsolationErrors(root) {
+  const dir = path.join(root, ".pi", "verify");
+  if (!fs.existsSync(dir)) return [];
+  const errors = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".mjs")) continue;
+    const relative = `.pi/verify/${entry.name}`;
+    const tree = ts.createSourceFile(
+      relative,
+      fs.readFileSync(path.join(dir, entry.name), "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const literals = [];
+    const visit = (node) => {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+        literals.push(node.text);
+      else if (ts.isTemplateExpression(node)) {
+        literals.push(node.head.text);
+        for (const span of node.templateSpans) literals.push(span.literal.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(tree);
+    if (!literals.some((text) => text.includes("new-session"))) continue; // launches no pi
+    for (const variable of HARNESS_ISOLATION)
+      if (!literals.some((text) => text.trimStart().startsWith(`${variable}=`)))
+        errors.push(
+          `${relative}: starts a tmux session without ${variable}=, so the run can reach the user's own config`,
+        );
   }
   return errors;
 }
@@ -423,6 +472,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     ...controlByteErrors(root),
     ...sharedHelperErrors(root),
     ...scriptEntryErrors(root),
+    ...harnessIsolationErrors(root),
     ...checkSkillReferences(root),
     ...sizes.errors,
   ];
