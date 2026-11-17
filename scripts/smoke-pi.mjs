@@ -427,6 +427,7 @@ export default function (pi) {
     ["/test example.mjs", "test-driven-development"],
     ["/refactor example.mjs", "interface-design"],
     ["/design cache API", "cache API"],
+    ["/verify-setup create", "meaningful acceptance check rejects a known-bad case"],
     [
       "/workflow fix the retry bug",
       "Complete this task using the existing repository workflow: fix the retry bug",

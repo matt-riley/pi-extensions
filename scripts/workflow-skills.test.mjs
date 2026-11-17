@@ -76,6 +76,16 @@ test("every owned workflow is used by a prompt", async () => {
     }
 });
 
+test("verification recipes require a safe failure witness or an explicit coverage gap", async () => {
+  const text = await readFile(root + "prompts/verify-setup.md", "utf8");
+  for (const sentence of [
+    "Demonstrate that a meaningful acceptance check rejects a known-bad case in an isolated fixture; never corrupt the live app to manufacture a failure.",
+    "If no safe failure witness is practical, mark that check's failure sensitivity unproven and explain why.",
+    "Recheck the known-bad witness when its acceptance check changes.",
+  ])
+    assert.ok(text.includes(sentence), sentence);
+});
+
 test("the restate prompt asks for a plain restatement and forbids acting", async () => {
   const text = await readFile(root + "prompts/restate.md", "utf8");
   assert.match(text, /^---\n(?:[\s\S]*?\n)?description: /);

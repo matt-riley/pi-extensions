@@ -11,14 +11,14 @@ The recipe has these sections: **Target** (what revision is being verified and h
 ## create
 
 1. Derive the recipe from the repo: manifests and their scripts, README, CI workflows, existing test or smoke harnesses. Don't invent a command the repo doesn't have.
-2. Prove every recipe by running it: launch, doctor, drive each feature once, clean up. Paste the observed result. A step you could not run is marked unproven with the reason, not written up as if it works.
+2. Prove every recipe by running it: launch, doctor, drive each feature once, clean up. Paste the observed result. A step you could not run is marked unproven with the reason, not written up as if it works. Demonstrate that a meaningful acceptance check rejects a known-bad case in an isolated fixture; never corrupt the live app to manufacture a failure. If no safe failure witness is practical, mark that check's failure sensitivity unproven and explain why.
 3. Put any helper scripts beside the SKILL.md, executable, with their invocation in the body.
 
 ## maintain
 
 1. Read the existing recipe and its feature map. Fix missing, duplicate or dead entries.
 2. For each feature, re-read its source entry points and note likely drift with `path:line`. Scan recent churn (`git log --since=30.days --name-only`) for user-facing surfaces missing from the map, citing a real path before calling one missing.
-3. Drive every feature live at least once, even when the source looks clean. Doctor before the first drive and after any failed one.
+3. Drive every feature live at least once, even when the source looks clean. Doctor before the first drive and after any failed one. Recheck the known-bad witness when its acceptance check changes.
 4. Triage what you find:
    - the recipe describes something wrong -> doc drift, fix it in the recipe;
    - working behaviour the recipe can't drive -> harness gap, fix it and re-drive it;
