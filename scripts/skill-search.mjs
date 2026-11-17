@@ -27,6 +27,7 @@
  */
 
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 import {
   DEFAULT_LIMIT,
@@ -36,7 +37,7 @@ import {
 } from "../packages/skill-select/library.mjs";
 import { selectSkills } from "../packages/skill-select/select.mjs";
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = {
     query: "",
     limit: DEFAULT_LIMIT,
@@ -93,51 +94,58 @@ function renderHelp() {
   ].join("\n");
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.error) {
-  console.error(args.error);
-  console.error(renderHelp());
-  process.exit(2);
-}
-if (args.help) {
-  console.log(renderHelp());
-  process.exit(0);
+async function main(argv) {
+  const args = parseArgs(argv);
+  if (args.error) {
+    console.error(args.error);
+    console.error(renderHelp());
+    process.exit(2);
+  }
+  if (args.help) {
+    console.log(renderHelp());
+    process.exit(0);
+  }
+
+  const roots =
+    args.roots.length > 0
+      ? args.roots
+      : resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env });
+  const skills = await discoverSkills({ roots });
+  const selected = await selectSkills({ skills, query: args.query, limit: args.limit });
+  const { matches } = selected;
+
+  if (args.json) {
+    console.log(
+      JSON.stringify(
+        {
+          query: args.query,
+          total: skills.length,
+          matches: matches.map(({ name, description, path, score, p, root }) => ({
+            name,
+            description,
+            path,
+            score,
+            p: p ?? null,
+            root,
+          })),
+          reason: selected.reason,
+          note: selected.note,
+          error: selected.error ?? null,
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.log(
+      formatMatches(matches, { query: args.query, total: skills.length, note: selected.note }),
+    );
+  }
+
+  return matches.length > 0 ? 0 : 1;
 }
 
-const roots =
-  args.roots.length > 0
-    ? args.roots
-    : resolveRoots({ cwd: process.cwd(), home: homedir(), env: process.env });
-const skills = await discoverSkills({ roots });
-const selected = await selectSkills({ skills, query: args.query, limit: args.limit });
-const { matches } = selected;
-
-if (args.json) {
-  console.log(
-    JSON.stringify(
-      {
-        query: args.query,
-        total: skills.length,
-        matches: matches.map(({ name, description, path, score, p, root }) => ({
-          name,
-          description,
-          path,
-          score,
-          p: p ?? null,
-          root,
-        })),
-        reason: selected.reason,
-        note: selected.note,
-        error: selected.error ?? null,
-      },
-      null,
-      2,
-    ),
-  );
-} else {
-  console.log(
-    formatMatches(matches, { query: args.query, total: skills.length, note: selected.note }),
-  );
+// Importing this module (a test, another script) must not run a search.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await main(process.argv.slice(2));
 }
-
-process.exitCode = matches.length > 0 ? 0 : 1;
