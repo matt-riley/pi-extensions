@@ -36,3 +36,18 @@ test("oracle checks the brief's claims against the code", () => {
 test("scout names how it knows, so the parent can repeat the check", () => {
   assert.match(prompt("scout"), /search or command|how you know/i);
 });
+
+test("adversary reports only reproduced failures, in a block the rerun can parse", () => {
+  const text = prompt("adversary");
+  assert.match(text, /^model: cross-family$/m);
+  assert.match(text, /^tools: .*\bwrite\b/m, "write unlocks the bash it needs for repro scripts");
+  for (const sentence of [
+    "Do not edit the code under review.",
+    "A finding counts only if you ran a command against the real code and its output shows behaviour the intent forbids.",
+    "No findings is a valid result.",
+    "Do not guess the intent.",
+    "End with exactly one fenced `json` block and nothing after it:",
+    "`command` must run from the worktree root, exit non-zero when the defect is present, and exit 0 when it is fixed.",
+  ])
+    assert.ok(text.includes(sentence), sentence);
+});
