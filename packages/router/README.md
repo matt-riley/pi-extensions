@@ -298,7 +298,7 @@ findings drove it:
 | Prompt features cannot tell hard from easy | frontier p50 61 chars vs mid 60 | Rules are out; judgement is in |
 | Sticky escalation without a way down | +1665% spend | Escalate per *task*, then release |
 
-And the two instruments TypeSafe could give:
+TypeSafe could give two instruments:
 
 | Instrument | AUC | Verdict |
 | --- | --- | --- |

@@ -204,7 +204,7 @@ same dialog (and the same check below) works while implementing. It is still
 deferred, so outside plan mode a short `ask_user` prompt section (about 100
 tokens, the same text every turn) tells the agent it exists, when to use it and
 that tool search loads it. Plan mode keeps its own prompt unchanged. The tool's
-label is now "Ask User Question"; its name is unchanged.
+label is "Ask User Question"; its name is unchanged.
 
 ## Answering a question the context already settles
 

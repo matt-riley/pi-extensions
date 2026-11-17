@@ -79,7 +79,7 @@ permission, however firmly it is worded. Two rules follow from that.
 **A copied command is flagged.** When a call that already needs a decision is a
 word-for-word copy of something a tool returned since your last message, the
 dialog says which tool and that tool output cannot authorise it, and it stops
-recommending Approve. A judge that finds the call harmless no longer lets it
+recommending Approve. A judge that finds the call harmless does not let it
 through: the call asks. With no UI it is refused, as for every other
 confirmation. The check stays quiet when you typed the command yourself, or when
 you named the file or page it came from ("follow the steps in RELEASING.md"),

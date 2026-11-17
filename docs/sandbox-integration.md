@@ -13,7 +13,7 @@ The example replaces built-in `bash` using `createBashTool` and custom
 `SandboxManager.wrapWithSandbox` applies filesystem and network restrictions
 through macOS `sandbox-exec` or Linux `bubblewrap`.
 
-That is a useful starting point, not a drop-in sandbox for the whole collection.
+That is a starting point, not a drop-in sandbox for the whole collection.
 In particular, the example falls back to unsandboxed bash when initialization
 fails, and it does not cover the file tools, background jobs or child sessions.
 

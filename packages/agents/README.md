@@ -26,14 +26,14 @@ instructions, guided by the [AGENTS.md examples](https://agents.md/#examples):
 - Project overview, important structure and security gotchas where relevant.
 
 These are topics to investigate, not mandatory headings or policies to invent.
-Non-JavaScript projects work too; the command no longer just lists npm scripts.
+Non-JavaScript projects work too.
 The reference topics are included in the request, so fetching the site is not
 required at runtime.
 
 ## Existing guidance
 
 The request tells the agent to read the complete existing file and preserve useful
-rules, commands, caveats and user edits. A Commands heading no longer prevents
+rules, commands, caveats and user edits. A Commands heading does not prevent
 improvement. It should correct guidance only with repository evidence, avoid
 duplicating inherited instructions, and leave an already useful file unchanged
 when there is nothing useful to add. It must re-read before editing and review
