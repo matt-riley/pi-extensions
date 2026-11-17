@@ -67,7 +67,12 @@ declare module "@earendil-works/pi-coding-agent" {
     select?(title: string, options: string[]): Promise<string | undefined>;
     confirm?(title: string, message: string): Promise<boolean>;
     input?(title: string, value?: string): Promise<string | undefined>;
-    theme?: { fg?: (color: string, text: string) => string };
+    theme?: {
+      fg?: (color: string, text: string) => string;
+      /** Opening escape of a theme color, for text styled outside pi's helpers. */
+      getFgAnsi?: (color: string) => string;
+      getBgAnsi?: (color: string) => string;
+    };
     [key: string]: unknown;
   }
 
@@ -77,6 +82,8 @@ declare module "@earendil-works/pi-coding-agent" {
   export interface ExtensionContext {
     cwd?: string;
     hasUI?: boolean;
+    /** "tui", "rpc", "json" or "print"; hasUI is also true in rpc, so terminal-only features check this. */
+    mode?: string;
     isProjectTrusted?(): boolean;
     model?: { id?: string; provider?: string; [key: string]: unknown };
     /** Session-scoped models ([{ model, thinkingLevel? }]); empty means all. */
@@ -239,6 +246,14 @@ declare module "@earendil-works/pi-coding-agent" {
     on?(name: string, handler: (payload: unknown) => void): void;
   }
 
+  /** What a Markdown transformer is told about the text it rewrites. */
+  export interface MarkdownTransformContext {
+    /** "user", "assistant", "assistant-thinking", or an opted-in surface such as "custom". */
+    messageType: string;
+    isStreaming?: boolean;
+    availableWidth?: number;
+  }
+
   /** The object every extension's default export receives. */
   export interface ExtensionAPI {
     registerCommand(name: string, def: CommandDefinition): void;
@@ -265,6 +280,11 @@ declare module "@earendil-works/pi-coding-agent" {
     /** Persist extension data. Custom entries do NOT enter LLM context. */
     appendEntry(customType: string, data?: unknown): void;
     getFlag(name: string): unknown;
+    /** Display-only Markdown rewrite before pi renders it; one per extension, chained in load order. */
+    registerMarkdownTransformer(
+      transformer: (markdown: string, context: MarkdownTransformContext) => string,
+      options?: { messageTypes?: string[] },
+    ): void;
     /** Effective settings (global + project merged); compaction budget lives under `compaction`. */
     getSettings?(): {
       compaction?: {

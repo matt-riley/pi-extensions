@@ -44,6 +44,7 @@ node .pi/verify/workbench.mjs --upgrade        # prior-HEAD footer upgraded thro
 node .pi/verify/jobs.mjs                       # real tmux + pi, /jobs logs, PTY takeover, shutdown
 bash .pi/verify/jobs-linux.sh                  # GNU script PTY primitives in an offline container
 node .pi/verify/toasts.mjs                     # real TUI: extension notify becomes a toast, then clears
+node .pi/verify/emphasis.mjs                   # real TUI: reply pills drawn, reply_style sent, PI_EMPHASIS=0 off
 ```
 
 Requirements: `pi` 1.4.0 or later on `PATH` (`PI_SMOKE_BIN` overrides the binary
@@ -114,6 +115,7 @@ Offline coverage (run every row on every change):
 | Done-gate: one quiet nudge after an unverified edit, none for an outside-cwd write | `npm run smoke` | both `ok: done-gate …` lines |
 | `/until <cmd>` sends the agent back until the predicate exits 0 | `npm run smoke` | `ok: /until sends the agent back until the predicate exits 0` |
 | `/climb` measures the baseline first, refuses a red gate, stops on a met target (the attempt loop is covered only by `node --test packages/until`) | `npm run smoke` | `ok: /climb measures the baseline first and refuses a red gate in a live Pi` |
+| Emphasis: a fixture reply's pills and lead label are drawn with icons and panel backgrounds on the `dark` theme, inline code keeps `[[Done]]`, the `reply_style` section reaches the model; `PI_EMPHASIS=0` leaves both untouched (the no-panel-color fallback is covered only by `node --test packages/emphasis`) | `node .pi/verify/emphasis.mjs` | the two `ok:` lines plus `Local real-TUI emphasis acceptance passed at HEAD …` |
 | Extension `ctx.ui.notify` becomes a self-clearing top-right toast; `PI_TOAST_CAPTURE=0` leaves pi's own row; narrow terminals hide it | `node .pi/verify/toasts.mjs` | the three `ok:` lines plus `Local real-TUI toasts acceptance passed at HEAD …` |
 | Workbench: command groups, intent search, cancel, built-in preparation, draft recovery, `/files` reference, `/changes` previews, Neovim handoff, `/eixt` -> `/exit` suggestion, resize, working->ready | `node .pi/verify/workbench.mjs --regular` | the five `ok:` lines plus `Local real-TUI acceptance passed at HEAD …` |
 | Footer: actual work state, and a prior-HEAD footer upgrading through `/reload` | `node .pi/verify/workbench.mjs --upgrade` | `ok: prior HEAD footer upgrades through actual /reload` plus the lifecycle line |
