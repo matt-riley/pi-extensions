@@ -77,8 +77,11 @@ test("foreign harness skills require explicit opt-in, while owned workflows work
   for (const root of foreignRoots) assert.ok(!defaults.includes(root));
   const skills = await discoverSkills({ roots: defaults });
   assert.deepEqual(skills.map((s) => s.name).sort(), [
+    "arena",
     "implementation-review",
     "interface-design",
+    "interrogate",
+    "swarm",
     "test-driven-development",
   ]);
   const optedIn = await discoverSkills({

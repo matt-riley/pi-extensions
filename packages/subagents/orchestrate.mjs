@@ -17,7 +17,7 @@ export const TOOL_DESCRIPTION = [
   "Spawn a specialist child with a brief that stands on its own: the goal, the plan this job is part of, concrete paths/symbols, the project conventions to follow, the deliverable format, and how to verify the work.",
   "Do not spawn for a job you can finish in one reply, and do not hand your whole assignment to one child.",
   "Fire multiple subagent calls in one turn to run them in parallel, then summarize each result for the user.",
-  "Built-in types: scout (recon), reviewer (code review), verifier (reproduces a change and reports observed evidence), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
+  "Built-in types: scout (recon), reviewer (code review), verifier (reproduces a change and reports observed evidence), adversary (tries to break a change; reports only reproduced failures), oracle (second opinion), worker (implements a fully-specified change; write-capable), researcher (web/docs research).",
   "Custom types live in .pi/agents/*.md or ~/.pi/agent/agents/*.md. Children cannot spawn children.",
 ].join(" ");
 
@@ -55,7 +55,7 @@ Two cases where spawning is the wrong call:
 - Do not run dependent steps in parallel; run them in sequence and paste the earlier result into the later task.
 - Writers in your working tree run one at a time. To run writers in parallel, pass \`isolation: "worktree"\`: each gets its own git worktree with your uncommitted changes copied in, and the result names its path and diff. Nothing is merged back; graft what you keep yourself.
 - Execution \`completed\` means the child stopped normally. Task outcome is separate; \`verified\` covers only the explicit acceptance command contracts at the recorded revision. Provide \`acceptance\` commands when useful and review whether those commands actually establish the criteria. A child result is evidence, not fact. Read the \`triage\`, \`changes\` and \`scope check\` lines under each result, and open the \`transcript\` path if a result looks thin. Verify a worker's claimed checks before relying on them, or spawn a verifier for anything that will be landed.
-- Built-in types: scout (recon), reviewer (findings with path:line), verifier (reproduces a change and reports observed evidence), oracle (challenge assumptions), worker (implements a fully-specified change; write-capable), researcher (web/docs research with cited sources).
+- Built-in types: scout (recon), reviewer (findings with path:line), verifier (reproduces a change and reports observed evidence), adversary (breaks a change and reports only failures it reproduced; run it in a worktree), oracle (challenge assumptions), worker (implements a fully-specified change; write-capable), researcher (web/docs research with cited sources).
 - Custom types may exist. Unknown types fail; do not invent names.
 
 ## Available types

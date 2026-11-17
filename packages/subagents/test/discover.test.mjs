@@ -307,6 +307,7 @@ test("shipped builtins resolve with the expected fleet and policy", () => {
   const builtinDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "agents");
   const { agents } = discoverAgents({ builtinDir });
   assert.deepEqual(agents.map((agent) => agent.name).sort(), [
+    "adversary",
     "comment-auditor",
     "oracle",
     "researcher",
@@ -330,6 +331,10 @@ test("shipped builtins resolve with the expected fleet and policy", () => {
   );
   assert.equal(isWriteCapable(verifier), true);
   assert.equal(usesAllowlistedBash(verifier), false);
+  const adversary = findAgent(agents, "adversary");
+  assert.equal(usesAllowlistedBash(adversary), false, "repro scripts need unrestricted bash");
+  assert.equal(adversary.model, "cross-family");
+  assert.equal(resolveChildTools(adversary).tools.includes("edit"), false);
   assert.equal(isWriteCapable(researcher), false);
   assert.equal(usesAllowlistedBash(researcher), true);
 

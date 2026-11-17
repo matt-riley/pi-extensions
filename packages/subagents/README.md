@@ -148,10 +148,11 @@ catches a path that no longer exists.
 | `verifier` | Independently reproduces a change. Runs the build, tests, and artifact, and reports observed evidence. | write-capable (bash unrestricted) |
 | `oracle` | Second opinion. Challenge assumptions. Name what is missing. | read-only |
 | `worker` | Implements a fully-specified change: edits files, runs checks, reports a diff summary. | edit/write + full bash |
+| `adversary` | Tries to break a change; reports only failures it reproduced, as commands `rerun_findings` reruns. Writes scratch files under `.adversary/` only; run it with `isolation: "worktree"`. | write + full bash |
 | `researcher` | Web/docs research with cited sources and a concise brief. | read-only |
 | `comment-auditor` | Classifies each comment in the diff (or a named path) as keep, delete, or encode, naming the type, test or lint that would enforce it. | read-only |
 
-`reviewer` and `oracle` default to `model: cross-family`: the strongest model
+`reviewer`, `oracle` and `adversary` default to `model: cross-family`: the strongest model
 listed in `~/.pi/agent/router.json` (frontier, then mid, then base) that is
 authenticated and from a different family than the parent (families are read
 from the model id, so `openai/gpt-*` and `openai-codex/gpt-*` count as one). A
@@ -163,7 +164,7 @@ model (or the configured base before the first route). The rest inherit the pare
 fail-closed allowlist. The `worker` is write-capable with prompt-level guard
 rails only (stay in scope, never commit/push/install, stop early on ambiguity).
 Builtins are pre-tuned: `scout` (10 turns, low thinking), `reviewer` (15/high),
-`verifier` (25/high), `oracle` (8/high), `worker` (30/high), `researcher` (12/high).
+`verifier` (25/high), `adversary` (25/high), `oracle` (8/high), `worker` (30/high), `researcher` (12/high).
 
 ## Custom types
 

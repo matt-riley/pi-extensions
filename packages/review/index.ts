@@ -9,6 +9,8 @@
 //                      not there
 //   blast_radius     — list the callers outside a diff of every definition it
 //                      touches, and the ones no test mentions
+//   rerun_findings   — rerun adversary repro commands through the bash tool and
+//                      keep only the ones that still fail (rerun.mjs)
 //
 // All are advisory: they return text the agent reads, and none blocks a tool
 // call. All are on demand, because a Jev request on every edit would be paid
@@ -22,6 +24,7 @@ import { LOCAL_READ, OPEN_READ } from "../../shared/tool-annotations.mjs";
 import { report as blastReport } from "./blast.mjs";
 import { formatVerified, verifyFindings } from "./findings.mjs";
 import { MAX_DIFF_CHARS, formatFindings, lintChange } from "./lint.mjs";
+import { installRerun } from "./rerun.mjs";
 
 const GIT_TIMEOUT_MS = 5_000;
 const DIFF_ARGS = ["--no-color", "-U3"];
@@ -66,6 +69,7 @@ function formatLint(result: {
 
 export default function piReviewExtension(pi: ExtensionAPI) {
   bindSystemOne(pi, "review");
+  installRerun(pi);
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",
