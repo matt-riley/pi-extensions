@@ -95,8 +95,10 @@ Keep skills lean: see `docs/skill-diet.md` before adding to or editing a
 Run these from the repository root after `npm install` (the tooling is
 development-only).
 
-- `npm test`: run the test suite (`node --test 'packages/**/*.test.mjs' 'scripts/**/*.test.mjs'`).
-  For one package, `node --test packages/<name>` runs just its `test/*.test.mjs`.
+- `npm test`: run the test suite (`node --test 'packages/**/*.test.mjs'
+  'scripts/**/*.test.mjs' 'shared/**/*.test.mjs'`). For one package,
+  `node --test packages/<name>` runs just its `test/*.test.mjs`; `shared/test/`
+  covers the shared helpers the same way.
 - `npm run check`: the full gate, in order: repository conventions, `tsc --noEmit`, `oxlint
   --deny-warnings`, `oxfmt --check`, `knip`, `fallow dead-code`, then the tests.
   This is what has to pass before pushing.

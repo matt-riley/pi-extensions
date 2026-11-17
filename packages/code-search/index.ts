@@ -26,6 +26,7 @@ import {
   refreshCache,
   saveCache,
 } from "./cache.mjs";
+import { piExec } from "../../shared/exec.mjs";
 import { findRepoRoot, listRepoFiles, normalizeRel } from "../../shared/inventory.mjs";
 import { attachContext, clampContext, MAX_CONTEXT } from "./hit-context.mjs";
 import { searchRepo } from "./search.mjs";
@@ -88,19 +89,6 @@ interface SessionState {
   symbolCount: number;
 }
 
-type ExecFn = (
-  cmd: string,
-  args: string[],
-  opts?: { timeout?: number },
-) => Promise<{ code: number; stdout: string; stderr: string }>;
-
-function makeExec(pi: ExtensionAPI): ExecFn {
-  return async (cmd, args, opts) => {
-    const r = await pi.exec(cmd, args, { timeout: opts?.timeout ?? 10_000 });
-    return { code: r.code, stdout: String(r.stdout ?? ""), stderr: String(r.stderr ?? "") };
-  };
-}
-
 interface UiLite {
   hasUI?: boolean;
   cwd?: string;
@@ -123,7 +111,7 @@ const readRepoFile =
   };
 
 export default function piCodeSearchExtension(pi: ExtensionAPI) {
-  const exec = makeExec(pi);
+  const exec = piExec(pi);
   // One in-flight refresh per repo root; sibling tool calls share it.
   const inflight = new Map<string, Promise<SessionState>>();
 
