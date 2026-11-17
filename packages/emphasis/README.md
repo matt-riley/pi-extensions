@@ -85,8 +85,12 @@ collection already knows. None changes what is stored or sent to the model.
   "missing" follows the span. It uses the existence check subagents run on child
   tasks (`shared/stalepaths.mjs`): only paths with a directory and an extension,
   never URLs, and not on a line about creating, deleting, removing, renaming or
-  moving a file. Results are cached for two seconds and never checked while a
-  reply is still streaming.
+  moving a file. A shortened path such as `` `emphasis/marks.mjs` `` is not
+  missing when it ends a file git lists (tracked or untracked, not ignored);
+  that list is read only when a path looks missing and is reused for ten
+  seconds. A path starting `./`, `../`, `/` or `~/` must exist as written.
+  Results are cached for two seconds and never checked while a reply is still
+  streaming.
 - **Extension messages and summaries.** Custom messages from extensions
   (background-job notices, `/until`, `/footer details`), expanded skill blocks,
   and branch and compaction summaries get the same bold, marks, labels and
