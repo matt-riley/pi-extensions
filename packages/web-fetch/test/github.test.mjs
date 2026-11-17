@@ -160,6 +160,61 @@ const API = {
     { name: "index.ts", type: "file", size: 1234 },
     { name: "lib", type: "dir" },
   ]),
+  "repos/octo/cat/releases/latest": JSON.stringify({
+    tag_name: "v2.0",
+    name: "Two point oh",
+    published_at: "2026-01-02T03:04:05Z",
+    prerelease: false,
+    draft: false,
+    body: "Release notes.",
+  }),
+  "repos/octo/cat/releases/tags/v1.2": JSON.stringify({
+    tag_name: "v1.2",
+    name: "v1.2",
+    published_at: "2025-12-01T00:00:00Z",
+    prerelease: true,
+    draft: true,
+    body: "",
+  }),
+  "repos/octo/cat/releases?per_page=20": JSON.stringify([
+    {
+      tag_name: "v2.0",
+      name: "Two point oh",
+      published_at: "2026-01-02T03:04:05Z",
+      body: "Release notes.",
+    },
+    { tag_name: "v1.0", name: "v1.0", published_at: "2025-01-01T00:00:00Z", body: "" },
+  ]),
+  "repos/octo/cat/commits/abc123": JSON.stringify({
+    sha: "abcdef1234567890",
+    commit: {
+      author: { name: "Octo Cat", date: "2026-01-02T03:04:05Z" },
+      message: "Subject line\n\nBody line",
+    },
+    stats: { total: 3, additions: 2, deletions: 1 },
+    author: { login: "octo" },
+  }),
+  "repos/octo/cat/commits?per_page=20&sha=main": JSON.stringify([
+    {
+      sha: "abcdef1234567890",
+      commit: {
+        author: { name: "Octo Cat", date: "2026-01-02T03:04:05Z" },
+        message: "Subject line",
+      },
+    },
+  ]),
+  "users/octo": JSON.stringify({
+    login: "octo",
+    name: "Octo Cat",
+    bio: "Meow",
+    company: "GitHub",
+    location: "Internet",
+    blog: "https://octo.example",
+    followers: 10,
+    following: 2,
+    public_repos: 7,
+    created_at: "2019-01-01T00:00:00Z",
+  }),
 };
 
 function fakeApi(args) {
@@ -214,6 +269,71 @@ test("fetchGithub: tree renders listing", async () => {
   );
   assert.match(outcome.markdown, /- index\.ts \(1\.2 KB\)/);
   assert.match(outcome.markdown, /- lib\//);
+});
+
+test("fetchGithub: release renders notes and the prerelease/draft flags", async () => {
+  setGhApiForTests(fakeApi);
+  const latest = await fetchGithub(
+    parseGithubUrl("https://github.com/octo/cat/releases/latest"),
+    {},
+  );
+  assert.equal(latest.outcome.title, "Release v2.0");
+  assert.match(latest.outcome.markdown, /# Release v2\.0 — Two point oh/);
+  assert.match(latest.outcome.markdown, /Release notes\./);
+  assert.equal(latest.outcome.published, "2026-01-02");
+
+  const tagged = await fetchGithub(
+    parseGithubUrl("https://github.com/octo/cat/releases/tag/v1.2"),
+    {},
+  );
+  assert.match(tagged.outcome.markdown, /published: 2025-12-01 · prerelease · draft/);
+  assert.match(tagged.outcome.markdown, /_No release notes\._/);
+});
+
+test("fetchGithub: releases list renders each tag", async () => {
+  setGhApiForTests(fakeApi);
+  const { outcome } = await fetchGithub(parseGithubUrl("https://github.com/octo/cat/releases"), {});
+  assert.equal(outcome.title, "Releases (octo/cat)");
+  assert.equal(outcome.description, "2 releases");
+  assert.match(outcome.markdown, /## v2\.0 — Two point oh/);
+  assert.match(outcome.markdown, /## v1\.0/);
+});
+
+test("fetchGithub: commit renders subject, body and stats", async () => {
+  setGhApiForTests(fakeApi);
+  const { outcome } = await fetchGithub(
+    parseGithubUrl("https://github.com/octo/cat/commit/abc123"),
+    {},
+  );
+  assert.equal(outcome.title, "abcdef123456 — Subject line");
+  assert.equal(outcome.description, "Subject line");
+  assert.match(outcome.markdown, /Body line/);
+  assert.match(outcome.markdown, /Files changed: 3 · Additions: 2 · Deletions: 1/);
+  assert.equal(outcome.published, "2026-01-02");
+});
+
+test("fetchGithub: commits list renders short shas and the ref", async () => {
+  setGhApiForTests(fakeApi);
+  const { outcome } = await fetchGithub(
+    parseGithubUrl("https://github.com/octo/cat/commits/main"),
+    {},
+  );
+  assert.equal(outcome.title, "Commits (octo/cat @ main)");
+  assert.equal(outcome.description, "1 commits");
+  assert.match(outcome.markdown, /- `abcdef1` Subject line \(Octo Cat, 2026-01-02\)/);
+});
+
+test("fetchGithub: profile renders bio and counts", async () => {
+  setGhApiForTests(fakeApi);
+  const { outcome } = await fetchGithub(parseGithubUrl("https://github.com/octo"), {});
+  assert.equal(outcome.title, "octo (Octo Cat)");
+  assert.equal(outcome.description, "Meow");
+  assert.match(outcome.markdown, /Followers: 10 · Following: 2 · Public repos: 7/);
+  assert.match(
+    outcome.markdown,
+    /Company: GitHub · Location: Internet · Blog: https:\/\/octo\.example/,
+  );
+  assert.equal(outcome.published, "2019-01-01");
 });
 
 test("fetchGithub: maxChars flags a long body but keeps the rest for paging", async () => {
