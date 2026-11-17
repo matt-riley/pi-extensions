@@ -72,3 +72,69 @@ export async function workingTree(cwd) {
     await rm(index, { force: true });
   }
 }
+
+/** git with `input` on stdin; resolves stdout, or null on any failure. */
+function gitWithInput(cwd, args, input) {
+  return new Promise((resolve) => {
+    const child = execFile(
+      "git",
+      args,
+      { cwd, timeout: 30000, maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => resolve(error ? null : String(stdout)),
+    );
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
+  });
+}
+
+/**
+ * Stable id of a change, unaffected by rebase: `git patch-id --stable` of the
+ * diff from the merge base of `base` to `head`, or to the working tree as it
+ * stands (untracked files included) when `head` is omitted. A rebase changes
+ * every SHA without failing any check; the patch id changes only when the
+ * change does. Null when it cannot be computed or the change is empty.
+ */
+export async function patchId(cwd, base, head) {
+  try {
+    const git = async (...args) =>
+      (await run("git", args, { cwd, timeout: 30000, maxBuffer: 64 * 1024 * 1024 })).stdout;
+    const tip = head ?? "HEAD";
+    const mergeBase = (await git("merge-base", base, tip)).trim();
+    const target = head ?? (await workingTree(cwd));
+    if (!mergeBase || !target) return null;
+    const diff = await git("diff", "--no-color", "--no-ext-diff", mergeBase, target);
+    if (!diff.trim()) return null;
+    const id = await gitWithInput(cwd, ["patch-id", "--stable"], diff);
+    return id?.split(/\s+/)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The branch changes are measured against: origin's default branch, else main, else master. */
+export async function defaultBase(cwd) {
+  const verify = async (ref) => {
+    try {
+      await run("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+        cwd,
+        timeout: 10000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    const { stdout } = await run(
+      "git",
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      { cwd, timeout: 10000 },
+    );
+    if (stdout.trim() && (await verify(stdout.trim()))) return stdout.trim();
+  } catch {
+    // no origin/HEAD
+  }
+  for (const ref of ["origin/main", "main", "origin/master", "master"])
+    if (await verify(ref)) return ref;
+  return null;
+}

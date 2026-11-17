@@ -47,7 +47,11 @@ these paths:
   construction, with execution completion kept separate from task verification.
   An `isolation: "worktree"` worker writes in its own worktree under the agent
   dir, starting from the parent's uncommitted state, while the parent's tree
-  stays untouched and the kept worktree stays in `git worktree list`.
+  stays untouched and the kept worktree stays in `git worktree list`. A
+  `verifier` child's verdict is recorded with its patch id, and the next
+  `watch_pr` adds a `verified:` line without changing its verdict. The fixture
+  PR's head is not a local commit, so smoke sees `verified: unknown`; the
+  yes/stale comparison is covered by `packages/watch-pr/test/verified.test.mjs`.
 - **Deslop:** `/deslop existing file.md` forwards a meaning-preserving rewrite
   request, then scripted read/edit calls change only the existing fixture file.
   This proves command/tool wiring, not real-model editorial quality.
