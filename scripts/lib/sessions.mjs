@@ -80,6 +80,8 @@ export function readSession(file) {
     try {
       record = JSON.parse(line);
     } catch {
+      // A live transcript can end mid-line; one unreadable line must not fail
+      // the whole corpus.
       continue;
     }
 
