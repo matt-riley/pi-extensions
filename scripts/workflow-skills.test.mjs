@@ -116,6 +116,16 @@ test("the run-proven skills keep the rules that make their results trustworthy",
   assert.ok(prompt.includes("Report findings; do not fix them."));
 });
 
+test("/ship trusts a verdict only from a separate agent, for the current patch", async () => {
+  const text = await readFile(root + "prompts/ship.md", "utf8");
+  const step1 = text.split("\n").find((line) => line.startsWith("1. "));
+  assert.ok(
+    step1?.includes(
+      "A verdict counts only from an agent that did not write the change, and only for the current patch id.",
+    ),
+  );
+});
+
 test("verification recipes require a safe failure witness or an explicit coverage gap", async () => {
   const text = await readFile(root + "prompts/verify-setup.md", "utf8");
   for (const sentence of [
