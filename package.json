@@ -50,6 +50,7 @@
       "./packages/footer/index.ts",
       "./packages/toasts/index.ts",
       "./packages/drift/index.ts",
+      "./packages/emphasis/index.ts",
       "./packages/safe-compact/index.ts",
       "./packages/review/index.ts",
       "./packages/watch-pr/index.ts",
