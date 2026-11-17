@@ -307,6 +307,7 @@ test("shipped builtins resolve with the expected fleet and policy", () => {
   const builtinDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "agents");
   const { agents } = discoverAgents({ builtinDir });
   assert.deepEqual(agents.map((agent) => agent.name).sort(), [
+    "comment-auditor",
     "oracle",
     "researcher",
     "reviewer",

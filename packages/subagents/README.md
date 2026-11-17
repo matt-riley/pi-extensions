@@ -78,6 +78,7 @@ catches a path that no longer exists.
 | `oracle` | Second opinion. Challenge assumptions. Name what is missing. | read-only |
 | `worker` | Implements a fully-specified change: edits files, runs checks, reports a diff summary. | edit/write + full bash |
 | `researcher` | Web/docs research with cited sources and a concise brief. | read-only |
+| `comment-auditor` | Classifies each comment in the diff (or a named path) as keep, delete, or encode, naming the type, test or lint that would enforce it. | read-only |
 
 `reviewer` and `oracle` default to `model: cross-family`: the strongest model
 listed in `~/.pi/agent/router.json` (frontier, then mid, then base) that is
