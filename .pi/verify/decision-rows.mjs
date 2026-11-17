@@ -72,6 +72,7 @@ const entries = [
   ["router-playbook", { type: "debug", boundary: true }],
   ["jev-decision", { v: 1, feature: "guardrail", model: "jev-1.13.0", requestedModel: "jev-1.13.0", questions: [], answers: null, latencyMs: 3000, outcome: "error", errorClass: "timeout" }],
   ["jev-decision", { v: 1, feature: HELD, model: "jev-1.13.0", outcome: "ok", latencyMs: 10 }],
+  ["jev-decision", { v: 1, feature: "done-gate", model: "jev-1.13.0", requestedModel: "jev-1.13.0", answers: { asserts_verified: { type: "noul", noul: 0.93 } }, latencyMs: 150, outcome: "ok" }],
   ["verifier-verdict", { verdict: "verified", head: "0123456789abcdef", patchId: "fedcba9876543210", base: "origin/main", at: "2026-11-17T10:00:00.000Z", id: "v1" }],
   ["prompt-coach-decision", { at: 1, version: 3, original: SECRET, candidate: SECRET, placed: SECRET, action: "rewritten", intentProbability: 0.81, filesRead: [`${SECRET}.md`], probe: { branch: SECRET }, model: "fixture", subscription: false, concise: false }],
 ];
@@ -151,6 +152,7 @@ try {
     new RegExp(`router escalated → ${MARK}-big@high · difficulty 0\\.72 · frontier`),
     /router playbook debug/,
     /jev guardrail failed: timeout · 3000ms/,
+    /jev done-gate · asserts_verified 0\.93/,
     /verifier verified · at 0123456789ab/,
     /prompt-coach rewritten · intent 0\.81 · fixture/,
   ])
@@ -159,7 +161,7 @@ try {
   assert.doesNotMatch(rows, new RegExp(SECRET));
   assert.doesNotMatch(rows, /patch id:/);
   if (process.env.SHOW_ROWS) console.log(rows.trimEnd());
-  console.log("ok: five collapsed rows drawn; held router decision and routine Jev answer draw nothing");
+  console.log("ok: six collapsed rows drawn, done-gate answer included; held router decision and routine Jev answer draw nothing");
 
   key("C-o");
   const expanded = await waitFor(/patch id: fedcba9876543210/);

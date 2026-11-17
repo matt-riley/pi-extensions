@@ -118,8 +118,33 @@ const guardrail = {
   outcome: "ok",
 };
 
-test("an answered Jev call is quiet; a failed one is an error row", () => {
-  assert.equal(rowFor(JEV_DECISION, guardrail), null);
+test("guardrail and done-gate answers draw their scores; other answers stay quiet", () => {
+  assert.equal(
+    rowFor(JEV_DECISION, guardrail).head,
+    "guardrail · destructive 0.08, blast_radius 0.88, pick #1",
+  );
+  const doneGate = {
+    ...guardrail,
+    feature: "done-gate",
+    answers: { asserts_verified: { noul: 0.93 }, claims_remote: { noul: 0.14 } },
+  };
+  assert.equal(
+    rowFor(JEV_DECISION, doneGate).head,
+    "done-gate · asserts_verified 0.93, claims_remote 0.14",
+  );
+  assert.equal(rowFor(JEV_DECISION, { ...guardrail, feature: "safe-compact" }), null);
+  assert.equal(rowFor(JEV_DECISION, { ...guardrail, feature: "diagnosis-nudge" }), null);
+  assert.equal(
+    rowFor(JEV_DECISION, { ...guardrail, feature: "router", answers: null }, "all").head,
+    "router · answered",
+  );
+});
+
+test("a failed Jev call is an error row whatever the feature", () => {
+  assert.equal(
+    rowFor(JEV_DECISION, { ...guardrail, feature: "safe-compact", outcome: "error" }).tone,
+    "error",
+  );
   const failed = rowFor(JEV_DECISION, {
     ...guardrail,
     answers: null,
@@ -131,12 +156,12 @@ test("an answered Jev call is quiet; a failed one is an error row", () => {
   assert.equal(failed.head, "guardrail failed: http (HTTP 503) · 178ms");
 });
 
-test("an answered Jev row in all mode lists numbers, never criteria labels", () => {
-  const row = rowFor(JEV_DECISION, guardrail, "all");
-  assert.equal(row.head, "guardrail answered · 178ms");
+test("an answered Jev row's details list numbers, never criteria labels", () => {
+  const row = rowFor(JEV_DECISION, guardrail);
   assert.deepEqual(row.details, [
     "model: jev-1.13.0",
     "transport: classify",
+    "answered in: 178ms",
     "questions: destructive (noul), blast_radius (score)",
     "destructive: noul 0.08",
     "blast_radius: score 0.88, confidence 0.13",

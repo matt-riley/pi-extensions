@@ -145,12 +145,30 @@ function answerLines(answers) {
   return lines;
 }
 
+/** The one number per answer that reads as the judgement: "destructive 0.08". */
+function answerSummary(answers) {
+  if (!answers || typeof answers !== "object") return null;
+  const parts = [];
+  for (const [id, answer] of Object.entries(answers)) {
+    const value = fixed(answer?.noul ?? answer?.score);
+    if (value !== null) parts.push(`${clean(id)} ${value}`);
+    else if (Number.isInteger(answer?.choice)) parts.push(`${clean(id)} #${answer.choice}`);
+  }
+  return parts.length ? parts.join(", ") : null;
+}
+
+// Judges whose answer decides something you see: guardrail approves or blocks a
+// tool call, done-gate decides whether a "done" claim needs checking. Their
+// answered calls draw by default; other features' routine answers do not.
+const JUDGES = new Set(["guardrail", "done-gate"]);
+
 function jevDecision(data, mode) {
   const ok = data.outcome === "ok";
-  if (ok && !data.modelDrift && mode !== "all") return null;
   const feature = clean(data.feature) || "jev";
-  let state = "answered";
-  if (!ok) {
+  if (ok && !data.modelDrift && !JUDGES.has(feature) && mode !== "all") return null;
+  let state;
+  if (ok) state = answerSummary(data.answers) ?? "answered";
+  else {
     const status = Number.isInteger(data.status) ? ` (HTTP ${data.status})` : "";
     state = `failed: ${clean(data.errorClass ?? data.outcome) || "unknown"}${status}`;
   }
@@ -163,8 +181,8 @@ function jevDecision(data, mode) {
     tag: "jev",
     tone,
     head: join([
-      `${feature} ${state}`,
-      ms(data.latencyMs),
+      ok ? `${feature} · ${state}` : `${feature} ${state}`,
+      !ok && ms(data.latencyMs),
       data.modelDrift && `model drift: ${clean(data.model)}`,
     ]),
     details: details([
@@ -172,6 +190,7 @@ function jevDecision(data, mode) {
       data.requestedModel !== data.model && detail("requested", data.requestedModel),
       data.modelDrift && detail("tuned on", data.tunedModel),
       detail("transport", data.transport),
+      ok && detail("answered in", ms(data.latencyMs)),
       detail("questions", questions),
       ...answerLines(data.answers),
       number(data.redactions) !== null && detail("secrets redacted", data.redactions),
