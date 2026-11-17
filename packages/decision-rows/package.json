@@ -1,0 +1,7 @@
+{
+  "name": "pi-decision-rows",
+  "version": "0.1.0",
+  "description": "Show the router, Jev, verifier and prompt-coach decisions this collection saves as compact transcript rows.",
+  "license": "MIT",
+  "type": "module"
+}

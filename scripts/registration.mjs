@@ -62,6 +62,10 @@ export async function loadRegistrations(root) {
           if (!def.provider || !def.id) throw new Error("Virtual model requires provider and id");
           capture("model", `${def.provider}/${def.id}`, def);
         },
+        registerEntryRenderer: (type, renderer) => {
+          if (typeof renderer !== "function") throw new Error(`Invalid entry renderer: ${type}`);
+          capture("entry-renderer", type, renderer);
+        },
         on: (name, handler) => capture("event", name, handler),
       };
       try {
