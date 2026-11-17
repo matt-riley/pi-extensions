@@ -9,6 +9,7 @@ import {
   controlByteErrors,
   fileSizeReport,
   runtimeImports,
+  scriptEntryErrors,
   sharedHelperErrors,
 } from "./check-conventions.mjs";
 
@@ -52,19 +53,72 @@ test("a shared helper copied into a package is caught, and tests are exempt", ()
       path.join(root, "packages", "copy", "test", "stub.test.mjs"),
       "function usableNumber(raw) {\n  return raw;\n}\n",
     );
+    writeFileSync(
+      path.join(root, "packages", "copy", "exec.ts"),
+      "const exec = async (cmd, args, opts) => {\n  return pi.exec(cmd, args, { timeout: opts?.timeout ?? 10_000 });\n};\n",
+    );
     const errors = sharedHelperErrors(root);
-    assert.equal(errors.length, 2, "the definition and the flag list, not the import");
+    assert.equal(errors.length, 3, "the definitions and the flag list, not the import");
     assert.match(
       errors[0],
-      /packages\/copy\/judge\.mjs: a local usableNumber belongs in shared\/systemone\.mjs/,
+      /packages\/copy\/exec\.ts: a local pi\.exec adapter belongs in shared\/exec\.mjs/,
     );
     assert.match(
       errors[1],
+      /packages\/copy\/judge\.mjs: a local usableNumber belongs in shared\/systemone\.mjs/,
+    );
+    assert.match(
+      errors[2],
       /packages\/copy\/judge\.mjs: a local off-flag list belongs in shared\/env-flag\.mjs/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("an importable script must guard its entry point, and a mention is not a read", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "script-entry-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, "scripts"), { recursive: true });
+  const write = (name, source) => writeFileSync(path.join(root, "scripts", name), source);
+
+  write(
+    "unguarded.mjs",
+    "export function parseArgs(argv) {\n  return argv;\n}\nconst args = parseArgs(process.argv.slice(2));\n",
+  );
+  assert.deepEqual(
+    scriptEntryErrors(root).map((error) => error.split(":")[0]),
+    ["scripts/unguarded.mjs"],
+  );
+  assert.match(scriptEntryErrors(root)[0], /guard the entry point on import\.meta\.url/);
+
+  // The guard, argv inside a function, and a run-only script all pass.
+  write(
+    "unguarded.mjs",
+    'import { pathToFileURL } from "node:url";\nexport function main(argv) {\n  return argv;\n}\nif (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main(process.argv.slice(2));\n',
+  );
+  write(
+    "function-only.mjs",
+    "export function parseArgs(argv) {\n  return process.argv.slice(2).concat(argv);\n}\n",
+  );
+  write("run-only.mjs", "const args = process.argv.slice(2);\nconsole.log(args);\n");
+  assert.deepEqual(scriptEntryErrors(root), []);
+
+  // A string or template that mentions argv is not a read; smoke-pi.mjs holds one.
+  write(
+    "mention.mjs",
+    'export const fixture = "const args = process.argv.slice(2);";\nexport const block = `\n  process.argv[1]\n`;\n',
+  );
+  assert.deepEqual(scriptEntryErrors(root), []);
+
+  // An exported value computed from argv still runs on import.
+  write("exported-args.mjs", "export const args = process.argv.slice(2);\n");
+  write("sample.test.mjs", "export const x = process.argv;\n");
+  assert.deepEqual(
+    scriptEntryErrors(root).map((error) => error.split(":")[0]),
+    ["scripts/exported-args.mjs"],
+    "a .test.mjs file is not a script entry",
+  );
 });
 
 test("runtime imports distinguish erased types, mixed bindings, empty imports and dynamic imports", () => {

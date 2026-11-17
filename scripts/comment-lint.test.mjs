@@ -148,19 +148,18 @@ test("a reason above must be adjacent, on its own line, and not another directiv
     assert.equal(lintSuppressions("sample.ts", source).length, 1, source);
 });
 
-test("the repository's existing suppressions keep their reasons", async () => {
+test("the repository's real suppressions keep their reasons", async () => {
   const source = await readFile(
-    new URL("../packages/web-fetch/github.mjs", import.meta.url),
+    new URL("../packages/decision-rows/rows.mjs", import.meta.url),
     "utf8",
   );
-  assert.deepEqual(lintSuppressions("github.mjs", source), []);
-  const stripped = source.replace(
-    /^(?:[ \t]*\/\/(?! eslint-disable).*\n)+(?=[ \t]*\/\/ eslint-disable)/gm,
-    "",
-  );
+  assert.deepEqual(lintSuppressions("rows.mjs", source), []);
+  // The same real directive without its inline reason must be found, so the
+  // pass above is the reason being read and not the directive being missed.
+  const stripped = source.replace(/ -- [^\n]*/, "");
   assert.equal(
-    lintSuppressions("github.mjs", stripped).length,
-    2,
-    "both directives are found once their reasons are gone",
+    lintSuppressions("rows.mjs", stripped).length,
+    1,
+    "the directive is found once its reason is gone",
   );
 });

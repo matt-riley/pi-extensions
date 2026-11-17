@@ -218,7 +218,88 @@ const SHARED_HELPERS = [
     what: "a local off-flag list",
     home: "shared/env-flag.mjs",
   },
+  {
+    // affected, architecture, code-search and docs-drift each carried this
+    // adapter; the timeout and the "an absent stream is empty text" rule must
+    // not drift again.
+    pattern: /timeout:\s*opts\?\.timeout\s*\?\?\s*10_000/,
+    what: "a local pi.exec adapter",
+    home: "shared/exec.mjs",
+  },
 ];
+
+const FUNCTION_LIKE = new Set([
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.MethodDeclaration,
+  ts.SyntaxKind.Constructor,
+  ts.SyntaxKind.GetAccessor,
+  ts.SyntaxKind.SetAccessor,
+]);
+
+/**
+ * A script that exports something can be imported by a test, so importing it
+ * must not run the command: a `process.argv` read at module scope starts the CLI
+ * as a side effect. Guard the entry point on `import.meta.url`, the shape every
+ * guarded script here already uses. Run-only scripts (no exports) are exempt —
+ * nothing imports them by contract.
+ *
+ * Parsing, not a text search, is what keeps a template literal that mentions
+ * `process.argv` (the smoke fixture contains one) out of the finding.
+ */
+export function scriptEntryErrors(root) {
+  const errors = [];
+  const dir = path.join(root, "scripts");
+  if (!fs.existsSync(dir)) return errors;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".mjs") || entry.name.endsWith(".test.mjs"))
+      continue;
+    const relative = `scripts/${entry.name}`;
+    const tree = ts.createSourceFile(
+      relative,
+      fs.readFileSync(path.join(dir, entry.name), "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const exported = tree.statements.some(
+      (node) =>
+        ts.isExportAssignment(node) ||
+        ts.isExportDeclaration(node) ||
+        (ts.canHaveModifiers(node) &&
+          ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)),
+    );
+    if (!exported) continue;
+    /** Is this node inside the entry-point `if`? */
+    const guarded = (node) => {
+      for (let parent = node.parent; parent; parent = parent.parent) {
+        if (ts.isIfStatement(parent) && parent.expression.getText(tree).includes("import.meta.url"))
+          return true;
+        if (parent === tree) break;
+      }
+      return false;
+    };
+    let unguarded = false;
+    const visit = (node) => {
+      if (FUNCTION_LIKE.has(node.kind)) return; // argv inside a function is not run on import
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "process" &&
+        node.name.text === "argv" &&
+        !guarded(node)
+      )
+        unguarded = true;
+      ts.forEachChild(node, visit);
+    };
+    visit(tree);
+    if (unguarded)
+      errors.push(
+        `${relative}: exports a function but reads process.argv at module scope; guard the entry point on import.meta.url`,
+      );
+  }
+  return errors;
+}
 
 /** Copies of a shared helper in packages/, found by definition rather than by name. */
 export function sharedHelperErrors(root) {
@@ -341,6 +422,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     ...checkConventions(root),
     ...controlByteErrors(root),
     ...sharedHelperErrors(root),
+    ...scriptEntryErrors(root),
     ...checkSkillReferences(root),
     ...sizes.errors,
   ];
