@@ -7,6 +7,7 @@ import {
   capDiff,
   conventionalProblems,
   formatFindings,
+  formatLint,
   lintChange,
   routeFindings,
 } from "../lint.mjs";
@@ -75,6 +76,39 @@ test("findings above threshold, strongest first, unusable answers dropped", () =
 test("a finding carries the label a person can act on", () => {
   const [finding] = routeFindings({ overengineered: noul(0.9) });
   assert.match(formatFindings([finding]), /^overengineered 0\.90 — /);
+});
+
+test("a judged change with nothing above threshold says so, not 'not judged'", () => {
+  assert.equal(
+    formatLint({ judged: true, truncated: false, findings: [], subject: [] }),
+    "No findings above threshold.",
+  );
+});
+
+test("a failed judgment reports the reason and never reads as a clean pass", () => {
+  assert.equal(
+    formatLint({ judged: false, truncated: false, findings: [], reason: "request timed out" }),
+    "Not judged: request timed out",
+  );
+  assert.equal(
+    formatLint({ judged: false, truncated: false, findings: [] }),
+    "Not judged: no judgment",
+  );
+});
+
+test("the text orders the failure, the cut, the subject and the findings", () => {
+  const text = formatLint({
+    judged: true,
+    truncated: true,
+    reason: "ignored once judged",
+    subject: ["subject ends with a period"],
+    findings: routeFindings({ overengineered: noul(0.9) }),
+  });
+  const lines = text.split("\n");
+  assert.match(lines[0], /^Diff cut at \d+ characters/);
+  assert.equal(lines[1], "subject: subject ends with a period");
+  assert.match(lines[2], /^overengineered 0\.90 — /);
+  assert.equal(lines.length, 3);
 });
 
 // ---------------------------------------------------------------------------

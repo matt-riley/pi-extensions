@@ -23,7 +23,7 @@ import { LOCAL_READ, OPEN_READ } from "../../shared/tool-annotations.mjs";
 
 import { report as blastReport } from "./blast.mjs";
 import { formatVerified, verifyFindings } from "./findings.mjs";
-import { MAX_DIFF_CHARS, formatFindings, lintChange } from "./lint.mjs";
+import { formatLint, lintChange } from "./lint.mjs";
 import { installRerun } from "./rerun.mjs";
 
 const GIT_TIMEOUT_MS = 5_000;
@@ -42,29 +42,6 @@ function selector(scope: string, ref?: string): string[] | null {
   if (scope === "worktree") return ["diff"];
   if (scope === "range") return ref ? ["diff", ref] : null;
   return ["diff", "--cached"];
-}
-
-function formatLint(result: {
-  findings: { id: string; probability: number; label: string }[];
-  subject: string[];
-  judged: boolean;
-  truncated: boolean;
-  reason?: string;
-}): string {
-  const lines: string[] = [];
-  if (!result.judged) {
-    lines.push("Not judged: " + (result.reason ?? "no judgment"));
-  }
-  if (result.truncated) {
-    lines.push("Diff cut at " + MAX_DIFF_CHARS + " characters; only the first part was judged.");
-  }
-  for (const problem of result.subject ?? []) {
-    lines.push("subject: " + problem);
-  }
-  const body = formatFindings(result.findings ?? []);
-  if (body) lines.push(body);
-  else if (result.judged) lines.push("No findings above threshold.");
-  return lines.join("\n");
 }
 
 export default function piReviewExtension(pi: ExtensionAPI) {
