@@ -42,55 +42,9 @@ export async function resolveDefinition({ symbol, fromFile, kind, cache, graph, 
 
   // --- Step 1: resolve via the fromFile's imports/reexports -----------------
   if (fromFile) {
-    const entry = cache.files[fromFile];
-    if (entry) {
-      let targetSpec = null;
-      let targetName = symbol;
-      const importRec = entry.imports?.find((r) => r.names?.some((nm) => nm.local === symbol));
-      if (importRec) {
-        targetSpec = importRec.source;
-        const nm = importRec.names.find((n) => n.local === symbol);
-        targetName = nm?.imported ?? symbol;
-      } else {
-        const re = entry.reexports?.find(
-          (r) => r.names === null || r.names?.some((nm) => nm.local === symbol),
-        );
-        if (re) {
-          targetSpec = re.source;
-          const nm = re.names?.find((n) => n.local === symbol);
-          targetName = nm?.imported ?? symbol;
-        }
-      }
-      if (targetSpec) {
-        const resolved = graph.resolve(targetSpec, fromFile);
-        if (resolved.type === "file") {
-          const followed = followReexports(resolved.rel, targetName, {
-            cache,
-            graph,
-            depth: 0,
-            visited: new Set(),
-            alsoName: symbol, // default imports resolve to the function's own name
-          });
-          if (followed?.rel) {
-            primaryRel = followed.rel;
-          } else if (followed?.external) {
-            external = followed.external;
-            if (importRec) note.push(`imported from "${importRec.source}" (re-exported)`);
-          } else {
-            note.push(
-              `import of "${symbol}" from "${targetSpec}" resolved to ${resolved.rel} but no definition found there`,
-            );
-          }
-        } else if (resolved.type === "external") {
-          external = resolved.pkg;
-          if (importRec) note.push(`imported from "${importRec.source}"`);
-        } else {
-          note.push(`could not resolve "${targetSpec}" — ${resolved.reason}`);
-        }
-      }
-    } else {
-      note.push(`fromFile "${fromFile}" not found in the inventory`);
-    }
+    const found = resolveFromFile({ symbol, fromFile, cache, graph, note });
+    external = found.external ?? null;
+    primaryRel = found.primaryRel ?? null;
   }
 
   // --- Step 2: global scan for definitions ---------------------------------
@@ -145,6 +99,63 @@ export async function resolveDefinition({ symbol, fromFile, kind, cache, graph, 
     note: note.length ? note.join("; ") : null,
     primaryRel,
   };
+}
+
+/**
+ * Resolve `symbol` through the imports and re-exports declared by `fromFile`.
+ * Returns the file that defines it, or the package it comes from. Explanations
+ * for an unresolved symbol are appended to `note`.
+ */
+function resolveFromFile({ symbol, fromFile, cache, graph, note }) {
+  const entry = cache.files[fromFile];
+  if (!entry) {
+    note.push(`fromFile "${fromFile}" not found in the inventory`);
+    return {};
+  }
+
+  const importRec = entry.imports?.find((r) => r.names?.some((nm) => nm.local === symbol));
+  let targetSpec = null;
+  let targetName = symbol;
+  if (importRec) {
+    targetSpec = importRec.source;
+    targetName = importRec.names.find((n) => n.local === symbol)?.imported ?? symbol;
+  } else {
+    const re = entry.reexports?.find(
+      (r) => r.names === null || r.names?.some((nm) => nm.local === symbol),
+    );
+    if (re) {
+      targetSpec = re.source;
+      targetName = re.names?.find((n) => n.local === symbol)?.imported ?? symbol;
+    }
+  }
+  if (!targetSpec) return {};
+
+  const resolved = graph.resolve(targetSpec, fromFile);
+  if (resolved.type === "external") {
+    if (importRec) note.push(`imported from "${importRec.source}"`);
+    return { external: resolved.pkg };
+  }
+  if (resolved.type !== "file") {
+    note.push(`could not resolve "${targetSpec}" — ${resolved.reason}`);
+    return {};
+  }
+
+  const followed = followReexports(resolved.rel, targetName, {
+    cache,
+    graph,
+    depth: 0,
+    visited: new Set(),
+    alsoName: symbol, // default imports resolve to the function's own name
+  });
+  if (followed?.rel) return { primaryRel: followed.rel };
+  if (followed?.external) {
+    if (importRec) note.push(`imported from "${importRec.source}" (re-exported)`);
+    return { external: followed.external };
+  }
+  note.push(
+    `import of "${symbol}" from "${targetSpec}" resolved to ${resolved.rel} but no definition found there`,
+  );
+  return {};
 }
 
 /** Follow a re-export chain from `startRel` looking for `name`. */
