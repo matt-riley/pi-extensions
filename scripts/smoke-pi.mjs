@@ -72,6 +72,12 @@ const server = createServer(async (req, res) => {
   if (scripted) {
     tool = scripted.shift();
     if (tool) content = null;
+  } else if (last?.role !== "tool" && isChild && phase === "worktree") {
+    tool = {
+      name: "write",
+      arguments: { path: "smoke-wt.txt", content: "from the isolated child\n" },
+    };
+    content = null;
   } else if (last?.role !== "tool" && isChild && ["verified", "failed"].includes(phase)) {
     tool = {
       name: "bash",
@@ -101,24 +107,34 @@ const server = createServer(async (req, res) => {
     tool =
       phase === "blocked"
         ? { name: "bash", arguments: { command: "touch smoke-blocked" } }
-        : {
-            name: "subagent",
-            arguments: {
-              agent: "scout",
-              task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
-              timeout_ms: 20000,
-              ...(phase === "verified" || phase === "failed"
-                ? {
-                    acceptance: [
-                      {
-                        criterion: "Fixture command completes",
-                        command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
-                      },
-                    ],
-                  }
-                : {}),
-            },
-          };
+        : phase === "worktree"
+          ? {
+              name: "subagent",
+              arguments: {
+                agent: "worker",
+                task: "SMOKE_CHILD_TASK: Write a new file smoke-wt.txt, then reply SMOKE_CHILD_OK.",
+                isolation: "worktree",
+                timeout_ms: 20000,
+              },
+            }
+          : {
+              name: "subagent",
+              arguments: {
+                agent: "scout",
+                task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
+                timeout_ms: 20000,
+                ...(phase === "verified" || phase === "failed"
+                  ? {
+                      acceptance: [
+                        {
+                          criterion: "Fixture command completes",
+                          command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+            };
     content = null;
   }
   const delta = tool
@@ -813,6 +829,28 @@ export default function (pi) {
       `ok: actual child command evidence reports ${expected} separately from execution completion`,
     );
   }
+  phase = "worktree";
+  await writeFile(path.join(cwd, "smoke-dirty.txt"), "parent's uncommitted file\n");
+  const isolatedText = JSON.stringify(await prompt("SMOKE_PARENT: run the isolated writer once."));
+  const worktreePath = isolatedText.match(/worktree: (\S+) \(branch pi-subagent\//)?.[1];
+  assert.ok(worktreePath, `no worktree line in the result: ${isolatedText.slice(-2000)}`);
+  assert.ok(worktreePath.startsWith(path.join(agentDir, "subagent-worktrees")), worktreePath);
+  assert.equal(
+    await readFile(path.join(worktreePath, "smoke-wt.txt"), "utf8"),
+    "from the isolated child\n",
+  );
+  assert.equal(
+    await readFile(path.join(worktreePath, "smoke-dirty.txt"), "utf8"),
+    "parent's uncommitted file\n",
+    "the parent's uncommitted state is copied in",
+  );
+  await assert.rejects(access(path.join(cwd, "smoke-wt.txt")), "the child wrote in place");
+  assert.match(isolatedText, /changes:\\n\s*smoke-wt\.txt \| 1 \+/);
+  assert.doesNotMatch(isolatedText, /changes:[^"]*smoke-dirty/, "copied state is not the child's");
+  const kept = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd, encoding: "utf8" });
+  assert.ok(kept.includes(worktreePath), "a worktree holding work is kept");
+  await rm(path.join(cwd, "smoke-dirty.txt"));
+  console.log("ok: an isolated writer works in its own worktree with the parent's dirty state");
   phase = "edit";
   let before = requests;
   const gated = await prompt("SMOKE_EDIT: write the fixture file, then stop.");

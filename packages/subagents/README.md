@@ -14,7 +14,8 @@ is capped; full transcripts are saved for later inspection.
 ```text
 /subagents on         opt in — activates the tool and the orchestrator brief
 /subagents off        opt out (running children keep going; new spawns stop)
-/subagents            pick a running or queued child, then steer or stop
+/subagents            pick a running or queued child, then steer or stop;
+                      also lists worktrees kept because a child left work in them
 ```
 
 ```text
@@ -35,10 +36,36 @@ subagent({
   description?,     // 3–5 words for the widget
   max_turns?,       // 1–30, may only lower the resolved cap
   timeout_ms?,      // wall-clock cap in ms (up to 2h), may only lower the resolved cap
+  model?,           // "provider/id" or "cross-family"; overrides the type's default
+  acceptance?,      // [{criterion, command}] parent-specified checks
+  isolation?,       // "worktree": run in its own git worktree (below)
 })
 ```
 
 Unknown or disabled types error. There is no general-purpose fallback.
+
+## Worktrees
+
+`isolation: "worktree"` runs the child in its own git worktree, so writers can
+run in parallel and an adversary can write repro scripts without touching your
+tree.
+
+- The worktree is created when the child starts, on a new branch
+  `pi-subagent/<id>-<hex>` at your current HEAD. Your uncommitted state is copied
+  in: tracked changes (staged and unstaged) as one binary patch, untracked files
+  that are not ignored as copies. A patch that does not apply is an error, and
+  nothing runs; the child never silently starts from a clean tree.
+- Worktrees live under `~/.pi/agent/subagent-worktrees/<repo-hash>/`, never inside
+  the repository, so the parent's `drift` and `done-gate` do not see them.
+- The child's working directory is your cwd mapped into the worktree. The
+  result names the worktree path, branch, base commit and commit count, and its
+  `changes:` lines are measured from the tree the child started with, so your
+  copied changes are not attributed to it.
+- Nothing is merged back. Read the result, then graft what you keep by hand
+  (`git -C <worktree> diff`, or cherry-pick a child's commits).
+- At session shutdown a worktree is removed with its branch only when the child
+  left no commit and no change. Otherwise it is kept and `/subagents` lists it;
+  `git worktree remove <path>` deletes it once grafted.
 
 ## Briefs and when to delegate
 
@@ -132,8 +159,9 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
 
 ## Limits
 
-- Max 4 running; extras queue. One write-capable child runs at a time (later writers wait their turn
-  in arrival order), so a writer's change list is its own; read-only children stay parallel. Still no worktrees.
+- Max 4 running; extras queue. One write-capable child in your tree runs at a time (later writers wait
+  their turn in arrival order), so a writer's change list is its own. Read-only children and writers in
+  their own worktree stay parallel.
 - 30 turns, wrap-up steer, then 2 grace turns, then abort; plus a 30-minute
   wall-clock timeout (frontmatter/`timeout_ms` can adjust) so a hung tool call
   cannot block the parent forever.
@@ -145,7 +173,7 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
   attributed to the session (`usage` on the tool result).
 - Child runtime failures (error / timed out / aborted) return as normal content,
   never `isError`, so pi does not blindly auto-retry the same failing spawn.
-- Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
+- Always fresh context. No resume, no background, no nested orchestrator.
 - Children load host extensions except this package and the interactive-only ones
   (`lore`, `prompt-coach`, `skill-select`), and never get `subagent`.
   The router loads on purpose so children that inherit `router/auto` still register

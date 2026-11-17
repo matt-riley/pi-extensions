@@ -113,7 +113,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-guardrail`](./packages/guardrail/README.md) | Check risky tool calls, ask for approval when needed, and refuse catastrophic operations. |
 | [`pi-router`](./packages/router/README.md) | Route tasks to models, with optional escalation for harder work, and pin a task playbook with `/playbook`. |
 | [`pi-prompt-coach`](./packages/prompt-coach/README.md) | Rewrite a rough request with a hosted model, then check that it still asks for the same thing. |
-| [`pi-subagents`](./packages/subagents/README.md) | Delegate separate tasks to child agents, with live progress and controls. Off by default. |
+| [`pi-subagents`](./packages/subagents/README.md) | Delegate separate tasks to child agents, with live progress and controls; writers can run in parallel, each in its own worktree. Off by default. |
 | [`pi-review`](./packages/review/README.md) | Review a diff, find affected callers, and check whether review findings are supported. |
 | [`pi-watch-pr`](./packages/watch-pr/README.md) | Check a pull request's CI, merge state and unresolved reviews in one report. |
 | [`pi-jobs`](./packages/jobs/README.md) | Run background commands, follow their logs, and take over an interactive terminal. |

@@ -109,6 +109,7 @@ Offline coverage (run every row on every change):
 | Failed-fix checkpoint (diagnosis-nudge) blocks native, shell and nested mutations until an observation | `npm run smoke` | `ok: two failed fixes block native, shell and nested mutations until a real checkpoint` |
 | Plan mode: read-only denial, the three plan tools offered, gone after `/plan exit` | `npm run smoke` | the three `ok: plan …` lines |
 | Subagents: `/subagents on`, real child, `verified`/`failed`/`unknown` outcome reporting | `npm run smoke` | the three `ok: … child …` lines |
+| Subagents: an isolated writer in its own worktree, with the parent's dirty state copied in | `npm run smoke` | `ok: an isolated writer works in its own worktree with the parent's dirty state` |
 | Done-gate: one quiet nudge after an unverified edit, none for an outside-cwd write | `npm run smoke` | both `ok: done-gate …` lines |
 | `/until <cmd>` sends the agent back until the predicate exits 0 | `npm run smoke` | `ok: /until sends the agent back until the predicate exits 0` |
 | `/climb` measures the baseline first, refuses a red gate, stops on a met target (the attempt loop is covered only by `node --test packages/until`) | `npm run smoke` | `ok: /climb measures the baseline first and refuses a red gate in a live Pi` |
