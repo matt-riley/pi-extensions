@@ -53,6 +53,11 @@ export async function loadRegistrations(root) {
         registerCommand: (name, def) => capture("command", name, def),
         registerFlag: (name, def) => capture("flag", name, def),
         registerShortcut: (name, def) => capture("shortcut", name, def),
+        // pi keeps one transformer per extension, so the entry is its name.
+        registerMarkdownTransformer: (transformer) => {
+          if (typeof transformer !== "function") throw new Error("Invalid Markdown transformer");
+          capture("transformer", entry, transformer);
+        },
         registerVirtualModel: (def) => {
           if (!def.provider || !def.id) throw new Error("Virtual model requires provider and id");
           capture("model", `${def.provider}/${def.id}`, def);

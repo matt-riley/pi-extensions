@@ -1,0 +1,7 @@
+{
+  "name": "pi-emphasis",
+  "version": "0.1.0",
+  "description": "Colored status pills, labeled headings and colored bold for assistant replies in pi's terminal, with the rules that teach the agent to write them.",
+  "license": "MIT",
+  "type": "module"
+}

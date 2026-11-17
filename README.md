@@ -124,6 +124,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-footer`](./packages/footer/README.md) | See your project, branch and work state; inspect usage and costs on demand. |
 | [`pi-toasts`](./packages/toasts/README.md) | Show extension notifications as temporary cards instead of permanent chat rows. |
 | [`pi-decision-rows`](./packages/decision-rows/README.md) | Show the router, Jev, verifier and prompt-coach decisions this collection saves as compact transcript rows. |
+| [`pi-emphasis`](./packages/emphasis/README.md) | Draw `[[Done]]`-style status pills, label icons and colored bold in replies, mark claims made over unchecked edits and paths that do not exist, and teach the agent to write them. Display only. |
 | [`pi-drift`](./packages/drift/README.md) | Tell the agent which files changed outside the session, so it re-reads them instead of overwriting from memory. |
 | [`pi-safe-compact`](./packages/safe-compact/README.md) | Carry selected context into a shorter session, with native compaction as a fallback. |
 
@@ -168,6 +169,10 @@ between them:
   **plan-mode** and **guardrail** share a quote-aware shell parser and a dialog
   queue, so simultaneous approval dialogs do not stack and hang.
 - **done-gate** has no sibling runtime import, but its tests load **jobs**.
+- **emphasis** reads **done-gate**'s unchecked-edit spans through
+  `shared/evidence-state.mjs` (neither imports the other) and checks reply paths
+  with `shared/stalepaths.mjs`, which **subagents** also uses. Without
+  done-gate, claim pills are drawn as written.
 
 The other packages import only their own files and `shared/`, not sibling
 packages. Most host SDK imports are type-only; subagents also loads the host's
