@@ -271,30 +271,38 @@ async function fetchRepo(parsed, opts) {
   });
 }
 
-async function fetchFile(parsed, opts) {
-  validateNames(parsed.owner, parsed.repo);
-  let body = "";
-  let used = null;
-  for (const { ref, path } of refPathCandidates(parsed.ref, parsed.path)) {
+/**
+ * Probe the ref/path candidates in order with `read`, returning the first hit
+ * and the candidate that produced it, or null when every candidate 404s.
+ * Sequential on purpose: a 404 decides whether the next candidate is even
+ * tried, so a hit ends the probe. Any other error is the caller's to report.
+ */
+async function probeCandidates(parsed, read) {
+  for (const candidate of refPathCandidates(parsed.ref, parsed.path)) {
+    const { ref, path } = candidate;
     const endpoint = `repos/${parsed.owner}/${parsed.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
     try {
-      // Sequential on purpose: candidates are probed in order and the first hit
-      // wins, so a 404 decides whether the next one is even tried.
-      // eslint-disable-next-line no-await-in-loop
-      body = await ghApiImpl(["-H", "Accept: application/vnd.github.raw", endpoint], opts);
-      used = { ref, path };
-      break;
+      return { value: await read(endpoint), used: candidate };
     } catch (err) {
       if (err.status === 404) continue;
       throw err;
     }
   }
-  if (used === null) {
+  return null;
+}
+
+async function fetchFile(parsed, opts) {
+  validateNames(parsed.owner, parsed.repo);
+  const probe = await probeCandidates(parsed, (endpoint) =>
+    ghApiImpl(["-H", "Accept: application/vnd.github.raw", endpoint], opts),
+  );
+  if (probe === null) {
     throw new GhApiError(
       `GitHub file not found: ${parsed.owner}/${parsed.repo} ${parsed.path || parsed.ref || ""} (ref not found or file missing)`,
       404,
     );
   }
+  const { value: body, used } = probe;
 
   const ext = (used.path.split(".").pop() ?? "").toLowerCase();
   const lang = EXT_LANG[ext] ?? "";
@@ -331,27 +339,16 @@ async function fetchFile(parsed, opts) {
 
 async function fetchTree(parsed, opts) {
   validateNames(parsed.owner, parsed.repo);
-  let listing = null;
-  let used = null;
-  for (const { ref, path } of refPathCandidates(parsed.ref, parsed.path)) {
-    const endpoint = `repos/${parsed.owner}/${parsed.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
-    try {
-      // Same ordered-candidate probe as the raw fetch above.
-      // eslint-disable-next-line no-await-in-loop
-      listing = JSON.parse(await ghApiImpl([endpoint], opts));
-      used = { ref, path };
-      break;
-    } catch (err) {
-      if (err.status === 404) continue;
-      throw err;
-    }
-  }
-  if (used === null) {
+  const probe = await probeCandidates(parsed, async (endpoint) =>
+    JSON.parse(await ghApiImpl([endpoint], opts)),
+  );
+  if (probe === null) {
     throw new GhApiError(
       `GitHub path not found: ${parsed.owner}/${parsed.repo} ${parsed.path || parsed.ref || ""}`,
       404,
     );
   }
+  const { value: listing, used } = probe;
 
   if (!Array.isArray(listing)) {
     // tree URL pointing at a single file — render it as a file

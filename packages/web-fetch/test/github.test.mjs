@@ -261,6 +261,42 @@ test("fetchGithub: blob renders fenced code with language", async () => {
   assert.equal(outcome.jsonBody.path, "src/index.ts");
 });
 
+test("fetchGithub: a 404 on one ref/path candidate falls through to the next", async () => {
+  const calls = [];
+  setGhApiForTests((args) => {
+    const endpoint = args.at(-1);
+    calls.push(endpoint);
+    if (endpoint === "repos/octo/cat/contents/lib/thing.ts?ref=main")
+      throw Object.assign(new Error("gh: Not Found (HTTP 404)"), { status: 404 });
+    if (endpoint === "repos/octo/cat/contents/thing.ts?ref=main%2Flib") return "# hit\n";
+    throw new Error("unexpected endpoint " + endpoint);
+  });
+  const { outcome } = await fetchGithub(
+    parseGithubUrl("https://github.com/octo/cat/blob/main/lib/thing.ts"),
+    {},
+  );
+  assert.deepEqual(calls, [
+    "repos/octo/cat/contents/lib/thing.ts?ref=main",
+    "repos/octo/cat/contents/thing.ts?ref=main%2Flib",
+  ]);
+  assert.match(outcome.markdown, /# hit/);
+  assert.equal(outcome.jsonBody.ref, "main/lib");
+  assert.equal(outcome.jsonBody.path, "thing.ts");
+});
+
+test("fetchGithub: a failure that is not a 404 stops the candidate probe", async () => {
+  const calls = [];
+  setGhApiForTests((args) => {
+    calls.push(args.at(-1));
+    throw Object.assign(new Error("gh: rate limited (HTTP 403)"), { status: 403 });
+  });
+  await assert.rejects(
+    fetchGithub(parseGithubUrl("https://github.com/octo/cat/blob/main/lib/thing.ts"), {}),
+    /rate limited/,
+  );
+  assert.equal(calls.length, 1, "the next candidate must not hide a real failure");
+});
+
 test("fetchGithub: tree renders listing", async () => {
   setGhApiForTests(fakeApi);
   const { outcome } = await fetchGithub(
