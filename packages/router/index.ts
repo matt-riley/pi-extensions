@@ -59,6 +59,7 @@ import {
   NO_PLAYBOOK,
   taskTypeFromAnswer,
 } from "./playbook.mjs";
+import { createPlaybookPin } from "./playbook-pin.mjs";
 import {
   buildDifficultyState,
   buildDifficultyQuestions,
@@ -213,6 +214,7 @@ export default function piRouterExtension(
   // boundary, so a task is judged once and keeps its playbook on follow-ups.
   // `undefined` means nothing has been judged in this process yet.
   let playbook: { type: string; text: string | null } | undefined;
+  const playbookPin = createPlaybookPin();
   // Difficulty answers fetched in before_agent_start for this prompt, so
   // route() can use them instead of asking again for the same task.
   let pending: { prompt: string; answers: unknown } | null = null;
@@ -636,8 +638,11 @@ export default function piRouterExtension(
   // run of that task. No key, an error or an unsure answer injects nothing.
   pi.on("before_agent_start", async (event, ctx) => {
     if (event?.messageType !== "user") return;
+    // A pin is the user's explicit choice: it holds with /route off or no key,
+    // skips the judgment, and never applies in a subagent child.
+    const pin: string | undefined = isSubagentChild ? undefined : playbookPin.pinned;
 
-    if (config.enabled && playbooksEnabled && !isSubagentChild) {
+    if (pin !== undefined || (config.enabled && playbooksEnabled && !isSubagentChild)) {
       const epoch = generation;
       const prompt = String(event?.prompt ?? "")
         .trim()
@@ -664,31 +669,38 @@ export default function piRouterExtension(
 
       if (boundary.route || playbook === undefined) {
         const routing = config.enabled && modelKey(ctx?.model ?? null) === VIRTUAL_KEY;
-        let type = NO_PLAYBOOK;
-        try {
-          const result = await judge({
-            state: buildDifficultyState({
-              prompt,
-              window: shareWindow ? history : [],
-              cwd: ctx?.cwd,
-            }),
-            questions: {
-              task_type: buildTaskTypeQuestion(),
-              ...(routing && !forcedPending ? buildDifficultyQuestions() : {}),
-            },
-            signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
-          });
-          if (!config.enabled || epoch !== generation) return;
-          type = taskTypeFromAnswer(result?.answers?.task_type);
-          if (routing && result?.answers && !forcedPending)
-            pending = { prompt, answers: result.answers };
-        } catch {
-          // Judge unavailable: no playbook for this task, and no retry until the next one.
-        }
-        if (!config.enabled || epoch !== generation) return;
+        let type = pin ?? NO_PLAYBOOK;
+        if (pin === undefined)
+          try {
+            const result = await judge({
+              state: buildDifficultyState({
+                prompt,
+                window: shareWindow ? history : [],
+                cwd: ctx?.cwd,
+              }),
+              questions: {
+                task_type: buildTaskTypeQuestion(),
+                ...(routing && !forcedPending ? buildDifficultyQuestions() : {}),
+              },
+              signal: AbortSignal.timeout(Math.min(config.timeoutMs, PLAYBOOK_TIMEOUT_MS)),
+            });
+            if (!config.enabled || epoch !== generation) return;
+            type = taskTypeFromAnswer(result?.answers?.task_type);
+            if (routing && result?.answers && !forcedPending)
+              pending = { prompt, answers: result.answers };
+          } catch {
+            // Judge unavailable: no playbook for this task, and no retry until the next one.
+          }
+        if (pin === undefined && (!config.enabled || epoch !== generation)) return;
         playbook = { type, text: loadPlaybook(type) };
         try {
-          pi.appendEntry?.("router-playbook", { at: Date.now(), type, boundary: boundary.route });
+          const how = pin === undefined ? {} : { pinned: true };
+          pi.appendEntry?.("router-playbook", {
+            at: Date.now(),
+            type,
+            boundary: boundary.route,
+            ...how,
+          });
         } catch {
           // Telemetry only.
         }
@@ -730,6 +742,7 @@ export default function piRouterExtension(
     last = null;
     lastState = null;
     resetTask();
+    playbookPin.reset();
     resetShadowSession();
     setPlaybookStatus(ctx, null);
     const selected = modelKey(ctx?.model ?? null) === VIRTUAL_KEY;
@@ -920,9 +933,21 @@ export default function piRouterExtension(
             ? `routed to ${lastState.model ?? "?"} (${lastState.tier}) · base ${lastState.base ?? "?"}`
             : "no routing decision yet",
           lastLine,
-          `playbooks ${config.enabled && playbooksEnabled ? "on" : "off"} · this task: ${playbook?.type ?? "not judged"}`,
+          `playbooks ${config.enabled && playbooksEnabled ? "on" : "off"} · this task: ${playbook?.type ?? "not judged"}${playbookPin.pinned === undefined ? "" : " (pinned)"}`,
         ].join("\n"),
       );
+    },
+  });
+
+  pi.registerCommand("playbook", {
+    description: "Show or pin the task playbook: /playbook [status | <type> | auto | off]",
+    handler: async (args, ctx) => {
+      const result = playbookPin.command(args, playbook);
+      if (result.changed) {
+        playbook = undefined; // re-resolved at the next prompt
+        setPlaybookStatus(ctx, playbookPin.pinned ?? null);
+      }
+      notify(ctx, result.message, result.level);
     },
   });
 }

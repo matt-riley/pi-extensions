@@ -9,7 +9,14 @@ import os from "node:os";
 import path from "node:path";
 
 import piRouterExtension from "../index.ts";
-import { loadPlaybook, NO_PLAYBOOK, PLAYBOOK_TYPES, taskTypeFromAnswer } from "../playbook.mjs";
+import {
+  buildTaskTypeQuestion,
+  JUDGED_TYPES,
+  loadPlaybook,
+  NO_PLAYBOOK,
+  PLAYBOOK_TYPES,
+  taskTypeFromAnswer,
+} from "../playbook.mjs";
 
 const SAVED = {
   PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD,
@@ -48,6 +55,28 @@ test("every playbook type has a short file", () => {
   assert.equal(loadPlaybook("../../package"), null);
 });
 
+test("the judgment chooses only judged types; pin-only types are refused", () => {
+  assert.equal(taskTypeFromAnswer(choice("perf", 0.9)), "perf");
+  for (const type of PLAYBOOK_TYPES.filter((t) => !JUDGED_TYPES.includes(t)))
+    assert.equal(taskTypeFromAnswer(choice(type, 0.9)), NO_PLAYBOOK, type);
+  assert.deepEqual(
+    Object.keys(buildTaskTypeQuestion().criteria).sort(),
+    [...JUDGED_TYPES, NO_PLAYBOOK].sort(),
+  );
+});
+
+test("every playbook opens with the todo-list line and stays under about 1 KB", () => {
+  for (const type of PLAYBOOK_TYPES) {
+    const text = loadPlaybook(type);
+    assert.match(
+      text,
+      /\n\nCopy these steps into your todo list before task-specific items; a step you skip stays with `skip: <reason>`\.\n/,
+      type,
+    );
+    assert.ok(Buffer.byteLength(text) <= 1100, `${type} is ${Buffer.byteLength(text)} bytes`);
+  }
+});
+
 test("the task type is the chosen option, or none when unsure or unknown", () => {
   assert.equal(taskTypeFromAnswer(choice("bug", 0.9)), "bug");
   assert.equal(taskTypeFromAnswer(choice("bug")), "bug");
@@ -69,6 +98,7 @@ function harness({ answers, fail = false, selected = null } = {}) {
   const entries = [];
   const statuses = [];
   const asks = [];
+  const notes = [];
   let virtualModel = null;
   let branch = [];
   const pi = {
@@ -90,7 +120,10 @@ function harness({ answers, fail = false, selected = null } = {}) {
     },
     modelRegistry: { getAvailable: () => [LUNA], find: () => LUNA, getModel: () => LUNA },
     sessionManager: { getBranch: () => branch },
-    ui: { notify: () => {}, setStatus: (id, text) => statuses.push({ id, text }) },
+    ui: {
+      notify: (text, level) => notes.push({ text, level }),
+      setStatus: (id, text) => statuses.push({ id, text }),
+    },
   };
   piRouterExtension(pi, {
     configPath: path.join(dir, "router.json"),
@@ -103,6 +136,9 @@ function harness({ answers, fail = false, selected = null } = {}) {
   return {
     asks,
     command: (args) => commands.route.handler(args, ctx),
+    playbook: (args) => commands.playbook.handler(args, ctx),
+    sessionStart: () => handlers.session_start({}, ctx),
+    notes,
     entries,
     statuses,
     setBranch: (messages) => {
@@ -246,4 +282,78 @@ test("with router/auto selected, one call rates both and route() reuses it", asy
   assert.ok("difficulty" in h.asks[0].questions);
   await h.route(prompt, [user(prompt)]);
   assert.equal(h.asks.length, 1);
+});
+
+test("a pinned playbook wins over the judgment and skips the call", async () => {
+  const h = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await h.playbook("perf");
+  assert.deepEqual(h.statuses.at(-1), { id: "playbook", text: "playbook: perf" });
+  const section = await h.start("the export command throws on empty input, fix it");
+  assert.match(section, /^## Playbook: performance/);
+  assert.equal(h.asks.length, 0);
+  assert.deepEqual(h.entries.at(-1).customType, "router-playbook");
+  assert.equal(h.entries.at(-1).data.type, "perf");
+  assert.equal(h.entries.at(-1).data.pinned, true);
+});
+
+test("a pin survives a task boundary; auto judges again and records no pin", async () => {
+  const h = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await h.playbook("pickup");
+  await h.start("read the handoff and carry on");
+  h.setBranch([user("read the handoff and carry on"), assistant("done")]);
+  const next = await h.start("completely different: which weekday was 1 march 2020 in london");
+  assert.match(next, /^## Playbook: session pickup/);
+  assert.equal(h.asks.length, 0);
+  await h.playbook("auto");
+  const judged = await h.start("the export command throws on empty input, fix it");
+  assert.match(judged, /^## Playbook: bug fix/);
+  assert.equal(h.asks.length, 1);
+  assert.equal(h.entries.at(-1).data.pinned, undefined);
+});
+
+test("/playbook off injects nothing and skips the judgment", async () => {
+  const h = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await h.playbook("off");
+  assert.equal(await h.start("the export command throws on empty input, fix it"), undefined);
+  assert.equal(h.asks.length, 0);
+  assert.deepEqual(h.entries.at(-1).data.type, NO_PLAYBOOK);
+  assert.equal(h.entries.at(-1).data.pinned, true);
+});
+
+test("a pin works with /route off, with no key and with PI_ROUTER_PLAYBOOKS=off", async () => {
+  const off = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await off.command("off");
+  await off.playbook("refactor");
+  assert.match(await off.start("tidy the parser"), /^## Playbook: refactor/);
+  const keyless = harness({ fail: true });
+  await keyless.playbook("design");
+  assert.match(await keyless.start("work out the cache design"), /^## Playbook: figure it out/);
+  process.env.PI_ROUTER_PLAYBOOKS = "off";
+  const unjudged = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await unjudged.playbook("pause");
+  assert.match(await unjudged.start("stop here for today"), /^## Playbook: pause safely/);
+  assert.equal(off.asks.length + keyless.asks.length + unjudged.asks.length, 0);
+});
+
+test("a pin never reaches a subagent child", async () => {
+  process.env.PI_SUBAGENT_CHILD = "1";
+  const child = harness({ answers: () => ({ task_type: choice("bug", 0.9) }) });
+  await child.playbook("bug");
+  assert.equal(await child.start("fix the failing test"), undefined);
+  assert.equal(child.asks.length, 0);
+});
+
+test("/playbook status says how the playbook was chosen, and session start unpins", async () => {
+  const h = harness({ answers: () => ({ task_type: choice("investigation", 0.9) }) });
+  await h.start("how does the compaction judge decide what to keep");
+  await h.playbook("");
+  assert.match(h.notes.at(-1).text, /^playbook: investigation \(judged\)/);
+  await h.playbook("eval");
+  await h.playbook("status");
+  assert.match(h.notes.at(-1).text, /^playbook: eval \(pinned\)/);
+  await h.playbook("ship-it");
+  assert.equal(h.notes.at(-1).level, "warning");
+  h.sessionStart();
+  await h.playbook("");
+  assert.match(h.notes.at(-1).text, /^playbook: not judged yet \(auto\)/);
 });

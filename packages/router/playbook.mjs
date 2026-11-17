@@ -3,14 +3,30 @@
 // The skill library only helps when the model thinks to search it. A playbook
 // is the opposite: the router already judges every new task, so it also asks
 // what kind of task it is and puts five to eight lines of "how we do this
-// here" in the system prompt for that run. Five types only; anything else is
-// `none`, which injects nothing.
+// here" in the system prompt for that run. The judgment picks among six types;
+// anything else is `none`, which injects nothing. The rest are reachable only
+// by `/playbook <type>` (playbook-pin.mjs): a prompt alone does not tell a
+// pickup from a pause.
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PLAYBOOK_TYPES = ["bug", "feature", "refactor", "investigation", "autonomous"];
+/** Types the TypeSafe task-type judgment may choose. */
+export const JUDGED_TYPES = ["bug", "feature", "refactor", "investigation", "autonomous", "perf"];
+const PIN_ONLY_TYPES = [
+  "hillclimb",
+  "prototype",
+  "plan",
+  "pickup",
+  "pause",
+  "pr",
+  "babysit",
+  "eval",
+  "design",
+];
+/** Every playbook with a file, judged or pin-only. */
+export const PLAYBOOK_TYPES = [...JUDGED_TYPES, ...PIN_ONLY_TYPES];
 export const NO_PLAYBOOK = "none";
 /**
  * Below this probability on the chosen type, inject nothing. A wrong playbook
@@ -28,7 +44,7 @@ export function buildTaskTypeQuestion() {
       "What kind of work does `prompt` ask for, given `conversation`? Judge the work, not the wording. " +
       "Choose none when it is a quick question, chit-chat, a trivial one-line edit, or a command like commit or push.",
     criteria: {
-      bug: "Something is broken, failing, throwing, slow or behaving wrongly and needs to be found and fixed.",
+      bug: "Something is broken, failing, throwing or behaving wrongly and needs to be found and fixed.",
       feature:
         "New or changed behaviour to build: add a command, support a case, implement a spec or ticket.",
       refactor:
@@ -37,6 +53,7 @@ export function buildTaskTypeQuestion() {
         "A read-only question to answer from the code or the web: how does X work, why is Y like this, should we do A or B.",
       autonomous:
         "Drive a long task to a finish line without stopping: keep going until CI is green, all PRs merged, every issue done.",
+      perf: "Make something measurably faster or cheaper: latency, throughput, memory, startup, build or test time.",
       [NO_PLAYBOOK]: "None of the above, or too small to need a playbook.",
     },
   };
@@ -46,7 +63,7 @@ export function buildTaskTypeQuestion() {
 export function taskTypeFromAnswer(answer, minConfidence = MIN_CONFIDENCE) {
   if (answer?.type !== "choice" || typeof answer.choice !== "string") return NO_PLAYBOOK;
   const choice = answer.choice.trim();
-  if (!PLAYBOOK_TYPES.includes(choice)) return NO_PLAYBOOK;
+  if (!JUDGED_TYPES.includes(choice)) return NO_PLAYBOOK;
   const p = Number(answer.probabilities?.[choice]);
   if (Number.isFinite(p) && p < minConfidence) return NO_PLAYBOOK;
   return choice;
