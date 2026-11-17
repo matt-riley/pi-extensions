@@ -37,6 +37,10 @@ these paths:
 - **Resource discovery:** skill and prompt loading/expansion, including
   `/workflow` and the five script-backed prompts; `/skill-search` and `/usage --json`
   without provider calls. `pi list` exposes the relocated collection path.
+- **PR observation:** `watch_pr` reports ready only for the clean fixture, rejects
+  missing checks, failed review retrieval and mixed-head evidence, and finds an
+  unresolved thread on a later page. An isolated `gh` fixture checks targeting
+  and pagination arguments; this does not exercise GitHub or live CLI pagination.
 - **Plan mode:** its three tools appear on entry and disappear on exit. A real
   `touch smoke-blocked` tool call is denied, and the file remains absent.
 - **Subagents:** explicit opt-in and a completed scout through real child-session

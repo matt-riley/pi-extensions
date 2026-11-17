@@ -38,7 +38,7 @@ and credentials are never read or written.
 ```sh
 npm run check                                  # conventions, tsc, lint, format, knip, fallow, tests
 npm run verify                                 # add -- --live for one real TypeSafe request
-npm run smoke                                  # real pi RPC host, all 20 manifest extensions
+npm run smoke                                  # real pi RPC host, all manifest extensions
 node .pi/verify/workbench.mjs --regular        # real tmux + pi + Neovim, inline UI mode
 node .pi/verify/workbench.mjs --upgrade        # prior-HEAD footer upgraded through /reload
 node .pi/verify/jobs.mjs                       # real tmux + pi, /jobs logs, PTY takeover, shutdown
@@ -99,8 +99,9 @@ Offline coverage (run every row on every change):
 
 | Feature | Drive | Observe |
 | --- | --- | --- |
-| All 20 extensions load; `/plan`, `/subagents`, `/route`, `/guardrail`, `/safe-compact`, `/jobs`, `/ui`, `/footer` register | `npm run smoke` | `ok: real host loads 20 manifest extensions` |
+| All manifest extensions load; `/plan`, `/subagents`, `/route`, `/guardrail`, `/safe-compact`, `/jobs`, `/ui`, `/footer` register | `npm run smoke` | `ok: real host loads … manifest extensions` |
 | Owned skills and `/review`, `/pr`, `/test`, `/refactor`, `/design` prompts expand outside the repo | `npm run smoke` | `ok: owned skills and workflow prompts discover and expand outside the repo` |
+| `watch_pr`: clean readiness, incomplete/mixed-head refusal and later-page threads, with isolated `gh` fixtures | `npm run smoke` | `ok: watch_pr rejects incomplete or mixed-head evidence and finds later-page threads` |
 | Background jobs: real completion follow-up, real failure status, optional Jev watch on redacted evidence | `npm run smoke` | both `ok: real background …` / `ok: background tools …` lines |
 | TypeSafe `find_code` and injection warnings through nested codemode | `npm run smoke` | the two `ok: … semantic/MCP …` lines |
 | `measure_command` trials and empty-work refusal | `npm run smoke` | `ok: controlled measurement executes nested trials and rejects empty work` |

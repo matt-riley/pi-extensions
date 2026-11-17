@@ -174,6 +174,26 @@ async function prompt(message, waitForAgent = !message.startsWith("/")) {
 try {
   await mkdir(agentDir);
   await mkdir(cwd);
+  const binDir = path.join(fixture, "bin");
+  const watchFixture = path.join(fixture, "watch-pr.json");
+  await mkdir(binDir);
+  await writeFile(
+    path.join(binDir, "gh"),
+    [
+      "#!/usr/bin/env node",
+      'const { readFileSync } = require("node:fs");',
+      "const fixture = JSON.parse(readFileSync(" + JSON.stringify(watchFixture) + ', "utf8"));',
+      "const args = process.argv.slice(2);",
+      'if (args[0] === "pr" && args[1] === "view") {',
+      "  process.stdout.write(JSON.stringify(fixture.pr));",
+      '} else if (args[0] === "api" && args[1] === "graphql" &&',
+      '    ["--paginate", "--slurp", "github.example.test", "o=fixture-owner", "r=fixture-repo"].every(x => args.includes(x))) {',
+      "  if (fixture.graph === null) process.exit(1);",
+      "  process.stdout.write(JSON.stringify(fixture.graph));",
+      "} else process.exit(2);",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
   await mkdir(installRoot);
   await Promise.all(
     ["package.json", "packages", "shared", "scripts", "prompts", ".agents"].map((entry) =>
@@ -308,7 +328,7 @@ export default function (pi) {
   child = spawn(piBin, args, {
     cwd,
     env: {
-      PATH: process.env.PATH,
+      PATH: [binDir, process.env.PATH].join(path.delimiter),
       PI_CODING_AGENT_DIR: agentDir,
       PI_CODING_AGENT_SESSION_DIR: path.join(fixture, "sessions"),
       PI_OFFLINE: "1",
@@ -480,6 +500,60 @@ export default function (pi) {
   assert.equal(await readFile(path.join(cwd, "existing file.md"), "utf8"), plainDoc);
   console.log("ok: /deslop reads and rewrites an existing file in the real host (scripted model)");
   const codeTool = (code) => ({ name: "codemode", arguments: { code } });
+  phase = "watch-pr";
+  const pullRequest = {
+    number: 7,
+    url: "https://github.example.test/fixture-owner/fixture-repo/pull/7",
+    state: "OPEN",
+    isDraft: false,
+    headRefOid: "a".repeat(40),
+    baseRefName: "main",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    statusCheckRollup: [{ name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }],
+  };
+  const reviewPage = (nodes, hasNextPage = false, headRefOid = pullRequest.headRefOid) => ({
+    data: {
+      repository: {
+        pullRequest: {
+          headRefOid,
+          reviewThreads: {
+            nodes,
+            pageInfo: { hasNextPage, endCursor: hasNextPage ? "next" : null },
+          },
+        },
+      },
+    },
+  });
+  for (const [verdict, pr, graph] of [
+    ["ready", pullRequest, [reviewPage([])]],
+    ["unknown", { ...pullRequest, statusCheckRollup: [] }, [reviewPage([])]],
+    ["unknown", pullRequest, null],
+    [
+      "needs-action",
+      pullRequest,
+      [
+        reviewPage([], true),
+        reviewPage([{ isResolved: false, isOutdated: false, path: "later-page.ts" }]),
+      ],
+    ],
+    ["unknown", pullRequest, [reviewPage([], false, "b".repeat(40))]],
+  ]) {
+    await writeFile(watchFixture, JSON.stringify({ pr, graph }));
+    scripted = [codeTool('text(await tools.watch_pr({pr:"7",wait_seconds:600}));')];
+    const observed = await prompt("SMOKE_WATCH_PR: inspect the fixture PR without changing it.");
+    const ended = observed.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "watch_pr",
+    );
+    assert.ok(ended && !ended.isError, JSON.stringify(observed));
+    const output = ended.result.content.map((part) => part.text ?? "").join("\n");
+    assert.equal(output.split("\n")[0], verdict, output);
+    assert.match(output, /head aaaaaaaa/);
+    if (verdict === "needs-action") assert.match(output, /later-page\.ts/);
+  }
+  console.log(
+    "ok: watch_pr rejects incomplete or mixed-head evidence and finds later-page threads",
+  );
   phase = "jobs";
   scripted = [
     codeTool(

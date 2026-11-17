@@ -39,13 +39,13 @@ export default function piWatchPrExtension(pi: ExtensionAPI) {
     annotations: OPEN_READ,
     description:
       "Where a pull request stands right now: checks on its head commit, merge conflicts or being behind base, " +
-      "requested changes, unresolved review threads. Returns a verdict — needs-action, pending, ready or closed — " +
+      "requested changes, unresolved review threads. Returns a verdict — needs-action, unknown, pending, ready or closed — " +
       "and the head SHA it applies to. With wait_seconds it polls while only pending checks remain. Read-only; " +
       "'ready' is not authority to merge.",
     promptSnippet:
       "watch_pr(pr?, wait_seconds?): checks, merge state and unresolved threads for a PR's head commit, with a verdict",
     promptGuidelines: [
-      "When taking a PR to merge, call watch_pr after every push, fix what it lists, rebase if it says behind, and stop when it says ready or closed.",
+      "When taking a PR to merge, call watch_pr after every push, fix what it lists, rebase if it says behind, and stop when it says ready or closed. Unknown means evidence is incomplete, not ready.",
     ],
     parameters: Type.Object({
       pr: Type.Optional(
@@ -77,7 +77,6 @@ export default function piWatchPrExtension(pi: ExtensionAPI) {
           return { content: [{ type: "text", text: snap.error }], isError: true };
         }
         const { verdict, lines } = assess(snap);
-        if (snap.note) lines.push(snap.note);
         if (verdict !== "pending" || Date.now() + POLL_MS > deadline || signal?.aborted) {
           return { content: [{ type: "text", text: `${verdict}\n${lines.join("\n")}` }] };
         }
