@@ -2,23 +2,7 @@
 import { Type } from "typebox";
 import { LOCAL_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
 import { revisionSnapshot } from "../../shared/revision.mjs";
-
-function summarize(samples) {
-  const values = samples.map((sample) => sample.value);
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const stdev = Math.sqrt(
-    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1),
-  );
-  const result = {
-    count: values.length,
-    mean,
-    min: Math.min(...values),
-    max: Math.max(...values),
-    stdev,
-  };
-  if (!Object.values(result).every(Number.isFinite)) throw new Error("Non-finite summary.");
-  return result;
-}
+import { parseCounters, rangesOverlap, summarize } from "../../shared/measure.mjs";
 
 function measurementOptions(params) {
   const {
@@ -168,24 +152,7 @@ export function installMeasurement(pi) {
             boundedSignal.throwIfAborted();
             if (after?.fingerprint !== revision.fingerprint)
               throw new Error("Revision changed during measurement.");
-            let sample;
-            try {
-              sample = JSON.parse(result.output);
-            } catch {
-              throw new Error("Measurement command must emit only JSON counters.");
-            }
-            if (
-              !sample ||
-              typeof sample !== "object" ||
-              Array.isArray(sample) ||
-              !Number.isSafeInteger(sample.completed) ||
-              sample.completed !== expected
-            )
-              throw new Error(
-                "Expected completed work must be nonzero and exactly match expected_work.",
-              );
-            if (sample.cached !== 0)
-              throw new Error("Cached or unknown-cache work is not an executed sample.");
+            const sample = parseCounters(result.output, expected);
             const value = metric === "duration" ? elapsed_ms : sample.value;
             if (!Number.isFinite(value))
               throw new Error("Measurement value must be a finite number.");
@@ -200,7 +167,7 @@ export function installMeasurement(pi) {
           arms: Object.fromEntries(
             Object.entries(arms).map(([name, arm]) => [
               name,
-              { ...arm, summary: summarize(arm.samples) },
+              { ...arm, summary: summarize(arm.samples.map((sample) => sample.value)) },
             ]),
           ),
           scope:
@@ -213,7 +180,7 @@ export function installMeasurement(pi) {
           report.comparison = {
             difference: b.mean - a.mean,
             percent_change: a.mean === 0 ? null : ((b.mean - a.mean) / Math.abs(a.mean)) * 100,
-            ranges_overlap: b.min <= a.max && a.min <= b.max,
+            ranges_overlap: rangesOverlap(a, b),
             interpretation:
               "Observed difference only; not a statistical or causal improvement claim.",
           };

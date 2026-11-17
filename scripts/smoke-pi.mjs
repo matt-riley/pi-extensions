@@ -676,6 +676,23 @@ export default function (pi) {
   assert.match(JSON.stringify(empty), /completed work/);
   console.log("ok: controlled measurement executes nested trials and rejects empty work");
 
+  scripted = [
+    codeTool(
+      'text(await tools.decision_log({phase:"verify",decision:"keep the fixture",why:"smoke",evidence:"smoke-measure.mjs:1 lookup/gone.mjs",result:"open"}));',
+    ),
+  ];
+  const logged = await prompt("SMOKE_TRAIL: log one decision.");
+  assert.match(
+    JSON.stringify(logged),
+    /evidence does not resolve: lookup\/gone\.mjs does not exist/,
+  );
+  const trail = await readFile(path.join(cwd, ".pi/runs/decisions.tsv"), "utf8");
+  assert.match(
+    trail,
+    /^ts\tphase\tdecision\twhy\tevidence\tresult\n.*\tverify\tkeep the fixture\t/,
+  );
+  console.log("ok: decision_log appends a trail row and reports evidence that does not resolve");
+
   const failingCheck = codeTool(
     'const job = await tools.terminal_start({command:"node --test smoke-fail.test.mjs",notify:false});' +
       "text(await tools.terminal_read({id:job.id,wait_seconds:3}));",
@@ -833,6 +850,14 @@ export default function (pi) {
   assert.match(doctorNote, /tools: \d+ registered/);
   assert.ok(doctorNote.includes(`pi ${piVersion} `), "the report names Pi's version");
   console.log("ok: /doctor reports versions and the tool registry from a live Pi");
+  const climbStart = events.length;
+  await prompt("/climb --target 1 --gate false node smoke-measure.mjs");
+  await prompt("/climb --target 10 --gate true node smoke-measure.mjs");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const climbNote = JSON.stringify(events.slice(climbStart));
+  assert.match(climbNote, /climb: the gate exits 1 on the untouched tree/, climbNote.slice(0, 400));
+  assert.match(climbNote, /climb: the baseline 7 \[7, 7\] already meets target 10/);
+  console.log("ok: /climb measures the baseline first and refuses a red gate in a live Pi");
   await mkdir(path.join(cwd, ".pi"), { recursive: true });
   await mkdir(path.join(cwd, "arch", "shared"), { recursive: true });
   await mkdir(path.join(cwd, "arch", "packages", "a"), { recursive: true });

@@ -1,0 +1,7 @@
+{
+  "name": "pi-trail",
+  "version": "0.1.0",
+  "description": "Keep an append-only decision trail with checked evidence pointers, and audit it with /trail.",
+  "license": "MIT",
+  "type": "module"
+}

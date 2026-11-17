@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { findStalePaths } from "../stalepaths.mjs";
+import { findStalePaths } from "../../../shared/stalepaths.mjs";
 import { preflightTask } from "../judge.mjs";
 
 function repo() {

@@ -50,6 +50,7 @@ export const OWNED_TOOL_NAMES = new Set([
   "doctor_report",
   "architecture_check",
   "affected_tests",
+  "decision_log",
 ]);
 
 /**
