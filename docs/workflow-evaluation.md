@@ -72,6 +72,35 @@ Inspect failure transcripts before changing prompts; reserve a fresh held-out
 set for any subsequent optimization. Retain useful checks, delete ineffective
 instructions, and do not claim improvement from this integration smoke alone.
 
+## Blinded A/B eval of two prompt or skill variants
+
+`node scripts/workflow-eval.mjs --live --variant-a <dir> --variant-b <dir> --cases <dir> --output <new directory>`
+runs every case under both variants with the same budget as the pilot: eight
+sessions at most (so four cases), six turns/90 seconds each, and no new run
+once reported cost reaches $2. The output directory must not exist: a finished
+eval is never rerun to make the result look better. The router's `eval`
+playbook (`/playbook eval`) carries the same protocol as steps.
+
+- **Variant directory:** any of `SYSTEM.md` (appended to the system prompt),
+  `AGENTS.md` (copied into the workspace as project context), `skills/` (each
+  entry loaded with `--skill`) and `prompts/` (loaded with `--prompt-template`).
+- **Cases directory:** one subdirectory per case with `prompt.md` (what a user
+  would type), optional `fixture/` (committed into the workspace first),
+  optional `accept.sh` (run in the workspace afterwards; exit 0 accepts) and
+  optional `case.json` (`split`, and `expectRead`: paths a run that follows the
+  chain must open).
+- **Blinding:** no `eval`, `test`, `judge`, `rubric`, `score`, `candidate` or
+  `benchmark` (or an inflection of one) in a case name, fixture path, skill or
+  prompt path, or case prompt, and no prompt asking which skills were used;
+  `scripts/workflow-eval/sanitize.mjs` refuses the run before any request. Each
+  run gets a fresh workspace named after the case under a neutral temporary
+  directory, and a private agent directory.
+- **Grading:** `accepted` comes from `accept.sh`, `followed` from the `read`
+  calls in the transcript, never from the model's own account. `blind/<case>.md`
+  holds both final answers as Response 1 and 2 in shuffled order for a judge
+  that scores both in one pass on one scale; `blind-key.json` maps them back.
+  The judge is not run by the script.
+
 ## Lightweight outcome record
 
 For an explicitly chosen workflow experiment, append one manual row per real

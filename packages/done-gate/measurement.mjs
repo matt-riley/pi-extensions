@@ -92,7 +92,8 @@ export function installMeasurement(pi) {
       "Execute 3–10 bounded trials through normal bash hooks on an unchanged Git revision. " +
       "Each command must print only JSON {completed: <expected_work>, cached: 0, value?: <finite number>}. " +
       "Report count, spread and raw samples; optionally compare interleaved baseline/candidate commands. " +
-      "Counters are a command contract, not independently verified work. No claim of causal improvement.",
+      "Counters are a command contract, not independently verified work. No claim of causal improvement. " +
+      "Explain the number (what work it counts, why it is that size) before trusting or reporting it.",
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: 4000 }),
       baseline_command: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),

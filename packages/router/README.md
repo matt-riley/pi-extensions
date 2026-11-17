@@ -170,7 +170,7 @@ pattern that names its provider is taken literally, and non-GPT patterns
 | `PI_ROUTER_FRONTIER_THRESHOLD` | `2.5` | rating at or above which the target is the frontier tier rather than mid (the two thresholds are ordered, so the lower starts mid and the higher starts frontier) |
 | `PI_ROUTER_TIMEOUT_MS` | `4000` | judgement deadline, after which the model is left alone |
 | `PI_ROUTER_SHARE` | `window` | `prompt` sends only the prompt to the judge, no conversation |
-| `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and playbook injection |
+| `PI_ROUTER_PLAYBOOKS` | unset (on) | `off` stops the task-type judgement and judged playbook injection; a `/playbook` pin still applies |
 | `PI_ROUTER_STUCK_BASELINE` | unset (on) | `off` / `0` / `false` / `no` keeps the fixed two-failure stuck rule and stops updating `router-turn-baseline.json` |
 
 In-session: `/route` for status and counters, `/route preview <prompt>` for a
@@ -180,8 +180,8 @@ dry run, `/route preview --json <prompt>` for the same report as JSON, and
 `off` stops both routing and playbook judgments/sharing, cancels in-flight
 judgments and clears their cached answers/playbook. A result arriving after
 an off/on cycle is discarded too. It holds the base without changing the
-selected model. This switch covers this router, not other TypeSafe-enabled
-extensions. `/route status` prints sharing/playbook state, config path, the
+selected model. A `/playbook` pin is not a judgment and stays on. This
+switch covers this router, not other TypeSafe-enabled extensions. `/route status` prints sharing/playbook state, config path, the
 configured lists, and the effective ladder at the current thinking cap.
 
 The ladder is what each tier resolves to under that cap, for example
@@ -244,9 +244,27 @@ node scripts/router-shadow-report.mjs /path/to/router-shadow.jsonl
 Skills only help when the model thinks to search for them. Playbooks don't wait
 for that: at each new task (the same boundary gate the router uses), one
 TypeSafe call asks what kind of work it is: `bug`, `feature`, `refactor`,
-`investigation`, `autonomous` or `none`. The matching file in
+`investigation`, `autonomous`, `perf` or `none`. The matching file in
 [`playbooks/`](./playbooks) (six numbered steps) is appended to the system prompt
 for every run of that task, and the footer shows `playbook: <type>`.
+
+`/playbook` chooses one explicitly instead:
+
+```
+/playbook              status: the current playbook and how it was chosen
+/playbook <type>       pin it until /playbook auto, /playbook off or the session ends
+/playbook auto         back to the TypeSafe judgment
+/playbook off          no playbook and no judgment
+```
+
+A pin wins over the judgment and skips the call, holds across task
+boundaries, and works with `/route off`, `PI_ROUTER_PLAYBOOKS=off` and no key.
+Subagent children never see it. Nine more playbooks are reachable only by pin,
+because a prompt alone does not tell them apart: `hillclimb`, `prototype`,
+`plan` (multi-phase), `pickup` (session pickup), `pause` (pause safely), `pr`
+(open a pull request), `babysit`, `eval` (blinded prompt eval) and `design`
+(figure it out). Argument parsing and pin state live in
+[`playbook-pin.mjs`](./playbook-pin.mjs).
 
 - **One judgement per task.** Follow-ups keep the task's playbook without
   another call. The next task boundary judges again and can drop it.
@@ -257,13 +275,16 @@ for every run of that task, and the footer shows `playbook: <type>`.
   call also rates difficulty, and `route()` uses that answer for the same prompt
   instead of asking again.
 - **Not while off or in subagent children.** `/route off` and `PI_ROUTER=off`
-  stop playbooks too; children get their task from the orchestrator.
+  stop judged playbooks too (a pin still applies); children get their task
+  from the orchestrator and never get a playbook.
 - Each judgement is recorded as a `router-playbook` entry (type and whether it
   was a boundary), kept apart from `router-decision` so the routing reports are
-  unchanged.
+  unchanged. A pinned task's entry adds `pinned: true`, so pinned and judged
+  tasks can be compared.
 
-Unmeasured: whether the task-type answer is accurate on real prompts, and
-whether a playbook changes outcomes. Both need a pass over the session corpus
+Unmeasured: whether the task-type answer is accurate on real prompts (`perf`
+was added without a pass over the corpus), and whether a playbook changes
+outcomes; none of the ten newer playbooks has been run against the first five. Both need a pass over the session corpus
 before the types or the threshold are tuned.
 
 ## Why it looks like this

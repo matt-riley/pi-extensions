@@ -14,6 +14,12 @@ Start with the caller's problem. A good module removes more complexity from its 
 5. Check compatibility across every affected caller, including malformed input, failure, cancellation and partial completion where relevant. Preserve public behavior unless the user authorized a compatibility change. Do not invent extension points for hypothetical future users.
 6. Give the verification: a test at the interface that demonstrates the behavior independently of its implementation. For an authorized refactor, run baseline tests first, make a small change, and rerun focused and repository checks.
 
+Three triggers, each with its rule:
+
+- Code branches a lot or repeats a shape assumption: model the domain as a type, table or state machine so the bad state cannot be written.
+- A command or loop runs amid crashes and retries: make it idempotent, so running it twice leaves the same state as running it once.
+- A new requirement is bolted onto an existing design: sketch the design as if the requirement had been there from the start, then compare it with the bolt-on.
+
 For a design-only request, report the proposal and trade-offs without editing code. Ask only about genuine product choices that code and documentation cannot settle. Use competing designs only when a consequential trade-off warrants them; do not summon an architecture process for a small helper.
 
 ## Deliverable

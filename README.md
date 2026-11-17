@@ -111,7 +111,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-trail`](./packages/trail/README.md) | Keep an append-only decision trail with checked evidence pointers (`decision_log`), and audit it with `/trail`. |
 | [`pi-until`](./packages/until/README.md) | Keep the agent working until your check passes, or until a metric reaches a target one measured change at a time (`/climb`), within a limit you set. |
 | [`pi-guardrail`](./packages/guardrail/README.md) | Check risky tool calls, ask for approval when needed, and refuse catastrophic operations. |
-| [`pi-router`](./packages/router/README.md) | Route tasks to models, with optional escalation for harder work. |
+| [`pi-router`](./packages/router/README.md) | Route tasks to models, with optional escalation for harder work, and pin a task playbook with `/playbook`. |
 | [`pi-prompt-coach`](./packages/prompt-coach/README.md) | Rewrite a rough request with a hosted model, then check that it still asks for the same thing. |
 | [`pi-subagents`](./packages/subagents/README.md) | Delegate separate tasks to child agents, with live progress and controls. Off by default. |
 | [`pi-review`](./packages/review/README.md) | Review a diff, find affected callers, and check whether review findings are supported. |

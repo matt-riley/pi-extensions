@@ -1,33 +1,57 @@
 #!/usr/bin/env node
-// Opt-in empirical verification-prompt pilot: real model, externally scored artifacts.
-import { spawn, execFileSync } from "node:child_process";
+// Opt-in empirical workflow evals: real model, externally scored artifacts.
+//
+// Default: the verification-prompt pilot (HEAD verifier versus the working
+// tree's, four frozen CLI cases). With --variant-a/--variant-b/--cases: a
+// blinded A/B run of two prompt or skill variants (workflow-eval/variants.mjs).
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { createInterface } from "node:readline";
+import {
+  ISOLATION_FLAGS,
+  MAX_RUNS,
+  MAX_TURNS,
+  REPORTED_COST_CEILING,
+  TIMEOUT_MS,
+  defaultModel,
+  privateAgentDir,
+  runPi,
+  summarize,
+} from "./workflow-eval/run-pi.mjs";
 import { acceptanceExecuted as observedAcceptance } from "./workflow-eval/scoring.mjs";
+import { runVariantEval } from "./workflow-eval/variants.mjs";
 
 if (!process.argv.includes("--live")) {
   console.log(
-    "Opt-in: node scripts/workflow-eval.mjs --live --output <directory>\n8 real model runs maximum, 90s/6 turns each, $2 reported-cost ceiling; reads default pi provider auth privately. See docs/workflow-evaluation.md.",
+    "Opt-in: node scripts/workflow-eval.mjs --live --output <directory>\n" +
+      "        node scripts/workflow-eval.mjs --live --variant-a <dir> --variant-b <dir> --cases <dir> --output <directory>\n" +
+      "8 real model runs maximum, 90s/6 turns each, $2 reported-cost ceiling; reads default pi provider auth privately. See docs/workflow-evaluation.md.",
   );
   process.exit(0);
 }
-const outputFlag = process.argv.indexOf("--output");
-if (outputFlag < 0 || !process.argv[outputFlag + 1]) throw new Error("--output is required");
-const output = path.resolve(process.argv[outputFlag + 1]);
+const flag = (name) => {
+  const at = process.argv.indexOf(name);
+  if (at < 0) return undefined;
+  const value = process.argv[at + 1];
+  if (!value || value.startsWith("--")) throw new Error(`${name} needs a value`);
+  return value;
+};
+const outputFlag = flag("--output");
+if (!outputFlag) throw new Error("--output is required");
+const output = path.resolve(outputFlag);
+const variantFlags = ["--variant-a", "--variant-b", "--cases"].map(flag);
+if (variantFlags.some(Boolean)) {
+  if (!variantFlags.every(Boolean))
+    throw new Error("--variant-a, --variant-b and --cases go together");
+  const [variantA, variantB, casesDir] = variantFlags;
+  await runVariantEval({ variantA, variantB, casesDir, output, model: await defaultModel() });
+  process.exit(0);
+}
+
 await mkdir(output); // Refuse overwriting an earlier pilot.
 const root = path.resolve(import.meta.dirname, "..");
-const sourceDir = process.env.PI_CODING_AGENT_DIR || path.join(homedir(), ".pi", "agent");
-const settings = JSON.parse(await readFile(path.join(sourceDir, "settings.json"), "utf8"));
-const provider = settings.defaultProvider;
-const model = settings.defaultModel;
-if (!provider || !model || provider === "router")
-  throw new Error("Configure a physical default provider/model before this pilot");
-const auth = JSON.parse(await readFile(path.join(sourceDir, "auth.json"), "utf8"));
-if (!auth[provider])
-  throw new Error("Default provider has no auth.json credential; provision one explicitly");
+const { provider, model, credential } = await defaultModel();
 const casesRaw = await readFile(path.join(root, "scripts/workflow-eval/cases.json"), "utf8");
 const cases = JSON.parse(casesRaw);
 const baseline = execFileSync("git", ["show", "HEAD:packages/subagents/agents/verifier.md"], {
@@ -42,10 +66,10 @@ const protocol = {
   provider,
   model,
   thinking: "off",
-  maxRuns: 8,
-  maxTurns: 6,
-  timeoutMs: 90000,
-  reportedCostCeiling: 2,
+  maxRuns: MAX_RUNS,
+  maxTurns: MAX_TURNS,
+  timeoutMs: TIMEOUT_MS,
+  reportedCostCeiling: REPORTED_COST_CEILING,
   baselineRef: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   casesHash: hash(casesRaw),
   baselineHash: hash(baseline),
@@ -63,26 +87,11 @@ let reportedCost = 0;
 try {
   for (const [index, item] of cases.entries()) {
     for (const variant of index % 2 ? ["candidate", "baseline"] : ["baseline", "candidate"]) {
-      if (reportedCost >= 2) break;
+      if (reportedCost >= REPORTED_COST_CEILING) break;
       const dir = path.join(output, `${item.id}-${variant}`);
       await mkdir(dir);
-      const config = await mkdtemp(path.join(tmpdir(), "pi-eval-config-"));
+      const config = await privateAgentDir({ provider, model, credential });
       try {
-        await writeFile(
-          path.join(config, "auth.json"),
-          JSON.stringify({ [provider]: auth[provider] }),
-          { mode: 0o600 },
-        );
-        await writeFile(
-          path.join(config, "settings.json"),
-          JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }),
-        );
-        await writeFile(
-          path.join(config, "models.json"),
-          JSON.stringify({
-            providers: { [provider]: { modelOverrides: { [model]: { maxTokens: 2048 } } } },
-          }),
-        );
         await writeFile(path.join(dir, "main.mjs"), item.implementation + "\n");
         await writeFile(
           path.join(dir, "test.mjs"),
@@ -112,23 +121,11 @@ try {
         const prompt = `Independently verify this CLI implementation without editing files. Acceptance: running node main.mjs ${item.a} ${item.b} must print exactly ${item.expected}. A passing npm test is supporting evidence. Inspect and execute the real artifact. End with exactly VERDICT: verified or VERDICT: failed; report the observed command/output. ${variant === "candidate" ? "Project verification recipe: VERIFICATION.md. Apply it and record the exact target identity." : ""}`;
         await writeFile(path.join(output, `${item.id}-${variant}-prompt.txt`), prompt);
         const started = Date.now();
-        const events = [];
-        let stderr = "";
-        let turns = 0;
-        let reason = "exited";
-        const child = spawn(
-          process.env.PI_SMOKE_BIN || "pi",
-          [
-            "--print",
-            "--mode",
-            "json",
-            "--offline",
-            "--no-session",
-            "--no-mcp",
-            "--no-extensions",
-            "--no-skills",
-            "--no-prompt-templates",
-            "--no-themes",
+        const { events, stderr, exitCode, reason, turns } = await runPi({
+          cwd: dir,
+          agentDir: config,
+          args: [
+            ...ISOLATION_FLAGS,
             "--no-context-files",
             "--no-approve",
             "--provider",
@@ -143,49 +140,8 @@ try {
             variant === "candidate" ? candidate : baseline,
             prompt,
           ],
-          {
-            cwd: dir,
-            env: {
-              PATH: process.env.PATH,
-              PI_CODING_AGENT_DIR: config,
-              PI_OFFLINE: "1",
-              PI_TELEMETRY: "0",
-            },
-            stdio: ["ignore", "pipe", "pipe"],
-          },
-        );
-        const timer = setTimeout(() => {
-          reason = "timeout";
-          child.kill("SIGKILL");
-        }, 90000);
-        child.stderr.on("data", (chunk) => {
-          stderr += chunk;
         });
-        createInterface({ input: child.stdout }).on("line", (line) => {
-          try {
-            const event = JSON.parse(line);
-            events.push(event);
-            if (event.type === "turn_end" && ++turns >= 6) {
-              reason = "turn cap";
-              child.kill("SIGKILL");
-            }
-          } catch {
-            /* Non-JSON startup text is not evidence. */
-          }
-        });
-        const exitCode = await new Promise((resolve, reject) => {
-          child.once("error", reject);
-          child.once("exit", resolve);
-        }).finally(() => clearTimeout(timer));
-        const messages = events
-          .filter((event) => event.type === "message_end" && event.message?.role === "assistant")
-          .map((event) => event.message);
-        const text =
-          messages
-            .at(-1)
-            ?.content?.filter((part) => part.type === "text")
-            .map((part) => part.text)
-            .join("\n") ?? "";
+        const { text, cost, tokens } = summarize(events);
         const verdict = text.match(/VERDICT:\s*(verified|failed)/)?.[1] ?? "unknown";
         const observed = execFileSync(process.execPath, ["main.mjs", item.a, item.b], {
           cwd: dir,
@@ -200,11 +156,6 @@ try {
           ["node", "main.mjs", item.a, item.b],
           dir,
         );
-        const costValues = messages.map((message) => message.usage?.cost?.total);
-        const cost =
-          costValues.length && costValues.every((value) => Number.isFinite(value))
-            ? costValues.reduce((a, b) => a + b, 0)
-            : null;
         if (cost !== null) reportedCost += cost;
         const unchanged = git("status", "--porcelain").toString().trim() === "";
         const result = {
@@ -223,7 +174,7 @@ try {
           turns,
           durationMs: Date.now() - started,
           cost,
-          tokens: messages.reduce((sum, message) => sum + (message.usage?.totalTokens ?? 0), 0),
+          tokens,
           bashCommands: toolCalls.map((event) => event.args?.command),
           promptHash: hash(prompt),
           humanCorrections: null,
@@ -249,6 +200,6 @@ try {
   }
 } finally {
   console.log(
-    `Pilot artifacts: ${output}; ${results.length}/8 runs; reported cost ${reportedCost}`,
+    `Pilot artifacts: ${output}; ${results.length}/${MAX_RUNS} runs; reported cost ${reportedCost}`,
   );
 }

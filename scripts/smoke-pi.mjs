@@ -392,6 +392,7 @@ export default function (pi) {
     "plan",
     "subagents",
     "route",
+    "playbook",
     "guardrail",
     "safe-compact",
     "jobs",
