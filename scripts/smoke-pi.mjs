@@ -710,6 +710,34 @@ export default function (pi) {
   );
   console.log("ok: decision_log appends a trail row and reports evidence that does not resolve");
 
+  const rerunText = `\`\`\`json\n${JSON.stringify({
+    findings: [
+      { title: "still fails", command: "printf 'RERUN_FAIL\\n'; exit 3", observed: "PASTED" },
+      { title: "fixed since", command: "true" },
+    ],
+  })}\n\`\`\``;
+  const rerunArgs = { reports: [{ source: "smoke-seat", cwd, text: rerunText }] };
+  scripted = [codeTool(`text(await tools.rerun_findings(${JSON.stringify(rerunArgs)}));`)];
+  const reran = await prompt("SMOKE_RERUN: rerun the fixture findings.");
+  const rerunReport =
+    reran.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "rerun_findings",
+    )?.result?.content?.[0]?.text ?? "";
+  assert.match(rerunReport, /^kept: 1 finding/, JSON.stringify(reran).slice(-2000));
+  assert.match(rerunReport, /exit: 3\noutput \(rerun, last lines\):\nRERUN_FAIL/);
+  assert.doesNotMatch(rerunReport, /PASTED/);
+  assert.match(rerunReport, /- smoke-seat: fixed since: command exited 0/);
+  assert.ok(
+    reran.some(
+      (event) =>
+        event.type === "tool_execution_start" &&
+        event.toolName === "bash" &&
+        String(event.args?.command).includes("exit 3"),
+    ),
+    "each finding command runs as a nested bash call the tool hooks see",
+  );
+  console.log("ok: rerun_findings reruns finding commands through nested bash and keeps failures");
+
   const failingCheck = codeTool(
     'const job = await tools.terminal_start({command:"node --test smoke-fail.test.mjs",notify:false});' +
       "text(await tools.terminal_read({id:job.id,wait_seconds:3}));",

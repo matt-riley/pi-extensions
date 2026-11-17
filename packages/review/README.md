@@ -4,9 +4,10 @@ Get a second look at a change: check it against the repository's preferences,
 find callers it might affect, and filter review findings that the diff does not
 support.
 
-There are three on-demand tools. `lint_change` and `verify_findings` use
-TypeSafe judgments; `blast_radius` searches locally without a model call. All
-three are deferred until tool search loads them, and none blocks a tool call.
+There are four on-demand tools. `lint_change` and `verify_findings` use
+TypeSafe judgments; `blast_radius` searches locally without a model call;
+`rerun_findings` reruns an adversary's repro commands. All four are deferred
+until tool search loads them, and none blocks a tool call.
 
 ## `lint_change`
 
@@ -62,6 +63,39 @@ request:
 Output is strongest first, each line carrying support, severity and whether the
 quotation was found. Dropped findings are listed separately with the reason.
 
+## `rerun_findings`
+
+The run-proven half of `/interrogate`. Each `adversary` child ends its report
+with a fenced `json` block of findings, each naming a `command` that exits
+non-zero while the defect is present. The tool takes those reports unedited,
+with the worktree each adversary ran in, and runs every command again:
+
+```text
+rerun_findings({ reports: [{ source, cwd, text }], timeout? })
+```
+
+- A command that exits 0 on rerun is dropped, whatever the report says. One
+  that exits non-zero is kept with the exit code and the last 30 lines of the
+  rerun's own output; the adversary's pasted `observed` text is never shown.
+- The same command from two adversaries is one finding with both sources.
+- A command that is blocked, times out (60 s default, 120 s cap) or is aborted
+  is dropped with the reason. At most 20 commands run per call.
+- A `cwd` that is not an absolute directory, or a report with no trailing
+  `json` block, is listed as unread rather than guessed at.
+- The output ends by saying that a non-zero exit proves a failure, not that the
+  failure breaks the intent. The skill makes the parent judge that part.
+
+**Execution path.** Each command runs as `cd '<cwd>' && <command>` through
+`ctx.executeTool("bash", …)`, the way `diagnosis_checkpoint` and
+`measure_command` run theirs. Nested calls go through the same `tool_call`
+hooks as a model-typed command, so `guardrail` sees and can block each one.
+This was chosen over a restricted runner confined to the worktree: a runner of
+its own would have been a second command policy beside guardrail, and the
+model-supplied command would have bypassed the one users configure. The `cd`
+is a starting directory, not a sandbox; containment is guardrail's. Because
+it executes commands, the tool is annotated destructive, so plan mode does
+not treat it as read-only.
+
 ## Configuration
 
 Shared with `pi-typesafe`: `TYPESAFE_API_KEY` (or `LORE_TYPESAFE_API_KEY`, or
@@ -72,6 +106,7 @@ Shared with `pi-typesafe`: `TYPESAFE_API_KEY` (or `LORE_TYPESAFE_API_KEY`, or
 ## Tests
 
 `npm test`: `packages/review/test/*.test.mjs` covers routing, the mechanical
-subject checks, quote extraction and the deterministic drop. The network is
+subject checks, quote extraction, the deterministic drop, and the rerun's
+keep/drop rules with a real shell behind a stubbed bash tool. The network is
 stubbed; `scripts/jev-questions.test.mjs` drives the question sets through the
 production validators.
