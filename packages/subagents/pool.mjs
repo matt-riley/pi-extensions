@@ -1,6 +1,7 @@
 // pool.mjs — cap-4 running, queue the rest, incrementing type ids. Children that
-// can write run one at a time (no worktrees): a writer's before/after diff is
-// then its own, while read-only children stay parallel.
+// write in the parent's tree run one at a time: a writer's before/after diff is
+// then its own. Read-only children and writers in their own worktree share
+// nothing, so they stay parallel.
 
 const MAX_CONCURRENT = 4;
 
@@ -31,15 +32,20 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
     return n;
   }
 
+  // A writer in its own worktree shares nothing, so it does not take the writer lane.
+  function sharesTree(entry) {
+    return entry.write && !entry.isolated;
+  }
+
   function writerRunning() {
     for (const entry of entries.values())
-      if (entry.write && entry.status === "running") return true;
+      if (sharesTree(entry) && entry.status === "running") return true;
     return false;
   }
 
-  // A free slot, and for a writer, no other writer already running.
+  // A free slot, and for an in-place writer, no other in-place writer running.
   function canStart(entry) {
-    return runningCount() < maxConcurrent && !(entry.write && writerRunning());
+    return runningCount() < maxConcurrent && !(sharesTree(entry) && writerRunning());
   }
 
   function promote(entry) {
@@ -71,6 +77,7 @@ export function createPool({ maxConcurrent = MAX_CONCURRENT, onChange } = {}) {
       task: meta.task || "",
       maxTurns: meta.maxTurns,
       write: meta.write === true,
+      isolated: meta.isolated === true,
       startedAt: undefined,
       turns: 0,
       toolUses: 0,

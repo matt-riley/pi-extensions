@@ -14,7 +14,8 @@ is capped; full transcripts are saved for later inspection.
 ```text
 /subagents on         opt in — activates the tool and the orchestrator brief
 /subagents off        opt out (running children keep going; new spawns stop)
-/subagents            pick a running or queued child, then steer or stop
+/subagents            pick a running or queued child, then steer or stop;
+                      also lists worktrees kept because a child left work in them
 ```
 
 ```text
@@ -35,10 +36,80 @@ subagent({
   description?,     // 3–5 words for the widget
   max_turns?,       // 1–30, may only lower the resolved cap
   timeout_ms?,      // wall-clock cap in ms (up to 2h), may only lower the resolved cap
+  model?,           // "provider/id" or "cross-family"; overrides the type's default
+  acceptance?,      // [{criterion, command}] parent-specified checks
+  isolation?,       // "worktree": run in its own git worktree (below)
 })
 ```
 
-Unknown or disabled types error. There is no general-purpose fallback.
+Unknown or disabled types error. There is no general-purpose fallback. Every
+result carries an `id:` line; `swarm_report` reads finished results by it.
+
+## Worktrees
+
+`isolation: "worktree"` runs the child in its own git worktree, so writers can
+run in parallel and an adversary can write repro scripts without touching your
+tree.
+
+- The worktree is created when the child starts, on a new branch
+  `pi-subagent/<id>-<hex>` at your current HEAD. Your uncommitted state is copied
+  in: tracked changes (staged and unstaged) as one binary patch, untracked files
+  that are not ignored as copies. A patch that does not apply is an error, and
+  nothing runs; the child never silently starts from a clean tree.
+- Worktrees live under `~/.pi/agent/subagent-worktrees/<repo-hash>/`, never inside
+  the repository, so the parent's `drift` and `done-gate` do not see them.
+- The child's working directory is your cwd mapped into the worktree. The
+  result names the worktree path, branch, base commit and commit count, and its
+  `changes:` lines are measured from the tree the child started with, so your
+  copied changes are not attributed to it.
+- Nothing is merged back. Read the result, then graft what you keep by hand
+  (`git -C <worktree> diff`, or cherry-pick a child's commits).
+- At session shutdown a worktree is removed with its branch only when the child
+  left no commit and no change. Otherwise it is kept and `/subagents` lists it;
+  `git worktree remove <path>` deletes it once grafted.
+
+## Panels
+
+`review_panel()` (deferred, read-only) returns
+`{ seats: string[], judge?: string, notes: string[] }` for skills that fan out
+across models (`interrogate`, `arena`). Pass each seat as a child's `model`.
+
+- **One seat per vendor.** Seats are distinct vendors as `modelFamily` reads them
+  from the model id, so `claude-fable-*` and `claude-opus-*` share one seat: two
+  models from one vendor tend to share its blind spots. At most three seats.
+- **Seats** come from `roles.panel` in `~/.pi/agent/router.json`, in order, then
+  from the `frontier`, `mid` and `base` tiers. Only authenticated models count.
+- **The judge** is the first `roles.judge` entry (else the panel list, then the
+  tiers) that is authenticated and outside the parent's vendor. With the parent
+  on `router/auto`, the vendor comes from its last physical model.
+- A panel with fewer than two vendors, and a missing judge, come back as notes.
+  Skills report them: a one-vendor panel is the same blind spots repeated.
+
+```json
+{
+  "frontier": ["claude-opus-5-5", "gpt-5.6-sol"],
+  "roles": {
+    "panel": ["claude-fable-5-2", "gemini-4-carbon", "gpt-5.6-sol"],
+    "judge": ["claude-opus-5-5", "gemini-4-carbon"]
+  }
+}
+```
+
+The router ignores `roles`; only this package reads it.
+
+## Swarm results
+
+`swarm_report({ slices: [{ id, slice?, required? }], expect_sha? })` (deferred,
+read-only) aggregates finished children by the `id:` on their results, from the
+child's own final text rather than a summary of it.
+
+- A slice is a **gap** when its child did not finish cleanly, when the first
+  non-blank line does not open with `PASS`, `ISSUES` or `BLOCKED`, or, with
+  `expect_sha`, when the text does not name that commit (full or a 7+ prefix).
+- Overall is `PASS` only when every required slice passed; with none marked
+  required, all are. A gap in a required slice makes it `INCOMPLETE`, and so does
+  an empty swarm. Otherwise `ISSUES`. Gaps in optional slices are still listed.
+- Only the 50 most recent finished children of this session are kept.
 
 ## Briefs and when to delegate
 
@@ -132,8 +203,9 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
 
 ## Limits
 
-- Max 4 running; extras queue. One write-capable child runs at a time (later writers wait their turn
-  in arrival order), so a writer's change list is its own; read-only children stay parallel. Still no worktrees.
+- Max 4 running; extras queue. One write-capable child in your tree runs at a time (later writers wait
+  their turn in arrival order), so a writer's change list is its own. Read-only children and writers in
+  their own worktree stay parallel.
 - 30 turns, wrap-up steer, then 2 grace turns, then abort; plus a 30-minute
   wall-clock timeout (frontmatter/`timeout_ms` can adjust) so a hung tool call
   cannot block the parent forever.
@@ -145,7 +217,7 @@ v1 frontmatter: `name`, `description`, `tools`, `model` (exact `provider/id`, or
   attributed to the session (`usage` on the tool result).
 - Child runtime failures (error / timed out / aborted) return as normal content,
   never `isError`, so pi does not blindly auto-retry the same failing spawn.
-- Always fresh context. No resume, no background, no nested orchestrator, no worktrees.
+- Always fresh context. No resume, no background, no nested orchestrator.
 - Children load host extensions except this package and the interactive-only ones
   (`lore`, `prompt-coach`, `skill-select`), and never get `subagent`.
   The router loads on purpose so children that inherit `router/auto` still register

@@ -45,6 +45,9 @@ these paths:
   `touch smoke-blocked` tool call is denied, and the file remains absent.
 - **Subagents:** explicit opt-in and a completed scout through real child-session
   construction, with execution completion kept separate from task verification.
+  An `isolation: "worktree"` worker writes in its own worktree under the agent
+  dir, starting from the parent's uncommitted state, while the parent's tree
+  stays untouched and the kept worktree stays in `git worktree list`.
 - **Deslop:** `/deslop existing file.md` forwards a meaning-preserving rewrite
   request, then scripted read/edit calls change only the existing fixture file.
   This proves command/tool wiring, not real-model editorial quality.

@@ -6,15 +6,16 @@ import { Type } from "typebox";
 import { readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { aggregate, formatAggregate } from "./aggregate.mjs";
 import { combineSignals } from "./combine-signals.mjs";
-import { CROSS_FAMILY, resolveCrossFamily } from "./cross-family.mjs";
+import { CROSS_FAMILY, resolveCrossFamily, resolvePanel } from "./cross-family.mjs";
 import { physicalParentKeyForCrossFamily } from "../router/parent-physical.mjs";
 import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
-import { OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
+import { LOCAL_READ, OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
 import { orchestratorPrompt, TASK_DESCRIPTION, TOOL_DESCRIPTION } from "./orchestrate.mjs";
 import { reconcileActiveTools, resolveChildModel } from "./policy.mjs";
 import { createPool } from "./pool.mjs";
@@ -22,6 +23,7 @@ import { fallbackDescription, formatResult, resolveMaxTurns, resolveTimeoutMs } 
 import { CHILD_ENV } from "./child-env.mjs";
 import { runChild } from "./spawn.mjs";
 import { formatWidgetLines } from "./widget.mjs";
+import { createWorktrees, worktreeLine } from "./worktree.mjs";
 
 const WIDGET_ID = "subagents";
 const TOOL_NAME = "subagent";
@@ -33,6 +35,17 @@ let enabled = false;
 let runsPruned = false;
 
 const KEEP_RUNS = 200;
+// Finished children swarm_report can read by id; the oldest are forgotten first.
+const KEEP_RESULTS = 50;
+
+interface Worktree {
+  root: string;
+  path: string;
+  branch: string;
+  base: string;
+  cwd: string;
+  baseline: string | null;
+}
 
 // Transcripts are the only way to see why a child went wrong; keep the newest.
 function pruneRuns(dir: string) {
@@ -75,6 +88,20 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
   bindSystemOne(pi, "subagents");
 
   let widgetCtx: UiCtx | undefined;
+  // Built on first use: the agent dir is the host's to report, not known at load.
+  let worktreeStore: ReturnType<typeof createWorktrees> | undefined;
+  const worktrees = () => (worktreeStore ??= createWorktrees({ agentDir: getAgentDir() }));
+  // Worktrees made in this session: removed at shutdown only when the child left nothing.
+  const made: Worktree[] = [];
+  const finished = new Map<string, { agent: string; status: string; text: string }>();
+
+  function remember(id: string, record: { agent: string; status: string; text: string }) {
+    finished.set(id, record);
+    for (const key of finished.keys()) {
+      if (finished.size <= KEEP_RESULTS) break;
+      finished.delete(key);
+    }
+  }
 
   const pool = createPool({
     onChange() {
@@ -151,6 +178,13 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     pool.abortAll();
+    for (const wt of made.splice(0)) {
+      try {
+        await worktrees().removeIfEmpty(wt);
+      } catch {
+        // kept; /subagents lists it
+      }
+    }
     widgetCtx?.ui?.setWidget?.(WIDGET_ID, undefined);
     widgetCtx?.ui?.setStatus?.(WIDGET_ID, undefined);
     widgetCtx = undefined;
@@ -209,6 +243,14 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             "Wall-clock cap for this child (ms, up to 2h). May only lower the resolved cap.",
         }),
       ),
+      isolation: Type.Optional(
+        Type.Literal("worktree", {
+          description:
+            "Run this child in its own git worktree at the current HEAD plus uncommitted changes. " +
+            "Use for parallel writers and for adversaries that write repro scripts. " +
+            "The result names the worktree and its diff; nothing is merged for you.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const agentName = String(params?.agent ?? "").trim();
@@ -263,11 +305,13 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           : fallbackDescription(task);
       const maxTurns = resolveMaxTurns(agent.maxTurns, params?.max_turns);
       const timeoutMs = resolveTimeoutMs(agent.timeoutMs, params?.timeout_ms);
+      const isolated = params?.isolation === "worktree";
       const { entry, ready } = pool.acquire(agent.name, {
         description,
         task,
         maxTurns,
         write: writeCapable,
+        isolated,
       });
 
       const started = await ready;
@@ -291,6 +335,24 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         };
       }
 
+      let wt: Worktree | undefined;
+      if (isolated) {
+        try {
+          wt = (await worktrees().create(cwd, entry.id)) as Worktree;
+          made.push(wt);
+        } catch (error) {
+          pool.release(entry.id);
+          const reason = error instanceof Error ? error.message : String(error);
+          // Not isError: the same call would fail the same way.
+          return {
+            content: [
+              { type: "text", text: `Could not create a worktree, so nothing ran: ${reason}` },
+            ],
+          };
+        }
+      }
+      const childCwd = wt?.cwd ?? cwd;
+
       pi.events.emit("subagents:started", { id: entry.id, type: agent.name, description });
       const modelSpec =
         typeof params?.model === "string" && params.model.trim()
@@ -309,11 +371,11 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         pruneRuns(runsDir);
       }
       const runFile = path.join(runsDir, `${Date.now()}-${entry.id}.jsonl`);
-      const before = writeCapable ? await snapshotChanges(cwd) : undefined;
+      const before = writeCapable && !wt ? await snapshotChanges(cwd) : undefined;
 
       try {
         const result = await runChild({
-          cwd,
+          cwd: childCwd,
           agent,
           task:
             childTask +
@@ -368,8 +430,25 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         }
 
         const clean = result.status === "completed" || result.status === "wrapped up";
-        const changed = before ? changedFiles(before, await snapshotChanges(cwd)) : [];
-        const changes = await describeChanges(cwd, changed);
+        let changes: { stat: string; diff: string };
+        let placeLine = "";
+        if (wt) {
+          const left = await worktrees()
+            .describe(wt)
+            .catch(() => ({
+              commits: 0,
+              changed: true,
+              known: false,
+              stat: "",
+              diff: "",
+            }));
+          changes = { stat: left.stat, diff: left.diff };
+          placeLine = worktreeLine(wt, left);
+        } else {
+          const changed = before ? changedFiles(before, await snapshotChanges(cwd)) : [];
+          changes = await describeChanges(cwd, changed);
+        }
+        remember(entry.id, { agent: agent.name, status: result.status, text: result.text ?? "" });
         const [triage, scopeWarning] = await Promise.all([
           clean
             ? triageResult({ agent: agent.name, task, text: result.text, signal: abortSignal })
@@ -379,7 +458,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
             : undefined,
         ]);
         const note = [
+          `id: ${entry.id}`,
           modelNote,
+          placeLine,
           triage ? `triage: ${triage}` : "",
           changes.stat ? `changes:\n${changes.stat}` : "",
           scopeWarning,
@@ -412,6 +493,92 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       } finally {
         pool.release(entry.id);
       }
+    },
+  });
+
+  // Worktrees a child left work in. They outlive the session; git lists them.
+  async function keptWorktrees(cwd: string) {
+    try {
+      const kept = await worktrees().listKept(cwd);
+      if (!kept.length) return "";
+      const list = kept.map((item) => `${item.path} (${item.branch})`).join(", ");
+      return `Subagent worktrees kept because they hold work: ${list}. Remove one with git worktree remove <path> once grafted.`;
+    } catch {
+      return "";
+    }
+  }
+
+  pi.registerTool({
+    name: "review_panel",
+    label: "review_panel",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Seats for a multi-model panel: up to three authenticated models, one per vendor, from roles.panel in " +
+      "~/.pi/agent/router.json, else its tiers; plus a judge outside the parent's vendor from roles.judge. " +
+      "Returns {seats, judge?, notes}. A panel with fewer than two vendors says so: it repeats one set of " +
+      "blind spots. Pass each seat as subagent's model. Reads config only.",
+    promptSnippet:
+      "review_panel(): model seats (one per vendor) and a judge for interrogate or arena",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const routerFile = path.join(getAgentDir(), "router.json");
+      const panel = await resolvePanel(ctx?.modelRegistry, ctx?.model, routerFile, {
+        physicalParentKey: physicalParentKeyForCrossFamily(ctx?.model, ctx, routerFile),
+      });
+      return { content: [{ type: "text", text: JSON.stringify(panel) }], details: panel };
+    },
+  });
+
+  pi.registerTool({
+    name: "swarm_report",
+    label: "swarm_report",
+    exposure: "deferred",
+    annotations: LOCAL_READ,
+    description:
+      "Aggregate finished subagent results by the id on each result. A slice whose child did not finish, " +
+      "whose text does not open with PASS, ISSUES or BLOCKED, or (with expect_sha) that does not name the " +
+      "commit it checked is a GAP, and a gap is never a pass. Overall is PASS only when every required " +
+      "slice passed; with none marked required, all are. Reads results from this session only.",
+    promptSnippet:
+      "swarm_report(slices, expect_sha?): PASS / ISSUES / INCOMPLETE over finished subagent ids; gaps are not passes",
+    parameters: Type.Object({
+      slices: Type.Array(
+        Type.Object({
+          id: Type.String({ description: "The id: line on a subagent result" }),
+          slice: Type.Optional(
+            Type.String({ description: "Name for the row; defaults to the id" }),
+          ),
+          required: Type.Optional(Type.Boolean()),
+        }),
+        { maxItems: 32 },
+      ),
+      expect_sha: Type.Optional(
+        Type.String({ description: "Commit every worker was told to check and record" }),
+      ),
+    }),
+    async execute(_toolCallId, params) {
+      const slices: { id?: unknown; slice?: unknown; required?: unknown }[] = Array.isArray(
+        params?.slices,
+      )
+        ? params.slices
+        : [];
+      const results = slices.map((item) => {
+        const id = String(item?.id ?? "");
+        const found = finished.get(id);
+        return {
+          slice: typeof item?.slice === "string" && item.slice ? item.slice : id,
+          required: item?.required === true ? true : item?.required === false ? false : undefined,
+          status: found?.status ?? "missing (no finished result with this id)",
+          text: found?.text,
+        };
+      });
+      const expectSha =
+        typeof params?.expect_sha === "string" && params.expect_sha.trim()
+          ? params.expect_sha.trim()
+          : undefined;
+      const report = aggregate(results, { expectSha });
+      return { content: [{ type: "text", text: formatAggregate(report) }], details: report };
     },
   });
 
@@ -452,6 +619,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         return;
       }
 
+      const kept = await keptWorktrees(ctx?.cwd || process.cwd());
+      if (kept) notify(ctx, kept);
       const fleet = pool.list();
       if (fleet.length === 0) {
         if (enabled && !isToolActive()) {

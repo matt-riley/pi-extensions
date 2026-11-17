@@ -51,6 +51,8 @@ export const OWNED_TOOL_NAMES = new Set([
   "architecture_check",
   "affected_tests",
   "decision_log",
+  "review_panel",
+  "swarm_report",
 ]);
 
 /**
