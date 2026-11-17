@@ -68,7 +68,11 @@ const server = createServer(async (req, res) => {
   const isChild = JSON.stringify(user?.content).includes("SMOKE_CHILD_TASK");
   if (isChild) childRequests++;
   let tool;
-  let content = isChild ? "SMOKE_CHILD_OK" : "SMOKE_PARENT_OK";
+  let content = isChild
+    ? phase === "verifier"
+      ? "## Verdict\n**verified**: the fixture reply was observed.\n\nSMOKE_CHILD_OK"
+      : "SMOKE_CHILD_OK"
+    : "SMOKE_PARENT_OK";
   if (scripted) {
     tool = scripted.shift();
     if (tool) content = null;
@@ -107,34 +111,43 @@ const server = createServer(async (req, res) => {
     tool =
       phase === "blocked"
         ? { name: "bash", arguments: { command: "touch smoke-blocked" } }
-        : phase === "worktree"
+        : phase === "verifier"
           ? {
               name: "subagent",
               arguments: {
-                agent: "worker",
-                task: "SMOKE_CHILD_TASK: Write a new file smoke-wt.txt, then reply SMOKE_CHILD_OK.",
-                isolation: "worktree",
+                agent: "verifier",
+                task: "SMOKE_CHILD_TASK: Reply with the fixture verdict. Do not call tools.",
                 timeout_ms: 20000,
               },
             }
-          : {
-              name: "subagent",
-              arguments: {
-                agent: "scout",
-                task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
-                timeout_ms: 20000,
-                ...(phase === "verified" || phase === "failed"
-                  ? {
-                      acceptance: [
-                        {
-                          criterion: "Fixture command completes",
-                          command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
-                        },
-                      ],
-                    }
-                  : {}),
-              },
-            };
+          : phase === "worktree"
+            ? {
+                name: "subagent",
+                arguments: {
+                  agent: "worker",
+                  task: "SMOKE_CHILD_TASK: Write a new file smoke-wt.txt, then reply SMOKE_CHILD_OK.",
+                  isolation: "worktree",
+                  timeout_ms: 20000,
+                },
+              }
+            : {
+                name: "subagent",
+                arguments: {
+                  agent: "scout",
+                  task: "SMOKE_CHILD_TASK: Reply with SMOKE_CHILD_OK. Do not call tools.",
+                  timeout_ms: 20000,
+                  ...(phase === "verified" || phase === "failed"
+                    ? {
+                        acceptance: [
+                          {
+                            criterion: "Fixture command completes",
+                            command: phase === "verified" ? "pwd" : "cat missing-smoke-file",
+                          },
+                        ],
+                      }
+                    : {}),
+                },
+              };
     content = null;
   }
   const delta = tool
@@ -582,6 +595,7 @@ export default function (pi) {
     const output = ended.result.content.map((part) => part.text ?? "").join("\n");
     assert.equal(output.split("\n")[0], verdict, output);
     assert.match(output, /head aaaaaaaa/);
+    assert.match(output, /\nverified: no verdict recorded$/, "no verifier has run yet");
     if (verdict === "needs-action") assert.match(output, /later-page\.ts/);
   }
   console.log(
@@ -894,6 +908,30 @@ export default function (pi) {
   assert.ok(kept.includes(worktreePath), "a worktree holding work is kept");
   await rm(path.join(cwd, "smoke-dirty.txt"));
   console.log("ok: an isolated writer works in its own worktree with the parent's dirty state");
+  phase = "verifier";
+  const verifierEvents = await prompt("SMOKE_PARENT: run the fixture verifier once.");
+  const recorded = verifierEvents.find(
+    (event) => event.type === "entry_appended" && event.entry?.customType === "verifier-verdict",
+  )?.entry?.data;
+  assert.equal(recorded?.verdict, "verified", JSON.stringify(verifierEvents).slice(-2000));
+  assert.match(String(recorded.patchId), /^[0-9a-f]{40}$/);
+  assert.match(JSON.stringify(verifierEvents), /verdict recorded: verified, patch [0-9a-f]{12}/);
+  await writeFile(watchFixture, JSON.stringify({ pr: pullRequest, graph: [reviewPage([])] }));
+  scripted = [codeTool('text(await tools.watch_pr({pr:"7"}));')];
+  const afterVerdict = await prompt("SMOKE_WATCH_PR: read the fixture PR after a verdict.");
+  scripted = undefined;
+  const watchOut = (
+    afterVerdict.find(
+      (event) => event.type === "tool_execution_end" && event.toolName === "watch_pr",
+    )?.result?.content ?? []
+  )
+    .map((part) => part.text ?? "")
+    .join("\n");
+  assert.equal(watchOut.split("\n")[0], "ready", watchOut);
+  assert.match(watchOut, /\nverified: unknown \(could not compute this PR's patch id locally/);
+  console.log(
+    "ok: a verifier verdict is recorded with its patch id and watch_pr reports it beside the verdict",
+  );
   phase = "edit";
   let before = requests;
   const gated = await prompt("SMOKE_EDIT: write the fixture file, then stop.");

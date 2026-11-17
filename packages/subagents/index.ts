@@ -14,6 +14,7 @@ import { changedFiles, describeChanges, snapshotChanges } from "./diff.mjs";
 import { discoverAgents, findAgent, usesAllowlistedBash } from "./discover.mjs";
 import { checkDiffScope, preflightTask, triageResult } from "./judge.mjs";
 import { isReadOnlyMode } from "../../shared/mode-flags.mjs";
+import { VERDICT_ENTRY, verdictEntry } from "../../shared/verdict.mjs";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { LOCAL_READ, OPEN_DESTRUCTIVE } from "../../shared/tool-annotations.mjs";
 import { orchestratorPrompt, TASK_DESCRIPTION, TOOL_DESCRIPTION } from "./orchestrate.mjs";
@@ -449,6 +450,18 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           changes = await describeChanges(cwd, changed);
         }
         remember(entry.id, { agent: agent.name, status: result.status, text: result.text ?? "" });
+        // A verdict covers a patch: watch_pr compares this patch id with the PR's.
+        let verdictNote = "";
+        if (agent.name === "verifier" && clean) {
+          const recorded = await verdictEntry({
+            text: result.text,
+            cwd: childCwd,
+            head: result.assessment?.revision?.head,
+            id: entry.id,
+          });
+          pi.appendEntry(VERDICT_ENTRY, recorded);
+          verdictNote = `verdict recorded: ${recorded.verdict}, patch ${recorded.patchId?.slice(0, 12) ?? "unknown"} against ${recorded.base ?? "no default branch"}`;
+        }
         const [triage, scopeWarning] = await Promise.all([
           clean
             ? triageResult({ agent: agent.name, task, text: result.text, signal: abortSignal })
@@ -464,6 +477,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
           triage ? `triage: ${triage}` : "",
           changes.stat ? `changes:\n${changes.stat}` : "",
           scopeWarning,
+          verdictNote,
         ]
           .filter(Boolean)
           .join("\n");

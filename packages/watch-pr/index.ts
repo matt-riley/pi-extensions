@@ -5,11 +5,14 @@
 //              unresolved review threads, with a verdict; optionally polls
 //              while the only thing outstanding is a pending check
 //
-// Read-only: it never pushes, rebases, resolves a thread or merges.
+// Read-only: it never pushes, rebases, resolves a thread or merges. A last
+// `verified:` line compares the session's newest verifier verdict with the
+// PR's patch id; it sits outside the five verdicts, so `ready` stays GitHub's.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { OPEN_READ } from "../../shared/tool-annotations.mjs";
+import { latestVerdict, prPatchId, verifiedLine } from "../../shared/verdict.mjs";
 
 import { assess, fetchSnapshot } from "./pr.mjs";
 
@@ -78,6 +81,9 @@ export default function piWatchPrExtension(pi: ExtensionAPI) {
         }
         const { verdict, lines } = assess(snap);
         if (verdict !== "pending" || Date.now() + POLL_MS > deadline || signal?.aborted) {
+          const recorded = latestVerdict(ctx?.sessionManager?.getBranch?.());
+          const current = recorded ? await prPatchId(cwd, snap.pr) : null;
+          lines.push(verifiedLine(recorded, current));
           return { content: [{ type: "text", text: `${verdict}\n${lines.join("\n")}` }] };
         }
         await sleep(POLL_MS, signal);
