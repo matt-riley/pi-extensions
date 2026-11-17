@@ -19,6 +19,7 @@ const ESC = String.fromCharCode(27);
 const REPLY =
   "**Cause:** [[Failed: 3 tests]] then [[Passed on CI]], `src/gone.ts` and literal `[[Done]]` stays.";
 const EDIT_REPLY = "[[Done]] wrote a.js, it stays.";
+const HEADING_REPLY = "## Scope stays. [[Observed]]";
 // What the fixture model does on each request of a run: "edit" calls the write
 // tool once; anything else is a text reply.
 let script = [];
@@ -55,7 +56,7 @@ const server = createServer(async (req, res) => {
     res.write("data: " + JSON.stringify(chunk({ role: "assistant", tool_calls: [call] }, null)) + "\n\n");
     res.write("data: " + JSON.stringify(chunk({}, "tool_calls")) + "\n\n");
   } else {
-    const content = step === "edit-reply" ? EDIT_REPLY : REPLY;
+    const content = { "edit-reply": EDIT_REPLY, heading: HEADING_REPLY }[step] ?? REPLY;
     res.write("data: " + JSON.stringify(chunk({ role: "assistant", content }, null)) + "\n\n");
     res.write("data: " + JSON.stringify(chunk({}, "stop")) + "\n\n");
   }
@@ -198,6 +199,12 @@ try {
   assert.ok(on.plain.includes("src/gone.ts \uf127 missing"), "missing path marked: " + on.plain);
   assert.ok(!on.plain.includes("unchecked"), "no edits, so no claim is doubted: " + on.plain);
   console.log("ok: pills, label icons and the reply_style section in a real TUI");
+
+  const heading = await run([], ["heading"]);
+  assert.ok(heading.plain.includes(" Observed"), "heading pill drawn: " + heading.plain);
+  assert.ok(!heading.plain.includes("[[Observed"), "heading pill markers replaced: " + heading.plain);
+  assert.ok(heading.escaped.includes(ESC + "[48;"), "heading pill has a panel background");
+  console.log("ok: a pill in a heading is drawn");
   console.log("ok: a missing path in inline code is marked");
 
   // The model writes a.js, then claims [[Done]] with no check run: done-gate's

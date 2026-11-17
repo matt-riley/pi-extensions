@@ -109,6 +109,21 @@ describe("labels", () => {
     assert.equal(plain("## Finding"), "##  Finding"));
   test("an unknown heading is untouched", () =>
     assert.equal(plain("## What happened"), "## What happened"));
+  test("a pill in a heading is drawn, and the icon still comes from the heading's words", () => {
+    assert.match(plain("## Scope [[Observed]]"), /^## Scope \|.*Observed\|$/);
+    assert.match(plain("### Checks [[Unverified]]"), /^### Checks \|.*Unverified\|$/);
+    assert.equal(
+      stripSgr(render("## Finding [[Done]]")),
+      stripSgr(render("## Finding")) + " " + stripSgr(render("[[Done]]")),
+    );
+    assert.equal(
+      plain("## `[[Done]]` syntax"),
+      "## `[[Done]]` syntax",
+      "inline code stays as typed",
+    );
+    const noPills = createPalette({ fg: theme.fg });
+    assert.equal(decorate("## Scope [[Observed]]", noPills), "## Scope [[Observed]]");
+  });
   test("a leading bold label takes an icon, after list markers and tree connectors", () => {
     assert.equal(plain("**Cause:** x"), "**<mdLink> Cause:</>** x");
     assert.equal(plain("- **Fix:** x"), "- **<mdLink> Fix:</>** x");
