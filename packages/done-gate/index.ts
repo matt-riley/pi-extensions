@@ -5,7 +5,7 @@
 // can still act — this appends one reminder and requests one continuation so
 // the model reads it before the turn closes. The reminder names the Go,
 // TypeScript or Lua commands that cover the dirty files, or `.pi/verify` when
-// that path exists. It also lists `[DEBUG-` tags left in the working-tree diff.
+// that file is executable, or points to a verification guide. It also lists `[DEBUG-` tags left in the working-tree diff.
 //
 // Quiet on purpose. The reminder is `display: false`: the model reads it as a
 // user message, the transcript does not, and it asks for the closing message to
@@ -55,7 +55,6 @@ import {
   resetGateState,
   shouldNudge,
 } from "./gate.mjs";
-import { formatRunReport, runChecks } from "./run-checks.mjs";
 import { resolveScopedChecks } from "./scoped.mjs";
 import { coverageForRun, isTestCommand } from "./coverage.mjs";
 import { claimGapLine, testClaimGap } from "./evidence.mjs";
@@ -327,7 +326,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
     // because an inherited abort would drop the judgment silently. A run that
     // only has a claim gap to report asks no model at all.
     const unjudged = { judged: false, verdict: null, reason: "not asked", signals: {} };
-    const [debugHits, judged, commands] = await Promise.all([
+    const [debugHits, judged, guidance] = await Promise.all([
       verifyNow ? findDebugTags(cwd, untracked) : Promise.resolve([]),
       verifyNow || checkRemote
         ? judgeDoneClaim({
@@ -338,8 +337,8 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
           })
         : Promise.resolve(unjudged),
       verifyNow
-        ? resolveScopedChecks({ root: cwd, files, env: process.env }).catch(() => [])
-        : Promise.resolve([]),
+        ? resolveScopedChecks({ root: cwd, files, env: process.env }).catch(() => ({}))
+        : Promise.resolve({}),
     ]);
     const gapLine = gap ? claimGapLine(gap) : null;
     if (gap) state.claimGapNudged = true;
@@ -372,17 +371,7 @@ export default function piDoneGateExtension(pi: ExtensionAPI) {
 
     state.dirty = new Set(files);
     const claimText = [claimLine(judged), gapLine].filter(Boolean).join(" ") || null;
-    let content = buildNudge(state, debugHits, claimText, commands);
-    // Opt-in: run what the reminder names and append the output. Only the exact
-    // value "1" turns it on; anything else, or unset, runs nothing.
-    if (process.env.PI_DONE_GATE_EXEC === "1" && commands.length > 0) {
-      const results = await runChecks({ commands, cwd, signal: ctx.signal });
-      if (results.length > 0) {
-        const cancelled = results.at(-1)?.status === "cancelled";
-        const notRun = cancelled ? 0 : commands.length - results.length;
-        content += `\n\n${formatRunReport(results, notRun)}`;
-      }
-    }
+    const content = buildNudge(state, debugHits, claimText, guidance.commands, guidance.recipe);
     // Keep earlier handlers' drafts; only ever set continue to true so another
     // extension's continuation is never cleared.
     return {

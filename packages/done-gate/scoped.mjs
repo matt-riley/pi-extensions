@@ -3,11 +3,10 @@
 // The mapping is deterministic and does not need TypeSafe. Jev is asked only
 // when a changed TypeScript file's nearest directory has several tsconfigs and
 // none of them is tsconfig.json. No key, a failed request, or an unusable
-// answer keeps every candidate. A `.pi/verify` path, when the snapshot says it
-// is present, replaces the per-language commands.
+// answer keeps every candidate.
 
 import { accessSync, constants } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { access, readdir, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 
 import { askSystemOne } from "../../shared/systemone.mjs";
@@ -238,22 +237,37 @@ async function directoryNames(root, dir, cache) {
   return set;
 }
 
+async function verificationTarget(root) {
+  const entry = join(root, ".pi", "verify");
+  try {
+    const info = await stat(entry);
+    if (info.isFile()) {
+      await access(entry, constants.X_OK);
+      return "executable";
+    }
+    if (info.isDirectory()) {
+      const guide = join(entry, "SKILL.md");
+      if ((await stat(guide)).isFile()) {
+        await access(guide, constants.R_OK);
+        return "recipe";
+      }
+    }
+  } catch {
+    // Absent or inaccessible: use the ordinary scoped commands.
+  }
+  return null;
+}
+
 async function discoverRepo(root, files, env) {
   const cache = new Map();
   const repo = {
-    verify: false,
+    verify: await verificationTarget(root),
     golangci: commandOnPath("golangci-lint", env),
     goModule: {},
     tsconfigs: {},
     stylua: [],
     selene: [],
   };
-  try {
-    await stat(join(root, ".pi", "verify"));
-    repo.verify = true;
-  } catch {
-    repo.verify = false;
-  }
   for (const file of files ?? []) {
     if (typeof file !== "string") continue;
     const rel = normalized(file);
@@ -301,7 +315,8 @@ export async function resolveScopedChecks({
       snapshot = {};
     }
   }
-  if (snapshot.verify === true) return [".pi/verify"];
+  if (snapshot.verify === "executable") return { commands: [".pi/verify"] };
+  if (snapshot.verify === "recipe") return { commands: [], recipe: ".pi/verify/SKILL.md" };
   const plan = tsPlan(files, snapshot);
   let picked = null;
   if (plan.ambiguous.length > 0 && resolveApiKey(env) && typeof ask === "function") {
@@ -311,9 +326,11 @@ export async function resolveScopedChecks({
       picked = null;
     }
   }
-  return [
-    ...goCommands(files, snapshot),
-    ...tsCommands(plan, picked),
-    ...luaCommands(files, snapshot),
-  ];
+  return {
+    commands: [
+      ...goCommands(files, snapshot),
+      ...tsCommands(plan, picked),
+      ...luaCommands(files, snapshot),
+    ],
+  };
 }

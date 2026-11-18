@@ -935,6 +935,8 @@ export default function (pi) {
   console.log(
     "ok: a verifier verdict is recorded with its patch id and watch_pr reports it beside the verdict",
   );
+  await mkdir(path.join(cwd, ".pi/verify"), { recursive: true });
+  await writeFile(path.join(cwd, ".pi/verify/SKILL.md"), "# Verify\n");
   phase = "edit";
   let before = requests;
   const gated = await prompt("SMOKE_EDIT: write the fixture file, then stop.");
@@ -945,7 +947,9 @@ export default function (pi) {
     /"display":false/,
     "the reminder stays out of the transcript",
   );
-  console.log("ok: done-gate continues once after an unverified edit");
+  assert.match(JSON.stringify(gated), /read `\.pi\/verify\/SKILL\.md`/i);
+  assert.doesNotMatch(JSON.stringify(gated), /run `\.pi\/verify`/);
+  console.log("ok: done-gate continues once after an unverified edit and points to the guide");
   phase = "outside";
   before = requests;
   const outside = await prompt("SMOKE_OUTSIDE: write a file outside the workspace, then stop.");

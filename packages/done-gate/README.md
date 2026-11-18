@@ -17,7 +17,7 @@ a report about this reminder.
 ```
 
 The reminder names checks for Go, TypeScript and Lua when it can find the right
-commands. Otherwise it asks for the repository checks (`.pi/verify` if present).
+commands. A repository verification guide takes precedence when present.
 It also flags leftover `[DEBUG-` tags. With TypeSafe credentials, it can add a
 warning when the closing message claims more than the recorded checks support.
 The basic reminder works without a key.
@@ -52,8 +52,7 @@ compound shell, and those do not count.
 Redirecting a check's output (`npm run check 2>&1`, `> log 2>&1`) does not make it compound. A pipe
 (`| tail`) or a chain (`; echo done`, `|| true`) does, because it can hide the check's exit status.
 
-**`.pi/verify` wins.** If that path exists (a file or a directory), it is the
-only command named. The language mapping is not also listed.
+**Repository guidance wins.** Read `.pi/verify/SKILL.md` when it is a readable regular file. If `.pi/verify` itself is an executable regular file, the reminder suggests running it. An unusable entry, including an empty directory, falls back to scoped checks.
 
 Otherwise the mapping is deterministic and needs no TypeSafe key:
 
@@ -82,26 +81,9 @@ candidate stays in the reminder. Clear mappings never call it.
 A change that matches none of this (a Python file, a `go.mod`, a TypeScript
 file with no tsconfig) keeps the generic sentence.
 
-## Running the named checks (opt-in)
+## Who runs the check?
 
-By default the reminder only names the commands. Set `PI_DONE_GATE_EXEC=1` (exactly
-`1`; unset or any other value is off) and the gate also runs the command(s) it
-worked out for the dirty files, in order, in the session cwd, and appends each
-command's status, exit code and output to the reminder. It runs only commands the
-reminder names (`.pi/verify` or the Go, TypeScript and Lua mapping), never
-anything the model wrote.
-
-It is bounded and cancellable: 120 seconds per command, the last 4,000
-characters of output per command (where a failing check says why), at most four
-commands, and a cancelled session stops the running command and starts no later
-one. Each command runs in its own process group, so a timeout takes its children
-with it.
-
-Two things to know before turning it on. `.pi/verify` and the language tools run
-repository-controlled code, which is why this is off by default. And the commands
-run directly, not through a bash tool call, so the guardrail extension does not
-see them. A run by the gate is not recorded as a verification run: the agent is
-still asked to run the checks itself, or to say what the output shows.
+The gate only observes. The former `PI_DONE_GATE_EXEC=1` setting has no effect: settle never executes the suggested checks. Run the chosen command explicitly in Pi so normal tool approval and evidence tracking apply. `measure_command` remains available for explicit measurements.
 
 ## Evidence that the changed path ran
 

@@ -6,7 +6,9 @@ import { join } from "node:path";
 
 import { validateRequest } from "../../../shared/systemone-request.mjs";
 import { isVerifyCommand } from "../../../shared/check-command.mjs";
-import { resolveScopedChecks } from "../scoped.mjs";
+import { resolveScopedChecks as guidance } from "../scoped.mjs";
+
+const resolveScopedChecks = async (options) => (await guidance(options)).commands;
 
 const repo = {
   verify: false,
@@ -174,22 +176,25 @@ test("golangci-lint on PATH is used when the repo has no config", async () => {
   }
 });
 
-test("a discovered .pi/verify directory replaces language commands", async () => {
+test("only a usable executable or readable recipe overrides language commands", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "done-gate-scope-"));
-  try {
-    mkdirSync(join(root, ".pi/verify"), { recursive: true });
-    mkdirSync(join(root, "pkg/foo"), { recursive: true });
-    writeFileSync(join(root, "go.mod"), "module example.com/app\n");
-    writeFileSync(join(root, ".golangci.yml"), "version: 2\n");
-    const commands = await resolveScopedChecks({
-      root,
-      files: ["pkg/foo/a.go"],
-      env: { PATH: "", LORE_CONFIG: "/no/such/lore.json", HOME: "/no/such/home" },
-    });
-    assert.deepEqual(commands, [".pi/verify"]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, ".pi/verify");
+  const read = () => guidance({ root, files: ["pkg/foo/a.go"], env: { PATH: "" } });
+  const fallback = { commands: ["go test ./pkg/foo"] };
+  assert.deepEqual(await read(), fallback);
+  mkdirSync(entry, { recursive: true });
+  assert.deepEqual(await read(), fallback);
+  mkdirSync(join(entry, "SKILL.md"));
+  assert.deepEqual(await read(), fallback);
+  rmSync(join(entry, "SKILL.md"), { recursive: true });
+  writeFileSync(join(entry, "SKILL.md"), "# Verify");
+  assert.deepEqual(await read(), { commands: [], recipe: ".pi/verify/SKILL.md" });
+  rmSync(entry, { recursive: true });
+  writeFileSync(entry, "#!/bin/sh\n", { mode: 0o644 });
+  assert.deepEqual(await read(), fallback);
+  chmodSync(entry, 0o755);
+  assert.deepEqual(await read(), { commands: [".pi/verify"] });
 });
 
 test("discovery reads each changed file's module, tsconfig and tool configs", async () => {
@@ -250,7 +255,7 @@ test("scoped commands are verification commands the gate accepts", async () => {
 
 test("a .pi/verify path replaces the per-language commands", async () => {
   const commands = await checks(["pkg/foo/a.go", "src/a.ts", "plugin/init.lua"], {
-    verify: true,
+    verify: "executable",
     golangci: true,
     tsconfigs: { "src/a.ts": ["tsconfig.json"] },
     stylua: ["plugin/init.lua"],

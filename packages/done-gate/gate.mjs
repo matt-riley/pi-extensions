@@ -377,7 +377,7 @@ function checkSentence(commands, staticOnly = false, gap = null) {
     commands = running;
   }
   if (!Array.isArray(commands) || commands.length === 0) {
-    return "Before reporting done, run the repo's checks (`.pi/verify` if present) and exercise the changed behavior,";
+    return "Before reporting done, run the repo's checks and exercise the changed behavior,";
   }
   const named = namedCommands(commands);
   if (commands.length === 1) {
@@ -401,7 +401,13 @@ const list = (items) =>
  * `claimText` is the claim judgment's line when it has one. It goes last,
  * where the model reads it immediately before deciding what to do next.
  */
-export function buildNudge(state, debugHits = [], claimText = null, commands = null) {
+export function buildNudge(
+  state,
+  debugHits = [],
+  claimText = null,
+  commands = null,
+  recipe = null,
+) {
   state.nudged = true;
   const files = [...state.dirty];
   const gap = state.verificationSeen && !state.behaviorVerified ? state.testGap : null;
@@ -420,6 +426,7 @@ export function buildNudge(state, debugHits = [], claimText = null, commands = n
   }
   const lines = [
     doneLine,
+    ...(recipe ? [`First read \`${recipe}\` and choose its applicable check.`] : []),
     checkSentence(commands, staticOnly, gap),
     "or say plainly why verification does not apply.",
     "Then close with your explanation of the work plus one line to name the check that reached the changed code and what it showed,",

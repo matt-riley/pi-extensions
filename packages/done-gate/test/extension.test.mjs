@@ -213,36 +213,32 @@ async function settleContent(h) {
   return result.entries.at(-1).content;
 }
 
-test("PI_DONE_GATE_EXEC unset: the named check is only named, never run", async (t) => {
-  const h = harness(t);
-  withVerifyScript(h, `echo ran > ${join(h.cwd, "marker")}; echo VERIFY-OUTPUT`);
-  delete process.env.PI_DONE_GATE_EXEC;
-  const content = await settleContent(h);
-  assert.match(content, /\.pi\/verify/);
-  assert.doesNotMatch(content, /VERIFY-OUTPUT/);
-  assert.equal(existsSync(join(h.cwd, "marker")), false);
-});
-
-test("PI_DONE_GATE_EXEC=0 and other values are off; only 1 turns it on", async (t) => {
-  const h = harness(t);
-  withVerifyScript(h, "echo VERIFY-OUTPUT");
-  t.after(() => delete process.env.PI_DONE_GATE_EXEC);
-  for (const value of ["0", "true", "yes", ""]) {
-    process.env.PI_DONE_GATE_EXEC = value;
-    h.reset();
-    assert.doesNotMatch(await settleContent(h), /VERIFY-OUTPUT/, `value ${JSON.stringify(value)}`);
+test("settle points to the recipe as reading, once, even with insufficient evidence", async (t) => {
+  for (const command of [null, "npx tsc --noEmit", "node --test missing.test.js"]) {
+    const h = harness(t);
+    mkdirSync(join(h.cwd, ".pi/verify"), { recursive: true });
+    writeFileSync(join(h.cwd, ".pi/verify/SKILL.md"), "# Verify\n");
+    h.write("export default 2;\n");
+    await h.edit();
+    if (command) await h.check({ command });
+    const result = await h.settle();
+    assert.match(result.entries.at(-1).content, /read `\.pi\/verify\/SKILL\.md`/i);
+    assert.doesNotMatch(result.entries.at(-1).content, /run `\.pi\/verify`/);
+    assert.equal(await h.settle(), undefined);
   }
 });
 
-test("PI_DONE_GATE_EXEC=1: runs the named check and appends its output", async (t) => {
+test("even the retired execution flag cannot launch a suggested executable", async (t) => {
   const h = harness(t);
-  withVerifyScript(h, "echo VERIFY-OUTPUT; exit 1");
+  withVerifyScript(h, "echo ran > marker");
+  const old = process.env.PI_DONE_GATE_EXEC;
+  t.after(() => {
+    if (old === undefined) delete process.env.PI_DONE_GATE_EXEC;
+    else process.env.PI_DONE_GATE_EXEC = old;
+  });
   process.env.PI_DONE_GATE_EXEC = "1";
-  t.after(() => delete process.env.PI_DONE_GATE_EXEC);
-  const content = await settleContent(h);
-  assert.match(content, /Done check: 1 file\(s\) changed/);
-  assert.match(content, /`\.pi\/verify` — failed \(exit 1/);
-  assert.match(content, /VERIFY-OUTPUT/);
+  assert.match(await settleContent(h), /run `\.pi\/verify`/);
+  assert.equal(existsSync(join(h.cwd, "marker")), false);
 });
 
 test("a typecheck alone leaves the edit unverified and says only compile or lint ran", async (t) => {
