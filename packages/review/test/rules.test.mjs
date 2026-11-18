@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { buildQuestionSet, loadUserRules } from "../rules.mjs";
+import { formatLint, lintChange } from "../lint.mjs";
+import { buildQuestionSet, loadUserRules, resolveRepoRules } from "../rules.mjs";
+
+const DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n";
 
 const temporaryDirectories = [];
 
@@ -43,7 +46,7 @@ test("missing .agents/rules directory adds no extra rules", () => {
     [],
   );
   assert.deepEqual(warnings, []);
-  assert.deepEqual(Object.keys(buildQuestionSet({ cwd: dir })).sort(), [
+  assert.deepEqual(Object.keys(buildQuestionSet({ rules: resolveRepoRules(dir).rules })).sort(), [
     "narrating_comment",
     "overengineered",
     "speculative_scaffolding",
@@ -61,7 +64,7 @@ test("a valid user rule becomes another yes/no question", () => {
   assert.equal(loaded[0].id, "no-drive-by-format");
   assert.equal(loaded[0].label, "unrelated formatting mixed into a functional change");
   assert.deepEqual(warnings, []);
-  const questions = buildQuestionSet({ cwd: dir });
+  const questions = buildQuestionSet({ rules: resolveRepoRules(dir).rules });
   assert.ok("no-drive-by-format" in questions);
   const question = questions["no-drive-by-format"];
   assert.equal(question.type, "noul");
@@ -100,7 +103,7 @@ purpose: Custom purpose
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /overengineered\.md/);
   assert.match(warnings[0], /built-in/i);
-  const questions = buildQuestionSet({ cwd: dir });
+  const questions = buildQuestionSet({ rules: resolveRepoRules(dir).rules });
   assert.ok("overengineered" in questions);
   assert.match(questions.overengineered.instructions, /senior engineer/);
 });
@@ -119,6 +122,25 @@ applicability: message
 ---
 `,
   );
-  assert.ok(!("message-only" in buildQuestionSet({ cwd: dir })));
-  assert.ok("message-only" in buildQuestionSet({ cwd: dir, message: "fix(review): x" }));
+  const { rules } = resolveRepoRules(dir);
+  assert.ok(!("message-only" in buildQuestionSet({ rules })));
+  assert.ok("message-only" in buildQuestionSet({ rules, message: "fix(review): x" }));
+});
+
+test("lintChange returns skipped rule warnings and formatLint prints them", async () => {
+  const dir = tempDir();
+  writeRule(dir, "broken.md", "no frontmatter\n");
+  const result = await lintChange({
+    diff: DIFF,
+    cwd: dir,
+    ask: async () => ({
+      model: "test",
+      usage: null,
+      answers: { overengineered: { type: "noul", noul: 0.1 } },
+    }),
+  });
+  assert.equal(result.skippedRules.length, 1);
+  assert.match(result.skippedRules[0], /broken\.md/);
+  const text = formatLint(result);
+  assert.match(text, /skip broken\.md:/);
 });

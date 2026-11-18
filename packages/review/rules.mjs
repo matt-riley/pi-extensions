@@ -292,9 +292,21 @@ export function loadUserRules(repoRoot, warn = () => {}) {
   return loaded;
 }
 
-function mergedRules(repoRoot, warn) {
-  if (!repoRoot) return ALL;
-  return [...ALL, ...loadUserRules(repoRoot, warn)];
+/**
+ * Built-in rules plus user rules from one disk read. Skipped files are listed in
+ * `skippedRules` with messages that name the file.
+ */
+export function resolveRepoRules(repoRoot) {
+  const skippedRules = [];
+  const userRules = repoRoot
+    ? loadUserRules(repoRoot, (message) => skippedRules.push(message))
+    : [];
+  const rules = [...ALL, ...userRules];
+  return {
+    rules,
+    rulesById: new Map(rules.map((rule) => [rule.id, rule])),
+    skippedRules,
+  };
 }
 
 /**
@@ -302,10 +314,10 @@ function mergedRules(repoRoot, warn) {
  * statement or test files is left out rather than asked against null state: a
  * question answered from nothing comes back as a confident "no".
  */
-export function buildQuestionSet({ message, task, hasTests, cwd, warn } = {}) {
+export function buildQuestionSet({ message, task, hasTests, rules = ALL } = {}) {
   const facts = { message: Boolean(message), task: Boolean(task), tests: hasTests === true };
   const questions = {};
-  for (const rule of mergedRules(cwd, warn)) {
+  for (const rule of rules) {
     if (rule.requires && !facts[rule.requires]) continue;
     questions[rule.id] = rule.question;
   }
@@ -313,6 +325,6 @@ export function buildQuestionSet({ message, task, hasTests, cwd, warn } = {}) {
 }
 
 /** Rule metadata for a repo root (built-ins plus loaded user rules). */
-export function rulesByIdForRepo(repoRoot, warn = () => {}) {
-  return new Map(mergedRules(repoRoot, warn).map((rule) => [rule.id, rule]));
+export function rulesByIdForRepo(repoRoot) {
+  return resolveRepoRules(repoRoot).rulesById;
 }

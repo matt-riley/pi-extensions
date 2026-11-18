@@ -43,8 +43,8 @@ A repository under review can add judgement rules beside AGENTS.md: one Markdown
 file per rule at `.agents/rules/<name>.md`. Each valid file becomes one more
 yes/no question asked about the diff in the same shape as the built-ins above.
 Missing `.agents/rules` means no extra rules; a malformed file is skipped with
-a warning that names the file. Built-in rule ids win when a user file reuses a
-name.
+a warning that names the file (printed as its own line in `lint_change` output).
+Built-in rule ids win when a user file reuses a name.
 
 Frontmatter fields:
 

@@ -5,7 +5,12 @@
 // threshold, a sort, and a line a person can act on.
 
 import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
-import { DEFAULT_THRESHOLD, buildQuestionSet, rulesByIdForRepo } from "./rules.mjs";
+import {
+  DEFAULT_THRESHOLD,
+  buildQuestionSet,
+  resolveRepoRules,
+  rulesByIdForRepo,
+} from "./rules.mjs";
 
 /**
  * The state budget. Jev refuses a state past 60000 characters, and a diff is
@@ -92,6 +97,7 @@ export function formatFindings(findings) {
  */
 export function formatLint(result) {
   const lines = [];
+  for (const warning of result.skippedRules ?? []) lines.push(warning);
   if (!result.judged) lines.push("Not judged: " + (result.reason ?? "no judgment"));
   if (result.truncated)
     lines.push("Diff cut at " + MAX_DIFF_CHARS + " characters; only the first part was judged.");
@@ -124,22 +130,23 @@ export async function lintChange({
   const capped = capDiff(diff);
   const list = Array.isArray(files) ? files.slice(0, MAX_FILES) : [];
   const repoRoot = cwd ?? process.cwd();
+  const { rules, rulesById, skippedRules } = resolveRepoRules(repoRoot);
   const questions = buildQuestionSet({
     message,
     task,
     hasTests: list.some(isTestPath),
-    cwd: repoRoot,
+    rules,
   });
-  const rulesById = rulesByIdForRepo(repoRoot);
   const subject = message ? conventionalProblems(message) : [];
+  const withSkipped = (body) => ({ ...body, skippedRules });
   if (Object.keys(questions).length === 0) {
-    return {
+    return withSkipped({
       findings: [],
       subject,
       judged: false,
       truncated: capped.truncated,
       reason: "no rules apply to this change",
-    };
+    });
   }
   const state = {
     diff: capped.text,
@@ -156,21 +163,21 @@ export async function lintChange({
       env,
       signal: signal ?? AbortSignal.timeout(timeoutMs),
     });
-    return {
+    return withSkipped({
       findings: routeFindings(result?.answers, rulesById),
       subject,
       judged: true,
       truncated: capped.truncated,
       model: result?.model,
       usage: result?.usage ?? null,
-    };
+    });
   } catch (error) {
-    return {
+    return withSkipped({
       findings: [],
       subject,
       judged: false,
       truncated: capped.truncated,
       reason: error instanceof Error ? error.message : String(error),
-    };
+    });
   }
 }
