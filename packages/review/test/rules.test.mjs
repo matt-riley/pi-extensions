@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { formatLint, lintChange } from "../lint.mjs";
-import { buildQuestionSet, loadUserRules, resolveRepoRules } from "../rules.mjs";
+import {
+  buildQuestionSet,
+  loadUserRules,
+  resolveRepoRules,
+  validateUserRuleFields,
+} from "../rules.mjs";
 
 const DIFF = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n";
 
@@ -37,6 +42,17 @@ purpose: Keep review focused on what changed for a reason
 ---
 A whole-file prettier pass on a one-line fix is a violation.
 `;
+
+test("validateUserRuleFields rejects line breaks in scalar fields", () => {
+  const problem = validateUserRuleFields({
+    name: "ok-name",
+    subject: "line one\nline two",
+    requirement: "r",
+    purpose: "p",
+  });
+  assert.match(problem, /subject/);
+  assert.match(problem, /single line/i);
+});
 
 test("missing .agents/rules directory adds no extra rules", () => {
   const dir = tempDir();

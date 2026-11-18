@@ -21,9 +21,9 @@ const RULES_DIR = ".agents/rules";
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_NAME_LEN = 80;
 const APPLICABILITY = new Set(["message", "task", "tests"]);
+export const BUILTIN_RULE_IDS = new Set();
 const ENFORCED_BY_PATTERN = /^[^\s:]+:[^\s:]+$/;
 const MAX_ENFORCED_BY_LEN = 120;
-const BUILTIN_IDS = new Set();
 
 const noul = (instructions, yes, no) => ({
   type: "noul",
@@ -167,7 +167,49 @@ const COMMIT_RULES = [
 ];
 
 const ALL = [...PREFERENCES, ...COMMIT_RULES];
-for (const rule of ALL) BUILTIN_IDS.add(rule.id);
+for (const rule of ALL) BUILTIN_RULE_IDS.add(rule.id);
+
+const SCALAR_FIELD_KEYS = [
+  "name",
+  "subject",
+  "requirement",
+  "purpose",
+  "applicability",
+  "enforced-by",
+];
+
+function scalarNeedsQuotes(value) {
+  const text = String(value);
+  if (text.startsWith("#")) return true;
+  return text.startsWith('"') || text.endsWith('"') || text.startsWith("'") || text.endsWith("'");
+}
+
+/** Write one frontmatter scalar so `parseRuleFrontmatter` reads it back unchanged. */
+function formatRuleScalar(value) {
+  const text = String(value ?? "").trim();
+  if (!scalarNeedsQuotes(text)) return text;
+  if (text.includes('"') && !text.includes("'")) return `'${text}'`;
+  if (text.includes("'") && !text.includes('"')) return `"${text}"`;
+  return `"${text}"`;
+}
+
+/** Serialize a user rule file body plus frontmatter fields. */
+export function formatRuleFile(fields, body = "") {
+  const lines = ["---"];
+  lines.push(`name: ${formatRuleScalar(fields.name)}`);
+  lines.push(`subject: ${formatRuleScalar(fields.subject)}`);
+  lines.push(`requirement: ${formatRuleScalar(fields.requirement)}`);
+  lines.push(`purpose: ${formatRuleScalar(fields.purpose)}`);
+  const applicability = String(fields.applicability ?? "").trim();
+  if (applicability) lines.push(`applicability: ${formatRuleScalar(applicability)}`);
+  const enforcedBy = String(fields["enforced-by"] ?? "").trim();
+  if (enforcedBy) lines.push(`enforced-by: ${formatRuleScalar(enforcedBy)}`);
+  lines.push("---");
+  const context = String(body ?? "").trim();
+  if (context) lines.push("", context, "");
+  else lines.push("");
+  return lines.join("\n");
+}
 
 function unquoteScalar(raw) {
   const text = String(raw ?? "").trim();
@@ -197,7 +239,13 @@ function parseRuleFrontmatter(text) {
   return { fields, body: match[2] ?? "" };
 }
 
-function validateUserRule(fields) {
+export function validateUserRuleFields(fields) {
+  for (const key of SCALAR_FIELD_KEYS) {
+    if (fields[key] === undefined) continue;
+    if (/[\r\n]/.test(String(fields[key]))) {
+      return `${key} must be a single line (no line breaks)`;
+    }
+  }
   const missing = ["name", "subject", "requirement", "purpose"].filter(
     (key) => !String(fields[key] ?? "").trim(),
   );
@@ -286,13 +334,13 @@ export function loadUserRules(repoRoot, warn = () => {}) {
       warn(`skip ${filename}: no YAML frontmatter block`);
       continue;
     }
-    const problem = validateUserRule(parsed.fields);
+    const problem = validateUserRuleFields(parsed.fields);
     if (problem) {
       warn(`skip ${filename}: ${problem}`);
       continue;
     }
     const id = String(parsed.fields.name).trim();
-    if (BUILTIN_IDS.has(id)) {
+    if (BUILTIN_RULE_IDS.has(id)) {
       warn(`skip ${filename}: built-in rule "${id}" already defines this id`);
       continue;
     }

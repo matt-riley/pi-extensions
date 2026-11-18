@@ -21,6 +21,7 @@ import { Type } from "typebox";
 import { bindSystemOne } from "../../shared/systemone-session.mjs";
 import { LOCAL_READ, OPEN_READ } from "../../shared/tool-annotations.mjs";
 
+import { runRulesAdd } from "./add-rule.mjs";
 import { report as blastReport } from "./blast.mjs";
 import { formatVerified, verifyFindings } from "./findings.mjs";
 import { formatLint, lintChange } from "./lint.mjs";
@@ -47,6 +48,27 @@ function selector(scope: string, ref?: string): string[] | null {
 export default function piReviewExtension(pi: ExtensionAPI) {
   bindSystemOne(pi, "review");
   installRerun(pi);
+  pi.registerCommand("rules", {
+    description:
+      "Add judgement rules under .agents/rules; /rules add compares against existing rules before saving",
+    handler: async (args, ctx) => {
+      const text = String(args ?? "").trim();
+      if (!text.startsWith("add")) {
+        ctx.ui?.notify?.(
+          "Usage: /rules add (prompts) or /rules add --name … --subject … --requirement … --purpose …",
+          "info",
+        );
+        return;
+      }
+      const result = await runRulesAdd({
+        args: text,
+        repoRoot: ctx.cwd ?? process.cwd(),
+        ui: ctx.ui,
+        signal: ctx.signal,
+      });
+      ctx.ui?.notify?.(result.message, result.ok ? "info" : "warning");
+    },
+  });
   pi.registerTool({
     name: "lint_change",
     label: "lint_change",
