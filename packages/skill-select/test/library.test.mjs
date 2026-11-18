@@ -81,6 +81,7 @@ test("foreign harness skills require explicit opt-in, while owned workflows work
     "implementation-review",
     "interface-design",
     "interrogate",
+    "lint-rules",
     "swarm",
     "test-driven-development",
   ]);
