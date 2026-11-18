@@ -80,7 +80,7 @@ test("every owned workflow is used by a prompt", async () => {
     "interface-design": ["design", "refactor"],
     interrogate: ["interrogate"],
     arena: ["arena"],
-    swarm: ["swarm"],
+    swarm: ["swarm", "simplify"],
     "lint-rules": ["garden"],
   };
   for (const [skill, names] of Object.entries(prompts))

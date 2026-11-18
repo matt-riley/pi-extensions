@@ -75,10 +75,10 @@ Frontmatter fields:
 | `requirement` | yes | What the diff must satisfy |
 | `purpose` | yes | Why the rule exists; included in the question |
 | `applicability` | no | When to ask: `message`, `task`, or `tests` (same as built-in `requires`) |
+| `enforced-by` | no | Native lint that already covers the rule, as `tool:rule` (e.g. `oxlint:local/no-foo`). When set, `lint_change` does not ask Jev about that rule and prints `enforced-by: <name> — <tool:rule>` in the output |
 
-The body after the frontmatter is optional context or examples. A future
-`enforced-by` frontmatter field may tie a rule to a mechanical check; it is not
-read yet.
+The body after the frontmatter is optional context or examples. Set `enforced-by`
+once the repository ships a native linter rule for the same requirement.
 
 Example:
 
@@ -88,6 +88,7 @@ name: no-drive-by-format
 subject: unrelated formatting mixed into a functional change
 requirement: Do not reformat or reorder code outside the lines the task touches
 purpose: Keep review focused on what changed for a reason
+enforced-by: oxlint:local/no-drive-by-format
 ---
 
 A whole-file prettier pass on a one-line fix is a violation.

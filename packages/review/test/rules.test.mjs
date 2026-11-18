@@ -127,6 +127,124 @@ applicability: message
   assert.ok("message-only" in buildQuestionSet({ rules, message: "fix(review): x" }));
 });
 
+const ENFORCED_STUB_RULE = {
+  id: "stub-enforced",
+  label: "mechanically covered smell",
+  threshold: 0.6,
+  enforcedBy: "oxlint:local/stub-rule",
+  question: {
+    type: "noul",
+    instructions: "stub",
+    criteria: { true: "yes", false: "no" },
+  },
+};
+
+test("lintChange with no applicable rules is not judged", async () => {
+  const result = await lintChange({
+    diff: DIFF,
+    rules: [],
+    ask: async () => {
+      throw new Error("should not ask Jev");
+    },
+  });
+  assert.equal(result.judged, false);
+  assert.equal(result.reason, "no rules apply to this change");
+  assert.equal(result.enforcedRules.length, 0);
+  const text = formatLint(result);
+  assert.match(text, /Not judged: no rules apply to this change/);
+  assert.doesNotMatch(text, /No findings above threshold/);
+});
+
+test("lintChange with only enforced rules is not judged and names native lint", async () => {
+  const result = await lintChange({
+    diff: DIFF,
+    rules: [ENFORCED_STUB_RULE],
+    ask: async () => {
+      throw new Error("should not ask Jev");
+    },
+  });
+  assert.equal(result.judged, false);
+  assert.equal(result.reason, "every applicable rule is enforced by native lint");
+  assert.equal(result.enforcedRules.length, 1);
+  const text = formatLint(result);
+  assert.match(text, /enforced-by: stub-enforced — oxlint:local\/stub-rule/);
+  assert.match(text, /Not judged: every applicable rule is enforced by native lint/);
+  assert.doesNotMatch(text, /No findings above threshold/);
+});
+
+test("enforced-by omits the rule from questions and formatLint lists coverage", async () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "native-format.md",
+    `---
+name: native-format
+subject: unrelated formatting mixed into a functional change
+requirement: Do not reformat or reorder code outside the lines the task touches
+purpose: Keep review focused on what changed for a reason
+enforced-by: oxlint:local/no-drive-by-format
+---
+`,
+  );
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].enforcedBy, "oxlint:local/no-drive-by-format");
+  assert.deepEqual(warnings, []);
+  const { rules } = resolveRepoRules(dir);
+  const questionSet = buildQuestionSet({ rules });
+  assert.ok(!("native-format" in questionSet));
+  let askedIds;
+  const result = await lintChange({
+    diff: DIFF,
+    cwd: dir,
+    ask: async ({ questions: asked }) => {
+      askedIds = Object.keys(asked);
+      return {
+        model: "test",
+        usage: null,
+        answers: { overengineered: { type: "noul", noul: 0.1 } },
+      };
+    },
+  });
+  assert.ok(!askedIds.includes("native-format"));
+  assert.equal(result.enforcedRules.length, 1);
+  assert.equal(result.enforcedRules[0].id, "native-format");
+  assert.equal(result.enforcedRules[0].enforcedBy, "oxlint:local/no-drive-by-format");
+  const text = formatLint(result);
+  assert.match(text, /enforced-by: native-format/);
+  assert.match(text, /oxlint:local\/no-drive-by-format/);
+});
+
+test("invalid enforced-by skips the file with a warning", () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "bad-enforced.md",
+    `---
+name: bad-enforced
+subject: bad enforced-by value
+requirement: Something
+purpose: Testing
+enforced-by: not-a-valid-pair
+---
+`,
+  );
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.deepEqual(loaded, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /bad-enforced\.md/);
+  assert.match(warnings[0], /enforced-by/i);
+});
+
+test("a user rule without enforced-by still becomes a question", () => {
+  const dir = tempDir();
+  writeRule(dir, "no-drive-by-format.md", VALID_RULE);
+  const { rules } = resolveRepoRules(dir);
+  assert.ok("no-drive-by-format" in buildQuestionSet({ rules }));
+});
+
 test("lintChange returns skipped rule warnings and formatLint prints them", async () => {
   const dir = tempDir();
   writeRule(dir, "broken.md", "no frontmatter\n");
