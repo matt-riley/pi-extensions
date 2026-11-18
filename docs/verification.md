@@ -159,7 +159,15 @@ function and unused file to be reported, and check that the scan preserves sourc
 It also exercises the AST comment rule against narration and legitimate JSDoc.
 `npm run smoke` additionally drives `/quality` through real Pi RPC and a scripted
 read/edit, preserving documentation. This proves command/scan/agent wiring, not
-real-model smell detection, generated lint-rule quality or Go parser semantics.
+real-model smell detection or the quality of a rule an agent writes later.
+`packages/quality/test/scaffold.test.mjs` writes the TypeScript, ruleguard and
+go/analysis scaffolds into a temporary directory and checks the generated files.
+It runs a generated fixture only when that fixture’s toolchain is already
+available: Oxlint at the pinned `oxlint/plugins-dev` version, Go for the
+ruleguard fixture, and Go 1.26 or newer for the analysistest fixture
+(`golang.org/x/tools` v0.52.0). Otherwise that run is skipped and the reason is
+printed. This repository’s CI does not install Go or that Oxlint plugin API, and
+the scaffold’s dev dependency stays in the generated project.
 The native comment rule in this collection is deliberately JS/TS-only; target
 repositories get their own native-rule implementation through the agent workflow.
 

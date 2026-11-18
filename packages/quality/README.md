@@ -87,4 +87,35 @@ workflow, rather than silently installing a JS toolchain everywhere.
 
 `/garden` complements this: sample recurring shortcuts, propose native lint rules
 with legitimate passing cases, then implement and verify only after approval
-using the bundled `lint-rules` skill for per-language authoring and fixtures.
+using the bundled `lint-rules` skill. That skill starts TypeScript and Go from
+the scaffolds below.
+
+## Rule scaffolds
+
+From this checkout, one command writes a sample rule and a fixture with one
+passing case and one failing case. `<rule-name>` is kebab-case. The dev
+dependency stays in the generated project.
+
+```sh
+node packages/quality/scaffold.mjs typescript <rule-name> --dir <target>
+node packages/quality/scaffold.mjs go-ruleguard <rule-name> --dir <target>
+node packages/quality/scaffold.mjs go-analysis <rule-name> --dir <target>
+```
+
+`typescript` writes a local plain `.mjs` Oxlint JS plugin registered through
+`jsPlugins`, and a `node:test` fixture that uses `RuleTester` from
+`oxlint/plugins-dev`. The generated plugin states that Oxlint JS plugins are
+alpha and are not covered by semver, and that type-aware rules cannot be
+written as JS plugins (`oxlint-tsgolint` is the built-in path).
+
+`go-ruleguard` writes a gocritic ruleguard rule for a small syntactic pattern,
+a golangci-lint v2 config, and a `go test` fixture. `go-analysis` writes a
+`go/analysis` analyser for a rule that needs types, tested with `analysistest`
+against `golang.org/x/tools` v0.52.0 (Go 1.26). The generated Go module includes
+`go.sum` for those pins, because `go test` does not fill in a missing sum file.
+Neither scaffold uses a golangci-lint module plugin, because those need a
+custom binary.
+
+Replace the sample pattern and keep both fixture cases. Merge the generated
+config into the target repository’s existing check rather than replacing a
+stricter one.
