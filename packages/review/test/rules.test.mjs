@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+
+import { buildQuestionSet, loadUserRules } from "../rules.mjs";
+
+const temporaryDirectories = [];
+
+after(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function tempDir() {
+  const dir = mkdtempSync(join(tmpdir(), "pi-review-rules-"));
+  temporaryDirectories.push(dir);
+  return dir;
+}
+
+function writeRule(dir, filename, body) {
+  const rulesDir = join(dir, ".agents", "rules");
+  mkdirSync(rulesDir, { recursive: true });
+  writeFileSync(join(rulesDir, filename), body);
+}
+
+const VALID_RULE = `---
+name: no-drive-by-format
+subject: unrelated formatting mixed into a functional change
+requirement: Do not reformat or reorder code outside the lines the task touches
+purpose: Keep review focused on what changed for a reason
+---
+A whole-file prettier pass on a one-line fix is a violation.
+`;
+
+test("missing .agents/rules directory adds no extra rules", () => {
+  const dir = tempDir();
+  const warnings = [];
+  assert.deepEqual(
+    loadUserRules(dir, (message) => warnings.push(message)),
+    [],
+  );
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(Object.keys(buildQuestionSet({ cwd: dir })).sort(), [
+    "narrating_comment",
+    "overengineered",
+    "speculative_scaffolding",
+    "unnecessary_dependency",
+    "unrequested_abstraction",
+  ]);
+});
+
+test("a valid user rule becomes another yes/no question", () => {
+  const dir = tempDir();
+  writeRule(dir, "no-drive-by-format.md", VALID_RULE);
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].id, "no-drive-by-format");
+  assert.equal(loaded[0].label, "unrelated formatting mixed into a functional change");
+  assert.deepEqual(warnings, []);
+  const questions = buildQuestionSet({ cwd: dir });
+  assert.ok("no-drive-by-format" in questions);
+  const question = questions["no-drive-by-format"];
+  assert.equal(question.type, "noul");
+  assert.match(question.instructions, /Do not reformat or reorder code/);
+  assert.match(question.instructions, /diff/);
+});
+
+test("a malformed rule file is skipped with a warning naming the file", () => {
+  const dir = tempDir();
+  writeRule(dir, "broken.md", "not frontmatter at all\n");
+  writeRule(dir, "incomplete.md", "---\nname: incomplete\n---\n");
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.deepEqual(loaded, []);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /broken\.md/);
+  assert.match(warnings[1], /incomplete\.md/);
+});
+
+test("built-in rule ids win when a user rule reuses a name", () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "overengineered.md",
+    `---
+name: overengineered
+subject: custom subject that should not load
+requirement: Custom requirement
+purpose: Custom purpose
+---
+`,
+  );
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.deepEqual(loaded, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /overengineered\.md/);
+  assert.match(warnings[0], /built-in/i);
+  const questions = buildQuestionSet({ cwd: dir });
+  assert.ok("overengineered" in questions);
+  assert.match(questions.overengineered.instructions, /senior engineer/);
+});
+
+test("applicability gates a user rule the same way as built-in requires", () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "message-only.md",
+    `---
+name: message-only
+subject: subject line must mention the package
+requirement: The commit subject names the package directory being changed
+purpose: Make git log scannable by area
+applicability: message
+---
+`,
+  );
+  assert.ok(!("message-only" in buildQuestionSet({ cwd: dir })));
+  assert.ok("message-only" in buildQuestionSet({ cwd: dir, message: "fix(review): x" }));
+});

@@ -5,7 +5,7 @@
 // threshold, a sort, and a line a person can act on.
 
 import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
-import { DEFAULT_THRESHOLD, RULES_BY_ID, buildQuestionSet } from "./rules.mjs";
+import { DEFAULT_THRESHOLD, buildQuestionSet, rulesByIdForRepo } from "./rules.mjs";
 
 /**
  * The state budget. Jev refuses a state past 60000 characters, and a diff is
@@ -64,10 +64,10 @@ export function conventionalProblems(message) {
  * is not a confident zero, and a lint that reports on no evidence is worse than
  * one that stays quiet.
  */
-export function routeFindings(answers) {
+export function routeFindings(answers, rulesById = rulesByIdForRepo()) {
   const findings = [];
   for (const [id, answer] of Object.entries(answers ?? {})) {
-    const rule = RULES_BY_ID.get(id);
+    const rule = rulesById.get(id);
     if (!rule || answer?.type !== "noul") continue;
     const probability = usableNumber(answer.noul);
     if (probability === null) continue;
@@ -114,6 +114,7 @@ export async function lintChange({
   files = [],
   message,
   task,
+  cwd,
   timeoutMs = 12_000,
   model,
   env,
@@ -122,11 +123,14 @@ export async function lintChange({
 } = {}) {
   const capped = capDiff(diff);
   const list = Array.isArray(files) ? files.slice(0, MAX_FILES) : [];
+  const repoRoot = cwd ?? process.cwd();
   const questions = buildQuestionSet({
     message,
     task,
     hasTests: list.some(isTestPath),
+    cwd: repoRoot,
   });
+  const rulesById = rulesByIdForRepo(repoRoot);
   const subject = message ? conventionalProblems(message) : [];
   if (Object.keys(questions).length === 0) {
     return {
@@ -153,7 +157,7 @@ export async function lintChange({
       signal: signal ?? AbortSignal.timeout(timeoutMs),
     });
     return {
-      findings: routeFindings(result?.answers),
+      findings: routeFindings(result?.answers, rulesById),
       subject,
       judged: true,
       truncated: capped.truncated,

@@ -1,5 +1,8 @@
 // rules.mjs — the AGENTS.md preferences that are judgement calls, as questions.
 //
+// Repositories may add judgement rules under `.agents/rules/<name>.md`; each
+// file becomes one more yes/no question in the same shape as the built-ins.
+//
 // check-conventions, tsc, oxlint, oxfmt, knip and fallow decide everything that
 // can be decided from shape. What is left is prose: "would a senior engineer
 // call this overcomplicated", "one logical change per commit". That residue is
@@ -9,7 +12,16 @@
 // routing table covers the lot. The threshold sits beside its rule: a rule that
 // misfires gets tuned where it is written, not in a global constant.
 
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 export const DEFAULT_THRESHOLD = 0.6;
+
+const RULES_DIR = ".agents/rules";
+const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_NAME_LEN = 80;
+const APPLICABILITY = new Set(["message", "task", "tests"]);
+const BUILTIN_IDS = new Set();
 
 const noul = (instructions, yes, no) => ({
   type: "noul",
@@ -153,21 +165,154 @@ const COMMIT_RULES = [
 ];
 
 const ALL = [...PREFERENCES, ...COMMIT_RULES];
+for (const rule of ALL) BUILTIN_IDS.add(rule.id);
+
+function unquoteScalar(raw) {
+  const text = String(raw ?? "").trim();
+  if (
+    (text.startsWith('"') && text.endsWith('"') && text.length >= 2) ||
+    (text.startsWith("'") && text.endsWith("'") && text.length >= 2)
+  ) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+/** A small YAML subset for rule frontmatter: plain scalars only. */
+function parseRuleFrontmatter(text) {
+  const normalized = String(text ?? "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n");
+  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(normalized);
+  if (!match) return null;
+  const fields = {};
+  for (const line of match[1].split("\n")) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const keyMatch = /^([A-Za-z0-9_-]+):\s*(.*?)\s*$/.exec(line);
+    if (!keyMatch) continue;
+    fields[keyMatch[1]] = unquoteScalar(keyMatch[2]);
+  }
+  return { fields, body: match[2] ?? "" };
+}
+
+function validateUserRule(fields) {
+  const missing = ["name", "subject", "requirement", "purpose"].filter(
+    (key) => !String(fields[key] ?? "").trim(),
+  );
+  if (missing.length > 0) {
+    return `missing frontmatter key(s): ${missing.join(", ")}`;
+  }
+  const name = String(fields.name).trim();
+  if (name.length > MAX_NAME_LEN) {
+    return `name is longer than ${MAX_NAME_LEN} characters`;
+  }
+  if (!NAME_PATTERN.test(name)) {
+    return "name must be kebab-case";
+  }
+  const applicability = String(fields.applicability ?? "").trim();
+  if (applicability && !APPLICABILITY.has(applicability)) {
+    return `applicability must be message, task, or tests (got ${applicability})`;
+  }
+  if (fields["enforced-by"] !== undefined) {
+    // Reserved for a future gate; ignored until wired up.
+  }
+  return null;
+}
+
+function userRuleFromFile(fields, body) {
+  const name = String(fields.name).trim();
+  const subject = String(fields.subject).trim();
+  const requirement = String(fields.requirement).trim();
+  const purpose = String(fields.purpose).trim();
+  const applicability = String(fields.applicability ?? "").trim();
+  const context = String(body ?? "").trim();
+  const instructions = [
+    "Read `diff`.",
+    requirement,
+    `Purpose: ${purpose}.`,
+    context ? `Context:\n${context}` : "",
+    "Judge only what the diff changes.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return {
+    id: name,
+    label: subject,
+    threshold: DEFAULT_THRESHOLD,
+    requires: applicability || undefined,
+    question: noul(instructions, subject, "The change satisfies the requirement for this rule."),
+  };
+}
+
+/**
+ * Load judgement rules from `.agents/rules/*.md` under `repoRoot`. Missing
+ * directory means none. Malformed files are skipped; `warn` receives a short
+ * message naming the file. Built-in ids win on a name clash.
+ */
+export function loadUserRules(repoRoot, warn = () => {}) {
+  const dir = join(String(repoRoot ?? ""), RULES_DIR);
+  if (!existsSync(dir)) return [];
+  let names;
+  try {
+    names = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    warn(`could not read ${RULES_DIR}`);
+    return [];
+  }
+  const loaded = [];
+  for (const filename of names) {
+    const filePath = join(dir, filename);
+    let content;
+    try {
+      content = readFileSync(filePath, "utf8");
+    } catch {
+      warn(`skip ${filename}: could not read file`);
+      continue;
+    }
+    const parsed = parseRuleFrontmatter(content);
+    if (!parsed) {
+      warn(`skip ${filename}: no YAML frontmatter block`);
+      continue;
+    }
+    const problem = validateUserRule(parsed.fields);
+    if (problem) {
+      warn(`skip ${filename}: ${problem}`);
+      continue;
+    }
+    const id = String(parsed.fields.name).trim();
+    if (BUILTIN_IDS.has(id)) {
+      warn(`skip ${filename}: built-in rule "${id}" already defines this id`);
+      continue;
+    }
+    loaded.push(userRuleFromFile(parsed.fields, parsed.body));
+  }
+  return loaded;
+}
+
+function mergedRules(repoRoot, warn) {
+  if (!repoRoot) return ALL;
+  return [...ALL, ...loadUserRules(repoRoot, warn)];
+}
 
 /**
  * The questions this change earns. A rule that needs a commit message, a task
  * statement or test files is left out rather than asked against null state: a
  * question answered from nothing comes back as a confident "no".
  */
-export function buildQuestionSet({ message, task, hasTests } = {}) {
+export function buildQuestionSet({ message, task, hasTests, cwd, warn } = {}) {
   const facts = { message: Boolean(message), task: Boolean(task), tests: hasTests === true };
   const questions = {};
-  for (const rule of ALL) {
+  for (const rule of mergedRules(cwd, warn)) {
     if (rule.requires && !facts[rule.requires]) continue;
     questions[rule.id] = rule.question;
   }
   return questions;
 }
 
-/** Rule metadata by id, for formatting a finding without trusting the model. */
-export const RULES_BY_ID = new Map(ALL.map((rule) => [rule.id, rule]));
+/** Rule metadata for a repo root (built-ins plus loaded user rules). */
+export function rulesByIdForRepo(repoRoot, warn = () => {}) {
+  return new Map(mergedRules(repoRoot, warn).map((rule) => [rule.id, rule]));
+}

@@ -37,6 +37,42 @@ Thresholds live beside each rule in `rules.mjs`. A rule that needs a commit
 message, a task statement or test files is left out of the request, since a
 question answered from nothing comes back as a confident "no".
 
+### User rules (`.agents/rules`)
+
+A repository under review can add judgement rules beside AGENTS.md: one Markdown
+file per rule at `.agents/rules/<name>.md`. Each valid file becomes one more
+yes/no question asked about the diff in the same shape as the built-ins above.
+Missing `.agents/rules` means no extra rules; a malformed file is skipped with
+a warning that names the file. Built-in rule ids win when a user file reuses a
+name.
+
+Frontmatter fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Rule id, kebab-case, at most 80 characters |
+| `subject` | yes | Short label shown on a finding line |
+| `requirement` | yes | What the diff must satisfy |
+| `purpose` | yes | Why the rule exists; included in the question |
+| `applicability` | no | When to ask: `message`, `task`, or `tests` (same as built-in `requires`) |
+
+The body after the frontmatter is optional context or examples. A future
+`enforced-by` frontmatter field may tie a rule to a mechanical check; it is not
+read yet.
+
+Example:
+
+```markdown
+---
+name: no-drive-by-format
+subject: unrelated formatting mixed into a functional change
+requirement: Do not reformat or reorder code outside the lines the task touches
+purpose: Keep review focused on what changed for a reason
+---
+
+A whole-file prettier pass on a one-line fix is a violation.
+```
+
 The diff is cut at 45,000 characters (the state limit is 60,000) and the output
 says when that happened, because a silent cut reads as a clean judgment.
 
