@@ -5,10 +5,12 @@ import { qualityPrompt } from "./workflow.mjs";
 
 export default function piQualityExtension(pi: ExtensionAPI) {
   pi.registerCommand("quality", {
-    description: "Clean up repository-wide code smells and add native lint prevention: /quality",
+    description:
+      "Clean up repository-wide code smells and add native lint prevention; /quality --scan reports without queuing edits",
     handler: async (args, ctx) => {
-      if (args.trim()) {
-        ctx.ui?.notify?.("Usage: /quality", "info");
+      const mode = args.trim();
+      if (mode && mode !== "--scan") {
+        ctx.ui?.notify?.("Usage: /quality [--scan]", "info");
         return;
       }
       const report = await runQuality({
@@ -17,7 +19,7 @@ export default function piQualityExtension(pi: ExtensionAPI) {
         signal: ctx.signal,
       });
       ctx.ui?.notify?.(formatQuality(report), report.ok ? "info" : "warning");
-      if (report.root && !ctx.signal?.aborted) {
+      if (!mode && report.root && !ctx.signal?.aborted) {
         pi.sendUserMessage(qualityPrompt(report), { deliverAs: "followUp" });
       }
     },

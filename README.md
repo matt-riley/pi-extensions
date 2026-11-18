@@ -96,7 +96,7 @@ project-specific skills in that project's `.agents/skills/`.
 
 | Package | Use it for |
 | --- | --- |
-| [`pi-quality`](./packages/quality/README.md) | `/quality`: run `crap` and `deadwood`, then ask the agent to remove repository-wide code smells and add native lint prevention. |
+| [`pi-quality`](./packages/quality/README.md) | `/quality --scan` reports without queuing edits; `/quality`: run `crap` and `deadwood`, then ask the agent to remove repository-wide code smells and add native lint prevention. |
 | [`pi-agents`](./packages/agents/README.md) | `/agents`: create or improve an `AGENTS.md` in a directory, keeping the guidance already there. |
 | [`pi-affected`](./packages/affected/README.md) | `/affected`: name the test files that can reach your changes, with the gaps and a package-level fallback. Runs nothing. |
 | [`pi-architecture`](./packages/architecture/README.md) | `/architecture`: check directory-boundary rules from a JSON file and report import cycles, with coverage gaps listed. |

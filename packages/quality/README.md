@@ -6,6 +6,8 @@ that a repository can be proven smell-free. It operates on the repository where
 you invoke it, not just this extension collection. No startup or settle hook
 runs checks or changes repositories automatically.
 
+For an audit, use `/quality --scan`. It runs the same scanners and reports failures or unsupported languages, but never sends a cleanup request to the agent. Bare `/quality` keeps the editing workflow.
+
 ## Initial measured scan
 
 The command finds the Git root and inventories tracked and nonignored untracked

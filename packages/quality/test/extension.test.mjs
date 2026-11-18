@@ -63,6 +63,18 @@ test("unsupported CLI languages still get native lint cleanup, with explicit sca
   assert.match(h.messages[0].text, /Skipped: no supported JS\/TS, Go, Rust or Lua source files/);
 });
 
+test("scan-only shows scanner failures and language gaps without dispatching edits", async () => {
+  const failed = setup();
+  await failed.run("--scan");
+  assert.deepEqual(failed.calls, ["git", "git", "crap", "deadwood"]);
+  assert.match(failed.notes[0].text, /crap: error \(exit 2\)/);
+  assert.deepEqual(failed.messages, []);
+  const unsupported = setup({ source: "main.py\0" });
+  await unsupported.run("--scan");
+  assert.match(unsupported.notes[0].text, /Skipped: no supported/);
+  assert.deepEqual(unsupported.messages, []);
+});
+
 test("an aborted scan does not queue another agent turn", async () => {
   const h = setup();
   h.ctx.signal = AbortSignal.abort();

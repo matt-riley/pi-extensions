@@ -1107,6 +1107,31 @@ export default function (pi) {
   const qualitySource =
     "/** Count tracks processed records. */\nexport let count = 0;\n// increment count\ncount++;\n";
   await writeFile(path.join(cwd, "quality-smell.ts"), qualitySource);
+  const scanner = (name, body) =>
+    writeFile(path.join(binDir, name), "#!/bin/sh\n" + body + "\n", { mode: 0o755 });
+  await scanner(
+    "deadwood",
+    'echo \'{"v":1,"ok":true,"complete":true,"summary":{"files":1},"findings":[]}\'',
+  );
+  for (const fails of [false, true]) {
+    await scanner(
+      "crap",
+      fails
+        ? "echo incomplete >&2; exit 2"
+        : 'echo \'{"v":1,"ok":true,"summary":{"files":1,"functions":1},"coverage":null,"findings":[]}\'',
+    );
+    const scanStart = events.length;
+    const beforeScan = requests;
+    await prompt("/quality --scan");
+    const state = await request("get_state");
+    const observed = JSON.stringify(events.slice(scanStart));
+    assert.match(observed, fails ? /crap: error \(exit 2\)/ : /crap: passed/);
+    assert.match(observed, /deadwood: passed/);
+    assert.equal(requests, beforeScan);
+    assert.equal(state.isStreaming, false);
+    assert.equal(state.pendingMessageCount, 0);
+  }
+  console.log("ok: /quality --scan reports success and failure without dispatching a model turn");
   scripted = [
     { name: "read", arguments: { path: "quality-smell.ts" } },
     {
@@ -1118,6 +1143,13 @@ export default function (pi) {
     },
   ];
   const qualityEvents = await prompt("/quality", true);
+  const cleanupMessages = qualityEvents.filter(
+    (e) =>
+      e.type === "message_start" &&
+      e.message?.role === "user" &&
+      JSON.stringify(e.message.content).includes("Inspect the whole repository"),
+  );
+  assert.equal(cleanupMessages.length, 1, "bare /quality should dispatch exactly one cleanup");
   const qualityRequest = JSON.stringify(resourceRequests.at(-1));
   assert.match(
     qualityRequest,
