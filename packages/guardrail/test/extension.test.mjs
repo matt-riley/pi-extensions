@@ -38,7 +38,7 @@ beforeEach(() => {
 
 function harness({
   hasUI = true,
-  cwd = process.cwd(),
+  cwd = "/workspace/guardrail-project",
   choices = [],
   inputs = [],
   tools = [],
@@ -799,6 +799,18 @@ test("a copied command that is not risky is left alone", async () => {
   });
   assert.equal(await h.run("bash", { command: "git status --short" }), undefined);
   assert.equal(h.dialogs.length, 0);
+});
+
+test("the same simulated removal asks in source and is regenerable in temporary storage", async () => {
+  for (const [cwd, asks] of [
+    ["/workspace/guardrail-project", true],
+    ["/tmp/guardrail-project", false],
+  ]) {
+    const h = harness({ cwd, choices: [DENY] });
+    const result = await h.run("bash", { command: "rm src/app.ts" });
+    assert.equal(h.dialogs.length, asks ? 1 : 0, cwd);
+    assert.equal(result?.block, asks ? true : undefined, cwd);
+  }
 });
 
 test("a judge that finds a copied command harmless still asks", async () => {
