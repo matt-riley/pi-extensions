@@ -127,6 +127,79 @@ applicability: message
   assert.ok("message-only" in buildQuestionSet({ rules, message: "fix(review): x" }));
 });
 
+test("enforced-by omits the rule from questions and formatLint lists coverage", async () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "native-format.md",
+    `---
+name: native-format
+subject: unrelated formatting mixed into a functional change
+requirement: Do not reformat or reorder code outside the lines the task touches
+purpose: Keep review focused on what changed for a reason
+enforced-by: oxlint:local/no-drive-by-format
+---
+`,
+  );
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].enforcedBy, "oxlint:local/no-drive-by-format");
+  assert.deepEqual(warnings, []);
+  const { rules } = resolveRepoRules(dir);
+  const questionSet = buildQuestionSet({ rules });
+  assert.ok(!("native-format" in questionSet));
+  let askedIds;
+  const result = await lintChange({
+    diff: DIFF,
+    cwd: dir,
+    ask: async ({ questions: asked }) => {
+      askedIds = Object.keys(asked);
+      return {
+        model: "test",
+        usage: null,
+        answers: { overengineered: { type: "noul", noul: 0.1 } },
+      };
+    },
+  });
+  assert.ok(!askedIds.includes("native-format"));
+  assert.equal(result.enforcedRules.length, 1);
+  assert.equal(result.enforcedRules[0].id, "native-format");
+  assert.equal(result.enforcedRules[0].enforcedBy, "oxlint:local/no-drive-by-format");
+  const text = formatLint(result);
+  assert.match(text, /enforced-by: native-format/);
+  assert.match(text, /oxlint:local\/no-drive-by-format/);
+});
+
+test("invalid enforced-by skips the file with a warning", () => {
+  const dir = tempDir();
+  writeRule(
+    dir,
+    "bad-enforced.md",
+    `---
+name: bad-enforced
+subject: bad enforced-by value
+requirement: Something
+purpose: Testing
+enforced-by: not-a-valid-pair
+---
+`,
+  );
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.deepEqual(loaded, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /bad-enforced\.md/);
+  assert.match(warnings[0], /enforced-by/i);
+});
+
+test("a user rule without enforced-by still becomes a question", () => {
+  const dir = tempDir();
+  writeRule(dir, "no-drive-by-format.md", VALID_RULE);
+  const { rules } = resolveRepoRules(dir);
+  assert.ok("no-drive-by-format" in buildQuestionSet({ rules }));
+});
+
 test("lintChange returns skipped rule warnings and formatLint prints them", async () => {
   const dir = tempDir();
   writeRule(dir, "broken.md", "no frontmatter\n");
