@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { isVerifyCommand } from "../../../shared/check-command.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -13,7 +14,6 @@ import {
   debugTagsInDiff,
   debugTagsInFile,
   isRemoteVerifyCommand,
-  isVerifyCommand,
   invalidateEvidence,
   livePaths,
   observeToolResult,

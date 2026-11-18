@@ -5,7 +5,7 @@ import { blockedBashCommand } from "../../shared/bash-policy.mjs";
 import { hasRedirectOutsideQuotes } from "../../shared/shell-parse.mjs";
 import { LOCAL_READ } from "../../shared/tool-annotations.mjs";
 import { revisionSnapshot } from "../../shared/revision.mjs";
-import { isVerifyCommand } from "../done-gate/gate.mjs";
+import { isVerifyCommand } from "../../shared/check-command.mjs";
 import { completedJobCheck } from "../../shared/job-evidence.mjs";
 
 const ENTRY = "diagnosis-checkpoint";

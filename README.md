@@ -153,9 +153,12 @@ between them:
 - **workbench**'s optional planning, subagent and footer actions appear only
   when those commands are loaded. It, code-search and several other packages
   share the repository file inventory in `shared/inventory.mjs`.
-- **jobs** uses **workbench** text sanitization and **done-gate** check detection.
-  **diagnosis-nudge** also uses **done-gate** check detection. Jobs, subagents and
-  both gates share revision fingerprints and completed-job evidence adapters.
+- **jobs** uses **workbench** text sanitization. Jobs, diagnosis-nudge and done-gate
+  recognize check commands through `shared/check-command.mjs`; their evidence and
+  process lifecycles remain separate. Both gate packages test against **jobs**.
+- **affected** and **architecture** use **code-search**'s TS parser with the shared import graph.
+- **doctor** uses **router** configuration and **subagents** discovery to diagnose the same formats the runtime loads.
+- **plan-mode** uses **subagents** child spawning and cross-family selection; both packages consult **router** for the physical parent model.
 - **typesafe** uses **guardrail**'s path policy.
 - **plan-mode** uses **web-fetch** for `plan_fetch_url`. It retains tools by
   runtime annotations, not a sibling-name list; `readOnlyHint: true` is trusted
@@ -168,7 +171,6 @@ between them:
 - **plan-mode** and **subagents** share the read-only bash policy.
   **plan-mode** and **guardrail** share a quote-aware shell parser and a dialog
   queue, so simultaneous approval dialogs do not stack and hang.
-- **done-gate** has no sibling runtime import, but its tests load **jobs**.
 - **emphasis** reads **done-gate**'s unchecked-edit spans through
   `shared/evidence-state.mjs` (neither imports the other) and checks reply paths
   with `shared/stalepaths.mjs`, which **subagents** also uses. Without

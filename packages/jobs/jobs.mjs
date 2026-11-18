@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { revisionSnapshot } from "../../shared/revision.mjs";
-import { isVerifyCommand } from "../done-gate/gate.mjs";
+import { isVerifyCommand } from "../../shared/check-command.mjs";
 
 const MAX_OUTPUT = 64_000;
 const MAX_JOBS = 20;

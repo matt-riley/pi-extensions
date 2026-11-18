@@ -7,7 +7,7 @@
 // test files cannot be worked out the answer is "unknown", never a guess.
 
 import { dirname, posix } from "node:path";
-import { isVerifyCommand } from "./gate.mjs";
+import { isVerifyCommand } from "../../shared/check-command.mjs";
 
 const PREFIX = String.raw`^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:rtk\s+)?(?:(?:npx|bunx|pnpm\s+exec|uv\s+run|python3?\s+-m)\s+)?`;
 const TEST_COMMANDS = [

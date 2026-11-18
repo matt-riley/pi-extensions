@@ -25,6 +25,7 @@
 // a completed run (not an abort or error), and only for non-doc edits.
 
 import { readFile, stat } from "node:fs/promises";
+import { isVerifyCommand } from "../../shared/check-command.mjs";
 import { join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -47,7 +48,6 @@ import {
   debugTagsInDiff,
   debugTagsInFile,
   invalidateEvidence,
-  isVerifyCommand,
   isRemoteVerifyCommand,
   observeToolResult,
   observeUserCheck,

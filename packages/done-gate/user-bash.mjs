@@ -10,7 +10,7 @@
 //     itself, changed the code since.
 // The newest recognised run decides, so a later failure undoes an earlier pass.
 
-import { isVerifyCommand } from "./gate.mjs";
+import { isVerifyCommand } from "../../shared/check-command.mjs";
 
 const sameRevision = (before, after) =>
   Boolean(

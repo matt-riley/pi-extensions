@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { validateRequest } from "../../../shared/systemone-request.mjs";
-import { isVerifyCommand } from "../gate.mjs";
+import { isVerifyCommand } from "../../../shared/check-command.mjs";
 import { resolveScopedChecks } from "../scoped.mjs";
 
 const repo = {
