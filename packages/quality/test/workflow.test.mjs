@@ -8,7 +8,7 @@ test("requests repository-wide remediation and durable native linting, not just 
     "Inspect the whole repository, not just the current diff or comments.",
     "Fix substantiated code smells while preserving observable behavior and public APIs.",
     "Reuse existing lint rules first; write a custom rule only for a missing, mechanically checkable smell.",
-    "When authoring a custom rule, read the `lint-rules` skill for per-language native wiring and a passing and failing fixture.",
+    "When authoring a custom rule, read the `lint-rules` skill and start TypeScript or Go from the scaffold command it names, which writes a passing and failing fixture.",
     "Wire prevention into the repository’s normal check command and existing CI gate.",
     "Use the language’s native parser and declaration/type information to distinguish documentation from ordinary comments.",
     "Preserve Go documentation comments attached to packages, declarations, fields and methods, and preserve JSDoc, Rust doc comments, Python docstrings, licenses and tool directives.",
