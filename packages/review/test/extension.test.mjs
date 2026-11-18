@@ -9,15 +9,29 @@ import {
 } from "../../../shared/tool-search.mjs";
 import extension from "../index.ts";
 
-function loadTools() {
+function loadReview(pi) {
   const tools = [];
-  extension({
+  const commands = [];
+  const hooks = pi ?? {
     registerTool: (def) => tools.push(def),
+    registerCommand: (name, def) => commands.push({ name, ...def }),
     exec: async () => ({ code: 0, stdout: "", stderr: "" }),
     on: () => {},
-  });
-  return tools;
+  };
+  extension(hooks);
+  return { tools, commands };
 }
+
+function loadTools() {
+  return loadReview().tools;
+}
+
+test("rules command registers for duplicate checks", () => {
+  const { commands } = loadReview();
+  const rules = commands.find((command) => command.name === "rules");
+  assert.ok(rules);
+  assert.match(rules.description, /rules add/i);
+});
 
 const DEFERRED_REVIEW = ["lint_change", "verify_findings"];
 

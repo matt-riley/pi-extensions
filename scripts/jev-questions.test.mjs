@@ -25,6 +25,7 @@ import {
 } from "../packages/router/model-battery.mjs";
 import { buildCoachQuestions as buildRewriteQuestions } from "../packages/prompt-coach/battery.mjs";
 import { rateCandidates } from "../shared/spans.mjs";
+import { buildRuleCompareRequest } from "../packages/review/add-rule.mjs";
 import { lintChange } from "../packages/review/lint.mjs";
 import { verifyFindings } from "../packages/review/findings.mjs";
 import { classifyCi } from "./ci-triage.mjs";
@@ -217,6 +218,15 @@ const CASES = {
       ask,
       env: {},
     }),
+  "rules add compare": async (ask) => {
+    const { state, questions } = buildRuleCompareRequest(process.cwd(), {
+      name: "no-console-log",
+      subject: "debug logging left in production paths",
+      requirement: "Do not add console.log calls outside test files",
+      purpose: "Keep runtime output quiet in shipped code",
+    });
+    await ask({ state, questions, env: {} });
+  },
   "review lint": (ask) =>
     lintChange({
       diff: DIFF,

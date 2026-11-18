@@ -101,7 +101,7 @@ Offline coverage (run every row on every change):
 | Feature | Drive | Observe |
 | --- | --- | --- |
 | All manifest extensions load; `/plan`, `/subagents`, `/route`, `/guardrail`, `/safe-compact`, `/jobs`, `/ui`, `/footer` register | `npm run smoke` | `ok: real host loads … manifest extensions` |
-| Owned skills and `/review`, `/pr`, `/test`, `/refactor`, `/design`, `/interrogate` prompts expand outside the repo | `npm run smoke` | `ok: owned skills and workflow prompts discover and expand outside the repo` |
+| Owned skills and `/review`, `/pr`, `/test`, `/refactor`, `/design`, `/interrogate`, `/simplify` prompts expand outside the repo | `npm run smoke` | `ok: owned skills and workflow prompts discover and expand outside the repo` |
 | `watch_pr`: clean readiness, incomplete/mixed-head refusal and later-page threads, with isolated `gh` fixtures | `npm run smoke` | `ok: watch_pr rejects incomplete or mixed-head evidence and finds later-page threads` |
 | Background jobs: real completion follow-up, real failure status, optional Jev watch on redacted evidence | `npm run smoke` | both `ok: real background …` / `ok: background tools …` lines |
 | TypeSafe `find_code` and injection warnings through nested codemode | `npm run smoke` | the two `ok: … semantic/MCP …` lines |

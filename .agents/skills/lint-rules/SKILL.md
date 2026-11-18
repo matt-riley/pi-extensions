@@ -25,4 +25,5 @@ Turn a mechanically checkable smell into a repository-native rule with regressio
 6. Lua (selene, luacheck): neither has a plugin API. Prefer selene std YAML (`deprecated`, `must_use`) when it fits. Otherwise a headless Neovim tree-sitter query check in the repo test harness.
 7. ast-grep is an optional syntax-only fallback when no native hook exists and a new tool install is approved. It is not a substitute for a native rule.
 8. Wire the rule into the usual `check`/CI gate without lowering thresholds or blanket suppressions. Run the fixture through the repository’s normal test command. Verify installed tool versions from lockfiles or `--help`, and report a gap when a language has no supported extension point.
-9. Report residual smells the rule cannot catch. Do not install tools, change global CI, or weaken existing policies without explicit approval.
+9. In `.agents/rules/<name>.md`, set `enforced-by: <tool>:<rule>` on the matching judgement rule (e.g. `oxlint:local/no-foo`, `golangci:ruleguard`, `clippy:disallowed-methods`) so `lint_change` skips the Jev question and lists mechanical coverage instead.
+10. Report residual smells the rule cannot catch. Do not install tools, change global CI, or weaken existing policies without explicit approval.
