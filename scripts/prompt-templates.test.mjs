@@ -125,6 +125,22 @@ test("mine lists the classifier's tiers in the order the script defines them", a
   assert.ok(text.includes("It returns one of " + tiers + " per cluster"), tiers);
 });
 
+test("simplify swarms four read-only slices then applies only behavior-preserving cuts", async () => {
+  const text = await prompt("simplify");
+  assertFrontmatter(text, "[scope]");
+  assertSentences(text, [
+    "Use the `swarm` skill",
+    "Run `/deslop code` on the same scope",
+    "`overengineered` and `scope_creep`",
+    "Search the whole repository for an existing helper",
+    "logic at the wrong layer",
+    "`/review` finds defects without editing",
+    "`/refactor` reshapes one target by interface",
+    "Revert any fix that fails a test",
+    "No JSON and no structured findings schema",
+  ]);
+});
+
 test("implementation review points at a run-proven check for findings that matter", async () => {
   const text = await read(".agents/skills/implementation-review/SKILL.md");
   assertSentences(text, [

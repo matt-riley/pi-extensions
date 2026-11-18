@@ -81,7 +81,7 @@ Six bundled skills support the prompt templates:
 | `interface-design` | `/design`, `/refactor` | Simplify module boundaries; `/design` proposes without editing. |
 | `interrogate` | `/interrogate` | Several models try to break a change; only findings whose command fails again on rerun are reported. Needs subagents on. |
 | `arena` | `/arena` | Competing candidates on different models in their own worktrees; pick a base by rubric and graft. Needs subagents on. |
-| `swarm` | `/swarm` | Fan a check out to parallel children; a missing or malformed result is a gap, never a pass. Needs subagents on. |
+| `swarm` | `/swarm`, `/simplify` | Fan a check out to parallel children; a missing or malformed result is a gap, never a pass. Needs subagents on. |
 
 `/skill-search <task>` finds a local skill and prepares a prompt for you to
 review. `/workflow <task>` guides the agent through investigation, implementation,

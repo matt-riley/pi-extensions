@@ -456,6 +456,7 @@ export default function (pi) {
     "interrogate",
     "arena",
     "swarm",
+    "simplify",
   ])
     assert.ok(names.has(name), `Missing workflow prompt ${name}`);
   phase = "resources";
