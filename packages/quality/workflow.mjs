@@ -13,6 +13,7 @@ export function qualityPrompt(report) {
     "Use small behavior-tested changes, review the diff, and do not overwrite unrelated user edits.",
     "",
     "Reuse existing lint rules first; write a custom rule only for a missing, mechanically checkable smell.",
+    "When authoring a custom rule, read the `lint-rules` skill for per-language native wiring and a passing and failing fixture.",
     "Use the repository’s installed native lint/type/test tooling; do not impose a JavaScript toolchain on Go, Rust, Lua, Python or other projects.",
     "Wire prevention into the repository’s normal check command and existing CI gate.",
     "Ensure both crap and deadwood run for the source languages each supports (JS/TS, Go, Rust, Lua); verify installed versions and --help instead of inventing options.",

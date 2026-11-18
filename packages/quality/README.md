@@ -86,4 +86,5 @@ Native rules for other repositories are built in those repositories by the
 workflow, rather than silently installing a JS toolchain everywhere.
 
 `/garden` complements this: sample recurring shortcuts, propose native lint rules
-with legitimate passing cases, then implement and verify only after approval.
+with legitimate passing cases, then implement and verify only after approval
+using the bundled `lint-rules` skill for per-language authoring and fixtures.
