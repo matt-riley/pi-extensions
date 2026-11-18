@@ -8,7 +8,7 @@ Use the `swarm` skill (find it with `skill_select`, then read its `SKILL.md`) to
 
 | Slice | Child brief |
 | --- | --- |
-| `dead-slop` | Run `/deslop code` on the same scope (pass the base ref when the parent used one). |
+| `dead-slop` | On the same scope: `git diff` from the merge base, then read and grep touched files only. Report dead or unused code and added lines that look like failures turned into normal-looking values, comments that repeat the next line, `as any` and other type escapes, defaults or guards for cases nobody described, deeply nested logic, single-implementation interfaces and forwarding wrappers. |
 | `overengineering` | Call `lint_change` on that scope and report only `overengineered` and `scope_creep` findings (pass `task` when you have one). |
 | `reuse` | Search the whole repository for an existing helper, utility or pattern this change duplicates. Name the canonical definition and what to call instead. |
 | `altitude` | Find logic at the wrong layer: policy in an entrypoint that belongs in a plain module, cross-package copies that belong in `shared/`, UI or extension code owning domain rules, or callers re-orchestrating what a neighbor already exposes. |

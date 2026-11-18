@@ -128,9 +128,18 @@ test("mine lists the classifier's tiers in the order the script defines them", a
 test("simplify swarms four read-only slices then applies only behavior-preserving cuts", async () => {
   const text = await prompt("simplify");
   assertFrontmatter(text, "[scope]");
+  assert.doesNotMatch(text, /Run `\/deslop code`/);
   assertSentences(text, [
     "Use the `swarm` skill",
-    "Run `/deslop code` on the same scope",
+    "`git diff` from the merge base",
+    "read and grep",
+    "dead or unused code",
+    "failures turned into normal-looking values",
+    "comments that repeat the next line",
+    "`as any` and other type escapes",
+    "defaults or guards for cases nobody described",
+    "deeply nested logic",
+    "single-implementation interfaces and forwarding wrappers",
     "`overengineered` and `scope_creep`",
     "Search the whole repository for an existing helper",
     "logic at the wrong layer",
