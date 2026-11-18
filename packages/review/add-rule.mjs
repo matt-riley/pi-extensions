@@ -6,7 +6,12 @@ import { join } from "node:path";
 
 import { askSystemOne } from "../../shared/systemone.mjs";
 import { validateRequest } from "../../shared/systemone-request.mjs";
-import { BUILTIN_RULE_IDS, resolveRepoRules, validateUserRuleFields } from "./rules.mjs";
+import {
+  BUILTIN_RULE_IDS,
+  formatRuleFile,
+  resolveRepoRules,
+  validateUserRuleFields,
+} from "./rules.mjs";
 
 const RULES_DIR = ".agents/rules";
 const RELATIONS = new Set(["distinct", "covered", "clarification", "conflict"]);
@@ -108,21 +113,6 @@ export function formatCompareReport(analysis) {
     lines.push("Distinct from every existing rule.");
   }
   return lines.join("\n") || "No comparison result.";
-}
-
-function formatRuleFile(fields, body = "") {
-  const lines = ["---"];
-  lines.push(`name: ${String(fields.name).trim()}`);
-  lines.push(`subject: ${String(fields.subject).trim()}`);
-  lines.push(`requirement: ${String(fields.requirement).trim()}`);
-  lines.push(`purpose: ${String(fields.purpose).trim()}`);
-  const applicability = String(fields.applicability ?? "").trim();
-  if (applicability) lines.push(`applicability: ${applicability}`);
-  lines.push("---");
-  const text = String(body ?? "").trim();
-  if (text) lines.push("", text, "");
-  else lines.push("");
-  return lines.join("\n");
 }
 
 function validationProblem(fields) {

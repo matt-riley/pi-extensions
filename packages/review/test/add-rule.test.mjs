@@ -11,6 +11,7 @@ import {
   formatCompareReport,
   ruleFilePath,
 } from "../add-rule.mjs";
+import { loadUserRules } from "../rules.mjs";
 
 const temporaryDirectories = [];
 
@@ -141,6 +142,56 @@ test("unusable Jev answer writes nothing", async () => {
   });
   assert.equal(result.written, false);
   assert.equal(result.reason, "unusable-answer");
+});
+
+test("addUserRule round-trips tricky scalars through loadUserRules", async () => {
+  const dir = tempDir();
+  const fields = {
+    name: "odd-scalars",
+    subject: '"quoted label"',
+    requirement: "Require: keep colon space",
+    purpose: "# not a yaml comment",
+    applicability: "message",
+  };
+  const { questions } = buildRuleCompareRequest(dir, fields, "");
+  const ruleIds = Object.keys(questions).map((key) => key.slice(4));
+  const result = await addUserRule({
+    repoRoot: dir,
+    fields,
+    ask: async () => ({ answers: distinctAnswers(ruleIds) }),
+    approve: async () => true,
+  });
+  assert.equal(result.written, true);
+  const warnings = [];
+  const loaded = loadUserRules(dir, (message) => warnings.push(message));
+  assert.deepEqual(warnings, []);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].id, "odd-scalars");
+  assert.equal(loaded[0].label, '"quoted label"');
+  assert.match(loaded[0].question.instructions, /Require: keep colon space/);
+  assert.match(loaded[0].question.instructions, /# not a yaml comment/);
+  assert.equal(loaded[0].requires, "message");
+});
+
+test("multi-line field values are refused and nothing is written", async () => {
+  const dir = tempDir();
+  const fields = {
+    ...PROPOSED,
+    subject: "first line\ninjected: applicability: task",
+  };
+  const target = ruleFilePath(dir, PROPOSED.name);
+  const result = await addUserRule({
+    repoRoot: dir,
+    fields,
+    ask: async () => {
+      throw new Error("Jev should not run for invalid fields");
+    },
+    approve: async () => true,
+  });
+  assert.equal(result.written, false);
+  assert.equal(result.reason, "invalid");
+  assert.match(result.detail, /single line/i);
+  assert.equal(existsSync(target), false);
 });
 
 test("existing rule file name is refused", async () => {
