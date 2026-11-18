@@ -130,11 +130,18 @@ export async function lintChange({
   env,
   ask = askSystemOne,
   signal,
+  rules: rulesOverride,
 } = {}) {
   const capped = capDiff(diff);
   const list = Array.isArray(files) ? files.slice(0, MAX_FILES) : [];
   const repoRoot = cwd ?? process.cwd();
-  const { rules, rulesById, skippedRules } = resolveRepoRules(repoRoot);
+  const { rules, rulesById, skippedRules } = Array.isArray(rulesOverride)
+    ? {
+        rules: rulesOverride,
+        rulesById: new Map(rulesOverride.map((rule) => [rule.id, rule])),
+        skippedRules: [],
+      }
+    : resolveRepoRules(repoRoot);
   const hasTests = list.some(isTestPath);
   const questionOpts = { message, task, hasTests, rules };
   const questions = buildQuestionSet(questionOpts);
@@ -142,12 +149,16 @@ export async function lintChange({
   const subject = message ? conventionalProblems(message) : [];
   const withSkipped = (body) => ({ ...body, skippedRules, enforcedRules });
   if (Object.keys(questions).length === 0) {
+    const reason =
+      enforcedRules.length === 0
+        ? "no rules apply to this change"
+        : "every applicable rule is enforced by native lint";
     return withSkipped({
       findings: [],
       subject,
-      judged: enforcedRules.length === 0,
+      judged: false,
       truncated: capped.truncated,
-      reason: enforcedRules.length === 0 ? "no rules apply to this change" : undefined,
+      reason,
     });
   }
   const state = {

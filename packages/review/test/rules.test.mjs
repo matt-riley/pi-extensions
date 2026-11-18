@@ -127,6 +127,51 @@ applicability: message
   assert.ok("message-only" in buildQuestionSet({ rules, message: "fix(review): x" }));
 });
 
+const ENFORCED_STUB_RULE = {
+  id: "stub-enforced",
+  label: "mechanically covered smell",
+  threshold: 0.6,
+  enforcedBy: "oxlint:local/stub-rule",
+  question: {
+    type: "noul",
+    instructions: "stub",
+    criteria: { true: "yes", false: "no" },
+  },
+};
+
+test("lintChange with no applicable rules is not judged", async () => {
+  const result = await lintChange({
+    diff: DIFF,
+    rules: [],
+    ask: async () => {
+      throw new Error("should not ask Jev");
+    },
+  });
+  assert.equal(result.judged, false);
+  assert.equal(result.reason, "no rules apply to this change");
+  assert.equal(result.enforcedRules.length, 0);
+  const text = formatLint(result);
+  assert.match(text, /Not judged: no rules apply to this change/);
+  assert.doesNotMatch(text, /No findings above threshold/);
+});
+
+test("lintChange with only enforced rules is not judged and names native lint", async () => {
+  const result = await lintChange({
+    diff: DIFF,
+    rules: [ENFORCED_STUB_RULE],
+    ask: async () => {
+      throw new Error("should not ask Jev");
+    },
+  });
+  assert.equal(result.judged, false);
+  assert.equal(result.reason, "every applicable rule is enforced by native lint");
+  assert.equal(result.enforcedRules.length, 1);
+  const text = formatLint(result);
+  assert.match(text, /enforced-by: stub-enforced — oxlint:local\/stub-rule/);
+  assert.match(text, /Not judged: every applicable rule is enforced by native lint/);
+  assert.doesNotMatch(text, /No findings above threshold/);
+});
+
 test("enforced-by omits the rule from questions and formatLint lists coverage", async () => {
   const dir = tempDir();
   writeRule(
