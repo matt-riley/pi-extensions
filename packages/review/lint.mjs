@@ -8,6 +8,7 @@ import { askSystemOne, usableNumber } from "../../shared/systemone.mjs";
 import {
   DEFAULT_THRESHOLD,
   buildQuestionSet,
+  enforcedRulesForChange,
   resolveRepoRules,
   rulesByIdForRepo,
 } from "./rules.mjs";
@@ -98,6 +99,9 @@ export function formatFindings(findings) {
 export function formatLint(result) {
   const lines = [];
   for (const warning of result.skippedRules ?? []) lines.push(warning);
+  for (const rule of result.enforcedRules ?? []) {
+    lines.push(`enforced-by: ${rule.id} — ${rule.enforcedBy}`);
+  }
   if (!result.judged) lines.push("Not judged: " + (result.reason ?? "no judgment"));
   if (result.truncated)
     lines.push("Diff cut at " + MAX_DIFF_CHARS + " characters; only the first part was judged.");
@@ -131,21 +135,19 @@ export async function lintChange({
   const list = Array.isArray(files) ? files.slice(0, MAX_FILES) : [];
   const repoRoot = cwd ?? process.cwd();
   const { rules, rulesById, skippedRules } = resolveRepoRules(repoRoot);
-  const questions = buildQuestionSet({
-    message,
-    task,
-    hasTests: list.some(isTestPath),
-    rules,
-  });
+  const hasTests = list.some(isTestPath);
+  const questionOpts = { message, task, hasTests, rules };
+  const questions = buildQuestionSet(questionOpts);
+  const enforcedRules = enforcedRulesForChange(questionOpts);
   const subject = message ? conventionalProblems(message) : [];
-  const withSkipped = (body) => ({ ...body, skippedRules });
+  const withSkipped = (body) => ({ ...body, skippedRules, enforcedRules });
   if (Object.keys(questions).length === 0) {
     return withSkipped({
       findings: [],
       subject,
-      judged: false,
+      judged: enforcedRules.length === 0,
       truncated: capped.truncated,
-      reason: "no rules apply to this change",
+      reason: enforcedRules.length === 0 ? "no rules apply to this change" : undefined,
     });
   }
   const state = {

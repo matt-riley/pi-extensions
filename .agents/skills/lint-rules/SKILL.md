@@ -11,7 +11,8 @@ Turn a mechanically checkable smell into a repository-native rule with regressio
 2. Search existing linter config for a built-in rule that already covers it.
 3. Implement with the language’s native extension point below. Ship one **passing** and one **failing** fixture; run them through the repository’s normal test command.
 4. Wire the rule into the usual `check`/CI gate without lowering thresholds or blanket suppressions.
-5. Verify installed tool versions from lockfiles or `--help`; report gaps when a language has no supported extension point.
+5. In `.agents/rules/<name>.md`, set `enforced-by: <tool>:<rule>` on the matching judgement rule (e.g. `oxlint:local/no-foo`, `golangci:ruleguard`, `clippy:disallowed-methods`) so `lint_change` skips the Jev question and lists mechanical coverage instead.
+6. Verify installed tool versions from lockfiles or `--help`; report gaps when a language has no supported extension point.
 
 ## TypeScript — Oxlint 1.94.0
 
