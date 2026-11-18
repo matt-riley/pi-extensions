@@ -126,6 +126,7 @@ export default function piReviewExtension(pi: ExtensionAPI) {
         files: files.split("\n").filter(Boolean),
         message: params?.message,
         task: params?.task,
+        cwd,
         signal,
       });
       return { content: [{ type: "text", text: formatLint(result) }] };
