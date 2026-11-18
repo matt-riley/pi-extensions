@@ -109,7 +109,7 @@ Offline coverage (run every row on every change):
 | `decision_log` appends a trail row and reports evidence that does not resolve | `npm run smoke` | `ok: decision_log appends a trail row and reports evidence that does not resolve` |
 | `rerun_findings` keeps a still-failing command, drops one that exits 0, through nested bash | `npm run smoke` | `ok: rerun_findings reruns finding commands through nested bash and keeps failures` |
 | Failed-fix checkpoint (diagnosis-nudge) blocks native, shell and nested mutations until an observation | `npm run smoke` | `ok: two failed fixes block native, shell and nested mutations until a real checkpoint` |
-| Plan mode: read-only denial, the three plan tools offered, gone after `/plan exit` | `npm run smoke` | the three `ok: plan …` lines |
+| Plan mode: read-only denial, four plan tools offered (question, completion, fetch and scout), gone after `/plan exit` | `npm run smoke` | the three `ok: plan …` lines |
 | Subagents: `/subagents on`, real child, `verified`/`failed`/`unknown` outcome reporting | `npm run smoke` | the three `ok: … child …` lines |
 | Subagents: an isolated writer in its own worktree, with the parent's dirty state copied in | `npm run smoke` | `ok: an isolated writer works in its own worktree with the parent's dirty state` |
 | A verifier verdict is recorded with its patch id; `watch_pr` reports a `verified:` line beside its verdict | `npm run smoke` | `ok: a verifier verdict is recorded with its patch id and watch_pr reports it beside the verdict` |

@@ -8,6 +8,17 @@ The full runnable recipe is [`.pi/verify/SKILL.md`](../.pi/verify/SKILL.md).
 It covers setup, host/UI drives, expected results and cleanup. This page explains
 what those checks establish, and where they stop.
 
+## From a change to a decision
+
+- **Feature or bug:** name an observable acceptance criterion; reproduce the defect before editing. Use affected tests for a fast first pass, then drive a real caller on the final patch. Stop when that witness and required checks pass, or identify the missing prerequisite.
+- **Read-only review:** read the diff, callers and tests. Use `/quality --scan` for scanner evidence without queuing remediation. Prefer a specific incorrect result over a smell count. Stop with supported findings and omitted paths; do not edit.
+- **Performance:** establish equal useful work, a green correctness gate and a budget before optimizing. Compare baseline and candidate on the same inputs and runtime using `measure_command`; retain raw trials, units and ranges. Stop at the target or budget. Report inconclusive overlap rather than a speedup.
+- **PR handoff:** check the assembled patch after the last edit. Compare the observed PR head and required job steps, not merely the workflow conclusion. Stop on pending evidence or a human policy decision; readiness is not permission to publish.
+
+Close each with the patch identity, command or interaction, raw observation, what it did not exercise, and why work stopped.
+
+**Cross-language example:** `node .pi/verify/node-python.mjs` runs a Node consumer against good and defective Python CLIs. Both pass the same ASCII check. Only the good one satisfies the UTF-8 wire contract. A missing Python interpreter exits 77 (gap), not success. This tests one boundary, not model quality or general Python support.
+
 ## Choose a check
 
 Run these from the repository root:
