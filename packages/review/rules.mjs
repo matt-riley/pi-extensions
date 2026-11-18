@@ -21,6 +21,8 @@ const RULES_DIR = ".agents/rules";
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_NAME_LEN = 80;
 const APPLICABILITY = new Set(["message", "task", "tests"]);
+const ENFORCED_BY_PATTERN = /^[^\s:]+:[^\s:]+$/;
+const MAX_ENFORCED_BY_LEN = 120;
 const BUILTIN_IDS = new Set();
 
 const noul = (instructions, yes, no) => ({
@@ -214,7 +216,12 @@ function validateUserRule(fields) {
     return `applicability must be message, task, or tests (got ${applicability})`;
   }
   if (fields["enforced-by"] !== undefined) {
-    // Reserved for a future gate; ignored until wired up.
+    const enforcedBy = String(fields["enforced-by"]).trim();
+    if (!enforcedBy) return "enforced-by must be tool:rule";
+    if (enforcedBy.length > MAX_ENFORCED_BY_LEN) {
+      return `enforced-by is longer than ${MAX_ENFORCED_BY_LEN} characters`;
+    }
+    if (!ENFORCED_BY_PATTERN.test(enforcedBy)) return "enforced-by must be tool:rule";
   }
   return null;
 }
@@ -235,11 +242,13 @@ function userRuleFromFile(fields, body) {
   ]
     .filter(Boolean)
     .join(" ");
+  const enforcedRaw = String(fields["enforced-by"] ?? "").trim();
   return {
     id: name,
     label: subject,
     threshold: DEFAULT_THRESHOLD,
     requires: applicability || undefined,
+    enforcedBy: enforcedRaw || undefined,
     question: noul(instructions, subject, "The change satisfies the requirement for this rule."),
   };
 }
@@ -309,16 +318,31 @@ export function resolveRepoRules(repoRoot) {
   };
 }
 
+function rulesForChange({ message, task, hasTests, rules }) {
+  const facts = { message: Boolean(message), task: Boolean(task), tests: hasTests === true };
+  return rules.filter((rule) => !rule.requires || facts[rule.requires]);
+}
+
+/**
+ * User rules with `enforced-by` that apply to this change — covered by native
+ * lint rather than a Jev question.
+ */
+export function enforcedRulesForChange({ message, task, hasTests, rules = ALL } = {}) {
+  return rulesForChange({ message, task, hasTests, rules })
+    .filter((rule) => rule.enforcedBy)
+    .map((rule) => ({ id: rule.id, label: rule.label, enforcedBy: rule.enforcedBy }));
+}
+
 /**
  * The questions this change earns. A rule that needs a commit message, a task
  * statement or test files is left out rather than asked against null state: a
- * question answered from nothing comes back as a confident "no".
+ * question answered from nothing comes back as a confident "no". Rules with
+ * `enforced-by` are omitted when native lint already covers them.
  */
 export function buildQuestionSet({ message, task, hasTests, rules = ALL } = {}) {
-  const facts = { message: Boolean(message), task: Boolean(task), tests: hasTests === true };
   const questions = {};
-  for (const rule of rules) {
-    if (rule.requires && !facts[rule.requires]) continue;
+  for (const rule of rulesForChange({ message, task, hasTests, rules })) {
+    if (rule.enforcedBy) continue;
     questions[rule.id] = rule.question;
   }
   return questions;
