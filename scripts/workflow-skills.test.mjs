@@ -16,6 +16,7 @@ test("owned workflow skills have portable metadata and package registration", as
     "implementation-review",
     "interface-design",
     "interrogate",
+    "lint-rules",
     "swarm",
     "test-driven-development",
   ]);
@@ -31,7 +32,7 @@ test("owned workflow skills have portable metadata and package registration", as
 
 test("realistic tasks route to owned workflows offline", async () => {
   const skills = await discoverSkills({ roots: [skillRoot] });
-  assert.equal(skills.length, 6, "do not pass by testing an empty catalogue");
+  assert.equal(skills.length, 7, "do not pass by testing an empty catalogue");
   const cases = [
     ["Review this PR for correctness and security regressions", "implementation-review"],
     ["Check the staged diff for actionable bugs", "implementation-review"],
@@ -43,6 +44,8 @@ test("realistic tasks route to owned workflows offline", async () => {
     ["Stress test this change before landing it", "interrogate"],
     ["Arena this: competing implementations of the cache", "arena"],
     ["Swarm this check across every package", "swarm"],
+    ["Turn this recurring smell into a native lint rule with fixtures", "lint-rules"],
+    ["Add an Oxlint JS plugin with RuleTester fixtures", "lint-rules"],
   ];
   for (const [query, expected] of cases)
     assert.equal(rankSkills(skills, query, { limit: 1 })[0]?.name, expected, query);
@@ -78,6 +81,7 @@ test("every owned workflow is used by a prompt", async () => {
     interrogate: ["interrogate"],
     arena: ["arena"],
     swarm: ["swarm", "simplify"],
+    "lint-rules": ["garden"],
   };
   for (const [skill, names] of Object.entries(prompts))
     for (const name of names) {
@@ -160,6 +164,7 @@ test("the garden prompt proposes durable lint rules while keeping its scan read-
     "Include the detection boundary, a failing example, legitimate passing examples and false-positive risks in a proposed rule.",
     "Use parser and declaration/type information for comment rules; preserve useful documentation, including Go documentation comments, rationale, licenses and directives.",
     "After approval, implement the rule with regression tests and wire it into the normal check command and existing CI gate.",
+    "Use the `lint-rules` skill (find it with `skill_select`, then read its `SKILL.md`) for per-language rule authoring and fixtures.",
     "Run it against the proposal's failing and passing examples without lowering thresholds or adding blanket suppressions.",
   ])
     assert.ok(text.includes(sentence), sentence);
