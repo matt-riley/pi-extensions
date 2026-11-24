@@ -50,8 +50,8 @@ import {
   classifyProviderError,
   createUsageCaps,
   offersExceptCooling,
+  successfulTurnKey,
   usageCapFromMessages,
-  usageCooldownMs,
 } from "./usage-cap.mjs";
 import {
   buildTaskTypeQuestion,
@@ -385,8 +385,7 @@ export default function piRouterExtension(
       if (reason === "retry" && classifyProviderError(failedErrorText(request)) === "usage") {
         const failedKey = modelKey(request?.failed) ?? heldKey;
         const tier = branchState?.tier ?? BASE_TIER;
-        if (failedKey)
-          usageCaps.record(failedKey, usageCooldownMs(failedErrorText(request)), clock());
+        if (failedKey) usageCaps.recordCap(failedKey, failedErrorText(request), clock());
         const pick = chooseModelForTier(
           offersExceptCooling(offers, usageCaps.active(clock())),
           tier,
@@ -719,7 +718,11 @@ export default function piRouterExtension(
       ? event.messages
       : (ctx?.sessionManager?.getBranch?.() ?? []);
     const cap = usageCapFromMessages(messages);
-    if (cap) usageCaps.record(cap.key, cap.ms, clock());
+    if (cap) usageCaps.recordCap(cap.key, cap.text, clock());
+    else {
+      const key = successfulTurnKey(messages);
+      if (key) usageCaps.clear(key);
+    }
   };
   const noteTurnBaseline = (event, ctx: ExtensionContext) => {
     try {

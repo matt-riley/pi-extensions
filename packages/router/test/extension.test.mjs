@@ -1082,6 +1082,140 @@ test("a context-overflow retry stays on the model that failed", async () => {
   );
 });
 
+test("a repeat no-suffix usage cap after the window expires cools for 15 minutes", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  now += SHORT_USAGE_COOLDOWN_MS;
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const cooled = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(cooled.model, SOL);
+  now += SHORT_USAGE_COOLDOWN_MS;
+  const stillPrompt = "inventory every on-call contact in the pager directory";
+  const still = await h.run(stillPrompt, {
+    state: cooled.state,
+    messages: [...turn(prompt), user(stillPrompt)],
+  });
+  assert.equal(still.model, SOL);
+  now += 15 * 60 * 1000 - SHORT_USAGE_COOLDOWN_MS;
+  const backPrompt = "rewrite the release checklist for the mobile client";
+  const back = await h.run(backPrompt, {
+    state: still.state,
+    messages: [...turn(stillPrompt), user(backPrompt)],
+  });
+  assert.equal(back.model, ASTRA);
+});
+
+test("a usage-limit retry and turn_end for one incident share the short default", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.run("", {
+    reason: "retry",
+    state: first.state,
+    failed: {
+      provider: ASTRA.provider,
+      id: ASTRA.id,
+      thinkingLevel: "medium",
+      message: usageError("You have hit your ChatGPT usage limit.", ASTRA.id),
+    },
+  });
+  await h.emit("turn_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  now += SHORT_USAGE_COOLDOWN_MS;
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const next = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(next.model, ASTRA);
+});
+
+test("a successful turn on the same model resets the no-suffix usage-cap ladder", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  now += SHORT_USAGE_COOLDOWN_MS;
+  await h.emit("agent_end", {
+    messages: [
+      {
+        role: "assistant",
+        stopReason: "stop",
+        provider: ASTRA.provider,
+        model: ASTRA.id,
+      },
+    ],
+  });
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const cooled = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(cooled.model, SOL);
+  now += SHORT_USAGE_COOLDOWN_MS;
+  const backPrompt = "rewrite the release checklist for the mobile client";
+  const back = await h.run(backPrompt, {
+    state: cooled.state,
+    messages: [...turn(prompt), user(backPrompt)],
+  });
+  assert.equal(back.model, ASTRA);
+});
+
+test("a successful turn on a different model leaves this model's usage-cap streak", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  now += SHORT_USAGE_COOLDOWN_MS;
+  await h.emit("agent_end", {
+    messages: [
+      {
+        role: "assistant",
+        stopReason: "stop",
+        provider: SOL.provider,
+        model: SOL.id,
+      },
+    ],
+  });
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const cooled = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(cooled.model, SOL);
+  now += SHORT_USAGE_COOLDOWN_MS;
+  const stillPrompt = "inventory every on-call contact in the pager directory";
+  const still = await h.run(stillPrompt, {
+    state: cooled.state,
+    messages: [...turn(prompt), user(stillPrompt)],
+  });
+  assert.equal(still.model, SOL);
+});
+
 test("preview reports when the tier does not fit the current context", async () => {
   const h = harness({
     difficulty: 2.6,

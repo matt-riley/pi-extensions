@@ -53,14 +53,19 @@ by the cap through the fallback entry), defaulting to Luna.
   the last assistant message is read. When `stopReason` is `error` and the text
   is a usage limit (checked before an overload, because a leaked WebSocket
   payload contains both `usage_limit_reached` and `429`), that physical
-  `provider/model` is cooled down. `Try again in ~N min` sets the length. With
-  no suffix the wait is two minutes (`SHORT_USAGE_COOLDOWN_MS`), because the
-  same sentence is also how a short throttle is worded. Cooled models are left
-  out of the offers before `chooseModelForTier`, so the next user turn takes
-  the next pair in the same tier. If every pair in the tier is cooling down,
-  the router stays put and warns, the same way it does when a tier is empty.
-  Caps live in process memory, not under the project's `.pi/`, and expired
-  ones drop out.
+  `provider/model` is cooled down. `Try again in ~N min` sets the length and
+  is never replaced or stretched by the ladder. With no suffix the wait starts
+  at two minutes (`SHORT_USAGE_COOLDOWN_MS`), because the same sentence is
+  also how a short throttle is worded. If that same pair is capped again after
+  its window has expired, the no-suffix wait steps up through 15 minutes, 1
+  hour, and 4 hours, and stays at 4 hours after that. A retry, `turn_end` and
+  `agent_end` for one incident share one step. A successful turn on that same
+  pair clears the streak; a successful turn on a different model does not.
+  Cooled models are left out of the offers before `chooseModelForTier`, so the
+  next user turn takes the next pair in the same tier. If every pair in the
+  tier is cooling down, the router stays put and warns, the same way it does
+  when a tier is empty. Caps live in process memory, not under the project's
+  `.pi/`, and expired ones drop out.
 - **Escalates in tiers, per task.** At `difficulty >= 1.5` the task routes to
   the mid tier, and at `>= 2.5` to the frontier tier. Within a task the router
   only moves up: a model already at or above the target tier holds, so nothing
