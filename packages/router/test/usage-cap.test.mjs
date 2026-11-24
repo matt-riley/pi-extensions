@@ -11,6 +11,7 @@ import {
   createUsageCaps,
   offersExceptCooling,
   SHORT_USAGE_COOLDOWN_MS,
+  successfulTurnKey,
   usageCapFromMessages,
   usageCooldownMs,
 } from "../usage-cap.mjs";
@@ -93,7 +94,11 @@ test("the last assistant usage-cap error names that model and its wait", () => {
       },
     },
   ]);
-  assert.deepEqual(found, { key: "openai-codex/gpt-5.6-luna", ms: 15 * 60 * 1000 });
+  assert.deepEqual(found, {
+    key: "openai-codex/gpt-5.6-luna",
+    ms: 15 * 60 * 1000,
+    text: "You have hit your ChatGPT usage limit (plus plan). Try again in ~15 min.",
+  });
 });
 
 const assistantError = (errorMessage, model = "gpt-5.6-luna", stopReason = "error") => ({
@@ -127,7 +132,11 @@ test("a later successful assistant message does not keep an earlier usage cap", 
 test("an SSE usage limit without a suffix records the short default for that model", () => {
   assert.deepEqual(
     usageCapFromMessages([assistantError("You have hit your ChatGPT usage limit.")]),
-    { key: "openai-codex/gpt-5.6-luna", ms: SHORT_USAGE_COOLDOWN_MS },
+    {
+      key: "openai-codex/gpt-5.6-luna",
+      ms: SHORT_USAGE_COOLDOWN_MS,
+      text: "You have hit your ChatGPT usage limit.",
+    },
   );
 });
 
@@ -135,6 +144,7 @@ test("a websocket usage-limit leak records a cap for that model", () => {
   assert.deepEqual(usageCapFromMessages([assistantError(WS_USAGE_LEAK, "gpt-6-astra")]), {
     key: "openai-codex/gpt-6-astra",
     ms: SHORT_USAGE_COOLDOWN_MS,
+    text: WS_USAGE_LEAK,
   });
 });
 
@@ -165,5 +175,127 @@ test("a cooling model is left out of the offers", () => {
   assert.deepEqual(
     offersExceptCooling(offers, caps.active(start + 1)).map((model) => model.id),
     ["gpt-5.6-sol"],
+  );
+});
+
+const NO_SUFFIX = "You have hit your ChatGPT usage limit.";
+const LUNA_KEY = "openai-codex/gpt-5.6-luna";
+
+test("a first no-suffix recordCap waits the short default", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, start), SHORT_USAGE_COOLDOWN_MS);
+  assert.deepEqual(caps.active(start + SHORT_USAGE_COOLDOWN_MS - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(start + SHORT_USAGE_COOLDOWN_MS), []);
+});
+
+test("a repeat no-suffix cap after the window expires steps up the ladder", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  const second = start + SHORT_USAGE_COOLDOWN_MS;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, second), 15 * 60 * 1000);
+  assert.deepEqual(caps.active(second + 15 * 60 * 1000 - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(second + 15 * 60 * 1000), []);
+  const third = second + 15 * 60 * 1000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, third), 60 * 60 * 1000);
+  const fourth = third + 60 * 60 * 1000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, fourth), 4 * 60 * 60 * 1000);
+  const fifth = fourth + 4 * 60 * 60 * 1000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, fifth), 4 * 60 * 60 * 1000);
+  assert.deepEqual(caps.active(fifth + 4 * 60 * 60 * 1000 - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(fifth + 4 * 60 * 60 * 1000), []);
+});
+
+test("recordCap calls for one incident do not bump the streak", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start + 1_000);
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start + 5_000);
+  assert.deepEqual(caps.active(start + SHORT_USAGE_COOLDOWN_MS - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(start + SHORT_USAGE_COOLDOWN_MS), []);
+});
+
+test("a provider-stated wait wins and does not escalate after a no-suffix cap", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  const later = start + SHORT_USAGE_COOLDOWN_MS;
+  assert.equal(
+    caps.recordCap(LUNA_KEY, "You have hit your ChatGPT usage limit. Try again in ~3 min.", later),
+    3 * 60 * 1000,
+  );
+  assert.deepEqual(caps.active(later + 3 * 60 * 1000 - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(later + 3 * 60 * 1000), []);
+});
+
+test("a provider-stated wait does not consume a ladder step", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  const statedAt = start + SHORT_USAGE_COOLDOWN_MS;
+  caps.recordCap(LUNA_KEY, "You have hit your ChatGPT usage limit. Try again in ~3 min.", statedAt);
+  const again = statedAt + 3 * 60 * 1000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, again), 15 * 60 * 1000);
+});
+
+test("a provider-stated wait is not shortened by a same-incident no-suffix recordCap", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(
+    LUNA_KEY,
+    "You have hit your ChatGPT usage limit (plus plan). Try again in ~180 min.",
+    start,
+  );
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start + 1_000);
+  assert.deepEqual(caps.active(start + 180 * 60 * 1000 - 1), [LUNA_KEY]);
+  assert.deepEqual(caps.active(start + 180 * 60 * 1000), []);
+});
+
+test("a first no-suffix cap after a stated wait still uses the short default", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(
+    LUNA_KEY,
+    "You have hit your ChatGPT usage limit (plus plan). Try again in ~15 min.",
+    start,
+  );
+  const later = start + 15 * 60 * 1000;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, later), SHORT_USAGE_COOLDOWN_MS);
+});
+
+test("a successful clear on that model resets the no-suffix ladder", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  const expired = start + SHORT_USAGE_COOLDOWN_MS;
+  caps.clear(LUNA_KEY);
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, expired), SHORT_USAGE_COOLDOWN_MS);
+});
+
+test("clearing a different model leaves this model's streak in place", () => {
+  const caps = createUsageCaps();
+  const start = 1_700_000_000_000;
+  caps.recordCap(LUNA_KEY, NO_SUFFIX, start);
+  caps.clear("openai-codex/gpt-6-astra");
+  const later = start + SHORT_USAGE_COOLDOWN_MS;
+  assert.equal(caps.recordCap(LUNA_KEY, NO_SUFFIX, later), 15 * 60 * 1000);
+});
+
+test("successfulTurnKey names the last successful assistant model", () => {
+  assert.equal(
+    successfulTurnKey([assistantError("done", "gpt-5.6-luna", "stop")]),
+    "openai-codex/gpt-5.6-luna",
+  );
+});
+
+test("successfulTurnKey is null for a usage-cap or any other error", () => {
+  assert.equal(successfulTurnKey([assistantError(NO_SUFFIX)]), null);
+  assert.equal(
+    successfulTurnKey([
+      assistantError("Our servers are currently overloaded. Please try again later."),
+    ]),
+    null,
   );
 });
