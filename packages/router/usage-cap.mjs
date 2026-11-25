@@ -147,11 +147,12 @@ export function usageCapFromMessages(messages) {
 
 /**
  * The physical key of the last assistant message when that turn succeeded.
- * Errors, including overloads and overflows, are not a success.
+ * Only `error` and `aborted` (or no assistant message) are not a success.
+ * A `toolUse` or `length` stop still counts: the model answered.
  */
 export function successfulTurnKey(messages) {
   const last = lastAssistant(messages);
-  if (!last || last.stopReason === "error") return null;
+  if (!last || last.stopReason === "error" || last.stopReason === "aborted") return null;
   return assistantModelKey(last);
 }
 
