@@ -299,3 +299,22 @@ test("successfulTurnKey is null for a usage-cap or any other error", () => {
     null,
   );
 });
+
+test("successfulTurnKey is null when the last turn was aborted", () => {
+  assert.equal(successfulTurnKey([assistantError("", "gpt-5.6-luna", "aborted")]), null);
+});
+
+test("successfulTurnKey is null when an error is recorded without stopReason error", () => {
+  assert.equal(
+    successfulTurnKey([
+      {
+        role: "assistant",
+        stopReason: "aborted",
+        errorMessage: "Request aborted",
+        provider: "openai-codex",
+        model: "gpt-5.6-luna",
+      },
+    ]),
+    null,
+  );
+});

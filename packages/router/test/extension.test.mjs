@@ -1216,6 +1216,42 @@ test("a successful turn on a different model leaves this model's usage-cap strea
   assert.equal(still.model, SOL);
 });
 
+test("an aborted turn on the same model leaves the usage-cap streak in place", async () => {
+  let now = 1_700_000_000_000;
+  const h = harness({ difficulty: 2.6, now: () => now, config: TWO_FRONTIER });
+  const first = await h.run("audit the routing design and tell me what is wrong with it");
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  now += SHORT_USAGE_COOLDOWN_MS;
+  await h.emit("agent_end", {
+    messages: [
+      {
+        role: "assistant",
+        stopReason: "aborted",
+        provider: ASTRA.provider,
+        model: ASTRA.id,
+      },
+    ],
+  });
+  await h.emit("agent_end", {
+    messages: [usageError("You have hit your ChatGPT usage limit.", ASTRA.id)],
+  });
+  const prompt = "explain the deploy pipeline end to end for a new reader";
+  const cooled = await h.run(prompt, {
+    state: first.state,
+    messages: [...turn("audit the routing design and tell me what is wrong with it"), user(prompt)],
+  });
+  assert.equal(cooled.model, SOL);
+  now += SHORT_USAGE_COOLDOWN_MS;
+  const stillPrompt = "inventory every on-call contact in the pager directory";
+  const still = await h.run(stillPrompt, {
+    state: cooled.state,
+    messages: [...turn(prompt), user(stillPrompt)],
+  });
+  assert.equal(still.model, SOL);
+});
+
 test("preview reports when the tier does not fit the current context", async () => {
   const h = harness({
     difficulty: 2.6,

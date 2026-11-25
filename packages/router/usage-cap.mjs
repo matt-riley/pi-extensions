@@ -147,11 +147,12 @@ export function usageCapFromMessages(messages) {
 
 /**
  * The physical key of the last assistant message when that turn succeeded.
- * Errors, including overloads and overflows, are not a success.
+ * Only a completed assistant turn (`stopReason` `stop`) counts. Aborted
+ * turns, errors, and any other stop reason are not a success.
  */
 export function successfulTurnKey(messages) {
   const last = lastAssistant(messages);
-  if (!last || last.stopReason === "error") return null;
+  if (!last || last.stopReason !== "stop") return null;
   return assistantModelKey(last);
 }
 
