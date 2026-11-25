@@ -134,13 +134,13 @@ function parseThinking(raw, fallback, levels = THINKING_LEVELS) {
 
 function failedErrorText(request: ModelRouteRequest<RouterState> | undefined): string {
   const message = request?.failed?.message;
-  if (!message || typeof message !== "object") return "";
-  const text = (message as { errorMessage?: unknown }).errorMessage;
+  if (!message || typeof message !== "object" || !("errorMessage" in message)) return "";
+  const text = message.errorMessage;
   return typeof text === "string" ? text : "";
 }
 
 function readState(value: unknown): RouterState | null {
-  return readBranchState(value) as RouterState | null;
+  return readBranchState(value);
 }
 
 export default function piRouterExtension(
@@ -463,7 +463,7 @@ export default function piRouterExtension(
 
     if (planned.aborted) {
       return {
-        model: (base?.model ?? planned.model) as unknown,
+        model: base?.model ?? planned.model,
         thinkingLevel: planned.thinking ?? selected,
       };
     }
@@ -483,11 +483,11 @@ export default function piRouterExtension(
         difficulty: 0,
         reason: `judge unavailable: ${planned.error ?? "unknown"}`,
       };
-      lastState = planned.state as RouterState;
+      lastState = planned.state;
       return {
-        model: planned.model as unknown,
+        model: planned.model,
         thinkingLevel: planned.thinking ?? selected,
-        state: planned.state as RouterState,
+        state: planned.state,
       };
     }
 
@@ -502,8 +502,8 @@ export default function piRouterExtension(
       outcome,
       contextTokens,
     } = planned;
-    const nextTier = planned.tier as RouteTier;
-    const nextState = planned.state as RouterState;
+    const nextTier = planned.tier;
+    const nextState = planned.state;
     const currentKey = modelKey(heldModel) ?? heldKey;
 
     if (decided && planned.warning === "too-big") {
@@ -651,7 +651,7 @@ export default function piRouterExtension(
       const forcedPending =
         pendingForcedTier !== null && pendingForcedPrompt === prompt ? pendingForcedTier : null;
 
-      const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
+      const branch = ctx?.sessionManager?.getBranch?.() ?? [];
       const turns = turnsFromMessages(branch, WINDOW + 1);
       // The branch may or may not hold the prompt being started yet.
       const tail = turns[turns.length - 1];
@@ -767,7 +767,7 @@ export default function piRouterExtension(
     const liveOffers = offersExceptCooling(offers, cooling);
     const stale = tiers.error ? [] : unmatchedPatterns(tiers, offers.map(modelKey).filter(Boolean));
     const ladder = routingLadder({ offers, tiers, cap: selected });
-    const branch = (ctx?.sessionManager?.getBranch?.() ?? []) as unknown[];
+    const branch = ctx?.sessionManager?.getBranch?.() ?? [];
     const history = turnsFromMessages(branch, WINDOW).slice(-WINDOW);
     const contextTokens = latestContextTokens(history);
     const fittingOffers = fitting(liveOffers, contextTokens);

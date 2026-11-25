@@ -340,8 +340,9 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
       let wt: Worktree | undefined;
       if (isolated) {
         try {
-          wt = (await worktrees().create(cwd, entry.id)) as Worktree;
-          made.push(wt);
+          const created = await worktrees().create(cwd, entry.id);
+          wt = created;
+          made.push(created);
         } catch (error) {
           pool.release(entry.id);
           const reason = error instanceof Error ? error.message : String(error);
@@ -683,7 +684,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI) {
         return;
       }
       if (action !== "Steer") return;
-      const steer = (entry as { steer?: (text: string) => Promise<void> }).steer;
+      const steer =
+        entry && typeof entry === "object" && "steer" in entry ? entry.steer : undefined;
       if (entry.status !== "running" || typeof steer !== "function") {
         notify(ctx, `${id} is not running`);
         return;

@@ -177,9 +177,11 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   };
 
   const branchMessages = (ctx: ExtensionContext) =>
-    ((ctx.sessionManager?.getBranch?.() ?? []) as Array<{ type?: string; message?: unknown }>)
-      .filter((entry) => entry?.type === "message")
-      .map((entry) => entry.message);
+    (ctx.sessionManager?.getBranch?.() ?? []).flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || !("type" in entry) || !("message" in entry))
+        return [];
+      return entry.type === "message" ? [entry.message] : [];
+    });
 
   /**
    * Snapshot the branch that is about to be replaced, and return the record the
@@ -190,9 +192,7 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
   const snapshot = (ctx: ExtensionContext): Snapshot | null => {
     try {
       const dir = snapshotDir();
-      const lines = ((ctx.sessionManager?.getBranch?.() ?? []) as unknown[]).map((entry) =>
-        JSON.stringify(entry),
-      );
+      const lines = (ctx.sessionManager?.getBranch?.() ?? []).map((entry) => JSON.stringify(entry));
       const file = join(dir, `${Date.now()}.jsonl`);
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, `${lines.join("\n")}\n`);
@@ -418,9 +418,17 @@ export default function safeCompact(pi: ExtensionAPI, options: { ask?: Ask } = {
     const snap = snapshot(ctx);
 
     const fileOps = preparation.fileOps;
-    const previousDetails = (branchEntries as Array<{ type?: string; details?: unknown }>)
+    const previousDetails = (Array.isArray(branchEntries) ? branchEntries : [])
       .toReversed()
-      .find((entry) => entry?.type === "compaction" && entry?.details)?.details;
+      .find(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          "type" in entry &&
+          entry.type === "compaction" &&
+          "details" in entry &&
+          entry.details,
+      )?.details;
     const fileLists = mergeFileLists(fileListsFromDetails(previousDetails), {
       readFiles: [...(fileOps?.read ?? [])].filter(
         (file: string) => !fileOps?.written?.has(file) && !fileOps?.edited?.has(file),

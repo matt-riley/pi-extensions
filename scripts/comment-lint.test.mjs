@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { lintComments, lintSuppressions } from "./comment-lint.mjs";
+import { lintComments, lintSuppressions, lintTypeAssertions } from "./comment-lint.mjs";
 
 test("reports exact narration of an AST statement with source locations", () => {
   const findings = lintComments(
@@ -162,4 +162,61 @@ test("the repository's real suppressions keep their reasons", async () => {
     1,
     "the directive is found once its reason is gone",
   );
+});
+
+test("a bare type assertion is reported at the assertion's line", () => {
+  for (const [source, line] of [
+    ["const n = value as number;", 1],
+    ["function f(x: unknown) {\n  return x as string;\n}", 2],
+    ["const n = <number>value;", 1],
+  ]) {
+    const findings = lintTypeAssertions("sample.ts", source);
+    assert.equal(findings.length, 1, source);
+    assert.deepEqual(
+      [findings[0].rule, findings[0].line],
+      ["type-assertion-needs-reason", line],
+      source,
+    );
+    assert.match(findings[0].message, /reason/);
+  }
+});
+
+test("a type assertion with a reason on the line or directly above it passes", () => {
+  for (const source of [
+    "const n = value as number; // JSON.parse returns a number here",
+    "// JSON.parse returns a number here\nconst n = value as number;",
+    "const n = <number>value; // the parser already checked the tag",
+  ])
+    assert.deepEqual(lintTypeAssertions("sample.ts", source), [], source);
+});
+
+test("as const does not need a reason", () => {
+  assert.deepEqual(lintTypeAssertions("sample.ts", "const t = ['a', 'b'] as const;"), []);
+});
+
+test("a chained type assertion is reported even with a reason", () => {
+  for (const source of [
+    "const n = value as unknown as number;",
+    "const n = (value as unknown) as number;",
+    "const n = value as unknown as number; // JSON.parse already validated this",
+  ]) {
+    const findings = lintTypeAssertions("sample.ts", source);
+    assert.equal(findings.length, 1, source);
+    assert.equal(findings[0].rule, "no-chained-type-assertion", source);
+    assert.match(findings[0].message, /chain|boundary|precise/i);
+  }
+});
+
+test("a short comment, a distant comment, a string or a non-JS file is not a reason", () => {
+  for (const source of [
+    "const n = value as number; // why",
+    "// JSON.parse returns a number here\n\nconst n = value as number;",
+    'const text = "value as number";',
+  ])
+    assert.equal(
+      lintTypeAssertions("sample.ts", source).length,
+      source.includes("text =") ? 0 : 1,
+      source,
+    );
+  assert.deepEqual(lintTypeAssertions("sample.py", "n = value as number"), []);
 });
