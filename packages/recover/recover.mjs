@@ -32,7 +32,8 @@ function isCompletedAssistant(entry) {
   return (
     message?.role === "assistant" &&
     message.stopReason !== "error" &&
-    message.stopReason !== "aborted"
+    message.stopReason !== "aborted" &&
+    message.stopReason !== "toolUse"
   );
 }
 
