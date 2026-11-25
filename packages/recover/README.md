@@ -11,14 +11,18 @@ There is nothing to configure after you [install the collection](../../README.md
 1. Each tool call is written as a session entry before it runs, and again when
    it finishes. The entries store the tool name and call id only, not arguments
    or results.
-2. When a session starts, the journal is read. If the last turn was cut off
+2. When a session starts, the journal is read from after the last recover
+   note or the last completed assistant turn. If that turn was cut off
    (a tool started and never finished, or the last assistant turn was aborted),
    one note is added: what finished, what may have partly run, and "check the
-   current state before repeating". The note is a `recover` prompt section on
-   the next user prompt, and a session entry so it is recorded. It is added
-   once for that cutoff.
+   current state before repeating". The lists cover only that cut-off turn
+   (records since the last user message), and each is capped at the last 20
+   calls, with a "+N more" count if there are more. The note is a `recover`
+   prompt section on the next user prompt, and a session entry so it is
+   recorded. It is added once for that cutoff.
 3. If the journal is missing or unreadable, the note says so rather than
-   guessing a list. A new or cleanly finished session gets no note.
+   guessing a list. A new or cleanly finished session gets no note. A later
+   clean turn after an old, unfinished call also gets no note.
 
 Nothing is started automatically, and no panes are opened.
 

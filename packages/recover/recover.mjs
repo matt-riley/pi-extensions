@@ -3,6 +3,7 @@
 
 export const JOURNAL_TYPE = "recover-journal";
 export const NOTE_TYPE = "recover-note";
+export const LIST_CAP = 20;
 const CHECK = "check the current state before repeating.";
 
 export function journalEntry(phase, event, at) {
@@ -18,6 +19,23 @@ function isCustom(entry, type) {
   return entry?.type === "custom" && entry.customType === type;
 }
 
+function messageOf(entry) {
+  return entry?.message ?? entry;
+}
+
+function isUser(entry) {
+  return messageOf(entry)?.role === "user";
+}
+
+function isCompletedAssistant(entry) {
+  const message = messageOf(entry);
+  return (
+    message?.role === "assistant" &&
+    message.stopReason !== "error" &&
+    message.stopReason !== "aborted"
+  );
+}
+
 function validRecord(data) {
   return (
     data?.version === 1 &&
@@ -30,26 +48,34 @@ function validRecord(data) {
 }
 
 function lastIndex(entries, match) {
-  for (let i = entries.length - 1; i >= 0; i--) if (match(entries[i])) return i;
+  for (let i = entries.length - 1; i >= 0; i--) if (match(entries[i], i)) return i;
   return -1;
 }
 
 function lastAssistant(entries) {
   for (let i = entries.length - 1; i >= 0; i--) {
-    const message = entries[i]?.message ?? entries[i];
+    const message = messageOf(entries[i]);
     if (message?.role === "assistant") return { message, index: i };
   }
   return { message: null, index: -1 };
 }
 
-function readJournal(entries) {
+function incidentStart(entries) {
+  return Math.max(
+    lastIndex(entries, (entry) => isCustom(entry, NOTE_TYPE)),
+    lastIndex(entries, isCompletedAssistant),
+  );
+}
+
+function readJournal(entries, start = -1) {
   const records = [];
   let found = false;
-  for (const entry of entries) {
+  for (let i = start + 1; i < entries.length; i++) {
+    const entry = entries[i];
     if (!isCustom(entry, JOURNAL_TYPE)) continue;
     found = true;
     if (!validRecord(entry.data)) return { ok: false, reason: "unreadable" };
-    records.push(entry.data);
+    records.push({ data: entry.data, index: i });
   }
   if (!found) return { ok: false, reason: "missing" };
   return { ok: true, records };
@@ -77,41 +103,46 @@ function foldRecords(records) {
   return { finished, partial };
 }
 
-function alreadyNoted(entries, after) {
-  return lastIndex(entries, (entry) => isCustom(entry, NOTE_TYPE)) > after;
-}
-
 export function summarizeRecovery(entries) {
   if (!Array.isArray(entries)) return { kind: "closed", reason: "unreadable" };
   if (entries.length === 0) return { kind: "none" };
 
-  const journal = readJournal(entries);
+  const start = incidentStart(entries);
+  const journal = readJournal(entries, start);
   if (!journal.ok && journal.reason === "unreadable") {
-    if (alreadyNoted(entries, -1)) return { kind: "none" };
     return { kind: "closed", reason: "unreadable" };
   }
 
   const assistant = lastAssistant(entries);
-  const aborted = assistant.message?.stopReason === "aborted";
-  const lastJournal = lastIndex(entries, (entry) => isCustom(entry, JOURNAL_TYPE));
-  const after = Math.max(lastJournal, aborted ? assistant.index : -1);
+  const aborted = assistant.message?.stopReason === "aborted" && assistant.index > start;
 
   if (journal.ok) {
-    const { finished, partial } = foldRecords(journal.records);
+    const lastUser = lastIndex(entries, (entry, i) => i > start && isUser(entry));
+    const turnStart = Math.max(start, lastUser);
+    const { finished, partial } = foldRecords(
+      journal.records.filter((record) => record.index > turnStart).map((record) => record.data),
+    );
     if (partial.length === 0 && !aborted) return { kind: "none" };
-    if (alreadyNoted(entries, after)) return { kind: "none" };
     return { kind: "cutoff", finished, partial };
   }
 
   if (aborted) {
-    if (alreadyNoted(entries, after)) return { kind: "none" };
-    return { kind: "closed", reason: "missing" };
+    const anyJournal = entries.some((entry) => isCustom(entry, JOURNAL_TYPE));
+    if (!anyJournal) return { kind: "closed", reason: "missing" };
+    return { kind: "cutoff", finished: [], partial: [] };
   }
   return { kind: "none" };
 }
 
 function nameTool(record) {
   return `${record.toolName} (${record.toolCallId})`;
+}
+
+function formatList(records) {
+  if (!records.length) return "none";
+  const hidden = Math.max(0, records.length - LIST_CAP);
+  const shown = records.slice(-LIST_CAP).map(nameTool).join(", ");
+  return hidden > 0 ? `${shown} +${hidden} more` : shown;
 }
 
 export function recoveryNote(summary) {
@@ -123,10 +154,8 @@ export function recoveryNote(summary) {
       `so what finished and what may have partly run cannot be listed. ${CHECK}`
     );
   }
-  const finished = summary.finished.length ? summary.finished.map(nameTool).join(", ") : "none";
-  const partial = summary.partial.length ? summary.partial.map(nameTool).join(", ") : "none";
   return (
-    `This session was cut off mid-turn. Finished: ${finished}. ` +
-    `May have partly run: ${partial}. ${CHECK}`
+    `This session was cut off mid-turn. Finished: ${formatList(summary.finished)}. ` +
+    `May have partly run: ${formatList(summary.partial)}. ${CHECK}`
   );
 }

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   JOURNAL_TYPE,
   NOTE_TYPE,
+  LIST_CAP,
   journalEntry,
   summarizeRecovery,
   recoveryNote,
@@ -123,4 +124,66 @@ test("a recover note already recorded for this cutoff is not written again", () 
     note("This session was cut off mid-turn. Check the current state before repeating."),
   ];
   assert.deepEqual(summarizeRecovery(entries), { kind: "none" });
+});
+
+test("a stale partial followed by a clean later turn gives no note", () => {
+  const entries = [
+    user("first crash"),
+    journal(started("stale", "write")),
+    assistant("aborted"),
+    note("This session was cut off mid-turn. check the current state before repeating."),
+    user("try again"),
+    journal(started("ok", "read")),
+    journal(finished("ok", "read")),
+    assistant("stop"),
+  ];
+  assert.deepEqual(summarizeRecovery(entries), { kind: "none" });
+  assert.equal(recoveryNote(summarizeRecovery(entries)), null);
+});
+
+test("a long history lists only the cut-off turn's calls", () => {
+  const earlier = [
+    user("old work"),
+    journal(started("old1", "bash")),
+    journal(finished("old1", "bash")),
+    journal(started("old2", "read")),
+    journal(finished("old2", "read")),
+    assistant("stop"),
+  ];
+  const cutoff = [
+    user("new work"),
+    journal(started("new1", "grep")),
+    journal(finished("new1", "grep")),
+    journal(started("new2", "write")),
+  ];
+  const summary = summarizeRecovery([...earlier, ...cutoff]);
+  assert.deepEqual(summary, {
+    kind: "cutoff",
+    finished: [{ toolCallId: "new1", toolName: "grep" }],
+    partial: [{ toolCallId: "new2", toolName: "write" }],
+  });
+  const text = recoveryNote(summary);
+  assert.doesNotMatch(text, /old1|old2|bash \(old|read \(old2/);
+  assert.match(text, /Finished: grep \(new1\)/);
+  assert.match(text, /May have partly run: write \(new2\)/);
+});
+
+test("a long cut-off turn caps the listed calls and says how many were hidden", () => {
+  const steps = [];
+  const extra = 5;
+  const total = LIST_CAP + extra;
+  for (let i = 1; i <= total; i++) {
+    const id = `f${i}`;
+    steps.push(journal(started(id, "read")), journal(finished(id, "read")));
+  }
+  const entries = [user("long turn"), ...steps, journal(started("partial", "write"))];
+  const summary = summarizeRecovery(entries);
+  assert.equal(summary.kind, "cutoff");
+  assert.equal(summary.finished.length, total);
+  assert.deepEqual(summary.partial, [{ toolCallId: "partial", toolName: "write" }]);
+  const text = recoveryNote(summary);
+  assert.match(text, new RegExp(`Finished: read \\(f${extra + 1}\\)`));
+  assert.doesNotMatch(text, new RegExp(`read \\(f${extra}\\)`));
+  assert.match(text, new RegExp(`\\+${extra} more`));
+  assert.match(text, /May have partly run: write \(partial\)/);
 });
