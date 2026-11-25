@@ -1,7 +1,7 @@
 // lowered.mjs — the lowered-bar pass of `/deslop code`: changes that make a
 // branch pass by lowering what passing means. A suppression directive, a
-// skipped test, a weaker threshold and a stub all turn a red result green
-// without fixing what was red.
+// skipped test, a weaker threshold, a stub, a fixed sleep, a retry or a raised
+// test timeout all turn a red result green without fixing what was red.
 //
 // Like codeslop.mjs this reads a unified diff and only reports. A hit is a place
 // to look, never a rewrite. It judges what the diff adds or removes, so a
@@ -285,6 +285,102 @@ const easierTests = (files) => [
   ...strippedAssertions(files),
 ];
 
+const TEST_CONFIG =
+  /(?:^|\/)(?:jest|vitest|playwright|ava|cypress|karma)\.config\.[cm]?[jt]sx?$|(?:^|\/)\.mocharc\b/;
+
+/** Whether a path is a test file or a test runner config. */
+function isTestScope(path) {
+  return isTest(path) || TEST_CONFIG.test(path);
+}
+
+/** Fixed-duration waits: a number of milliseconds rather than a signal or event. */
+const FIXED_SLEEP =
+  /\b(?:await\s+(?:new\s+Promise\s*\([^;\n]*?)?(?:setTimeout|setInterval)\s*\(|new\s+Promise\s*\([^;\n]*setTimeout|\b(?:sleep|delay|waitForTimeout|wait_for_timeout|waitMs|wait_ms)\s*\(\s*[\d_]|\bcy\.wait\s*\(\s*[\d_]|\b(?:time|asyncio)\.sleep\s*\(|\btime\.Sleep\s*\(|\b(?:std::)?thread::sleep\s*\(|\b(?:tokio::)?time::sleep\s*\(|\bsleep_for\s*\(|\bBun\.sleep\s*\(|\bAtomics\.wait(?:Timeout)?\s*\(|\bsetTimeout\s*\(\s*(?:resolve|done|finish|next)\s*,)/;
+
+/** Retries that let a flake pass on a later attempt. */
+const TEST_RETRY =
+  /\bjest\.retryTimes\s*\(|\b(?:retryTimes|retries|retry)\s*:\s*[\d_]|\.(?:retry|retries)\s*\(\s*[\d_]|\bthis\.retries\s*\(\s*[\d_]|\bpytest\.mark\.flaky\b|\breruns\s*=\s*[\d_]/;
+
+const numberOf = (raw) => Number(String(raw).replace(/_/g, ""));
+
+/**
+ * Test and hook timeout settings on a line: `testTimeout`, `hookTimeout`, a
+ * `timeout` option on a test or in a runner config, and `jest.setTimeout`,
+ * `test.setTimeout` or `this.timeout`. A request timeout (`page.goto({ timeout })`)
+ * is left alone.
+ */
+function timeoutSettings(text, path) {
+  const found = [];
+  for (const match of text.matchAll(
+    /["']?(testTimeout|hookTimeout)["']?\s*[:=]\s*["']?(\d[\d_]*)/gi,
+  ))
+    found.push({ key: match[1].toLowerCase(), name: match[1], value: numberOf(match[2]) });
+  const timeoutHere =
+    TEST_CONFIG.test(path) ||
+    /\b(?:test|it|describe|suite|context|specify)\b|\bsetTimeout\s*\(|\bsetConfig\s*\(/.test(
+      text,
+    ) ||
+    /^\s*[{,]?\s*["']?timeout["']?\s*:/.test(text);
+  if (timeoutHere)
+    for (const match of text.matchAll(/["']?timeout["']?\s*[:=]\s*["']?(\d[\d_]*)/gi))
+      found.push({ key: "timeout", name: "timeout", value: numberOf(match[1]) });
+  for (const match of text.matchAll(
+    /\b(?:jest\.setTimeout|test\.setTimeout|this\.timeout)\s*\(\s*(\d[\d_]*)/g,
+  ))
+    found.push({ key: "timeout", name: "timeout", value: numberOf(match[1]) });
+  return found;
+}
+
+/** Timeout values a hunk's added lines change, paired by key with the number they replaced. */
+function* changedTimeouts(lines, path) {
+  const before = new Map();
+  for (const line of lines)
+    if (line.kind === "del")
+      for (const { key, value } of timeoutSettings(line.text, path))
+        before.set(key, [...(before.get(key) ?? []), value]);
+  for (const [at, line] of lines.entries()) {
+    if (line.kind !== "add") continue;
+    for (const { key, name, value } of timeoutSettings(line.text, path)) {
+      const old = before.get(key)?.shift();
+      yield { at, line, name, old, value };
+    }
+  }
+}
+
+/**
+ * Fixed sleeps, test retries and raised (or newly set) test timeouts. A tighter
+ * timeout, a wait in production code, a quoted shell `sleep`, and a request
+ * timeout are not flagged.
+ */
+function flakeMasks(files) {
+  const hits = [];
+  for (const file of files) {
+    const style = commentStyleOf(file.path);
+    if (!style || file.deleted || !isTestScope(file.path)) continue;
+    for (const { lines, at, line } of addedLines(file)) {
+      const code = splitComment(line.text, style).code;
+      if (FIXED_SLEEP.test(code) || TEST_RETRY.test(code))
+        hits.push({
+          path: file.path,
+          n: line.n,
+          text: line.text,
+          weak: reasonNear(lines, at, style),
+        });
+    }
+    for (const { lines } of file.hunks)
+      for (const { at, line, name, old, value } of changedTimeouts(lines, file.path)) {
+        if (old !== undefined && value <= old) continue;
+        hits.push({
+          path: file.path,
+          n: line.n,
+          text: old === undefined ? line.text : `${name}: ${old} -> ${value}`,
+          weak: reasonNear(lines, at, style),
+        });
+      }
+  }
+  return hits;
+}
+
 const CONFIG_FILE =
   /\.(?:json|jsonc|ya?ml|toml|ini|cfg)$|(?:^|\/)\.[\w-]*rc(?:\.\w+)?$|\.config\.[cm]?[jt]s$/;
 const WORKFLOW_FILE =
@@ -567,6 +663,13 @@ const CHECKS = [
       /\b(?:tests?|specs?|assert\w*)\b/i,
     ],
     scan: easierTests,
+  },
+  {
+    id: "flake-mask",
+    label: "fixed sleep, test retry or raised test timeout",
+    fix: "wait on the event the test depends on, or record why a delay, retry or longer timeout is required",
+    topic: [/\b(?:sleep|delay|wait|retry|rerun|timeout|flake|flak\w*|poll)\b/i],
+    scan: flakeMasks,
   },
   {
     id: "weaker-check",

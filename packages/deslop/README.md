@@ -217,7 +217,8 @@ turns the command off along with the rest of the extension.
 ### Lowered bar checks
 
 A branch can go green by making green easier to reach: silence the check, skip
-the test, lower the threshold, leave the stub. The other checks here judge how
+the test, lower the threshold, leave the stub, sleep until a race usually
+passes, retry the flake, or raise the timeout. The other checks here judge how
 code is written. These judge what the diff does to the bar the code has to clear.
 They run inside `/deslop code`, on the same diff and the same read-only git
 calls, because that command already knows which lines a branch added and removed.
@@ -236,6 +237,7 @@ suppression that was already in the file is not new. Each finding names
 | Test skipped, deleted or stripped of assertions | adds `.skip` or `.only`, `xit`, `xdescribe`, `t.Skip`, `#[ignore]`, a pytest or unittest skip, or a node test `skip` option; deletes a test file while the file it tests stays; or removes more assertions than it adds across the test files that remain. |
 | Threshold lowered, CI check removed or lint rule switched off | lowers a coverage floor (`lines`, `branches`, `threshold`, `fail_under` and similar) or raises a budget ceiling (`maxSize`, `max-warnings` and similar) on the same key; removes a `run:` or `uses:` step or script line that runs a check (tests, lint, type-check, scan) from a workflow without adding it anywhere in the diff, or deletes such a workflow; adds `continue-on-error: true` or `|| true` to a check; or sets a rule to `off`, `0` or `allow`, starts an `ignore` list, or sets `strict` and its relatives to `false` in an ESLint, oxlint, Biome, Ruff, golangci, TypeScript or Cargo config. |
 | Stub, empty error handler or TODO standing in for the code | adds a throw or panic of "not implemented", `NotImplementedError`, `todo!()` or `unimplemented!()`; adds a `catch`, `except` or `if err != nil` block with nothing in it, or `.catch(() => {})`; or adds a function whose only body is a `TODO`, `FIXME` or `XXX` comment. |
+| Fixed sleep, test retry or raised test timeout | in a test file or a test runner config (`jest.config`, `vitest.config` and similar), adds a fixed-duration wait (`await sleep(1000)`, `await delay(10)`, `await new Promise((r) => setTimeout(r, n))`, `time.sleep`, `time.Sleep`, `thread::sleep`, `cy.wait(n)`, `waitForTimeout`); adds a retry (`retry: 3`, `jest.retryTimes`, `this.retries`, `pytest.mark.flaky`, `reruns=`); or sets or raises a test timeout (`timeout` or `testTimeout` on a test or runner, `jest.setTimeout`, `this.timeout`). A tighter timeout, a wait in production code, a quoted shell `sleep`, and a request timeout such as `page.goto({ timeout })` are not flagged. |
 
 **Strong and weak.** A strong finding has severity `high`. A reason moves a hit to a
 weak finding, severity `low`, which is listed under the label "weak sign" and, like
@@ -247,9 +249,10 @@ every low finding, shows only beside a stronger one. A reason is any of:
 - for a skip call, a string argument of two plain words, as in
   `t.Skip("flaky on shared runners")` (a test name such as `it.skip("adds")` is not one);
 - a commit message on the branch that is about that kind of change and says why:
-  it names the change (`suppress`, `skip`, `lower`, `stub` and similar) and uses a
-  reason word (`because`, `until`, `flaky`, `upstream`, `workaround`, `tracked`, an
-  issue number). A message downgrades only the finding category it is about. The
+  it names the change (`suppress`, `skip`, `lower`, `stub`, `sleep`, `retry`,
+  `timeout` and similar) and uses a reason word (`because`, `until`, `flaky`,
+  `upstream`, `workaround`, `tracked`, an issue number). A message downgrades only
+  the finding category it is about. The
   messages come from one read-only `git log` of the commits since the base, and
   are fetched only when a strong finding exists.
 
@@ -267,7 +270,9 @@ as the way to say it is deliberate. A bare `@ts-ignore` or empty `catch` can als
 appear in the code-slop list for its own reason; the type directive is reported
 only here. Only `.mjs`, `.ts`, `.py`, `.go` and `.rs` sources get the stub and
 empty-handler checks, and test files, lock files, generated output and Markdown
-are never read for them.
+are never read for them. A test of a timer itself can look like a fixed sleep;
+a short timeout added on a test is flagged the same way as a long one, because
+the diff cannot see the runner's default.
 
 ## Limits
 
