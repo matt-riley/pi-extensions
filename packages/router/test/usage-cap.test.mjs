@@ -318,3 +318,17 @@ test("successfulTurnKey is null when an error is recorded without stopReason err
     null,
   );
 });
+
+test("successfulTurnKey treats a toolUse turn as a success", () => {
+  assert.equal(
+    successfulTurnKey([assistantError("", "gpt-5.6-luna", "toolUse")]),
+    "openai-codex/gpt-5.6-luna",
+  );
+});
+
+test("successfulTurnKey treats a length turn as a success", () => {
+  assert.equal(
+    successfulTurnKey([assistantError("", "gpt-5.6-luna", "length")]),
+    "openai-codex/gpt-5.6-luna",
+  );
+});

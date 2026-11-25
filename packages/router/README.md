@@ -59,9 +59,9 @@ by the cap through the fallback entry), defaulting to Luna.
   also how a short throttle is worded. If that same pair is capped again after
   its window has expired, the no-suffix wait steps up through 15 minutes, 1
   hour, and 4 hours, and stays at 4 hours after that. A retry, `turn_end` and
-  `agent_end` for one incident share one step. A successful turn (`stopReason` `stop`) on that same
-  pair clears the streak; a successful turn on a different model does not.
-  An aborted turn or an error does not clear it.
+  `agent_end` for one incident share one step. A successful turn on that same pair clears the streak,
+  including one that ended with `toolUse` or `length`; a successful turn on
+  a different model does not. An aborted turn or an error does not clear it.
   Cooled models are left out of the offers before `chooseModelForTier`, so the
   next user turn takes the next pair in the same tier. If every pair in the
   tier is cooling down, the router stays put and warns, the same way it does
