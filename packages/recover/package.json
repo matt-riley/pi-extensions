@@ -1,0 +1,7 @@
+{
+  "name": "pi-recover",
+  "version": "0.1.0",
+  "description": "On resume of a cut-off session, tell the agent what finished and what may have partly run.",
+  "license": "MIT",
+  "type": "module"
+}

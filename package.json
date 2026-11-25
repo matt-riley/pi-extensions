@@ -52,6 +52,7 @@
       "./packages/decision-rows/index.ts",
       "./packages/drift/index.ts",
       "./packages/emphasis/index.ts",
+      "./packages/recover/index.ts",
       "./packages/safe-compact/index.ts",
       "./packages/review/index.ts",
       "./packages/watch-pr/index.ts",

@@ -127,6 +127,7 @@ project-specific skills in that project's `.agents/skills/`.
 | [`pi-decision-rows`](./packages/decision-rows/README.md) | Show the router, Jev, verifier and prompt-coach decisions this collection saves as compact transcript rows. |
 | [`pi-emphasis`](./packages/emphasis/README.md) | Draw `[[Done]]`-style status pills, label icons and colored bold in replies, mark claims made over unchecked edits and paths that do not exist, and teach the agent to write them. Display only. |
 | [`pi-drift`](./packages/drift/README.md) | Tell the agent which files changed outside the session, so it re-reads them instead of overwriting from memory. |
+| [`pi-recover`](./packages/recover/README.md) | On resume of a cut-off session, tell the agent what finished and what may have partly run, and not to repeat a step before checking. |
 | [`pi-safe-compact`](./packages/safe-compact/README.md) | Carry selected context into a shorter session, with native compaction as a fallback. |
 
 ## Development
