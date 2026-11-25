@@ -58,6 +58,11 @@ import { setReadOnlyMode } from "../../shared/mode-flags.mjs";
 const QUESTION_TOOL = "plan_mode_question";
 const GATE_ENV = "PI_PLAN_JUDGE";
 
+/** Catch clauses are `unknown`; only an Error is guaranteed a message. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Off means off, and no key means no request rather than a lost question. */
 function gateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   if (flagOff(env?.[GATE_ENV])) {
@@ -246,7 +251,7 @@ export default function planMode(pi: ExtensionAPI) {
       try {
         current = await readFile(planPath, "utf8");
       } catch (error) {
-        notify(ctx, `Failed to read ${planPath}: ${(error as Error).message}`);
+        notify(ctx, `Failed to read ${planPath}: ${errorMessage(error)}`);
         return null;
       }
       const edited = await editor("Edit plan — Ctrl+G opens $EDITOR:", current);
@@ -265,7 +270,7 @@ export default function planMode(pi: ExtensionAPI) {
     try {
       await atomicWriteFile(state.planPath, edited);
     } catch (error) {
-      notify(ctx, `Failed to write ${state.planPath}: ${(error as Error).message}`);
+      notify(ctx, `Failed to write ${state.planPath}: ${errorMessage(error)}`);
       return;
     }
     lastWritten = edited;
@@ -299,7 +304,7 @@ export default function planMode(pi: ExtensionAPI) {
         try {
           currentPlan = await readFile(checkPath, "utf8");
         } catch (error) {
-          notify(ctx, `Failed to read ${checkPath}: ${(error as Error).message}`);
+          notify(ctx, `Failed to read ${checkPath}: ${errorMessage(error)}`);
           return;
         }
         notify(ctx, "Plan comprehension check running (one read-only child + TypeSafe)…");
@@ -317,7 +322,7 @@ export default function planMode(pi: ExtensionAPI) {
             resolvePlanCheckModel(registry, parent, commandCtx, routerFile),
         }).catch((error) => ({
           appendix: null,
-          notify: `Plan check failed: ${(error as Error).message}`,
+          notify: `Plan check failed: ${errorMessage(error)}`,
         }));
         if (!checked.appendix) {
           notify(ctx, checked.notify ?? "Plan check produced nothing to append.");
@@ -332,7 +337,7 @@ export default function planMode(pi: ExtensionAPI) {
           await atomicWriteFile(checkPath, merged);
           lastWritten = merged;
         } catch (error) {
-          notify(ctx, `Failed to write ${checkPath}: ${(error as Error).message}`);
+          notify(ctx, `Failed to write ${checkPath}: ${errorMessage(error)}`);
           return;
         }
         notify(ctx, checked.notify ?? "Plan comprehension check appended.");
@@ -554,7 +559,7 @@ export default function planMode(pi: ExtensionAPI) {
           content: [
             {
               type: "text",
-              text: `Question dialog failed (${(error as Error).message}). Ask the question in plain text instead.`,
+              text: `Question dialog failed (${errorMessage(error)}). Ask the question in plain text instead.`,
             },
           ],
         };
@@ -614,7 +619,7 @@ export default function planMode(pi: ExtensionAPI) {
           content: [
             {
               type: "text",
-              text: `Failed to write the plan file: ${(error as Error).message}. Report this and ask how to proceed.`,
+              text: `Failed to write the plan file: ${errorMessage(error)}. Report this and ask how to proceed.`,
             },
           ],
         };

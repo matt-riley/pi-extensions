@@ -104,6 +104,119 @@ export function lintSuppressions(filename, source) {
   return findings;
 }
 
+/**
+ * Type assertions (`as T` and `<T>value`) need a stated reason, except `as const`.
+ * A chain such as `as A as B` is always a finding: it discards type evidence
+ * rather than parsing at a boundary, and a comment does not make that safe.
+ * @param {string} filename
+ * @param {string} source
+ * @returns {Finding[]}
+ */
+export function lintTypeAssertions(filename, source) {
+  if (!/\.[cm]?[jt]sx?$/.test(filename)) return [];
+  const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  const comments = commentRanges(tree, source);
+  /** @type {Finding[]} */
+  const findings = [];
+
+  /** @param {ts.Expression} node */
+  function unwrap(node) {
+    let current = node;
+    while (ts.isParenthesizedExpression(current)) current = current.expression;
+    return current;
+  }
+
+  /** @param {ts.Node} node */
+  function isAssertion(node) {
+    return ts.isAsExpression(node) || ts.isTypeAssertionExpression(node);
+  }
+
+  /**
+   * @param {ts.AsExpression | ts.TypeAssertion} node
+   */
+  function isConstAssertion(node) {
+    const type = node.type;
+    return (
+      ts.isTypeReferenceNode(type) &&
+      ts.isIdentifier(type.typeName) &&
+      type.typeName.text === "const"
+    );
+  }
+
+  /**
+   * @param {ts.AsExpression | ts.TypeAssertion} node
+   */
+  function isOutermost(node) {
+    let current = node.parent;
+    while (current && ts.isParenthesizedExpression(current)) current = current.parent;
+    return !current || !isAssertion(current);
+  }
+
+  /**
+   * @param {ts.AsExpression | ts.TypeAssertion} node
+   */
+  function isForbiddenChain(node) {
+    let count = 0;
+    let nonConst = false;
+    /** @type {ts.Expression} */
+    let current = node;
+    while (isAssertion(current)) {
+      count++;
+      if (!isConstAssertion(current)) nonConst = true;
+      current = unwrap(current.expression);
+    }
+    return count > 1 && nonConst;
+  }
+
+  /**
+   * @param {ts.Node} node
+   */
+  function hasReason(node) {
+    const start = node.getStart(tree);
+    const lineEnd = source.indexOf("\n", start);
+    const endPos = lineEnd === -1 ? source.length : lineEnd;
+    for (const range of comments) {
+      if (
+        range.pos >= start &&
+        range.pos < endPos &&
+        commentBody(source, range).trim().length >= MIN_REASON
+      )
+        return true;
+    }
+    const lineStart = source.lastIndexOf("\n", start - 1) + 1;
+    for (const range of comments) {
+      if (range.end > lineStart) continue;
+      if (!startsLine(source, range.pos)) continue;
+      if (!/^[ \t]*\r?\n?[ \t]*$/.test(source.slice(range.end, lineStart))) continue;
+      if (commentBody(source, range).trim().length >= MIN_REASON) return true;
+    }
+    return false;
+  }
+
+  /** @param {ts.Node} node */
+  function visit(node) {
+    if (isAssertion(node) && isOutermost(node)) {
+      if (isForbiddenChain(node))
+        findings.push({
+          rule: "no-chained-type-assertion",
+          line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1,
+          message:
+            "Chained `as` discards type evidence. Keep the precise type, or parse at the boundary instead of asserting twice.",
+        });
+      else if (!isConstAssertion(node) && !hasReason(node))
+        findings.push({
+          rule: "type-assertion-needs-reason",
+          line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1,
+          message:
+            "Type assertion has no reason. Narrow the value properly, or state why the assertion is safe here.",
+        });
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  return findings;
+}
+
 /** @param {string} source @param {ts.CommentRange} range */
 function commentBody(source, range) {
   return source.slice(range.pos, range.end).replace(/^\/\/|^\/\*|\*\/$/g, "");
@@ -207,14 +320,18 @@ if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === imp
     const target = resolve(root, file);
     if (!statSync(target, { throwIfNoEntry: false })?.isFile()) continue;
     const source = readFileSync(target, "utf8");
-    const findings = [...lintComments(file, source), ...lintSuppressions(file, source)];
+    const findings = [
+      ...lintComments(file, source),
+      ...lintSuppressions(file, source),
+      ...lintTypeAssertions(file, source),
+    ];
     for (const finding of findings)
       console.error(`${file}:${finding.line}: ${finding.rule}: ${finding.message}`);
     errors += findings.length;
   }
   if (!errors)
     console.log(
-      "Comment lint passes (exact statement narration, suppressions with reasons; documentation preserved)",
+      "Comment lint passes (exact statement narration, suppressions and type assertions with reasons; documentation preserved)",
     );
   process.exitCode = errors ? 1 : 0;
 }
