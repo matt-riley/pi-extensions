@@ -235,6 +235,98 @@ test("a clean test change produces no flags", () => {
   assert.deepEqual(findLoweredBar(clean), []);
 });
 
+test("a fixed sleep or wait in a test is a strong flag", () => {
+  const cases = {
+    "src/a.test.ts": [
+      "  await new Promise((resolve) => setTimeout(resolve, 1000));",
+      "  await setTimeout(500);",
+      "  await sleep(1000);",
+      "  await delay(10);",
+      "  await page.waitForTimeout(500);",
+      "  cy.wait(1000);",
+    ],
+    "tests/test_a.py": ["    time.sleep(0.5)", "    await asyncio.sleep(1)"],
+    "pkg/a_test.go": ["\ttime.Sleep(time.Second)"],
+    "src/a_test.rs": ["    std::thread::sleep(Duration::from_millis(50));"],
+  };
+  for (const [file, lines] of Object.entries(cases))
+    for (const line of lines)
+      assert.deepEqual(kinds(added(file, line)), ["flake-mask/high"], `${file}: ${line}`);
+});
+
+test("a test retry or a raised test timeout is a strong flag", () => {
+  const cases = {
+    "src/a.test.ts": [
+      "test('adds', { retry: 3 }, () => {});",
+      "test('adds', { timeout: 30_000 }, () => {});",
+      "jest.setTimeout(60000);",
+      "jest.retryTimes(3);",
+      "  this.timeout(10000);",
+      "  this.retries(2);",
+    ],
+    "jest.config.ts": ["  testTimeout: 30_000,"],
+    "tests/test_a.py": ["@pytest.mark.flaky(reruns=3)"],
+  };
+  for (const [file, lines] of Object.entries(cases))
+    for (const line of lines)
+      assert.deepEqual(kinds(added(file, line)), ["flake-mask/high"], `${file}: ${line}`);
+  const raised = diffOf("src/a.test.ts", [
+    "-test('adds', { timeout: 1000 }, () => {});",
+    "+test('adds', { timeout: 30_000 }, () => {});",
+  ]);
+  const found = findLoweredBar(raised);
+  assert.deepEqual(kinds(raised), ["flake-mask/high"]);
+  assert.match(found[0].excerpts[0], /timeout: 1000 -> 30000/);
+});
+
+test("a reason next to a sleep, retry or timeout downgrades the flag to weak", () => {
+  const sleep = added(
+    "src/a.test.ts",
+    "// the subject under test is the timer itself",
+    "  await sleep(1, signal);",
+  );
+  assert.deepEqual(kinds(sleep), ["flake-mask/low"]);
+  assert.deepEqual(
+    kinds(
+      added(
+        "src/a.test.ts",
+        "test('adds', { retry: 3 }, () => {}); // until the upstream race is fixed",
+      ),
+    ),
+    ["flake-mask/low"],
+  );
+});
+
+test("a sleep, retry or timeout outside a test, in a string, or tightened is not flagged", () => {
+  assert.deepEqual(kinds(added("src/poll.ts", "await sleep(POLL_MS, signal);")), []);
+  assert.deepEqual(
+    kinds(added("src/a.test.ts", '  await jobs.start({ command: "sleep 30" });')),
+    [],
+  );
+  assert.deepEqual(kinds(added("src/a.test.ts", "// never await sleep(1000) here")), []);
+  assert.deepEqual(kinds(removed("src/a.test.ts", "  await delay(10);")), []);
+  const tightened = diffOf("src/a.test.ts", [
+    "-test('adds', { timeout: 30_000 }, () => {});",
+    "+test('adds', { timeout: 1000 }, () => {});",
+  ]);
+  assert.deepEqual(kinds(tightened), []);
+  const request = added("src/a.test.ts", "  await page.goto(url, { timeout: 5000 });");
+  assert.deepEqual(kinds(request), []);
+  const held = diffOf("config.json", ['-  "timeout": 10,', '+  "timeout": 30,']);
+  assert.deepEqual(kinds(held), []);
+});
+
+test("a commit message about a flake-masking change can downgrade it", () => {
+  const wait = added("src/a.test.ts", "  await delay(10);");
+  assert.deepEqual(
+    kinds(wait, ["test: keep a short sleep until the job emits ready, tracked in #12"]),
+    ["flake-mask/low"],
+  );
+  assert.deepEqual(kinds(wait, ["test: skip the timer test until the fix lands"]), [
+    "flake-mask/high",
+  ]);
+});
+
 test("a coverage floor lowered or a budget ceiling raised is a strong flag", () => {
   const floor = diffOf("package.json", [
     '   "c8": {',
