@@ -12,7 +12,8 @@ There is nothing to configure after you [install the collection](../../README.md
    it finishes. The entries store the tool name and call id only, not arguments
    or results.
 2. When a session starts, the journal is read from after the last recover
-   note or the last completed assistant turn. If that turn was cut off
+   note or the last completed assistant turn (`stop` or `length`, not a
+   mid-turn `toolUse`). If that turn was cut off
    (a tool started and never finished, or the last assistant turn was aborted),
    one note is added: what finished, what may have partly run, and "check the
    current state before repeating". The lists cover only that cut-off turn

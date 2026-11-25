@@ -74,6 +74,27 @@ test("a tool that started and never finished is listed as maybe partly run", () 
   assert.match(text, new RegExp(CHECK));
 });
 
+test("a multi-step turn lists every finished call before the cut-off step", () => {
+  const entries = [
+    user("edit the file"),
+    assistant("toolUse"),
+    journal(started("a", "read")),
+    journal(finished("a", "read")),
+    assistant("toolUse"),
+    journal(started("b", "write")),
+  ];
+  const summary = summarizeRecovery(entries);
+  assert.deepEqual(summary, {
+    kind: "cutoff",
+    finished: [{ toolCallId: "a", toolName: "read" }],
+    partial: [{ toolCallId: "b", toolName: "write" }],
+  });
+  const text = recoveryNote(summary);
+  assert.match(text, /Finished: read \(a\)/);
+  assert.match(text, /May have partly run: write \(b\)/);
+  assert.match(text, new RegExp(CHECK));
+});
+
 test("an aborted last turn with a complete journal still adds a note", () => {
   const entries = [
     user("edit the file"),
@@ -126,20 +147,22 @@ test("a recover note already recorded for this cutoff is not written again", () 
   assert.deepEqual(summarizeRecovery(entries), { kind: "none" });
 });
 
-test("a stale partial followed by a clean later turn gives no note", () => {
-  const entries = [
-    user("first crash"),
-    journal(started("stale", "write")),
-    assistant("aborted"),
-    note("This session was cut off mid-turn. check the current state before repeating."),
-    user("try again"),
-    journal(started("ok", "read")),
-    journal(finished("ok", "read")),
-    assistant("stop"),
-  ];
-  assert.deepEqual(summarizeRecovery(entries), { kind: "none" });
-  assert.equal(recoveryNote(summarizeRecovery(entries)), null);
-});
+for (const stopReason of ["stop", "length"]) {
+  test(`a stale partial followed by a clean later turn ending in ${stopReason} gives no note`, () => {
+    const entries = [
+      user("first crash"),
+      journal(started("stale", "write")),
+      assistant("aborted"),
+      note("This session was cut off mid-turn. check the current state before repeating."),
+      user("try again"),
+      journal(started("ok", "read")),
+      journal(finished("ok", "read")),
+      assistant(stopReason),
+    ];
+    assert.deepEqual(summarizeRecovery(entries), { kind: "none" });
+    assert.equal(recoveryNote(summarizeRecovery(entries)), null);
+  });
+}
 
 test("a long history lists only the cut-off turn's calls", () => {
   const earlier = [
