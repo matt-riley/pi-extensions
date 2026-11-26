@@ -17,7 +17,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}:${{ github.ref }}:check
       cancel-in-progress: true
-    uses: matt-riley/matt-riley-ci/.github/workflows/aube-ci.yml@82773e1ba2dc26de50fa6b1d62d31c6b873208b5 # v4
+    uses: matt-riley/matt-riley-ci/.github/workflows/aube-ci.yml@c0e6946b1acb68a526ec34fb251d16ac1f63d358 # v4
     with:
       # `npm run check` is the repo's full gate (tsc, oxlint, oxfmt, knip, fallow, node tests).
       run-lint: false
